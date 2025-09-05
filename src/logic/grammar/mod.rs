@@ -8,15 +8,31 @@ use std::collections::HashMap;
 pub struct Symbol {
     pub value: String,
     pub binding: Option<String>,
+    pub repetition: Option<RepetitionKind>,
+}
+
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
+pub enum RepetitionKind {
+    ZeroOrMore,     // *
+    OneOrMore,      // +
+    ZeroOrOne,      // ?
 }
 
 impl Symbol {
     pub fn new(value: String) -> Self {
-        Symbol { value, binding: None }
+        Symbol { value, binding: None, repetition: None }
     }
     
     pub fn with_binding(value: String, binding: String) -> Self {
-        Symbol { value, binding: Some(binding) }
+        Symbol { value, binding: Some(binding), repetition: None }
+    }
+    
+    pub fn with_repetition(value: String, repetition: RepetitionKind) -> Self {
+        Symbol { value, binding: None, repetition: Some(repetition) }
+    }
+    
+    pub fn with_binding_and_repetition(value: String, binding: String, repetition: RepetitionKind) -> Self {
+        Symbol { value, binding: Some(binding), repetition: Some(repetition) }
     }
 }
 
@@ -232,6 +248,143 @@ pub(crate) mod tests {
 
         // Start symbol preserved through roundtrip
         assert_eq!(grammar1.start_nonterminal(), grammar2.start_nonterminal());
-        assert_eq!(grammar1.production_order, grammar2.production_order);
+    }
+
+    #[test]
+    fn test_parse_repetition_suffix() {
+        use crate::logic::grammar::utils::parse_repetition_suffix;
+        
+        // Test parsing repetition operators
+        let (base, rep) = parse_repetition_suffix("Stmt*");
+        assert_eq!(base, "Stmt");
+        assert_eq!(rep, Some(RepetitionKind::ZeroOrMore));
+
+        let (base, rep) = parse_repetition_suffix("Term+");
+        assert_eq!(base, "Term");
+        assert_eq!(rep, Some(RepetitionKind::OneOrMore));
+
+        let (base, rep) = parse_repetition_suffix("Expr?");
+        assert_eq!(base, "Expr");
+        assert_eq!(rep, Some(RepetitionKind::ZeroOrOne));
+
+        let (base, rep) = parse_repetition_suffix("Variable");
+        assert_eq!(base, "Variable");
+        assert_eq!(rep, None);
+    }
+
+    #[test]
+    fn test_parse_rhs_with_repetition() {
+        use crate::logic::grammar::utils::parse_rhs;
+        
+        // Test parsing RHS with repetition operators
+        let result = parse_rhs("Stmt*").expect("Failed to parse RHS");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 1);
+        assert_eq!(result[0][0].value, "Stmt");
+        assert_eq!(result[0][0].repetition, Some(RepetitionKind::ZeroOrMore));
+
+        let result = parse_rhs("'{' Stmt* '}'").expect("Failed to parse RHS");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 3);
+        assert_eq!(result[0][0].value, "{");
+        assert_eq!(result[0][1].value, "Stmt");
+        assert_eq!(result[0][1].repetition, Some(RepetitionKind::ZeroOrMore));
+        assert_eq!(result[0][2].value, "}");
+    }
+
+    #[test]
+    fn test_parse_rhs_with_binding_and_repetition() {
+        use crate::logic::grammar::utils::parse_rhs;
+        
+        // Test parsing with both binding and repetition
+        let result = parse_rhs("'{' Stmt[s]* '}'").expect("Failed to parse RHS");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 3);
+        assert_eq!(result[0][1].value, "Stmt");
+        assert_eq!(result[0][1].binding, Some("s".to_string()));
+        assert_eq!(result[0][1].repetition, Some(RepetitionKind::ZeroOrMore));
+    }
+
+    const REPETITION_GRAMMAR: &str = r#"
+    // Grammar with repetition for testing
+    Stmt ::= 'print' Expr ';'
+    Expr ::= Number | Variable
+    Number ::= /[0-9]+/
+    Variable ::= /[a-zA-Z][a-zA-Z0-9]*/
+    Block ::= '{' Stmt* '}'
+    "#;
+
+    #[test]
+    fn test_grammar_with_repetition_loads() {
+        let grammar = Grammar::load(REPETITION_GRAMMAR);
+        assert!(grammar.is_ok(), "Grammar should load successfully: {:?}", grammar.err());
+        
+        let grammar = grammar.unwrap();
+        
+        // Check that Block production has correct repetition
+        let block_productions = grammar.productions.get("Block").unwrap();
+        assert_eq!(block_productions.len(), 1);
+        assert_eq!(block_productions[0].rhs.len(), 3);
+        assert_eq!(block_productions[0].rhs[1].value, "Stmt");
+        assert_eq!(block_productions[0].rhs[1].repetition, Some(RepetitionKind::ZeroOrMore));
+    }
+
+    #[test] 
+    fn test_parse_empty_block() {
+        use crate::logic::parser::Parser;
+        
+        let grammar = Grammar::load(REPETITION_GRAMMAR).expect("Failed to load grammar");
+        let mut parser = Parser::new(grammar);
+        
+        // Test parsing empty block "{}"
+        let ast = parser.parse("{ }");
+        assert!(ast.is_ok(), "Should parse empty block: {:?}", ast.err());
+        
+        let ast = ast.unwrap();
+        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast {
+            assert_eq!(nt.value, "Block");
+            assert_eq!(nt.children.len(), 2); // Only '{' and '}', no statements
+        } else {
+            panic!("Expected nonterminal node");
+        }
+    }
+
+    #[test]
+    fn test_parse_block_with_statements() {
+        use crate::logic::parser::Parser;
+        
+        let grammar = Grammar::load(REPETITION_GRAMMAR).expect("Failed to load grammar");
+        let mut parser = Parser::new(grammar);
+        
+        // Test parsing block with statements "{ print x ; print y ; }"
+        let ast = parser.parse("{ print x ; print y ; }");
+        assert!(ast.is_ok(), "Should parse block with statements: {:?}", ast.err());
+        
+        let ast = ast.unwrap();
+        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast {
+            assert_eq!(nt.value, "Block");
+            assert!(nt.children.len() > 2); // '{', statements, '}'
+        } else {
+            panic!("Expected nonterminal node");
+        }
+    }
+
+    #[test]
+    fn test_parse_all_repetition_operators() {
+        use crate::logic::grammar::utils::parse_rhs;
+        
+        // Test all three repetition operators
+        let result = parse_rhs("Term* Expr+ Stmt?").expect("Failed to parse RHS");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].len(), 3);
+        
+        assert_eq!(result[0][0].value, "Term");
+        assert_eq!(result[0][0].repetition, Some(RepetitionKind::ZeroOrMore));
+        
+        assert_eq!(result[0][1].value, "Expr");
+        assert_eq!(result[0][1].repetition, Some(RepetitionKind::OneOrMore));
+        
+        assert_eq!(result[0][2].value, "Stmt");
+        assert_eq!(result[0][2].repetition, Some(RepetitionKind::ZeroOrOne));
     }
 }

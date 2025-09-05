@@ -55,6 +55,48 @@ Where:
 ### Semantic Bindings
 Non-terminals in the RHS bind semantic variables that capture their meaning. The bind module resolves these to concrete nodes/types and stores a BoundTypingRule on the NonTerminal.
 
+### Repetition Operators
+
+The grammar supports repetition operators for symbols in production rules:
+
+- `Symbol*`: Zero or more occurrences (Kleene star)
+- `Symbol+`: One or more occurrences (Kleene plus)
+- `Symbol?`: Zero or one occurrence (optional)
+
+#### Syntax Examples
+
+```
+// Zero or more statements in a block
+Block ::= '{' Stmt* '}'
+
+// One or more parameters
+FunctionDef ::= 'def' Identifier '(' Param+ ')'
+
+// Optional else clause
+IfStmt ::= 'if' '(' Expr ')' Stmt Else?
+Else ::= 'else' Stmt
+```
+
+#### Repetition with Bindings
+
+Repetition operators can be combined with semantic bindings:
+
+```
+// Zero or more statements bound to variable 's'
+Block ::= '{' Stmt[s]* '}'
+
+// One or more parameters bound to variable 'p'
+FunctionDef ::= 'def' Identifier[name] '(' Param[p]+ ')'
+```
+
+#### Parsing Behavior
+
+- `*` (Zero or More): Parser attempts to match the symbol repeatedly until it fails, then continues. No error if zero matches are found.
+- `+` (One or More): Same as `*` but requires at least one successful match. Error if zero matches are found.
+- `?` (Zero or One): Parser attempts to match the symbol once. If it fails, continues without error. If it succeeds, does not attempt additional matches.
+
+All repetition parsing uses backtracking to handle ambiguity and ensure correct parsing of surrounding symbols.
+
 ## Start Nonterminal (parsing)
 
 - Convention: the start symbol is the last declared production LHS in the spec.

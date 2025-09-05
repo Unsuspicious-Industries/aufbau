@@ -1,4 +1,4 @@
-use crate::logic::grammar::{Grammar, Nonterminal, Production, Symbol};
+use crate::logic::grammar::{Grammar, Nonterminal, Production, Symbol, RepetitionKind};
 use crate::logic::ast::{ASTNode, SourceSpan, Terminal, NonTerminal};
 use crate::logic::tokenizer::Tokenizer;
 use regex;
@@ -145,15 +145,73 @@ impl Parser {
 
         let mut children = Vec::new();
         for symbol in &production.rhs {
-            match self.parse_symbol(symbol) {
-                Ok(child) => children.push(child),
-                Err(e) => return Err(e),
+            if let Some(ref repetition) = symbol.repetition {
+                // Handle repetition
+                match repetition {
+                    RepetitionKind::ZeroOrMore => {
+                        // Parse zero or more occurrences
+                        loop {
+                            let initial_pos = self.pos;
+                            match self.parse_symbol_no_repetition(symbol) {
+                                Ok(child) => children.push(child),
+                                Err(_) => {
+                                    // Backtrack and break
+                                    self.pos = initial_pos;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    RepetitionKind::OneOrMore => {
+                        // Parse one or more occurrences
+                        let mut found_at_least_one = false;
+                        loop {
+                            let initial_pos = self.pos;
+                            match self.parse_symbol_no_repetition(symbol) {
+                                Ok(child) => {
+                                    children.push(child);
+                                    found_at_least_one = true;
+                                }
+                                Err(_) => {
+                                    // Backtrack and break
+                                    self.pos = initial_pos;
+                                    break;
+                                }
+                            }
+                        }
+                        if !found_at_least_one {
+                            return Err(format!("Expected at least one occurrence of '{}'", symbol.value));
+                        }
+                    }
+                    RepetitionKind::ZeroOrOne => {
+                        // Parse zero or one occurrence
+                        let initial_pos = self.pos;
+                        match self.parse_symbol_no_repetition(symbol) {
+                            Ok(child) => children.push(child),
+                            Err(_) => {
+                                // Backtrack - zero occurrences is okay
+                                self.pos = initial_pos;
+                            }
+                        }
+                    }
+                }
+            } else {
+                // No repetition, parse normally
+                match self.parse_symbol(symbol) {
+                    Ok(child) => children.push(child),
+                    Err(e) => return Err(e),
+                }
             }
         }
         Ok(children)
     }
 
     fn parse_symbol(&mut self, symbol: &Symbol) -> Result<ASTNode, String> {
+        // Delegate to the non-repetition version since repetition is handled in try_production
+        self.parse_symbol_no_repetition(symbol)
+    }
+
+    fn parse_symbol_no_repetition(&mut self, symbol: &Symbol) -> Result<ASTNode, String> {
         if self.pos >= self.tokens.len() {
             return Err("Unexpected end of input".to_string());
         }
