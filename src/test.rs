@@ -83,16 +83,7 @@ int
     match ast {
         Ok(parsed_ast) => {
             println!("✅ Parsing successful!");
-            println!("📝 Summary of what works:");
-            println!("   • Generic operation patterns with regex");
-            println!("   • AST generation with proper semantic bindings");
-            println!("   • Bound typing rule resolution");
-            println!("   • Context-based variable type checking");
-            
-            println!("\n❌ Current limitations:");
-            println!("   • Number literals need typing rules (empty premise issue)");
-            println!("   • Parser hardcoded for expressions, not full programs");
-            println!("   • Type checker too strict about missing rules");
+            println!("AST: {}", parsed_ast.pretty());
             
             println!("\n🔧 Type checking attempted anyway...");
             let ty = tc.check(&parsed_ast);
