@@ -10,6 +10,9 @@ pub mod bind;
 pub mod debug;
 pub mod test_grammars;
 pub mod debug_tests;
+pub mod advanced_type_tests;
+pub mod type_edge_cases;
+pub mod focused_fail_tests;
 
 
 
