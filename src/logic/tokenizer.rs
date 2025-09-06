@@ -45,7 +45,7 @@ impl Tokenizer {
     }
 
     /// Tokenize the input string into a vector of tokens, handling special tokens
-    pub fn tokenize(&mut self,input: String) -> Result<Vec<TokenId>,Error> {
+    pub fn tokenize(&mut self, input: String) -> Result<Vec<TokenId>,Error> {
         let mut split = Vec::<String>::new();
         let mut i = 0;
         let chars: Vec<char> = input.chars().collect();
@@ -117,7 +117,7 @@ pub(crate) mod tests {
             .map(|id| tokenizer.tokens.get_by_right(id).unwrap().clone())
             .collect();
 
-        println!("Tokens: {:?}", token_strs);
+        // Removed debug print - use unified debug system if needed
         assert_eq!(token_strs, vec!["x", "=", "r", "+", "4", "print", "x"]);
     }
 }

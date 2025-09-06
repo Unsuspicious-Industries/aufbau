@@ -1,6 +1,29 @@
 # Unified Grammar Specification
 
-A unified grammar format that combines syntax definitions with typing rules using standard mathematical inference notation with a **deterministic, unambiguous format**.
+A unified grammar format that combines syntax definitions with typing rules using standard mathematical inference notation with a deterministic, unambiguous format. This specification includes a generalizable type checker that supports context membership, type ascription, and extensible judgment systems.
+
+## Core Architecture
+
+### Type Checker Design
+
+The type checker implements a rule-based inference system with the following key components:
+
+1. Typing Context (Γ): Maps variables to their types, supports extensions and lookups
+2. Judgment System: Extensible framework for different logical operations on types
+3. Premise Evaluation: Validates conditions before applying typing rules
+4. Conclusion Inference: Determines result types from rule conclusions
+
+### Bound Rule Evaluation (new)
+
+- All meta-variable resolution from grammar/rules to concrete AST nodes and concrete types happens in the binding phase (bind module).
+- The type checker consumes BoundTypingRule only; it does not perform meta-variable lookups at check time.
+- Premises and conclusions reference concrete AST nodes and concrete Type values.
+- This eliminates runtime binding lookups and simplifies evaluation.
+- Strictness: the binder MUST supply only concrete types (no unresolved Type::Atom placeholders) and variable nodes MUST expose an extractable terminal name.
+
+Implications:
+- NonTerminal nodes that carry a typing rule must embed a BoundTypingRule where all variables are resolved.
+- The checker evaluates premises directly on these nodes/types and uses the current context Γ only for lookups of terminal variable names.
 
 ## Syntax
 
@@ -17,36 +40,73 @@ conclusion
 ```
 
 Where:
-- **`NonTerminal(typing_rule)`**: Grammar rule name with typing rule reference in parentheses
-- **`syntax_rhs`**: Traditional EBNF right-hand side with semantic bindings
-- **`premises`**: Comma-separated conditions that must hold (above the line)
-- **`-----`**: Horizontal inference bar
-- **`(typing_rule)`**: Typing rule name (matches the (typing_rule) annotation)
-- **`conclusion`**: The typing judgment this rule establishes (below the line)
+- NonTerminal(typing_rule): Grammar rule name with typing rule reference in parentheses
+- syntax_rhs: Traditional EBNF right-hand side with semantic bindings
+- premises: Comma-separated conditions that must hold (above the line)
+- -----: Horizontal inference bar
+- (typing_rule): Typing rule name (matches the (typing_rule) annotation)
+- conclusion: The typing judgment this rule establishes (below the line)
 
 ### Comments
-```
+``` 
 // This is a comment
 ```
 
 ### Semantic Bindings
-Non-terminals in the RHS bind semantic variables that capture their meaning:
+Non-terminals in the RHS bind semantic variables that capture their meaning. The bind module resolves these to concrete nodes/types and stores a BoundTypingRule on the NonTerminal.
+
+### Repetition Operators
+
+The grammar supports repetition operators for symbols in production rules:
+
+- `Symbol*`: Zero or more occurrences (Kleene star)
+- `Symbol+`: One or more occurrences (Kleene plus)
+- `Symbol?`: Zero or one occurrence (optional)
+
+#### Syntax Examples
+
 ```
-Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
+// Zero or more statements in a block
+Block ::= '{' Stmt* '}'
 
-//                      ^         ^^^^^^       ^^^^^^
-//                      |         |            └─ binds semantic variable e
-//                      |         └─ binds semantic variable τ  
-//                      └─ binds semantic variable x
+// One or more parameters
+FunctionDef ::= 'def' Identifier '(' Param+ ')'
 
-Γ[x:τ] ⊢ e : σ
---------------------------- (lambda)
-τ -> σ
+// Optional else clause
+IfStmt ::= 'if' '(' Expr ')' Stmt Else?
+Else ::= 'else' Stmt
 ```
 
-## **Tyming rules**
+#### Repetition with Bindings
 
-### **Strict Rule Structure**
+Repetition operators can be combined with semantic bindings:
+
+```
+// Zero or more statements bound to variable 's'
+Block ::= '{' Stmt[s]* '}'
+
+// One or more parameters bound to variable 'p'
+FunctionDef ::= 'def' Identifier[name] '(' Param[p]+ ')'
+```
+
+#### Parsing Behavior
+
+- `*` (Zero or More): Parser attempts to match the symbol repeatedly until it fails, then continues. No error if zero matches are found.
+- `+` (One or More): Same as `*` but requires at least one successful match. Error if zero matches are found.
+- `?` (Zero or One): Parser attempts to match the symbol once. If it fails, continues without error. If it succeeds, does not attempt additional matches.
+
+All repetition parsing uses backtracking to handle ambiguity and ensure correct parsing of surrounding symbols.
+
+## Start Nonterminal (parsing)
+
+- Convention: the start symbol is the last declared production LHS in the spec.
+- Rationale: specs usually declare smaller building blocks first and the full program/term last.
+- Loader behavior: when parsing the spec, the loader records the order of the first appearance of each production LHS. After loading, it sets Grammar.start to the last one seen.
+- Override: a future extension may allow an explicit directive to set the start nonterminal, but by default the last LHS is used. The parser requires Grammar.start and does not guess.
+
+## Typing rules
+
+### Strict Rule Structure
 Every typing rule MUST follow this exact format:
 ```
 <premise1>, <premise2>, ..., <premiseN>
@@ -54,331 +114,123 @@ Every typing rule MUST follow this exact format:
 <conclusion>
 ```
 
-**Validation Rules:**
+Validation Rules:
 - Premises MUST be comma-separated (no other separators allowed)
 - Rule name MUST match a production rule annotation exactly
 - Conclusion MUST be a valid type expression or typing judgment
-- All semantic variables MUST exist in the corresponding grammar production
+- All semantic variables MUST exist in the corresponding grammar production and be resolvable by the bind phase
 
-### **Premise Types (Exhaustive List)**
+### Premise Format
 
-#### 1. **Typing Judgment**: `<context> ⊢ <expr> : <type>`
-**Format:** `Γ ⊢ e : τ` or `Γ[x:τ₁] ⊢ e : τ₂`
+Premises establish the conditions that must hold for a typing rule to apply. Each premise consists of:
 
-**Rules:**
-- `<context>` MUST follow Context Format (see below)
-- `<expr>` MUST be a semantic variable from grammar bindings
-- `<type>` MUST be a valid type expression
-- Exactly one `⊢` symbol required
-- Exactly one `:` symbol required after `⊢`
+1. Setting (optional): Context information and operations
+2. Judgment: A logical assertion about types or variables
 
-**Valid Examples:**
-```
-Γ ⊢ e : τ
-Γ[x:Int] ⊢ e : Bool
-Γ[x:τ₁][y:τ₂] ⊢ f : τ₁ -> τ₂
-```
+#### Premise Types
 
-**Invalid Examples:**
-```
-Γ ⊢ e : τ           // Missing :
-Γ[x] ⊢ e : τ       // Invalid context extension (missing type)
-⊢ e : τ           // Missing context
-Γ ⊢ : τ           // Missing expression
-Γ[x:τ₁,y:τ₂] ⊢ e : σ // Use separate brackets for each extension
-```
+1) Type Ascription Premises: [Γ[extensions]] ⊢ e : τ
 
-#### 2. **Context Relation**: `<var> ∈ <context>`
-**Format:** `x ∈ Γ`
+Format: Γ[x:τ₁][y:τ₂] ⊢ e : σ
 
-**Rules:**
-- `<var>` MUST be a valid semantic variable
-- `<context>` MUST be `Γ` or a context variable
-- Exactly one `∈` symbol required
+Components:
+- Context: Γ with optional extensions [var:type]
+- Expression: Resolved AST node (from bind phase)
+- Type: Concrete Type value (variables resolved by bind phase when possible)
 
-**Valid Examples:**
-```
+Evaluation:
+- Temporarily extends the typing context with the given extensions; each extension is provided as BoundTypeAscription with a concrete AST node for the variable and a concrete Type.
+- Recursively type-checks the provided node.
+- Verifies the inferred type matches the expected type.
+- Strictness: No fallback to context lookup; if no type can be inferred for the node in an ascription, the rule fails.
+
+2) Context Membership Premises: x ∈ Γ
+
+Format: x ∈ Γ
+
+Components:
+- Variable node: Concrete AST node whose terminal value is the variable name
+- Context: Currently Γ
+
+Evaluation:
+- Checks if the variable name extracted from the node exists in Γ
+
+#### Context Operations
+
+Context Extensions: Γ[var:type]
+
+In the bound system, extensions are provided as a list of BoundTypeAscription entries where var is a concrete AST node and type is a concrete Type.
+
+Scoping:
+- Extensions are temporary and only apply during premise evaluation
+- Original context is restored after premise check
+- Extensions shadow existing bindings with the same name
+
+### Context Format
+
+Valid Context Examples:
+- Γ
+- Γ[x:τ]
+- Γ[x:τ₁][y:τ₂]
+- Γ[f:τ->σ][x:τ]
+
+### Conclusion Format
+
+Conclusions specify the type or judgment that results from applying a typing rule.
+
+1) Direct Type Expression
+- Format: concrete Type, e.g., Int, τ₁ → τ₂ after bind resolution.
+- In the bound system the checker returns the provided Type as-is (no further resolution).
+
+2) Context Lookup
+- Format: Γ(var_node)
+- Usage: Retrieves the type of a variable from Γ using the terminal name extracted from var_node.
+
+## Type Checker Algorithm (updated)
+
+Core Checking Process:
+1. Rule Resolution:
+   - If node has a BoundTypingRule: apply bound-rule inference
+   - Else if the node has one nonterminal child: bubble through
+   - Else: error
+2. Premise Validation (bound):
+   - For each bound premise, optionally extend Γ with BoundTypeAscription entries (node → name extracted, type), then check the bound judgment directly
+3. Conclusion Inference (bound):
+   - If Type: return it
+   - If ContextLookup: extract name from node and look up in Γ
+
+Removal of runtime binding lookups:
+- The checker no longer uses meta-variable resolution during checking. All such resolution must be performed by bind.
+- Strictness: No fallbacks are performed by the checker; all required information must be supplied by the binder.
+
+## Assigning types directly in context
+
+In some rules you can avoid pattern variables by assigning a type directly into Γ via settings, then relying on ContextLookup or Membership. For example, a rule can add Γ[x: Int] via settings and use Γ(x) as conclusion.
+
+## Example: Simply Typed Lambda Calculus (updated)
+
+Typing Rules (bound-friendly):
+
+// Variable rule: look up type in context
 x ∈ Γ
-x 
-```
-
-**Invalid Examples:**
-```
-x y ∈ Γ          // Multiple variables
-x ∈              // Missing context
-∈ Γ              // Missing variable
-```
-
-#### 3. **Type Relation**: `<type1> = <type2>` or `<type1> ∈ <type2>`
-**Format:** `τ₁ = τ₂`
-
-**Rules:**
-- Both sides MUST be valid type expressions
-- Exactly one relation symbol required
-- MUST NOT contain `⊢` (to avoid confusion with typing judgments)
-
-**Valid Examples:**
-```
-τ₁ = τ₂
-Int < σ
-τ -> σ = α -> β
-```
-
-**Invalid Examples:**
-```
-τ₁ = τ₂ = τ₃     // Multiple equals
-= τ              // Missing left side
-τ =              // Missing right side
-```
-
-#### 4. **Custom Predicate**: `<predicate>(<args>)`
-**Format:** `predicate(arg1, arg2, ...)`
-
-**Rules:**
-- `<predicate>` MUST be alphabetic characters only
-- Arguments MUST be comma-separated semantic variables
-- Parentheses are required (even for zero arguments)
-- All arguments MUST be valid semantic variables
-
-**Valid Examples:**
-```
-fresh(x)
-unify(τ₁, τ₂)
-occurs_check(α, τ)
-constraint()
-```
-
-**Invalid Examples:**
-```
-fresh x          // Missing parentheses
-unify(τ₁ τ₂)     // Missing comma
-123_pred(x)      // Invalid predicate name
-pred(not_var)    // Invalid argument format
-```
-
-### **Context Format (Strict Grammar)**
-```
-<context> ::= 'Γ'                                    // Base context
-            | 'Γ' <bracketed_extension_list>         // Extended context
-
-<bracketed_extension_list> ::= <bracketed_extension>                  // Single extension
-                            | <bracketed_extension> <bracketed_extension_list> // Multiple extensions
-
-<bracketed_extension> ::= '[' <var> ':' <type> ']'   // Variable binding in brackets
-
-<var> ::= <semantic_variable>                        // Must be valid semantic variable
-<type> ::= <type_expression>                         // Must be valid type expression
-```
-
-**Valid Context Examples:**
-```
-Γ                    // Base context
-Γ[x:τ]               // Single extension
-Γ[x:τ₁][y:τ₂]        // Multiple extensions
-Γ[f:τ->σ][x:τ]       // Function type in context
-```
-
-**Invalid Context Examples:**
-```
-x:τ                 // Missing Γ base
-Γ x:τ               // Missing brackets
-Γ[x τ]              // Missing colon
-Γ[x:]               // Missing type
-Γ[:τ]               // Missing variable
-Γ[x:τ₁,y:τ₂]        // Use separate brackets for each extension
-```
-
-### **Type Expression Format (Strict Grammar)**
-```
-<type> ::= <type_var>                               // Type variable
-         | <type_constructor>                       // Base type
-         | <type> '->' <type>                       // Function type (right-associative)
-         | '(' <type> ')'                           // Parenthesized type
-         | <type_constructor> '<' <type_list> '>'   // Generic type
-
-<type_var> ::= <semantic_variable>                  // τ, σ, α, etc.
-<type_constructor> ::= [A-Z][a-zA-Z0-9]*           // Int, Bool, List, etc.
-<type_list> ::= <type> | <type> ',' <type_list>    // Comma-separated types
-```
-
-**Valid Type Examples:**
-```
-τ                   // Type variable
-Int                 // Base type
-τ -> σ              // Function type
-(τ -> σ) -> τ       // Parenthesized function type
-List<Int>           // Generic type
-```
-
-**Invalid Type Examples:**
-```
-τ ->                // Incomplete function type
--> σ                // Missing left operand
-τ → σ               // Wrong arrow symbol (use ->)
-list<int>           // Lowercase type constructor
-```
-
-### **Semantic Variable Format (Strict Rules)**
-Semantic variables MUST match exactly ONE of these patterns:
-
-1. **Single Latin letter**: `a-z`, `A-Z`
-   - Examples: `x`, `y`, `f`, `e`, `X`, `Y`
-
-2. **Single Greek letter**: `α-ω`, `Α-Ω`
-   - Examples: `τ`, `σ`, `α`, `β`, `Γ`, `Δ`
-
-3. **Subscripted variable**: `<base><subscript>`
-   - Base: Single Latin or Greek letter
-   - Subscript: Unicode subscript digits `₀₁₂₃₄₅₆₇₈₉`
-   - Examples: `τ₁`, `τ₂`, `e₁`, `x₀`, `α₁₂₃`
-
-**Valid Semantic Variables:**
-```
-x, y, z, f, e, g, h
-τ, σ, α, β, γ, δ, ρ
-τ₁, τ₂, e₁, x₀, α₁₂₃
-```
-
-**Invalid Semantic Variables:**
-```
-var         // Multi-character
-x1          // Regular digits (use τ₁)
-τ_1         // Underscore not allowed
-xy          // Multiple characters
-τα          // Multiple base characters
-```
-
-### **Conclusion Format**
-The conclusion MUST be one of:
-
-1. **Type Expression**: Following Type Expression Format
-   ```
-   τ -> σ
-   Int
-   List<τ>
-   ```
-
-2. **Typing Judgment**: Following Typing Judgment Format
-   ```
-   Γ ⊢ e : τ
-   Γ[x:σ] ⊢ f : τ -> σ
-   Γ[x:τ₁][y:τ₂] ⊢ f : τ₁ -> τ₂
-   ```
-
-## Grammar Elements
-
-### Terminals
-- **String literals**: `'λ'`, `'('`, `')'`, `':'`, `'->'`
-- **Regular expressions**: `/[a-zA-Z][a-zA-Z0-9_]*/`
-
-### Non-terminals
-- **With semantic binding**: `Variable[x]`, `Type[τ]`, `Term[e]`
-- **Without binding**: `Variable`, `Type`, `Term` (when binding not needed)
-
-### Alternatives
-Use `|` to separate alternatives in the same production:
-```
-Type ::= AtomicType[τ] | FunctionType[τ]
-```
-
-### Pure Syntax Rules
-Productions without typing rules don't need parentheses:
-```
-TypeName ::= /[a-zA-Z][a-zA-Z0-9_]*/
-```
-
-## Example: Simply Typed Lambda Calculus (Deterministic Format)
-
-### Production Rules
-
-```
-// Variables  
-Variable(var) ::= /[a-zA-Z][a-zA-Z0-9_]*/[x]
-
-// Type names
-TypeName ::= /[A-Z][a-zA-Z0-9_]*/
-
-// Atomic types
-AtomicType ::= TypeName | '(' Type ')'
-
-// Function types
-FunctionType ::= AtomicType[τ] '->' Type[σ]
-
-Type ::= AtomicType 
-       | FunctionType
-
-// Typed parameter
-TypedParam ::= Variable[x] ':' Type[τ]
-
-// Lambda abstraction
-Lambda(lambda) ::= 'λ' TypedParam '.' Term[e]
-
-// Function application
-Application(app) ::= Term[f] Term[e]
-
-// Terms
-Term ::= Variable | Lambda | Application
-```
-
-### Typing Rules (Deterministic Format)
-
-```
-x ∈ Γ
------------- (var)
+------------- (var)
 Γ(x)
 
-Γ[x:τ] ⊢ e : σ
---------------------------- (lambda)
-τ -> σ
+// Lambda rule: function type formation
+Γ[x:τ₁] ⊢ e : τ₂
+----------------------- (lambda)
+τ₁ → τ₂
 
-Γ ⊢ f : τ -> σ, Γ ⊢ e : τ
--------------------------------- (app)  
-σ
+// Application rule: function application
+Γ ⊢ f : τ₁ → τ₂, Γ ⊢ e : τ₁
+------------------------------- (app)
+τ₂
 
-// Multiple extensions:
-Γ[x:τ₁][y:τ₂] ⊢ e : σ
-```
+The bind phase resolves x, e, f, τ₁, τ₂ to concrete nodes/types in the BoundTypingRule attached to the AST. The checker then evaluates the rule without additional binding lookups.
 
-## **Validation and Error Handling**
+## Limitations and Future Work
 
-### **Rule Validation**
-A typing rule is **INVALID** and MUST be rejected if:
-
-1. **Format Violations:**
-   - Premises not comma-separated
-   - Missing or malformed inference bar
-   - Rule name doesn't match production annotation
-   - Invalid premise type
-
-2. **Context Format Violations:**
-   - Context doesn't start with `Γ`
-   - Invalid extension format (not `[var:type]`)
-   - Invalid variable or type in extension
-
-3. **Semantic Variable Violations:**
-   - Variables don't match semantic variable format
-   - Variables in premises don't exist in grammar production
-   - Invalid subscript usage
-
-4. **Type Expression Violations:**
-   - Invalid type constructor format
-   - Malformed function types
-   - Invalid generic type syntax
-
-5. **Premise-Specific Violations:**
-   - Typing judgment: Missing `⊢` or `:`, invalid format
-   - Membership: Missing `∈`, invalid variable/context
-   - Type equality: Multiple `=` symbols, contains `⊢`
-   - Custom predicate: Missing parentheses, invalid arguments
-
-### **Error Messages**
-The type checker MUST provide specific error messages for each violation type:
-
-```
-"Invalid typing judgment format: missing ⊢ symbol"
-"Invalid context extension format, expected '[var:type]': [x τ]"
-"Invalid semantic variable format: var123 (use subscripts like x₁₂₃)"
-"Missing required binding 'e' for rule 'lambda'"
-"Premise failed for rule 'app': Γ ⊢ f : τ -> σ"
-```
+- Single context Γ for now
+- No polymorphism or subtyping yet
+- Bind phase is responsible for correctness of resolution (well-formedness checks recommended)
 

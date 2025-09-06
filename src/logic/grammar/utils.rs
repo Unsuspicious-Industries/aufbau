@@ -1,5 +1,5 @@
 use regex::Regex;
-use super::{TypingRule, Symbol};
+use super::{Symbol, RepetitionKind};
 
 // collection of utils for working with grammar definitions
 pub fn is_regex(pattern: &str) -> bool {
@@ -31,6 +31,19 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
     Ok((nt_str.trim().to_string(), None))
 }
 
+/// Parse repetition suffix from a token and return (base_token, repetition_kind)
+pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) {
+    if token.ends_with('*') {
+        (token[..token.len()-1].to_string(), Some(RepetitionKind::ZeroOrMore))
+    } else if token.ends_with('+') {
+        (token[..token.len()-1].to_string(), Some(RepetitionKind::OneOrMore))
+    } else if token.ends_with('?') {
+        (token[..token.len()-1].to_string(), Some(RepetitionKind::ZeroOrOne))
+    } else {
+        (token.to_string(), None)
+    }
+}
+
 /// Parse RHS with bindings like "'λ' Variable[x] ':' Type[τ₁] '.' Term[e]"
 pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     let mut alternatives = Vec::new();
@@ -39,25 +52,65 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     for alt in rhs.split('|').map(str::trim).filter(|alt| !alt.is_empty()) {
         let mut symbols_in_alt = Vec::new();
         for token in alt.split_whitespace() {
+            // Parse repetition suffix first
+            let (base_token, repetition) = parse_repetition_suffix(token);
+            
             // Check if it's a regex pattern first (before checking for bindings)
-            if is_regex(token) {
+            if is_regex(&base_token) {
                 // It's a regex pattern like /[a-zA-Z]+/ - treat as regular symbol
-                symbols_in_alt.push(Symbol::new(token.to_string()));
-            } else if let Some(open_bracket) = token.find('[') {
-                if let Some(close_bracket) = token.rfind(']') {
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(base_token));
+                }
+            } else if let Some(open_bracket) = base_token.find('[') {
+                if let Some(close_bracket) = base_token.rfind(']') {
                     if close_bracket > open_bracket {
                         // Symbol with binding like "Variable[x]"
-                        let value = token[..open_bracket].to_string();
-                        let binding = token[open_bracket + 1..close_bracket].to_string();
-                        symbols_in_alt.push(Symbol::with_binding(value, binding));
+                        let value = base_token[..open_bracket].to_string();
+                        let binding = base_token[open_bracket + 1..close_bracket].to_string();
+                        
+                        // Strip quotes from the value if it's a quoted terminal
+                        let clean_value = if (value.starts_with('\'') && value.ends_with('\'')) || 
+                                           (value.starts_with('"') && value.ends_with('"')) {
+                            value.trim_matches('\'').trim_matches('"').to_string()
+                        } else {
+                            value
+                        };
+                        
+                        if let Some(rep) = repetition {
+                            symbols_in_alt.push(Symbol::with_binding_and_repetition(clean_value, binding, rep));
+                        } else {
+                            symbols_in_alt.push(Symbol::with_binding(clean_value, binding));
+                        }
                         continue;
                     }
                 }
                 // If we get here, it has brackets but not a valid binding - treat as regular symbol
-                symbols_in_alt.push(Symbol::new(token.to_string()));
+                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || 
+                                   (base_token.starts_with('"') && base_token.ends_with('"')) {
+                    base_token.trim_matches('\'').trim_matches('"').to_string()
+                } else {
+                    base_token
+                };
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(clean_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(clean_token));
+                }
             } else {
-                // Regular symbol without binding
-                symbols_in_alt.push(Symbol::new(token.to_string()));
+                // Regular symbol without binding - strip quotes if it's a terminal
+                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || 
+                                   (base_token.starts_with('"') && base_token.ends_with('"')) {
+                    base_token.trim_matches('\'').trim_matches('"').to_string()
+                } else {
+                    base_token
+                };
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(clean_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(clean_token));
+                }
             }
         }
         alternatives.push(symbols_in_alt);
@@ -123,7 +176,6 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String,String,String), St
         }
         if !in_conclusion {
             premises = trimmed.to_string();
-            println!("Premises: {}", premises);
         } else {
             // first non-dash line after separator is conclusion
             conclusion = trimmed.to_string();
@@ -142,9 +194,7 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String,String,String), St
     }
 
     Ok((premises, conclusion, name))
-}
-
-pub const RELATION_SYMBOLS: [&str; 8] = ["=", "<", "∈", "⊆", "⊂", "⊃", "⊇", ":"];
+}pub const RELATION_SYMBOLS: [&str; 8] = ["=", "<", "∈", "⊆", "⊂", "⊃", "⊇", ":"];
 
 pub fn parse_judgement(
     judgment_str: &str,

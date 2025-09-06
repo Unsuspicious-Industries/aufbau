@@ -1,14 +1,19 @@
 use std::path::Path;
 use super::{Grammar, Symbol};
-use super::typing::{Premise, TypingJudgment};
+use crate::logic::typing::Conclusion;
 
 
 impl Grammar {
     /// Produce the textual specification string.
     pub fn to_spec_string(&self) -> String {
         let mut out = String::new();
-        let mut nt_list: Vec<_> = self.productions.keys().cloned().collect();
-        nt_list.sort();
+        // Preserve original declaration order; fall back to sorted for any missing
+        let mut nt_list: Vec<_> = self.production_order.clone();
+        for k in self.productions.keys() {
+            if !nt_list.contains(k) {
+                nt_list.push(k.clone());
+            }
+        }
 
         // ---------- Productions ----------
         out.push_str("// --- Production Rules ---\n");
@@ -22,7 +27,7 @@ impl Grammar {
                         nt.clone()
                     };
                     
-                    let rhs = format_rhs(&prod.rhs);
+                    let rhs = self.format_rhs(&prod.rhs);
                     
                     if first {
                         out.push_str(&format!("{} ::= {}", lhs, rhs));
@@ -56,68 +61,64 @@ impl Grammar {
         out
     }
 
+    /// Helper to format the right-hand side of a production
+    fn format_rhs(&self, rhs_symbols: &[Symbol]) -> String {
+        rhs_symbols.iter().map(|symbol| {
+            if let Some(binding) = &symbol.binding {
+                format!("{}[{}]", symbol.value, binding)
+            } else {
+                // Handle special tokens that need quotes
+                if symbol.value.len() > 1 && (symbol.value.starts_with('\'') || symbol.value.starts_with('"')) {
+                     symbol.value.clone()
+                } else if symbol.value.starts_with('/') && symbol.value.ends_with('/') {
+                     // Do not quote regex patterns that start with '/'
+                     symbol.value.clone()
+                } else if self.productions.contains_key(&symbol.value) {
+                     // Do not quote nonterminals
+                     symbol.value.clone()
+                } else {
+                     // Quote everything else (terminals)
+                     format!("'{}'", symbol.value)
+                }
+            }
+        }).collect::<Vec<_>>().join(" ")
+    }
+
     /// Write the textual specification to a file on disk.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::io::Result<()> {
         std::fs::write(path, self.to_spec_string())
     }
 }
 
-/// Helper to format the right-hand side of a production
-fn format_rhs(rhs_symbols: &[Symbol]) -> String {
-    rhs_symbols.iter().map(|symbol| {
-        if let Some(binding) = &symbol.binding {
-            format!("{}[{}]", symbol.value, binding)
-        } else {
-            // Handle special tokens that need quotes
-            if symbol.value.len() > 1 && (symbol.value.starts_with('\'') || symbol.value.starts_with('"')) {
-                 symbol.value.clone()
-            } else if !symbol.value.chars().all(char::is_alphanumeric) {
-                 // Do not quote regex patterns that start with '/'
-                 if symbol.value.starts_with('/') && symbol.value.ends_with('/') {
-                     symbol.value.clone()
-                 } else {
-                     format!("'{}'", symbol.value)
-                 }
+/// Helper to format a list of premises as a string
+fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
+    premises.iter().map(|p| match (&p.setting, &p.judgment) {
+        (Some(setting), crate::logic::typing::TypingJudgment::Ascription((term, ty))) => {
+            if setting.extensions.is_empty() {
+                format!("{} ⊢ {} : {}", setting.name, term, ty)
             } else {
-                 symbol.value.clone()
+                let exts = setting.extensions.iter()
+                    .map(|(v, t)| format!("[{}:{}]", v, t))
+                    .collect::<Vec<_>>()
+                    .join("");
+                format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
             }
         }
-    }).collect::<Vec<_>>().join(" ")
-}
-
-/// Helper to format a list of premises as a string
-fn format_premises(premises: &[super::typing::Premise]) -> String {
-    premises.iter().map(|p| match p {
-        Premise::Judgment(TypingJudgment { extensions, expression, type_expr }) => {
-            let ctx = if extensions.is_empty() {
-                "Γ".to_string()
-            } else {
-                let exts = extensions.iter().map(|e| format!("{}:{}", e.variable, e.type_expr)).collect::<Vec<_>>().join(",");
-                format!("Γ,{}", exts)
-            };
-            format!("{} ⊢ {} : {}", ctx, expression, type_expr)
+        (None, crate::logic::typing::TypingJudgment::Ascription((term, ty))) => {
+            format!("{} : {}", term, ty)
         }
-        Premise::Membership { variable, context } => format!("{} ∈ {}", variable, context),
-        Premise::TypeRelation { left_type, right_type, relation } => format!("{} {} {}", left_type, relation, right_type),
-        Premise::Compound(inner) => format_premises(inner),
+        (None, crate::logic::typing::TypingJudgment::Membership(var, ctx)) => {
+            format!("{} ∈ {}", var, ctx)
+        }
+        (Some(_), crate::logic::typing::TypingJudgment::Membership(var, ctx)) => {
+            // Membership with setting doesn't make sense in current design, but handle it
+            format!("{} ∈ {}", var, ctx)
+        }
     }).collect::<Vec<_>>().join(", ")
 }
 
 
-fn format_conclusion(conclusion: &super::typing::Conclusion) -> String {
-    use super::typing::Conclusion;
-    match conclusion {
-        Conclusion::TypeValue(s) => s.clone(),
-        Conclusion::Judgment(j) => {
-            let ctx = if j.extensions.is_empty() {
-                "Γ".to_string()
-            } else {
-                let exts = j.extensions.iter().map(|e| format!("{}:{}", e.variable, e.type_expr)).collect::<Vec<_>>().join(",");
-                format!("Γ,{}", exts)
-            };
-            format!("{} ⊢ {} : {}", ctx, j.expression, j.type_expr)
-        }
-        Conclusion::ContextLookup(var) => format!("Γ({})", var),
-    }
+fn format_conclusion(conclusion: &Conclusion) -> String {
+    format!("{}", conclusion)
 }
 

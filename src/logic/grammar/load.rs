@@ -1,11 +1,12 @@
-use crate::logic::grammar::{utils::parse_inference_rule, Grammar, Production, TypingRule};
-use super::utils::{parse_nonterminal, parse_production, parse_rhs, special_tokens};
-use regex::Regex;
+use crate::logic::grammar::{ Grammar, Production, TypingRule};
+use super::utils::{parse_nonterminal, parse_production, parse_rhs, special_tokens,parse_inference_rule};
 
 impl Grammar {
     /// Parse the textual specification into a `Grammar`.
     pub fn load(input: &str) -> Result<Grammar, String> {
         let mut grammar = Grammar::new();
+        // Track first-seen order of nonterminals to pick a deterministic start symbol
+        let mut nt_order: Vec<String> = Vec::new();
         
         // Split input into blocks separated by blank lines
         let blocks: Vec<&str> = input.split("\n\n").filter(|b| !b.trim().is_empty()).collect();
@@ -44,6 +45,12 @@ impl Grammar {
                         let (name, rule_name) = parse_nonterminal(&lhs_str)?;
                         let rhs_alternatives = parse_rhs(&rhs_str)?;
                         
+                        // Record first time we see this nonterminal (declaration order)
+                        if !nt_order.contains(&name) {
+                            nt_order.push(name.clone());
+                            grammar.production_order.push(name.clone());
+                        }
+                        
                         // Extract special tokens
                         let new_specials = special_tokens(&rhs_str);
                         for sym in new_specials {
@@ -67,6 +74,13 @@ impl Grammar {
                 grammar.add_typing_rule(TypingRule::new(premises, conclusion, name)?);
             }
 
+        }
+        
+        // By convention, set the start symbol to the last declared production LHS
+        if grammar.start_nonterminal().is_none() {
+            if let Some(last) = grammar.production_order.last().cloned() {
+                grammar.set_start(last);
+            }
         }
         
         Ok(grammar)
