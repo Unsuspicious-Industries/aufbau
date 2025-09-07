@@ -13,6 +13,7 @@ pub mod debug_tests;
 pub mod advanced_type_tests;
 pub mod type_edge_cases;
 pub mod focused_fail_tests;
+pub mod enhanced_features_tests;
 
 
 
