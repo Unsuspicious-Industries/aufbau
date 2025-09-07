@@ -1,6 +1,7 @@
 use crate::logic::ast::{ASTNode, NonTerminal};
 use crate::logic::typing::{Type, TypingRule, Premise, TypingJudgment, TypeSetting, Conclusion};
-use super::utils::{get_nt_binding, get_type_binding, collect_nt_bindings_same_level, collect_type_bindings_same_level};
+use super::typing::BoundType;
+use super::utils::{get_nt_binding, bind_type, collect_nt_bindings_same_level, get_type_value};
 
 /// A bound typing rule where all rule variables have been resolved to actual AST nodes
 #[derive(Debug, Clone,PartialEq)]
@@ -28,7 +29,7 @@ pub struct BoundTypeSetting {
 #[derive(Debug, Clone,PartialEq)]
 pub struct BoundTypeAscription {
     pub node: NonTerminal,  // The actual AST node (instead of rule variable)
-    pub ty: Type,          // Regular type, no need for special bound type
+    pub ty: BoundType,          // Regular type, no need for special bound type
 }
 
 /// A bound typing judgment with resolved nodes
@@ -41,7 +42,7 @@ pub enum BoundTypingJudgment {
 /// A bound conclusion with resolved components
 #[derive(Debug, Clone,PartialEq)]
 pub enum BoundConclusion {
-    Type(Type),  // Regular type, no need for bound type
+    Type(BoundType),  // Regular type, no need for bound type
     ContextLookup(String, NonTerminal), // (context, resolved variable node)
 }
 
@@ -93,8 +94,8 @@ impl BindingResolver for DefaultBindingResolver {
                     .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
                 
                 // For types, try to resolve type variables but keep the type structure
-                let resolved_type = get_type_binding(node, ty.clone()).unwrap_or_else(|| ty.clone());
-                
+                let resolved_type = bind_type(node, ty.clone()).unwrap();
+
                 BoundTypingJudgment::Ascription(BoundTypeAscription {
                     node: var_node,
                     ty: resolved_type,
@@ -119,7 +120,7 @@ impl BindingResolver for DefaultBindingResolver {
         match conclusion {
             Conclusion::Type(ty) => {
                 // For types, try to resolve type variables but keep the type structure
-                let resolved_type = get_type_binding(node, ty.clone()).unwrap_or_else(|| ty.clone());
+                let resolved_type = bind_type(node, ty.clone()).unwrap();
                 Ok(BoundConclusion::Type(resolved_type))
             }
             Conclusion::ContextLookup(context, var) => {
@@ -144,8 +145,8 @@ impl DefaultBindingResolver {
                 .ok_or_else(|| format!("Could not resolve binding variable {} in type setting", term))?;
             
             // For types, try to resolve type variables but keep the type structure
-            let resolved_type = get_type_binding(node, ty.clone()).unwrap_or_else(|| ty.clone());
-            
+            let resolved_type = bind_type(node, ty.clone()).unwrap();
+
             bound_extensions.push(BoundTypeAscription {
                 node: var_node,
                 ty: resolved_type,
@@ -169,7 +170,7 @@ impl DefaultBindingResolver {
             TypingJudgment::Ascription((term, ty)) => {
                 // Try to expand by repetition at same level
                 let reps = collect_nt_bindings_same_level(node, term);
-                let resolved_type = get_type_binding(node, ty.clone()).unwrap_or_else(|| ty.clone());
+                let resolved_type = bind_type(node, ty.clone()).unwrap();
                 if !reps.is_empty() {
                     Ok(reps.into_iter().map(|var_node| BoundPremise {
                         setting: bound_setting.clone(),

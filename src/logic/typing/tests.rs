@@ -106,3 +106,29 @@ fn stlc_app_rule_parse_and_inspect() {
     assert!(pretty.contains("Γ ⊢ e : τ₁"));
     assert!(pretty.contains("[app]"));
 }
+
+#[test]
+fn test_tuple_meta_types() {
+    // Test tuple types as meta types with (<id>...) syntax
+    let tuple1 = Type::parse("(A...)").expect("parse (A...)");
+    assert_eq!(tuple1, Type::Tuple("A".to_string()));
+    assert_eq!(format!("{}", tuple1), "(A...)");
+
+    let tuple2 = Type::parse("(tuple_id...)").expect("parse (tuple_id...)");
+    assert_eq!(tuple2, Type::Tuple("tuple_id".to_string()));
+    assert_eq!(format!("{}", tuple2), "(tuple_id...)");
+
+    let tuple3 = Type::parse("(τ₁...)").expect("parse (τ₁...)");
+    assert_eq!(tuple3, Type::Tuple("τ₁".to_string()));
+    assert_eq!(format!("{}", tuple3), "(τ₁...)");
+
+    // Test that regular parenthesized expressions work correctly
+    let arrow_in_parens = Type::parse("(Int -> Bool)").expect("parse (Int -> Bool)");
+    assert_eq!(arrow_in_parens, Type::Arrow(Box::new(Type::Atom("Int".to_string())), Box::new(Type::Atom("Bool".to_string()))));
+    assert_eq!(format!("{}", arrow_in_parens), "Int → Bool");
+
+    // Test that simple atoms in parentheses are not confused with tuples
+    let atom_in_parens = Type::parse("(Int)").expect("parse (Int)");
+    assert_eq!(atom_in_parens, Type::Atom("Int".to_string()));
+    assert_eq!(format!("{}", atom_in_parens), "Int");
+}

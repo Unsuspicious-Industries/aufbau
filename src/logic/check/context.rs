@@ -1,12 +1,12 @@
 use std::collections::HashMap;
-use crate::logic::typing::Type;
+use crate::logic::bind::typing::BoundType;
 
 
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypingContext {
     /// Stack of scopes, where the last element is the innermost scope
-    scopes: Vec<HashMap<String, Type>>,
+    scopes: Vec<HashMap<String, BoundType>>,
 }
 
 impl TypingContext {
@@ -18,7 +18,7 @@ impl TypingContext {
     }
 
     /// Create a new context with the given references in the initial scope
-    pub fn with_references<I: IntoIterator<Item=(String, Type)>>(iter: I) -> Self {
+    pub fn with_references<I: IntoIterator<Item=(String, BoundType)>>(iter: I) -> Self {
         let mut initial_scope = HashMap::new();
         for (k, v) in iter {
             initial_scope.insert(k, v);
@@ -49,7 +49,7 @@ impl TypingContext {
     }
 
     /// Extend the current (innermost) scope with new references
-    pub fn extend<I: IntoIterator<Item=(String, Type)>>(&mut self, iter: I) { 
+    pub fn extend<I: IntoIterator<Item=(String, BoundType)>>(&mut self, iter: I) { 
         let current_scope = self.scopes.last_mut().expect("Context should always have at least one scope");
         for (k, v) in iter { 
             current_scope.insert(k, v); 
@@ -57,13 +57,13 @@ impl TypingContext {
     }
 
     /// Add a single reference to the current scope
-    pub fn bind(&mut self, var: String, ty: Type) {
+    pub fn add(&mut self, var: String, ty: BoundType) {
         let current_scope = self.scopes.last_mut().expect("Context should always have at least one scope");
         current_scope.insert(var, ty);
     }
 
     /// Look up a variable, searching from innermost to outermost scope
-    pub fn lookup(&self, v: &str) -> Option<&Type> { 
+    pub fn lookup(&self, v: &str) -> Option<&BoundType> { 
         // Search from innermost scope (end of vector) to outermost (beginning)
         for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.get(v) {
@@ -82,7 +82,7 @@ impl TypingContext {
     }
 
     /// Get all references from all scopes (innermost references shadow outer ones)
-    pub fn all_references(&self) -> HashMap<String, &Type> {
+    pub fn all_references(&self) -> HashMap<String, &BoundType> {
         let mut result = HashMap::new();
         // Start from outermost scope and work inward so inner references override outer ones
         for scope in self.scopes.iter() {
@@ -94,12 +94,12 @@ impl TypingContext {
     }
 
     /// Get references from the current scope only
-    pub fn current_scope_references(&self) -> &HashMap<String, Type> {
+    pub fn current_scope_references(&self) -> &HashMap<String, BoundType> {
         self.scopes.last().expect("Context should always have at least one scope")
     }
 
     /// Create a new context that extends this one with a new scope containing the given references
-    pub fn with_extended_scope<I: IntoIterator<Item=(String, Type)>>(&self, iter: I) -> Self {
+    pub fn with_extended_scope<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
         let mut new_context = self.clone();
         new_context.enter_scope();
         new_context.extend(iter);

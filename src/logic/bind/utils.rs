@@ -1,6 +1,6 @@
-use crate::logic::typing::{Type, ArraySize};
+use super::typing::BoundType;
+use crate::logic::typing::Type;
 use crate::logic::ast::{ASTNode, NonTerminal};
-use crate::logic::debug::DebugUtils;
 use crate::{debug_trace, debug_debug, debug_warn};
 
 fn collect_terminals(node: &ASTNode, out: &mut Vec<String>) {
@@ -10,15 +10,6 @@ fn collect_terminals(node: &ASTNode, out: &mut Vec<String>) {
             for ch in &nt.children { collect_terminals(ch, out); }
         }
     }
-}
-
-fn type_from_type_ast(node: &ASTNode) -> Option<Type> {
-    // The value of a type nonterminal is the concatenation of all its terminal tokens
-    let mut toks: Vec<String> = Vec::new();
-    collect_terminals(node, &mut toks);
-    if toks.is_empty() { return None; }
-    let s: String = toks.concat();
-    Type::parse(&s).ok()
 }
 
 /// Find the shallowest NonTerminal in the subtree of `root` that has one or more
@@ -49,108 +40,107 @@ pub fn collect_nt_bindings_same_level(root: &NonTerminal, var: &str) -> Vec<NonT
 }
 
 /// Collect and parse types from all nodes at the same AST level sharing the binding name.
-pub fn collect_type_bindings_same_level(root: &NonTerminal, var: &str) -> Vec<Type> {
+pub fn collect_types_same_level(root: &NonTerminal, var: &str) -> Vec<BoundType> {
     collect_nt_bindings_same_level(root, var)
         .into_iter()
-        .filter_map(|nt| type_from_type_ast(&nt.as_node()))
+        .filter_map(|nt| get_type_value(&nt))
         .collect()
 }
 
-pub fn  get_type_binding(node: &NonTerminal, type_var: Type) -> Option<Type> {
-    debug_trace!("bind::utils", "get_type_binding: looking for type_var={}", DebugUtils::type_summary(&type_var));
+pub fn get_type_value(nt: &NonTerminal) -> Option<BoundType> {
+    extract_terminal_value(&nt.as_node()).map(BoundType::Atom)
+}
+
+pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
+    debug_trace!("bind::utils", "get_type_binding: looking for type_var={:?}", type_var);
     match type_var {
         Type::Atom(var) => {
-            // Check if repeated same-level occurrences exist
-            let many = collect_type_bindings_same_level(node, &var);
-            if many.len() > 1 {
-                // Ambiguous in a scalar position; caller must model list explicitly (e.g., via Arrow-list→Fn path)
-                debug_warn!("bind::utils", "Ambiguous repeated type binding '{}' at same level ({} items) in scalar position", var, many.len());
-                return None;
+            // Check if this is a quoted concrete type (e.g., 'int', 'float')
+            if var.starts_with('\'') && var.ends_with('\'') {
+                let concrete_type = &var[1..var.len()-1]; // Remove quotes
+                debug_trace!("bind::utils", "get_type_binding: found concrete type '{}'", concrete_type);
+                return Some(BoundType::Atom(concrete_type.to_string()));
             }
-            if many.len() == 1 { return Some(many[0].clone()); }
-
+            
             // Single binding resolution path
             if let Some(nt) = get_nt_binding(&node, var.clone()) {
-                if let Some(full_ty) = type_from_type_ast(&nt.as_node()) {
-                    debug_trace!("bind::utils", "get_type_binding: found structured type={}", DebugUtils::type_summary(&full_ty));
+                if let Some(full_ty) = get_type_value(&nt) {
+                    debug_trace!("bind::utils", "get_type_binding: found structured type={:?}", full_ty);
                     return Some(full_ty);
                 } else {
                     debug_warn!("bind::utils", "get_type_binding: failed to parse structured type from subtree");
                     return None;
                 }
             }
-            
             debug_debug!("bind::utils", "get_type_binding: no node binding found for {}", var);
             None
         }
-        Type::Arrow(t1, t2) => {
-            // If the domain variable denotes a same-level repeated list, synthesize Fn(params, ret)
-            if let Type::Atom(var) = *t1.clone() {
-                let params = collect_type_bindings_same_level(node, &var);
-                if !params.is_empty() {
-                    let ret = get_type_binding(node, *t2)?;
-                    return Some(Type::Fn { params, ret: Box::new(ret) });
-                }
-            }
-            // Otherwise resolve both as Arrow if both sides resolve
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Arrow(Box::new(b1), Box::new(b2)))
+        Type::Raw(concrete_type) => {
+            // Raw/concrete types are bound directly without variable resolution
+            debug_trace!("bind::utils", "get_type_binding: binding raw type '{}'", concrete_type);
+            Some(BoundType::Atom(concrete_type.clone()))
         }
-        Type::Fn { params, ret } => {
-            // Resolve inner types generically
-            let mut new_params = Vec::with_capacity(params.len());
-            for p in params {
-                let rp = get_type_binding(node, p)?;
-                new_params.push(rp);
+        Type::Arrow(t1, t2) => {
+            // Otherwise resolve both as Arrow if both sides resolve
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Arrow(Box::new(b1), Box::new(b2)))
+        }
+        Type::Tuple(v) => {
+            let elements = collect_nt_bindings_same_level(node, &v);
+            if elements.is_empty() {
+                debug_debug!("bind::utils", "get_type_binding: no tuple elements found for {}, returning empty tuple", v);
+                return Some(BoundType::Tuple(Vec::new()));
             }
-            let new_ret = get_type_binding(node, *ret)?;
-            Some(Type::Fn { params: new_params, ret: Box::new(new_ret) })
+            let tuple_elem_types: Vec<BoundType> = elements
+                .into_iter()
+                .filter_map(|nt| get_type_value(&nt))
+                .collect();
+            Some(BoundType::Tuple(tuple_elem_types))
         }
         Type::Pointer(t) => {
-            let b = get_type_binding(node, *t)?;
-            Some(Type::Pointer(Box::new(b)))
+            let b = bind_type(node, *t)?;
+            Some(BoundType::Pointer(Box::new(b)))
         }
         Type::Array(t, size) => {
-            let b = get_type_binding(node, *t)?;
+            let b = bind_type(node, *t)?;
             // Try to resolve symbolic size variables via get_var_binding
-            let resolved_size = match size {
-                ArraySize::Var(var) => {
-                    if let Ok(Some(val)) = get_var_binding(node, var.clone()) {
-                        if let Ok(n) = val.parse::<u64>() {
-                            ArraySize::Const(n)
-                        } else {
-                            // Keep as symbolic if cannot parse
-                            ArraySize::Var(var)
-                        }
-                    } else {
-                        ArraySize::Var(var)
+            let size_str = get_var_binding(node, size);
+            if size_str.is_err() {
+                debug_warn!("bind::utils", "get_type_binding: failed to resolve array size variable");
+                return None;
+            }
+            // parse as u64
+            let size_u64 = if let Some(s) = size_str.unwrap() {
+                s.parse::<u64>().ok()
+            } else {
+                None
+            };
+            match size_u64 {
+                    Some(n) => Some(BoundType::Array(Box::new(b), n)),
+                    None => {
+                        debug_warn!("bind::utils", "get_type_binding: failed to parse array size as u64");
+                        None
                     }
                 }
-                other => other,
-            };
-            Some(Type::Array(Box::new(b), resolved_size))
+
         }
-        Type::Empty => Some(Type::Empty),
+        Type::Empty => Some(BoundType::Empty),
         Type::Not(t) => {
-            let b = get_type_binding(node, *t)?;
-            Some(Type::Not(Box::new(b)))
+            let b = bind_type(node, *t)?;
+            Some(BoundType::Not(Box::new(b)))
         }
         Type::Intersection(t1, t2) => {
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Intersection(Box::new(b1), Box::new(b2)))
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Intersection(Box::new(b1), Box::new(b2)))
         }
         Type::Union(t1, t2) => {
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Union(Box::new(b1), Box::new(b2)))
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Union(Box::new(b1), Box::new(b2)))
         }
-        Type::Refinement { base, predicate } => {
-            let b = get_type_binding(node, *base)?;
-            Some(Type::Refinement { base: Box::new(b), predicate })
-        }
-        Type::Universe => Some(Type::Universe),
+        Type::Universe => Some(BoundType::Universe),
     }
 }
 

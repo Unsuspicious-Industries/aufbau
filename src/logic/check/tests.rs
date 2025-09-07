@@ -22,12 +22,12 @@ use crate::debug_info;
 
     let mut tc = TypeChecker::with_input(Some(expr.to_string()));
     // Add the free variable z to the context
-    tc.bind("z".to_string(), crate::logic::typing::Type::Atom("a".to_string()));
+    tc.add("z".to_string(), crate::logic::bind::typing::BoundType::Atom("a".to_string()));
     let res = tc.check(&ast);
     match res {
         Ok(ty) => {
             if let Some(ty) = ty {
-                debug_info!("test", "Type: {}", ty);
+                debug_info!("test", "Type: {:?}", ty);
             } else {
                 debug_info!("test", "No type inferred");
             }
@@ -50,8 +50,8 @@ use crate::debug_info;
     let ast = parser.parse(expr).unwrap();
     let mut tc = TypeChecker::with_input(Some(expr.to_string()));
     // Add True : Bool to context
-    tc.bind("True".to_string(), crate::logic::typing::Type::Atom("Bool".to_string()));
-    
+    tc.add("True".to_string(), crate::logic::bind::typing::BoundType::Atom("Bool".to_string()));
+
     let res = tc.check(&ast);
     assert!(res.is_err(), "Expected type mismatch error but type checking succeeded");
     
@@ -93,13 +93,13 @@ use crate::debug_info;
     let ast = parser.parse(expr).unwrap();
     let mut tc = TypeChecker::with_input(Some(expr.to_string()));
     // Add variable to context
-    tc.bind("y".to_string(), crate::logic::typing::Type::Atom("a".to_string()));
-    
+    tc.add("y".to_string(), crate::logic::bind::typing::BoundType::Atom("a".to_string()));
+
     let res = tc.check(&ast);
     assert!(res.is_ok(), "Expected type checking to succeed");
     
     if let Ok(Some(ty)) = res {
-        assert_eq!(ty, crate::logic::typing::Type::Atom("a".to_string()));
-        debug_info!("test", "Successfully inferred type: {}", ty);
+        assert_eq!(ty, crate::logic::bind::typing::BoundType::Atom("a".to_string()));
+        debug_info!("test", "Successfully inferred type: {:?}", ty);
     }
 }

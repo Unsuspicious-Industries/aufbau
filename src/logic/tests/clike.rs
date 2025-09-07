@@ -10,7 +10,7 @@ use crate::{debug_info, set_debug_level, set_debug_input, DebugLevel};
 pub const C_LIKE_SPEC: &str = r#"
 // Identifiers and literals
 Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
-Number ::= /\d+/
+Number(int-lit) ::= /\d+/
 String ::= /"[^"]*"/
 
 // Variables
@@ -61,19 +61,23 @@ Assignment(assign) ::= Expr[target] '=' Expr[value]
 IfStmt(if) ::= 'if' '(' Expr[cond] ')' Stmt[then] ('else' Stmt[else])?
 WhileStmt(while) ::= 'while' '(' Expr[cond] ')' Stmt[body]
 ForStmt(for) ::= 'for' '(' Stmt[init] Expr[cond] ';' Stmt[update] ')' Stmt[body]
-ReturnStmt(return) ::= 'return' Expr?[ret_val] ';'
 BlockStmt ::= '{' Stmt* '}'
 ExprStmt ::= Expr
 
-Stmt ::= VarDecl | Assignment | IfStmt | WhileStmt | ForStmt | ReturnStmt | BlockStmt | ExprStmt
+Stmt ::= VarDecl | Assignment | IfStmt | WhileStmt | ForStmt | BlockStmt | ExprStmt
 
 // Function definitions (UNIMPLEMENTED - should fail complex cases)
-FunctionDef(funcdef) ::= Type[ret_ty] Identifier[name] '(' ParamDeclList? ')' BlockStmt[body]
-ParamDecl ::= Type Identifier
-ParamDeclList ::= ParamDecl | ParamDeclList ',' ParamDecl
+ReturnStmt(return) ::= 'return' Expr[ret_val] ';'
+FunctionDef(funcdef) ::= Type[ret_ty] Identifier[name] '(' ParamDecl* ')' '{' Stmt* ReturnStmt '}'
+ParamDecl ::= Type[in_tys] Identifier ','?
 
 // Program
 Program ::= FunctionDef | Stmt | Expr
+
+
+// Type rule for Int literals - concrete int type
+-------------- (int-lit)
+'int'
 
 // Basic typing rules (many advanced features not implemented)
 x ∈ Γ
@@ -82,9 +86,7 @@ x ∈ Γ
 
 Γ ⊢ ret_val: ret_ty
 ----------------------- (funcdef)
-
-
-Γ ⊢ left : float, Γ ⊢ right : float
+(in_tys...) -> ret_ty
 
 
 // More complex rules would be needed for pointers, structs, etc.
@@ -92,12 +94,23 @@ x ∈ Γ
 
 #[test]
 fn test_simple() {
-    let expr = "int main() {}";
+    let expr = "int main() {return 't';}";
     // Enable debug output for this test
     set_debug_level(DebugLevel::Debug);
     set_debug_input(Some(expr.to_string()));
 
     let grammar = Grammar::load(C_LIKE_SPEC).expect("Failed to load C-like grammar");
+    
+    // Debug: Print all loaded productions
+    println!("=== LOADED PRODUCTIONS ===");
+    for (nt, prods) in &grammar.productions {
+        println!("Nonterminal: {}", nt);
+        for (i, prod) in prods.iter().enumerate() {
+            println!("  Production {}: {:?}", i, prod);
+        }
+    }
+    println!("=== END PRODUCTIONS ===");
+    
     debug_info!("test", "Loaded grammar with {} rules", grammar.typing_rules.len());
     let mut parser = Parser::new(grammar);
     debug_info!("test", "Initialized parser");
@@ -110,7 +123,7 @@ fn test_simple() {
 
     // if type is some print, else not
     if let Some(ty) = rt {
-        println!("return type: {}", ty);
+        println!("return type: {:?}", ty);
     } else {
         println!("no return type");
     }

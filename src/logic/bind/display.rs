@@ -3,12 +3,33 @@ use std::fmt;
 use super::{
     BoundConclusion,
     BoundPremise,
+    BoundType,
     BoundTypeAscription,
     BoundTypeSetting,
     BoundTypingJudgment,
     BoundTypingRule,
 };
 use super::utils::{extract_terminal_value,extract_terminals};
+
+impl fmt::Display for BoundType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BoundType::Atom(name) => write!(f, "{}", name),
+            BoundType::Arrow(from, to) => write!(f, "{} → {}", from, to),
+            BoundType::Tuple(types) => {
+                let type_strs: Vec<String> = types.iter().map(|t| t.to_string()).collect();
+                write!(f, "({})", type_strs.join(", "))
+            }
+            BoundType::Pointer(inner) => write!(f, "*{}", inner),
+            BoundType::Array(inner, size) => write!(f, "{}[{}]", inner, size),
+            BoundType::Not(inner) => write!(f, "¬{}", inner),
+            BoundType::Intersection(left, right) => write!(f, "{} ∧ {}", left, right),
+            BoundType::Union(left, right) => write!(f, "{} ∨ {}", left, right),
+            BoundType::Universe => write!(f, "⊤"),
+            BoundType::Empty => write!(f, "∅"),
+        }
+    }
+}
 
 impl fmt::Display for BoundTypeAscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

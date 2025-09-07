@@ -10,10 +10,6 @@ path = "src/mod.rs"
 name = "beam"
 path = "src/main.rs"
 
-[[bin]]
-name = "repetition_demo"
-path = "examples/repetition_demo.rs"
-
 [dependencies]
 regex = "1.10"
 bimap = "0.6.3"

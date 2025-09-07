@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 use crate::logic::ast::{ASTNode, SourceSpan};
-use crate::logic::typing::{Type, ArraySize};
+use crate::logic::typing::Type;
 
 /// Debug level for controlling output verbosity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -225,29 +225,7 @@ impl DebugUtils {
         }
     }
 
-    /// Get a compact representation of a type for debugging
-    pub fn type_summary(ty: &Type) -> String {
-        match ty {
-            Type::Atom(name) => name.clone(),
-            Type::Arrow(t1, t2) => format!("{} → {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Pointer(t) => format!("*{}", Self::type_summary(t)),
-            Type::Array(t, size) => match size {
-                ArraySize::Dynamic => format!("{}[]", Self::type_summary(t)),
-                ArraySize::Const(n) => format!("{}[{}]", Self::type_summary(t), n),
-                ArraySize::Var(v) => format!("{}[{}]", Self::type_summary(t), v),
-            },
-            Type::Fn { params, ret } => {
-                let param_strs: Vec<String> = params.iter().map(|p| Self::type_summary(p)).collect();
-                format!("({}) → {}", param_strs.join(", "), Self::type_summary(ret))
-            }
-            Type::Universe => "𝒰".to_string(),
-            Type::Not(t) => format!("¬{}", Self::type_summary(t)),
-            Type::Intersection(t1, t2) => format!("{} ∧ {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Union(t1, t2) => format!("{} ∨ {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Refinement { base, predicate } => format!("{{{}|{}}}", Self::type_summary(base), predicate),
-            Type::Empty => "∅".to_string(),
-        }
-    }
+
 
     /// Pretty print an AST node tree with indentation
     pub fn pretty_print_ast(node: &ASTNode, indent: usize) -> String {

@@ -42,27 +42,19 @@ impl Parser {
             crate::debug_info!("parser", "Special token: '{}'", token);
         }
         
-        // BYPASS TOKENIZER FOR DEBUGGING - Use simple tokenization with better splitting
-        crate::debug_info!("parser", "BYPASSING TOKENIZER: Using improved tokenization for debugging");
+        // Use proper tokenizer with STLC special tokens
+        let token_ids = match self.tokenizer.tokenize(input.to_string()) {
+            Ok(ids) => ids,
+            Err(_) => return Err("Tokenization failed".to_string()),
+        };
         
-        // Split on whitespace and then further split on special characters
+        // Convert token IDs back to strings for the parser
         let mut tokens = Vec::new();
-        for chunk in input.split_whitespace() {
-            // Split each chunk on special characters while preserving them
-            let mut current = String::new();
-            for ch in chunk.chars() {
-                if matches!(ch, ';' | '=' | '(' | ')' | '[' | ']' | '{' | '}' | ',' | '+' | '-' | '*' | '/' | '&' | '.') {
-                    if !current.is_empty() {
-                        tokens.push(current.clone());
-                        current.clear();
-                    }
-                    tokens.push(ch.to_string());
-                } else {
-                    current.push(ch);
-                }
-            }
-            if !current.is_empty() {
-                tokens.push(current);
+        for id in token_ids {
+            if let Some(token_str) = self.tokenizer.str(id) {
+                tokens.push(token_str);
+            } else {
+                return Err(format!("Invalid token ID: {}", id));
             }
         }
         
@@ -70,10 +62,10 @@ impl Parser {
         self.pos = 0;
         self.recursion_tracker.reset();
         
-        crate::debug_info!("parser", "Simple tokenization resulted in {} tokens: {:?}", self.tokens.len(), self.tokens);
+        crate::debug_info!("parser", "Proper tokenization resulted in {} tokens: {:?}", self.tokens.len(), self.tokens);
         
         if self.tokens.is_empty() {
-            return Err("Empty input after simple tokenization".to_string());
+            return Err("Empty input after tokenization".to_string());
         }
         
         return self.parse_with_tokens();

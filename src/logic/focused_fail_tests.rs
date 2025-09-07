@@ -3,11 +3,13 @@
 //! This module contains focused FAIL tests using the existing STLC grammar
 //! to demonstrate type checking failures and validate the robustness of the system.
 //! These tests serve as goal posts for identifying missing features.
+    
 
 #[cfg(test)]
 pub mod focused_fail_tests {
     use crate::logic::{grammar::tests::STLC_SPEC, grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
     use crate::debug_info;
+    use crate::logic::bind::BoundType;
 
     /// Test function application with wrong argument type - should fail
     #[test]
@@ -45,7 +47,7 @@ pub mod focused_fail_tests {
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
         let mut tc = TypeChecker::with_input(Some(expr.to_string()));
-        tc.bind("List".to_string(), Type::Atom("List".to_string()));
+        tc.add("List".to_string(), BoundType::Atom("List".to_string()));
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected higher-order function type mismatch to fail");
@@ -126,6 +128,7 @@ pub mod focused_fail_tests {
 
 #[cfg(test)]
 pub mod unimplemented_feature_tests {
+    use crate::logic::bind::BoundType;
     use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
     use crate::debug_info;
 
@@ -196,7 +199,7 @@ pub mod unimplemented_feature_tests {
             let expr = "&x";
             if let Ok(ast) = parser.parse(expr) {
                 let mut tc = TypeChecker::with_input(Some(expr.to_string()));
-                tc.bind("x".to_string(), Type::Atom("Int".to_string()));
+                tc.add("x".to_string(), BoundType::Atom("Int".to_string()));
                 let res = tc.check(&ast);
                 
                 // Document the current behavior - may succeed due to fallback rules
@@ -204,7 +207,7 @@ pub mod unimplemented_feature_tests {
                     Err(e) => debug_info!("test", "Address-of failed (good): {}", e),
                     Ok(None) => debug_info!("test", "Address-of has no typing rule (neutral)"),
                     Ok(Some(ty)) => {
-                        debug_info!("test", "Address-of succeeded with type: {} (needs proper pointer typing)", ty);
+                        debug_info!("test", "Address-of succeeded with type: {:?} (needs proper pointer typing)", ty);
                         // This shows we need proper pointer type rules
                     }
                 }
@@ -221,7 +224,7 @@ pub mod unimplemented_feature_tests {
             let expr = "*p";
             if let Ok(ast) = parser.parse(expr) {
                 let mut tc = TypeChecker::with_input(Some(expr.to_string()));
-                tc.bind("p".to_string(), Type::Atom("Int*".to_string()));
+                tc.add("p".to_string(), BoundType::Atom("Int*".to_string()));
                 let res = tc.check(&ast);
                 
                 // Document the current behavior - may succeed due to fallback rules
@@ -229,7 +232,7 @@ pub mod unimplemented_feature_tests {
                     Err(e) => debug_info!("test", "Dereference failed (good): {}", e),
                     Ok(None) => debug_info!("test", "Dereference has no typing rule (neutral)"),
                     Ok(Some(ty)) => {
-                        debug_info!("test", "Dereference succeeded with type: {} (needs proper pointer typing)", ty);
+                        debug_info!("test", "Dereference succeeded with type: {:?} (needs proper pointer typing)", ty);
                         // This shows we need proper pointer type rules
                     }
                 }
@@ -247,7 +250,7 @@ pub mod unimplemented_feature_tests {
             let expr = "(λp:Int*.λx:Int.*p)(&x)";
             if let Ok(ast) = parser.parse(expr) {
                 let mut tc = TypeChecker::with_input(Some(expr.to_string()));
-                tc.bind("x".to_string(), Type::Atom("Int".to_string()));
+                tc.add("x".to_string(), BoundType::Atom("Int".to_string()));
                 let res = tc.check(&ast);
                 
                 // Should fail due to unimplemented pointer operations

@@ -6,7 +6,8 @@
 
 #[cfg(test)]
 pub mod subtle_failures {
-    use crate::logic::{grammar::tests::STLC_SPEC, grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
+    use crate::logic::{grammar::tests::STLC_SPEC, grammar::Grammar, parser::Parser, check::TypeChecker};
+    use crate::logic::bind::BoundType;
     use crate::debug_info;
 
     /// Test function composition with type mismatches
@@ -33,7 +34,7 @@ pub mod subtle_failures {
         if let Ok(ast) = parser.parse(expr) {
             let mut tc = TypeChecker::with_input(Some(expr.to_string()));
             // Add List type to context
-            tc.bind("List".to_string(), Type::Atom("List".to_string()));
+            tc.add("List".to_string(), BoundType::Atom("List".to_string()));
             
             let res = tc.check(&ast);
             // Should fail because map expects Int->Int but gets Bool->Bool
@@ -84,21 +85,21 @@ pub mod subtle_failures {
         if let Ok(ast) = parser.parse(expr) {
             let mut tc = TypeChecker::with_input(Some(expr.to_string()));
             // Add required functions to context
-            tc.bind("if".to_string(), Type::Arrow(
-                Box::new(Type::Atom("Bool".to_string())), 
-                Box::new(Type::Arrow(
-                    Box::new(Type::Atom("a".to_string())),
-                    Box::new(Type::Arrow(
-                        Box::new(Type::Atom("a".to_string())),
-                        Box::new(Type::Atom("a".to_string()))
+            tc.add("if".to_string(), BoundType::Arrow(
+                Box::new(BoundType::Atom("Bool".to_string())), 
+                Box::new(BoundType::Arrow(
+                    Box::new(BoundType::Atom("a".to_string())),
+                    Box::new(BoundType::Arrow(
+                        Box::new(BoundType::Atom("a".to_string())),
+                        Box::new(BoundType::Atom("a".to_string()))
                     ))
                 ))
             ));
-            tc.bind("==".to_string(), Type::Arrow(
-                Box::new(Type::Atom("Int".to_string())),
-                Box::new(Type::Arrow(
-                    Box::new(Type::Atom("Int".to_string())),
-                    Box::new(Type::Atom("Bool".to_string()))
+            tc.add("==".to_string(), BoundType::Arrow(
+                Box::new(BoundType::Atom("Int".to_string())),
+                Box::new(BoundType::Arrow(
+                    Box::new(BoundType::Atom("Int".to_string())),
+                    Box::new(BoundType::Atom("Bool".to_string()))
                 ))
             ));
             
@@ -128,7 +129,7 @@ pub mod subtle_failures {
 
 #[cfg(test)]
 pub mod complex_type_scenarios {
-    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
+    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker};
     use crate::debug_info;
 
     /// Extended STLC grammar with more type constructs for testing
@@ -311,7 +312,8 @@ pub mod complex_type_scenarios {
 
 #[cfg(test)]
 pub mod type_system_stress_tests {
-    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
+    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker};
+    use crate::logic::bind::BoundType;
     use crate::debug_info;
 
     /// Stress test with very deep nesting
@@ -350,7 +352,7 @@ pub mod type_system_stress_tests {
             
             // Add many variables to context
             for i in 1..=100 {
-                tc.bind(format!("x{}", i), Type::Atom("Int".to_string()));
+                tc.add(format!("x{}", i), BoundType::Atom("Int".to_string()));
             }
             
             let res = tc.check(&ast);
@@ -376,7 +378,7 @@ pub mod type_system_stress_tests {
             match res {
                 Ok(ty) => {
                     if let Some(ty) = ty {
-                        debug_info!("test", "Complex type expression inferred: {}", ty);
+                        debug_info!("test", "Complex type expression inferred: {:?}", ty);
                     }
                 },
                 Err(e) => debug_info!("test", "Complex type expression failed: {}", e),
