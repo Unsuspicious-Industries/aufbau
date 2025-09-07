@@ -1,5 +1,7 @@
 pub mod rule;
 pub mod utils;
+pub mod typing;
+pub use typing::BoundType;
 mod display;
 
 #[cfg(test)]
@@ -20,7 +22,7 @@ pub use rule::{
 };
 
 pub use utils::{
-    get_type_binding,
+    bind_type,
     get_nt_binding, 
     get_var_binding,
     extract_terminal_value

@@ -225,19 +225,7 @@ impl DebugUtils {
         }
     }
 
-    /// Get a compact representation of a type for debugging
-    pub fn type_summary(ty: &Type) -> String {
-        match ty {
-            Type::Atom(name) => name.clone(),
-            Type::Arrow(t1, t2) => format!("{} → {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Universe => "𝒰".to_string(),
-            Type::Not(t) => format!("¬{}", Self::type_summary(t)),
-            Type::Intersection(t1, t2) => format!("{} ∧ {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Union(t1, t2) => format!("{} ∨ {}", Self::type_summary(t1), Self::type_summary(t2)),
-            Type::Refinement { base, predicate } => format!("{{{}|{}}}", Self::type_summary(base), predicate),
-            Type::Empty => "∅".to_string(),
-        }
-    }
+
 
     /// Pretty print an AST node tree with indentation
     pub fn pretty_print_ast(node: &ASTNode, indent: usize) -> String {

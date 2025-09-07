@@ -1,8 +1,12 @@
 #[cfg(test)]
 mod tests {
+    use std::fmt::format;
+
     use crate::logic::ast::{ASTNode, NonTerminal, SourceSpan, Terminal};
     use crate::logic::typing::{Type, TypingJudgment, Premise};
-    use crate::logic::bind::{extract_terminal_value, get_nt_binding, get_type_binding, get_var_binding, BindingResolver, BoundConclusion, BoundTypingJudgment, BoundTypingRule, DefaultBindingResolver};
+    use crate::logic::bind::{extract_terminal_value, get_nt_binding, bind_type, get_var_binding, BindingResolver, BoundConclusion, BoundTypingJudgment, BoundTypingRule, DefaultBindingResolver};
+    use crate::{debug_info, set_debug_input, set_debug_level};
+    use crate::logic::bind::typing::BoundType;
 
     /// Helper function to create a test NonTerminal node
     fn create_test_nonterminal(value: &str, binding: Option<String>) -> NonTerminal {
@@ -60,10 +64,10 @@ mod tests {
         
         // Test resolving a type variable that has a binding
         let type_var = Type::Atom("ty".to_string());
-        let result = get_type_binding(&test_node, type_var);
+        let result = bind_type(&test_node, type_var);
         
         assert!(result.is_some());
-        if let Some(Type::Atom(resolved)) = result {
+        if let Some(BoundType::Atom(resolved)) = result {
             assert_eq!(resolved, "Int");
         } else {
             panic!("Expected resolved atom type");
@@ -76,7 +80,7 @@ mod tests {
         
         // Test resolving a type variable that has no binding
         let type_var = Type::Atom("unbound".to_string());
-        let result = get_type_binding(&test_node, type_var);
+        let result = bind_type(&test_node, type_var);
         
         assert!(result.is_none());
     }
@@ -190,7 +194,7 @@ mod tests {
         match bound_premise.judgment {
             BoundTypingJudgment::Ascription(ascr) => {
                 assert_eq!(ascr.node.value, "Variable");
-                assert_eq!(ascr.ty, Type::Atom("Int".to_string()));
+                assert_eq!(ascr.ty, BoundType::Atom("Int".to_string()));
             }
             _ => panic!("Expected ascription judgment"),
         }
@@ -201,7 +205,7 @@ mod tests {
         let bound_rule = BoundTypingRule {
             name: "display_test".to_string(),
             premises: vec![],
-            conclusion: BoundConclusion::Type(Type::Atom("Result".to_string())),
+            conclusion: BoundConclusion::Type(BoundType::Atom("Result".to_string())),
         };
         
         let display_string = format!("{}", bound_rule);
@@ -214,9 +218,113 @@ mod tests {
         let bound_rule = BoundTypingRule {
             name: "empty_rule".to_string(),
             premises: vec![],
-            conclusion: BoundConclusion::Type(Type::Atom("Result".to_string())),
+            conclusion: BoundConclusion::Type(BoundType::Atom("Result".to_string())),
         };
         
         assert!(bound_rule.is_well_formed());
+    }
+
+    #[test]
+    fn complete_test() {
+        let expr = "(λy:a->a.y)((λx:a->a.x)z)";
+
+        // Enable debug output for this test
+        set_debug_level(crate::DebugLevel::Info);
+        set_debug_input(Some(expr.to_string()));
+
+        let mut parser = crate::logic::parser::Parser::new(
+            crate::logic::grammar::Grammar::load(
+                crate::logic::grammar::tests::STLC_SPEC)
+                    .unwrap()
+        );  
+
+        let term = parser.parse(expr).unwrap();
+        debug_info!("test", "AST: {}", term.pretty());
+
+        // assert is has one child and that child is a NonTerminal
+        assert_eq!(term.nonterminal_children().len(), 1);
+        let nt = &term.nonterminal_children()[0];
+
+        let r = if let Some(r) = nt.bound_typing_rule.as_ref() {
+            r
+        } else {
+            panic!("Expected NonTerminal to have a bound typing rule");
+        };
+        
+        let typing_rule_str = format!("{}",r.as_ref());
+        println!("{}",typing_rule_str);
+
+        assert_eq!(typing_rule_str,"Γ ⊢ (λy:a->a.y) : a → a, Γ ⊢ ((λx:a->a.x)z) : a ⇒ a")
+
+
+    }
+
+    #[test]
+    fn test_bound_type_display() {
+        // Test basic atom type
+        let atom = BoundType::Atom("Int".to_string());
+        assert_eq!(format!("{}", atom), "Int");
+
+        // Test arrow type
+        let arrow = BoundType::Arrow(
+            Box::new(BoundType::Atom("Int".to_string())),
+            Box::new(BoundType::Atom("Bool".to_string()))
+        );
+        assert_eq!(format!("{}", arrow), "Int → Bool");
+
+        // Test tuple type
+        let tuple = BoundType::Tuple(vec![
+            BoundType::Atom("Int".to_string()),
+            BoundType::Atom("String".to_string()),
+            BoundType::Atom("Bool".to_string())
+        ]);
+        assert_eq!(format!("{}", tuple), "(Int, String, Bool)");
+
+        // Test pointer type
+        let pointer = BoundType::Pointer(Box::new(BoundType::Atom("Int".to_string())));
+        assert_eq!(format!("{}", pointer), "*Int");
+
+        // Test array type
+        let array = BoundType::Array(Box::new(BoundType::Atom("Int".to_string())), 10);
+        assert_eq!(format!("{}", array), "Int[10]");
+
+        // Test negation type
+        let negation = BoundType::Not(Box::new(BoundType::Atom("Int".to_string())));
+        assert_eq!(format!("{}", negation), "¬Int");
+
+        // Test intersection type
+        let intersection = BoundType::Intersection(
+            Box::new(BoundType::Atom("Readable".to_string())),
+            Box::new(BoundType::Atom("Writable".to_string()))
+        );
+        assert_eq!(format!("{}", intersection), "Readable ∧ Writable");
+
+        // Test union type
+        let union = BoundType::Union(
+            Box::new(BoundType::Atom("Int".to_string())),
+            Box::new(BoundType::Atom("String".to_string()))
+        );
+        assert_eq!(format!("{}", union), "Int ∨ String");
+
+        // Test universe type
+        let universe = BoundType::Universe;
+        assert_eq!(format!("{}", universe), "⊤");
+
+        // Test empty type
+        let empty = BoundType::Empty;
+        assert_eq!(format!("{}", empty), "∅");
+
+        // Test complex nested type
+        let complex = BoundType::Arrow(
+            Box::new(BoundType::Tuple(vec![
+                BoundType::Atom("Int".to_string()),
+                BoundType::Pointer(Box::new(BoundType::Atom("Char".to_string())))
+            ])),
+            Box::new(BoundType::Union(
+                Box::new(BoundType::Atom("Result".to_string())),
+                Box::new(BoundType::Empty)
+            ))
+        );
+        assert_eq!(format!("{}", complex), "(Int, *Char) → Result ∨ ∅");
     }
 }

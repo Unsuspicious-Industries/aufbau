@@ -1,6 +1,6 @@
+use super::typing::BoundType;
 use crate::logic::typing::Type;
 use crate::logic::ast::{ASTNode, NonTerminal};
-use crate::logic::debug::DebugUtils;
 use crate::{debug_trace, debug_debug, debug_warn};
 
 fn collect_terminals(node: &ASTNode, out: &mut Vec<String>) {
@@ -12,84 +12,135 @@ fn collect_terminals(node: &ASTNode, out: &mut Vec<String>) {
     }
 }
 
-fn type_from_type_ast(node: &ASTNode) -> Option<Type> {
-    // The value of a type nonterminal is the concatenation of all its terminal tokens
-    let mut toks: Vec<String> = Vec::new();
-    collect_terminals(node, &mut toks);
-    if toks.is_empty() { return None; }
-    let s: String = toks.concat();
-    Type::parse(&s).ok()
+/// Find the shallowest NonTerminal in the subtree of `root` that has one or more
+/// direct nonterminal children with the requested binding name. Returns that parent.
+fn find_parent_with_binding_level(root: &NonTerminal, var: &str) -> Option<NonTerminal> {
+    // If current node has any direct children with binding = var, return it
+    let direct = root.nonterminal_children();
+    let has_any = direct.iter().any(|ch| ch.binding.as_deref() == Some(var));
+    if has_any { return Some(root.clone()); }
+    // Otherwise recurse; prefer the first shallowest occurrence in preorder
+    for ch in direct {
+        if let Some(p) = find_parent_with_binding_level(&ch, var) { return Some(p); }
+    }
+    None
 }
 
-pub fn  get_type_binding(node: &NonTerminal, type_var: Type) -> Option<Type> {
-    debug_trace!("bind::utils", "get_type_binding: looking for type_var={}", DebugUtils::type_summary(&type_var));
+/// Collect all direct child nonterminals of the discovered parent that share the same binding name.
+pub fn collect_nt_bindings_same_level(root: &NonTerminal, var: &str) -> Vec<NonTerminal> {
+    if let Some(parent) = find_parent_with_binding_level(root, var) {
+        parent
+            .nonterminal_children()
+            .into_iter()
+            .filter(|ch| ch.binding.as_deref() == Some(var))
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Collect and parse types from all nodes at the same AST level sharing the binding name.
+pub fn collect_types_same_level(root: &NonTerminal, var: &str) -> Vec<BoundType> {
+    collect_nt_bindings_same_level(root, var)
+        .into_iter()
+        .filter_map(|nt| get_type_value(&nt))
+        .collect()
+}
+
+pub fn get_type_value(nt: &NonTerminal) -> Option<BoundType> {
+    extract_terminal_value(&nt.as_node()).map(BoundType::Atom)
+}
+
+pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
+    debug_trace!("bind::utils", "get_type_binding: looking for type_var={:?}", type_var);
     match type_var {
         Type::Atom(var) => {
-            // Resolve the variable to an AST node, then parse the full type from that subtree
+            // Check if this is a quoted concrete type (e.g., 'int', 'float')
+            if var.starts_with('\'') && var.ends_with('\'') {
+                let concrete_type = &var[1..var.len()-1]; // Remove quotes
+                debug_trace!("bind::utils", "get_type_binding: found concrete type '{}'", concrete_type);
+                return Some(BoundType::Atom(concrete_type.to_string()));
+            }
+            
+            // Single binding resolution path
             if let Some(nt) = get_nt_binding(&node, var.clone()) {
-                if let Some(full_ty) = type_from_type_ast(&nt.as_node()) {
-                    debug_trace!("bind::utils", "get_type_binding: found structured type={}", DebugUtils::type_summary(&full_ty));
+                if let Some(full_ty) = get_type_value(&nt) {
+                    debug_trace!("bind::utils", "get_type_binding: found structured type={:?}", full_ty);
                     return Some(full_ty);
                 } else {
                     debug_warn!("bind::utils", "get_type_binding: failed to parse structured type from subtree");
                     return None;
                 }
             }
-            
-            // Special handling for lambda rules with simple parameter types
-            // If we can't find τ₁ or τ₂, try to infer from the parameter type τ
-            if var == "τ₁" || var == "τ₂" {
-                if let Some(param_type_node) = get_nt_binding(&node, "τ".to_string()) {
-                    if let Some(param_type) = type_from_type_ast(&param_type_node.as_node()) {
-                        // For simple types (non-arrow), both τ₁ and τ₂ should be the same
-                        match param_type {
-                            Type::Arrow(ref t1, ref t2) => {
-                                if var == "τ₁" {
-                                    debug_trace!("bind::utils", "get_type_binding: inferred τ₁ from arrow type: {}", DebugUtils::type_summary(t1));
-                                    return Some((**t1).clone());
-                                } else if var == "τ₂" {
-                                    debug_trace!("bind::utils", "get_type_binding: inferred τ₂ from arrow type: {}", DebugUtils::type_summary(t2));
-                                    return Some((**t2).clone());
-                                }
-                            }
-                            _ => {
-                                // For simple types, both τ₁ and τ₂ are the parameter type
-                                debug_trace!("bind::utils", "get_type_binding: inferred {} from simple parameter type: {}", var, DebugUtils::type_summary(&param_type));
-                                return Some(param_type);
-                            }
-                        }
-                    }
-                }
-            }
-            
             debug_debug!("bind::utils", "get_type_binding: no node binding found for {}", var);
             None
         }
-        Type::Arrow(t1, t2) => {
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Arrow(Box::new(b1), Box::new(b2)))
+        Type::Raw(concrete_type) => {
+            // Raw/concrete types are bound directly without variable resolution
+            debug_trace!("bind::utils", "get_type_binding: binding raw type '{}'", concrete_type);
+            Some(BoundType::Atom(concrete_type.clone()))
         }
-        Type::Empty => Some(Type::Empty),
+        Type::Arrow(t1, t2) => {
+            // Otherwise resolve both as Arrow if both sides resolve
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Arrow(Box::new(b1), Box::new(b2)))
+        }
+        Type::Tuple(v) => {
+            let elements = collect_nt_bindings_same_level(node, &v);
+            if elements.is_empty() {
+                debug_debug!("bind::utils", "get_type_binding: no tuple elements found for {}, returning empty tuple", v);
+                return Some(BoundType::Tuple(Vec::new()));
+            }
+            let tuple_elem_types: Vec<BoundType> = elements
+                .into_iter()
+                .filter_map(|nt| get_type_value(&nt))
+                .collect();
+            Some(BoundType::Tuple(tuple_elem_types))
+        }
+        Type::Pointer(t) => {
+            let b = bind_type(node, *t)?;
+            Some(BoundType::Pointer(Box::new(b)))
+        }
+        Type::Array(t, size) => {
+            let b = bind_type(node, *t)?;
+            // Try to resolve symbolic size variables via get_var_binding
+            let size_str = get_var_binding(node, size);
+            if size_str.is_err() {
+                debug_warn!("bind::utils", "get_type_binding: failed to resolve array size variable");
+                return None;
+            }
+            // parse as u64
+            let size_u64 = if let Some(s) = size_str.unwrap() {
+                s.parse::<u64>().ok()
+            } else {
+                None
+            };
+            match size_u64 {
+                    Some(n) => Some(BoundType::Array(Box::new(b), n)),
+                    None => {
+                        debug_warn!("bind::utils", "get_type_binding: failed to parse array size as u64");
+                        None
+                    }
+                }
+
+        }
+        Type::Empty => Some(BoundType::Empty),
         Type::Not(t) => {
-            let b = get_type_binding(node, *t)?;
-            Some(Type::Not(Box::new(b)))
+            let b = bind_type(node, *t)?;
+            Some(BoundType::Not(Box::new(b)))
         }
         Type::Intersection(t1, t2) => {
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Intersection(Box::new(b1), Box::new(b2)))
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Intersection(Box::new(b1), Box::new(b2)))
         }
         Type::Union(t1, t2) => {
-            let b1 = get_type_binding(node, *t1)?;
-            let b2 = get_type_binding(node, *t2)?;
-            Some(Type::Union(Box::new(b1), Box::new(b2)))
+            let b1 = bind_type(node, *t1)?;
+            let b2 = bind_type(node, *t2)?;
+            Some(BoundType::Union(Box::new(b1), Box::new(b2)))
         }
-        Type::Refinement { base, predicate } => {
-            let b = get_type_binding(node, *base)?;
-            Some(Type::Refinement { base: Box::new(b), predicate })
-        }
-        Type::Universe => Some(Type::Universe),
+        Type::Universe => Some(BoundType::Universe),
     }
 }
 
@@ -131,43 +182,34 @@ pub fn get_var_binding(node: &NonTerminal,var: String) -> Result<Option<String>,
     Ok(None)
 }
 
-pub fn extract_terminal_value(node: &ASTNode) -> Option<String> {
+pub fn extract_terminals(node: &ASTNode) -> Vec<String> {
     match node {
-        ASTNode::Terminal(t) => Some(t.value.clone()),
+        ASTNode::Terminal(t) => vec![t.value.clone()],
         ASTNode::Nonterminal(nt) => {
-            // Special handling for parenthesized expressions like '(' Term ')'
-            if nt.value == "BaseTerm" && nt.children.len() == 3 {
-                if let (Some(ASTNode::Terminal(open_t)), Some(middle), Some(ASTNode::Terminal(close_t))) = (nt.children.get(0), nt.children.get(1), nt.children.get(2)) {
-                    if open_t.value == "(" && close_t.value == ")" {
-                        // Skip the parentheses and extract from the middle term
-                        return extract_terminal_value(middle);
-                    }
-                }
-            }
             
-            let terminal_children = nt.children
-                .iter()
-                .filter(|c| matches!(c, ASTNode::Terminal(_)))
-                .collect::<Vec<_>>();
-            
-            if terminal_children.len() == 1 {
-                return extract_terminal_value(terminal_children[0]);
-            }
-            
-            // Skip structural tokens like parentheses and look for meaningful content
+            let mut terminals = vec![];
             for child in &nt.children {
-                match child {
-                    ASTNode::Terminal(t) if t.value == "(" || t.value == ")" => continue,
-                    _ => {
-                        if let Some(value) = extract_terminal_value(child) {
-                            return Some(value);
-                        }
-                    }
-                }
+                // all extract_terminals on all childrens and merge vecs
+                let extracted = extract_terminals(child);
+                terminals.extend(extracted);
             }
             
-            None
+            terminals
         }
+    }
+}
+
+// extract ONE terminal value. errors if more
+pub fn extract_terminal_value(node: &ASTNode) -> Option<String> {
+    let terms = extract_terminals(node);
+    // Filter out structural parentheses
+    let filtered: Vec<String> = terms
+        .into_iter()
+        .filter(|t| t != "(" && t != ")")
+        .collect();
+    match filtered.len() {
+        1 => Some(filtered[0].clone()),
+        _ => None,
     }
 }
 

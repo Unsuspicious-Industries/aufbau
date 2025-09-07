@@ -44,12 +44,75 @@ pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) 
     }
 }
 
+/// Split a RHS string by | but respect quoted strings
+fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
+    // First check if this contains any quoted segments at all
+    let has_quotes = rhs.contains('\'') || rhs.contains('"');
+    
+    // If no quotes, use simple split - this handles regex patterns correctly
+    if !has_quotes {
+        return Ok(rhs.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
+    }
+    
+    let mut alternatives = Vec::new();
+    let mut current = String::new();
+    let mut in_single_quotes = false;
+    let mut in_double_quotes = false;
+    let mut chars = rhs.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        // Check if we're starting a regex pattern (starts with /)
+        if ch == '/' && !in_single_quotes && !in_double_quotes {
+            // Consume the entire regex pattern
+            current.push(ch);
+            while let Some(regex_ch) = chars.next() {
+                current.push(regex_ch);
+                if regex_ch == '/' {
+                    break; // End of regex
+                }
+            }
+            continue;
+        }
+        
+        match ch {
+            '\'' if !in_double_quotes => {
+                in_single_quotes = !in_single_quotes;
+                current.push(ch);
+            }
+            '"' if !in_single_quotes => {
+                in_double_quotes = !in_double_quotes;
+                current.push(ch);
+            }
+            '|' if !in_single_quotes && !in_double_quotes => {
+                // This is an alternative separator, not part of a quoted string
+                alternatives.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => {
+                current.push(ch);
+            }
+        }
+    }
+    
+    // Add the last alternative
+    alternatives.push(current.trim().to_string());
+    
+    // Check for unclosed quotes (but don't count quotes inside regex patterns)
+    if in_single_quotes || in_double_quotes {
+        return Err(format!("Unclosed quotes in grammar rule: {}", rhs));
+    }
+    
+    // Filter out empty alternatives
+    Ok(alternatives.into_iter().filter(|s| !s.is_empty()).collect())
+}
+
 /// Parse RHS with bindings like "'λ' Variable[x] ':' Type[τ₁] '.' Term[e]"
 pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     let mut alternatives = Vec::new();
     
-    // Split by | for alternatives
-    for alt in rhs.split('|').map(str::trim).filter(|alt| !alt.is_empty()) {
+    // Split by | for alternatives, but handle quoted strings properly
+    let alt_strings = split_alternatives(rhs)?;
+    for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
         let mut symbols_in_alt = Vec::new();
         for token in alt.split_whitespace() {
             // Parse repetition suffix first
@@ -122,19 +185,23 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
 /// Find special tokens in a right-hand side string.
 pub fn special_tokens(rhs: &str) -> Vec<String> {
     let mut found = Vec::new();
-    for alt in rhs.split('|').map(str::trim).filter(|alt| !alt.is_empty()) {
-        for sym in alt.split_whitespace() {
-            // Any token surrounded by single quotes is a special token
-            if (sym.starts_with('\'') && sym.ends_with('\'')) || 
-                (sym.starts_with('"') && sym.ends_with('"')) {
-                let sym_stripped = sym.trim_matches('\'').trim_matches('"');
-                if !found.contains(&sym_stripped.to_string()) {
-                    found.push(sym_stripped.to_string());
+    
+    // Use the same alternative splitting logic to avoid issues with quoted |
+    if let Ok(alt_strings) = split_alternatives(rhs) {
+        for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
+            for sym in alt.split_whitespace() {
+                // Any token surrounded by single quotes is a special token
+                if (sym.starts_with('\'') && sym.ends_with('\'')) || 
+                    (sym.starts_with('"') && sym.ends_with('"')) {
+                    let sym_stripped = sym.trim_matches('\'').trim_matches('"');
+                    if !found.contains(&sym_stripped.to_string()) {
+                        found.push(sym_stripped.to_string());
+                    }
                 }
-            }
-            // Skip regex patterns - they're not special tokens
-            else if is_regex(sym) {
-                continue;
+                // Skip regex patterns - they're not special tokens
+                else if is_regex(sym) {
+                    continue;
+                }
             }
         }
     }

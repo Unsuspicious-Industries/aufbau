@@ -1,11 +1,16 @@
 use crate::logic::ast::NonTerminal;
-use crate::logic::typing::Type;
+
 
 use super::ast::ASTNode;
 use super::bind::{
     extract_terminal_value,
     // Bound rule types
-    BoundTypingRule, BoundPremise, BoundTypingJudgment, BoundConclusion, BoundTypeAscription,
+    BoundTypingRule, 
+    BoundPremise, 
+    BoundTypingJudgment, 
+    BoundConclusion, 
+    BoundTypeAscription,
+    BoundType
 };
 use crate::debug_debug;
 
@@ -57,8 +62,8 @@ impl TypeChecker {
     }
 
     /// Add a reference to the current scope
-    pub fn bind(&mut self, var: String, ty: Type) {
-        self.context.bind(var, ty);
+    pub fn add(&mut self, var: String, ty: BoundType) {
+        self.context.add(var, ty);
     }
 
     /// Format an error with span information
@@ -83,7 +88,7 @@ impl TypeChecker {
 }
 
 impl TypeChecker {
-    pub fn check(&mut self, node: &ASTNode) -> Result<Option<Type>, String> { 
+    pub fn check(&mut self, node: &ASTNode) -> Result<Option<BoundType>, String> { 
         match node {
             ASTNode::Nonterminal(nt) => {
                 self.check_nt(nt)
@@ -92,22 +97,13 @@ impl TypeChecker {
         }
     }
 
-    pub fn check_nt(&mut self, node: &NonTerminal) -> Result<Option<Type>, String> {
+    pub fn check_nt(&mut self, node: &NonTerminal) -> Result<Option<BoundType>, String> {
         let bound_typing_rule = &node.bound_typing_rule;
         if let Some(rule) = bound_typing_rule {
             // Use already-bound typing rules directly
             let ty = self.apply_bound_rule(rule, node)?;
             Ok(Some(ty))
         } else {
-            // For nodes without typing rules, try context lookup if it's a variable
-            if node.value == "Variable" {
-                // Extract variable name and look up in context
-                if let Some(var_name) = extract_terminal_value(&node.as_node()) {
-                    if let Some(ty) = self.context.lookup(&var_name) {
-                        return Ok(Some(ty.clone()));
-                    }
-                }
-            }
             
             let nt_children = node.nonterminal_children();
             if nt_children.len() == 1 {
@@ -122,7 +118,7 @@ impl TypeChecker {
 
     /// Resolve bound type setting extensions (already-resolved nodes and types)
     fn resolve_bound_extensions(&self, extensions: &[BoundTypeAscription]) -> Result<TypingContext, String> {
-        let mut pairs: Vec<(String, Type)> = Vec::with_capacity(extensions.len());
+        let mut pairs: Vec<(String, BoundType)> = Vec::with_capacity(extensions.len());
         for ext in extensions {
             let name = extract_terminal_value(&ext.node.as_node())
                 .ok_or_else(|| self.format_error(&ext.node.as_node(), "Could not extract variable name in type setting"))?;
@@ -132,7 +128,7 @@ impl TypeChecker {
     }
 
     /// Apply a bound typing rule where all meta-variables are already resolved
-    pub fn apply_bound_rule(&self, rule: &BoundTypingRule, node: &NonTerminal) -> Result<Type, String> {
+    pub fn apply_bound_rule(&self, rule: &BoundTypingRule, node: &NonTerminal) -> Result<BoundType, String> {
         // Keep track of the final context for conclusion evaluation
         let mut final_context = self.context.clone();
         
@@ -181,21 +177,23 @@ impl TypeChecker {
         match &premise.judgment {
             BoundTypingJudgment::Ascription(ascr) => {
                 let var_nt = &ascr.node;
-                let ty = ascr.ty.clone();
+                let expected_ty = ascr.ty.clone();
 
                 if let Some(inferred_ty) = self.check(&var_nt.as_node())? {
-                    if inferred_ty == ty {
+                    // Use type compatibility checking instead of strict equality
+                    if inferred_ty.is_compatible_with(&expected_ty) {
                         Ok(())
                     } else {
                         let value = self.extract_text(&var_nt.as_node());
                         Err(self.format_error(&var_nt.as_node(),
-                            &format!("Type mismatch for {}: expected {}, found {}", value, ty, inferred_ty)))
+                            &format!("Type mismatch for {}: expected {:?}, found {:?} (incompatible types)", 
+                                    value, expected_ty, inferred_ty)))
                     }
                 } else {
                     // Strict mode: no fallback to context lookup; nodes in ascriptions must type-check to a concrete type
                     let value = self.extract_text(&var_nt.as_node());
                     Err(self.format_error(&var_nt.as_node(),
-                        &format!("No type inferred for {}, required {}", value, ty)))
+                        &format!("No type inferred for {}, required {:?}", value, expected_ty)))
                 }
             }
             BoundTypingJudgment::Membership(var_node, ctx) => {
