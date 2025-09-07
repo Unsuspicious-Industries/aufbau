@@ -18,7 +18,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected function argument type mismatch to fail");
@@ -32,7 +32,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected function composition type mismatch to fail");
@@ -46,7 +46,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         tc.add("List".to_string(), BoundType::Atom("List".to_string()));
         
         let res = tc.check(&ast);
@@ -61,7 +61,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected lambda shadowing with type error to fail");
@@ -75,7 +75,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected curried function type error to fail");
@@ -89,7 +89,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected lambda return type error to fail");
@@ -103,7 +103,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         assert!(res.is_err(), "Expected deep nested type error to fail");
@@ -117,7 +117,7 @@ pub mod focused_fail_tests {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         // Don't bind y to context - should fail
         
         let res = tc.check(&ast);
@@ -180,7 +180,7 @@ pub mod unimplemented_feature_tests {
             // Test pointer variable declaration
             let expr = "λp:Int*.p";
             if let Ok(ast) = parser.parse(expr) {
-                let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 // Should fail because pointer types are not implemented
@@ -198,7 +198,7 @@ pub mod unimplemented_feature_tests {
             
             let expr = "&x";
             if let Ok(ast) = parser.parse(expr) {
-                let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+                let mut tc = TypeChecker::new();
                 tc.add("x".to_string(), BoundType::Atom("Int".to_string()));
                 let res = tc.check(&ast);
                 
@@ -223,7 +223,7 @@ pub mod unimplemented_feature_tests {
             
             let expr = "*p";
             if let Ok(ast) = parser.parse(expr) {
-                let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+                let mut tc = TypeChecker::new();
                 tc.add("p".to_string(), BoundType::Atom("Int*".to_string()));
                 let res = tc.check(&ast);
                 
@@ -249,7 +249,7 @@ pub mod unimplemented_feature_tests {
             // Function that takes a pointer and dereferences it
             let expr = "(λp:Int*.λx:Int.*p)(&x)";
             if let Ok(ast) = parser.parse(expr) {
-                let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+                let mut tc = TypeChecker::new();
                 tc.add("x".to_string(), BoundType::Atom("Int".to_string()));
                 let res = tc.check(&ast);
                 

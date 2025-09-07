@@ -182,7 +182,7 @@ mod tests {
         let test_node = create_test_ast();
         let premise = Premise {
             setting: None,
-            judgment: TypingJudgment::Ascription(("var".to_string(), Type::Atom("ty".to_string()))),
+            judgment: Some(TypingJudgment::Ascription(("var".to_string(), Type::Atom("ty".to_string())))),
         };
         let resolver = DefaultBindingResolver;
         
@@ -192,7 +192,7 @@ mod tests {
         let bound_premise = result.unwrap();
         
         match bound_premise.judgment {
-            BoundTypingJudgment::Ascription(ascr) => {
+            Some(BoundTypingJudgment::Ascription(ascr)) => {
                 assert_eq!(ascr.node.value, "Variable");
                 assert_eq!(ascr.ty, BoundType::Atom("Int".to_string()));
             }

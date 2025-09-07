@@ -179,7 +179,7 @@ pub mod advanced_fail_tests {
         let expr = "int* ptr";
         let ast = parser.parse(expr).expect("Failed to parse pointer declaration");
         
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         let res = tc.check(&ast);
         
         // Should fail because pointer types are not implemented
@@ -210,7 +210,7 @@ pub mod advanced_fail_tests {
 
         // This should parse (grammar supports it) but type checking should fail
         if let Ok(ast) = parser.parse(program) {
-            let mut tc = TypeChecker::with_input(Some(program.to_string()));
+            let mut tc = TypeChecker::new();      
             let res = tc.check(&ast);
             
             assert!(res.is_err(), "Expected complex function type checking to fail but it succeeded");
@@ -240,7 +240,7 @@ pub mod advanced_fail_tests {
 
         for program in programs {
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 assert!(res.is_err(), "Expected memory operation '{}' to fail but it succeeded", program);
@@ -268,7 +268,7 @@ pub mod advanced_fail_tests {
 
         for program in programs {
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 assert!(res.is_err(), "Expected generic type '{}' to fail but it succeeded", program);
@@ -297,7 +297,7 @@ pub mod advanced_fail_tests {
 
         for program in programs {
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 assert!(res.is_err(), "Expected union/intersection type '{}' to fail but it succeeded", program);
@@ -327,7 +327,7 @@ pub mod advanced_fail_tests {
 
         for program in programs {
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 assert!(res.is_err(), "Expected object type '{}' to fail but it succeeded", program);
@@ -357,7 +357,7 @@ pub mod advanced_fail_tests {
 
         for program in programs {
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 assert!(res.is_err(), "Expected subtle type error for '{}' but it succeeded", program);
@@ -416,7 +416,7 @@ pub mod realistic_program_tests {
             let mut parser = Parser::new(grammar);
             
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 // Should fail due to unimplemented pointer and struct features
@@ -487,7 +487,7 @@ pub mod realistic_program_tests {
             let mut parser = Parser::new(grammar);
             
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 // Should fail due to unimplemented advanced TypeScript features
@@ -584,7 +584,7 @@ pub mod realistic_program_tests {
             let mut parser = Parser::new(grammar);
             
             if let Ok(ast) = parser.parse(program) {
-                let mut tc = TypeChecker::with_input(Some(program.to_string()));
+                let mut tc = TypeChecker::new();
                 let res = tc.check(&ast);
                 
                 // Should fail due to unimplemented advanced features

@@ -66,9 +66,11 @@ impl fmt::Display for BoundTypeSetting {
 
 impl fmt::Display for BoundPremise {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.setting {
-            Some(setting) => write!(f, "{} ⊢ {}", setting, self.judgment),
-            None => write!(f, "{}", self.judgment),
+        match (&self.setting, &self.judgment) {
+            (Some(setting), Some(judgment)) => write!(f, "{} ⊢ {}", setting, judgment),
+            (Some(setting), None) => write!(f, "{}", setting),
+            (None, Some(judgment)) => write!(f, "{}", judgment),
+            (None, None) => Ok(()),
         }
     }
 }

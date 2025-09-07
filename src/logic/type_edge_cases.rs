@@ -17,7 +17,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         let ast = parser.parse(expr).unwrap();
-        let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+        let mut tc = TypeChecker::new();
         
         let res = tc.check(&ast);
         // This should fail because the second function (λz:Bool.z) returns Bool, not String
@@ -32,7 +32,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             // Add List type to context
             tc.add("List".to_string(), BoundType::Atom("List".to_string()));
             
@@ -50,7 +50,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             
             let res = tc.check(&ast);
             // Should fail because add expects Int but gets String
@@ -66,7 +66,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             
             let res = tc.check(&ast);
             // Should fail because + requires both operands to be same type (Int + Bool invalid)
@@ -83,7 +83,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             // Add required functions to context
             tc.add("if".to_string(), BoundType::Arrow(
                 Box::new(BoundType::Atom("Bool".to_string())), 
@@ -117,7 +117,7 @@ pub mod subtle_failures {
         
         let mut parser = Parser::new(Grammar::load(STLC_SPEC).unwrap());
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             
             let res = tc.check(&ast);
             // Should fail because id cannot be instantiated with both Int and Bool simultaneously
@@ -226,7 +226,7 @@ pub mod complex_type_scenarios {
         // Test fst on non-pair type
         let expr = "fst 42";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             assert!(res.is_err(), "Expected fst on non-pair to fail");
@@ -243,7 +243,7 @@ pub mod complex_type_scenarios {
         // Function that takes a pair and returns wrong type
         let expr = "(λf:(Int * Bool) -> String.λp:Int * Bool.42)(λx:Int * Bool.fst x)";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             // Should fail because lambda returns Int but f expects String return
@@ -261,7 +261,7 @@ pub mod complex_type_scenarios {
         // Case analysis with type mismatch in branches
         let expr = "case (inl 42) of inl x => x | inr y => \"error\"";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             // Should fail because branches return different types (Int vs String)
@@ -279,7 +279,7 @@ pub mod complex_type_scenarios {
         // Complex higher-order function with nested error
         let expr = "(λf:(Int -> (Bool -> String)) -> (Int * Bool) -> String.λg:Int -> Bool -> String.λp:Int * Bool.f g p)";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             // May fail due to complex type matching requirements
@@ -300,7 +300,7 @@ pub mod complex_type_scenarios {
         // Cons with mismatched element types
         let expr = "42 :: (\"hello\" :: nil)";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             // Should fail because list elements must be same type
@@ -329,7 +329,7 @@ pub mod type_system_stress_tests {
         }
         
         if let Ok(ast) = parser.parse(&expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.clone()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             // Should succeed but stress test the type checker
@@ -348,7 +348,7 @@ pub mod type_system_stress_tests {
 
         let expr = "x1";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             
             // Add many variables to context
             for i in 1..=100 {
@@ -372,7 +372,7 @@ pub mod type_system_stress_tests {
         // Function with very complex type
         let expr = "λf:((a->b)->c)->((d->e)->f)->(g->h).f";
         if let Ok(ast) = parser.parse(expr) {
-            let mut tc = TypeChecker::with_input(Some(expr.to_string()));
+            let mut tc = TypeChecker::new();
             let res = tc.check(&ast);
             
             match res {

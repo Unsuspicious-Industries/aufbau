@@ -93,7 +93,7 @@ impl Grammar {
 /// Helper to format a list of premises as a string
 fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
     premises.iter().map(|p| match (&p.setting, &p.judgment) {
-        (Some(setting), crate::logic::typing::TypingJudgment::Ascription((term, ty))) => {
+        (Some(setting), Some(crate::logic::typing::TypingJudgment::Ascription((term, ty)))) => {
             if setting.extensions.is_empty() {
                 format!("{} ⊢ {} : {}", setting.name, term, ty)
             } else {
@@ -104,16 +104,18 @@ fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
                 format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
             }
         }
-        (None, crate::logic::typing::TypingJudgment::Ascription((term, ty))) => {
+        (None, Some(crate::logic::typing::TypingJudgment::Ascription((term, ty)))) => {
             format!("{} : {}", term, ty)
         }
-        (None, crate::logic::typing::TypingJudgment::Membership(var, ctx)) => {
+        (None, Some(crate::logic::typing::TypingJudgment::Membership(var, ctx))) => {
             format!("{} ∈ {}", var, ctx)
         }
-        (Some(_), crate::logic::typing::TypingJudgment::Membership(var, ctx)) => {
+        (Some(_), Some(crate::logic::typing::TypingJudgment::Membership(var, ctx))) => {
             // Membership with setting doesn't make sense in current design, but handle it
             format!("{} ∈ {}", var, ctx)
         }
+        (Some(setting), None) => format!("{}", setting.name),
+        (None, None) => String::new(),
     }).collect::<Vec<_>>().join(", ")
 }
 

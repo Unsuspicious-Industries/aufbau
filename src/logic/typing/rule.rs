@@ -25,7 +25,7 @@ pub enum TypingJudgment {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Premise {
     pub setting: Option<TypeSetting>,
-    pub judgment: TypingJudgment,
+    pub judgment: Option<TypingJudgment>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,35 +121,36 @@ impl TypingRule {
 
     fn parse_premise(premise_str: &str) -> Result<Option<Premise>, String> {
         let s = premise_str.trim();
-        if s.is_empty() { return Ok(None); }
-        
-        // Check for membership judgment first (x ∈ Γ)
-        if s.contains('∈') {
-            let parts: Vec<&str> = s.split('∈').map(str::trim).collect();
-            if parts.len() == 2 {
-                let var = parts[0].to_string();
-                let ctx = parts[1].to_string();
-                return Ok(Some(Premise { 
-                    setting: None, 
-                    judgment: TypingJudgment::Membership(var, ctx) 
-                }));
-            } else {
+        if s.is_empty() {
+            return Ok(None);
+        }
+
+        // Membership judgment: x ∈ Γ
+        if let Some((var_part, ctx_part)) = s.split_once('∈') {
+            let var = var_part.trim().to_string();
+            let ctx = ctx_part.trim().to_string();
+            if var.is_empty() || ctx.is_empty() {
                 return Err(format!("Invalid membership premise: '{}'", s));
             }
+            return Ok(Some(Premise {
+                setting: None,
+                judgment: Some(TypingJudgment::Membership(var, ctx)),
+            }));
         }
-        
-        // Check for typing judgment (Γ ⊢ e : τ)
-        if s.contains('⊢') {
-            let parts: Vec<&str> = s.splitn(2, '⊢').collect();
-            if parts.len() == 2 {
-                let setting = Some(Self::parse_setting(parts[0].trim())?);
-                let ascription = Self::parse_ascription(parts[1].trim())?;
-                return Ok(Some(Premise { setting, judgment: TypingJudgment::Ascription(ascription) }));
-            } else {
-                return Err(format!("Invalid judgment premise: '{}'", s));
-            }
+
+        // Typing judgment: Γ ⊢ e : τ
+        if let Some((setting_part, ascr_part)) = s.split_once('⊢') {
+            let setting = Some(Self::parse_setting(setting_part.trim())?);
+            let ascription = Self::parse_ascription(ascr_part.trim())?;
+            return Ok(Some(Premise {
+                setting,
+                judgment: Some(TypingJudgment::Ascription(ascription)),
+            }));
         }
-        Err(format!("Unsupported premise (only typing judgments and membership allowed): '{}'", s))
+
+        // Premise without explicit judgment – treat as setting
+        let setting = Some(Self::parse_setting(s)?);
+        Ok(Some(Premise { setting, judgment: None }))
     }
 
     /// Pretty multiline formatting of the rule as an inference rule with indentation.
@@ -208,9 +209,11 @@ impl fmt::Display for TypingJudgment {
 
 impl fmt::Display for Premise {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.setting {
-            Some(setting) => write!(f, "{} ⊢ {}", setting, self.judgment),
-            None => write!(f, "{}", self.judgment),
+        match (&self.setting, &self.judgment) {
+            (Some(setting), Some(judgment)) => write!(f, "{} ⊢ {}", setting, judgment),
+            (Some(setting), None) => write!(f, "{}", setting),
+            (None, Some(judgment)) => write!(f, "{}", judgment),
+            (None, None) => Ok(()),
         }
     }
 }

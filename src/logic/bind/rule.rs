@@ -15,7 +15,7 @@ pub struct BoundTypingRule {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BoundPremise {
     pub setting: Option<BoundTypeSetting>,
-    pub judgment: BoundTypingJudgment,
+    pub judgment: Option<BoundTypingJudgment>,
 }
 
 /// A bound type setting with resolved node references
@@ -88,7 +88,7 @@ impl BindingResolver for DefaultBindingResolver {
         };
         
         let bound_judgment = match &premise.judgment {
-            TypingJudgment::Ascription((term, ty)) => {
+            Some(TypingJudgment::Ascription((term, ty))) => {
                 // Resolve the term variable to an actual node
                 let var_node = get_nt_binding(node, term.clone())
                     .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
@@ -101,18 +101,21 @@ impl BindingResolver for DefaultBindingResolver {
                     ty: resolved_type,
                 })
             }
-            TypingJudgment::Membership(var, ctx) => {
+            Some(TypingJudgment::Membership(var, ctx)) => {
                 // Resolve the variable to an actual node
                 let var_node = get_nt_binding(node, var.clone())
                     .ok_or_else(|| format!("Could not resolve binding variable {} in membership", var))?;
                 
-                BoundTypingJudgment::Membership(var_node, ctx.clone())
+                return Ok(BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())) });
+            }
+            None => {
+                return Ok(BoundPremise { setting: bound_setting, judgment: None });
             }
         };
         
         Ok(BoundPremise {
             setting: bound_setting,
-            judgment: bound_judgment,
+            judgment: Some(bound_judgment),
         })
     }
     
@@ -145,7 +148,8 @@ impl DefaultBindingResolver {
                 .ok_or_else(|| format!("Could not resolve binding variable {} in type setting", term))?;
             
             // For types, try to resolve type variables but keep the type structure
-            let resolved_type = bind_type(node, ty.clone()).unwrap();
+            let resolved_type = bind_type(node, ty.clone())
+                .ok_or_else(|| format!("Could not resolve type binding for type {:?} in type setting", ty))?;
 
             bound_extensions.push(BoundTypeAscription {
                 node: var_node,
@@ -167,35 +171,36 @@ impl DefaultBindingResolver {
         } else { None };
 
         match &premise.judgment {
-            TypingJudgment::Ascription((term, ty)) => {
+            Some(TypingJudgment::Ascription((term, ty))) => {
                 // Try to expand by repetition at same level
                 let reps = collect_nt_bindings_same_level(node, term);
                 let resolved_type = bind_type(node, ty.clone()).unwrap();
                 if !reps.is_empty() {
                     Ok(reps.into_iter().map(|var_node| BoundPremise {
                         setting: bound_setting.clone(),
-                        judgment: BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type.clone() })
+                        judgment: Some(BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type.clone() })),
                     }).collect())
                 } else {
                     // Fallback to single binding
                     let var_node = get_nt_binding(node, term.clone())
                         .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
-                    Ok(vec![BoundPremise { setting: bound_setting, judgment: BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type }) }])
+                    Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type })) }])
                 }
             }
-            TypingJudgment::Membership(var, ctx) => {
+            Some(TypingJudgment::Membership(var, ctx)) => {
                 let reps = collect_nt_bindings_same_level(node, var);
                 if !reps.is_empty() {
                     Ok(reps.into_iter().map(|var_node| BoundPremise {
                         setting: bound_setting.clone(),
-                        judgment: BoundTypingJudgment::Membership(var_node, ctx.clone())
+                        judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())),
                     }).collect())
                 } else {
                     let var_node = get_nt_binding(node, var.clone())
                         .ok_or_else(|| format!("Could not resolve binding variable {} in membership", var))?;
-                    Ok(vec![BoundPremise { setting: bound_setting, judgment: BoundTypingJudgment::Membership(var_node, ctx.clone()) }])
+                    Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())) }])
                 }
             }
+            None => Ok(vec![BoundPremise { setting: bound_setting, judgment: None }]),
         }
     }
 }
@@ -259,12 +264,13 @@ impl BoundTypingRule {
         
         for premise in &self.premises {
             match &premise.judgment {
-                BoundTypingJudgment::Ascription(ascr) => {
+                Some(BoundTypingJudgment::Ascription(ascr)) => {
                     nodes.push(&ascr.node);
                 }
-                BoundTypingJudgment::Membership(node, _) => {
+                Some(BoundTypingJudgment::Membership(node, _)) => {
                     nodes.push(node);
                 }
+                None => {}
             }
             
             if let Some(setting) = &premise.setting {

@@ -5,104 +5,120 @@ use crate::logic::bind::typing::BoundType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypingContext {
-    /// Stack of scopes, where the last element is the innermost scope
-    scopes: Vec<HashMap<String, BoundType>>,
+    /// Variables in this context level
+    bindings: HashMap<String, BoundType>,
+    /// Parent context that this context can see variables from
+    parent: Option<Box<TypingContext>>,
 }
 
 impl TypingContext {
-    /// Create a new context with a single empty scope
+    /// Create a new empty context
     pub fn new() -> Self { 
         Self { 
-            scopes: vec![HashMap::new()] 
+            bindings: HashMap::new(),
+            parent: None,
         } 
     }
 
-    /// Create a new context with the given references in the initial scope
+    /// Create a new context with the given references
     pub fn with_references<I: IntoIterator<Item=(String, BoundType)>>(iter: I) -> Self {
-        let mut initial_scope = HashMap::new();
+        let mut bindings = HashMap::new();
         for (k, v) in iter {
-            initial_scope.insert(k, v);
+            bindings.insert(k, v);
         }
         Self { 
-            scopes: vec![initial_scope] 
+            bindings,
+            parent: None,
         }
     }
 
-    /// Enter a new scope (pushes an empty scope onto the stack)
-    pub fn enter_scope(&mut self) {
-        self.scopes.push(HashMap::new());
-    }
-
-    /// Exit the current scope (pops the innermost scope from the stack)
-    /// Returns an error if trying to exit the last scope
-    pub fn exit_scope(&mut self) -> Result<(), String> {
-        if self.scopes.len() <= 1 {
-            return Err("Cannot exit the last scope".to_string());
+    /// Create a new child context with this context as parent
+    /// The child context can see variables from this context but not vice versa
+    pub fn create_child(&self) -> Self {
+        Self {
+            bindings: HashMap::new(),
+            parent: Some(Box::new(self.clone())),
         }
-        self.scopes.pop();
-        Ok(())
     }
 
-    /// Get the current scope depth (number of nested scopes)
-    pub fn scope_depth(&self) -> usize {
-        self.scopes.len()
+    /// Create a new child context with the given bindings
+    pub fn create_child_with<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
+        let mut bindings = HashMap::new();
+        for (k, v) in iter {
+            bindings.insert(k, v);
+        }
+        Self {
+            bindings,
+            parent: Some(Box::new(self.clone())),
+        }
     }
 
-    /// Extend the current (innermost) scope with new references
+    /// Add a single reference to this context
+    pub fn add(&mut self, var: String, ty: BoundType) {
+        self.bindings.insert(var, ty);
+    }
+
+    /// Extend this context with new references
     pub fn extend<I: IntoIterator<Item=(String, BoundType)>>(&mut self, iter: I) { 
-        let current_scope = self.scopes.last_mut().expect("Context should always have at least one scope");
         for (k, v) in iter { 
-            current_scope.insert(k, v); 
+            self.bindings.insert(k, v); 
         } 
     }
 
-    /// Add a single reference to the current scope
-    pub fn add(&mut self, var: String, ty: BoundType) {
-        let current_scope = self.scopes.last_mut().expect("Context should always have at least one scope");
-        current_scope.insert(var, ty);
-    }
-
-    /// Look up a variable, searching from innermost to outermost scope
+    /// Look up a variable, searching in this context then parent contexts
     pub fn lookup(&self, v: &str) -> Option<&BoundType> { 
-        // Search from innermost scope (end of vector) to outermost (beginning)
-        for scope in self.scopes.iter().rev() {
-            if let Some(ty) = scope.get(v) {
-                return Some(ty);
-            }
+        // First search in this context's bindings
+        if let Some(ty) = self.bindings.get(v) {
+            return Some(ty);
         }
-        None
+        
+        // If not found, search in parent context
+        if let Some(parent) = &self.parent {
+            parent.lookup(v)
+        } else {
+            None
+        }
     }
 
-    /// Check if a variable is bound in the current (innermost) scope only
-    pub fn is_bound_in_current_scope(&self, v: &str) -> bool {
-        self.scopes
-            .last()
-            .map(|scope| scope.contains_key(v))
-            .unwrap_or(false)
+    /// Check if a variable is bound in this context only (not parent contexts)
+    pub fn is_bound_in_current_context(&self, v: &str) -> bool {
+        self.bindings.contains_key(v)
     }
 
-    /// Get all references from all scopes (innermost references shadow outer ones)
+    /// Get all references from this context and all parent contexts (inner contexts shadow outer ones)
+    /// 
+    /// **WARNING**: This is expensive for deep hierarchies as it traverses the entire parent chain
+    /// and creates a new HashMap. Prefer using `lookup()` for individual variable lookups.
+    /// This method is mainly useful for debugging or when you actually need all variables.
     pub fn all_references(&self) -> HashMap<String, &BoundType> {
         let mut result = HashMap::new();
-        // Start from outermost scope and work inward so inner references override outer ones
-        for scope in self.scopes.iter() {
-            for (var, ty) in scope {
-                result.insert(var.clone(), ty);
-            }
-        }
+        self.collect_all_references(&mut result);
         result
     }
-
-    /// Get references from the current scope only
-    pub fn current_scope_references(&self) -> &HashMap<String, BoundType> {
-        self.scopes.last().expect("Context should always have at least one scope")
+    
+    /// Efficiently collect all references by traversing the hierarchy once
+    fn collect_all_references<'a>(&'a self, result: &mut HashMap<String, &'a BoundType>) {
+        // First collect from parent (so child bindings can override)
+        if let Some(parent) = &self.parent {
+            parent.collect_all_references(result);
+        }
+        
+        // Then add/override with this context's bindings
+        for (var, ty) in &self.bindings {
+            result.insert(var.clone(), ty);
+        }
     }
 
-    /// Create a new context that extends this one with a new scope containing the given references
+    /// Get references from this context only (not parent contexts)
+    pub fn current_context_references(&self) -> &HashMap<String, BoundType> {
+        &self.bindings
+    }
+
+    /// Create a new child context with the given references
+    /// This replaces the old with_extended_scope method
     pub fn with_extended_scope<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
-        let mut new_context = self.clone();
-        new_context.enter_scope();
-        new_context.extend(iter);
-        new_context
+        self.create_child_with(iter)
     }
 }
+
+

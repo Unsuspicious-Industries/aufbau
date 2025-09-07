@@ -168,7 +168,7 @@ pub(crate) mod tests {
         assert_eq!(var_rule.conclusion, typing::Conclusion::ContextLookup("Γ".to_string(), "x".to_string()));
         assert_eq!(var_rule.premises.len(), 1);
         match &var_rule.premises[0] {
-            typing::Premise { setting: None, judgment: typing::TypingJudgment::Membership(var, ctx) } => {
+            typing::Premise { setting: None, judgment: Some(typing::TypingJudgment::Membership(var, ctx)) } => {
                 assert_eq!(var, "x");
                 assert_eq!(ctx, "Γ");
             }
@@ -179,7 +179,7 @@ pub(crate) mod tests {
         assert_eq!(lambda_rule.conclusion, typing::Conclusion::Type(typing::Type::parse("τ₁ → τ₂").unwrap()));
         assert_eq!(lambda_rule.premises.len(), 1);
         match &lambda_rule.premises[0] {
-            typing::Premise { setting, judgment: typing::TypingJudgment::Ascription((term, ty)) } => {
+            typing::Premise { setting, judgment: Some(typing::TypingJudgment::Ascription((term, ty))) } => {
                 let setting = setting.as_ref().unwrap();
                 assert_eq!(setting.name, "Γ");
                 assert_eq!(setting.extensions.len(), 1);
@@ -195,7 +195,7 @@ pub(crate) mod tests {
         assert_eq!(app_rule.conclusion, typing::Conclusion::Type(typing::Type::parse("τ₂").unwrap()));
         assert_eq!(app_rule.premises.len(), 2);
         match &app_rule.premises[0] {
-            typing::Premise { setting, judgment: typing::TypingJudgment::Ascription((term, ty)) } => {
+            typing::Premise { setting, judgment: Some(typing::TypingJudgment::Ascription((term, ty))) } => {
                 assert!(setting.is_none() || setting.as_ref().unwrap().extensions.is_empty());
                 assert_eq!(term, "f");
                 assert_eq!(format!("{}", ty), "τ₁ → τ₂");
@@ -203,7 +203,7 @@ pub(crate) mod tests {
             _ => panic!("Expected ascription judgment for app rule premise 0"),
         }
         match &app_rule.premises[1] {
-            typing::Premise { setting, judgment: typing::TypingJudgment::Ascription((term, ty)) } => {
+            typing::Premise { setting, judgment: Some(typing::TypingJudgment::Ascription((term, ty))) } => {
                 assert!(setting.is_none() || setting.as_ref().unwrap().extensions.is_empty());
                 assert_eq!(term, "e");
                 assert_eq!(format!("{}", ty), "τ₁");

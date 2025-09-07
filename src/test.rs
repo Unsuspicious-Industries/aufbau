@@ -74,7 +74,7 @@ int
 
     let mut parser = Parser::new(grammar.clone());
     
-    let mut tc = TypeChecker::with_input(Some(program.to_string()));
+    let mut tc = TypeChecker::new();
 
     println!("\n🔄 Attempting to parse program...");
 

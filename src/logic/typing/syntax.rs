@@ -72,6 +72,12 @@ impl Type {
         if s == cfg.universe_kw  { return Ok(Type::Universe); }
         if s == cfg.empty_kw { return Ok(Type::Empty); }
         
+        // Parse quoted raw/concrete types (e.g., 'int', 'string') - MOVED UP to avoid conflicts with operators
+        if s.starts_with('\'') && s.ends_with('\'') && s.len() > 2 {
+            let raw_type = &s[1..s.len()-1]; // Remove quotes
+            return Ok(Type::Raw(raw_type.to_string()));
+        }
+        
         // Parse tuple types as meta types: (<id>...)
         if s.starts_with('(') && s.ends_with("...)") && s.len() > 5 {
             let inner = s[1..s.len()-4].trim();
@@ -107,12 +113,6 @@ impl Type {
         if let Some(tok) = cfg.negation.iter().find(|t| s.starts_with(**t)) { return Ok(Type::Not(Box::new(Self::parse_with_config(&s[tok.len()..], cfg)?))); }
         if let Some((pos, tok_len)) = find_first_outside_parens(s, &cfg.intersection) { return Ok(Type::Intersection(Box::new(Self::parse_with_config(&s[..pos], cfg)?), Box::new(Self::parse_with_config(&s[pos+tok_len..], cfg)?))); }
         if let Some((pos, tok_len)) = find_first_outside_parens(s, &cfg.union) { return Ok(Type::Union(Box::new(Self::parse_with_config(&s[..pos], cfg)?), Box::new(Self::parse_with_config(&s[pos+tok_len..], cfg)?))); }
-        
-        // Parse quoted raw/concrete types (e.g., 'int', 'string')
-        if s.starts_with('\'') && s.ends_with('\'') && s.len() > 2 {
-            let raw_type = &s[1..s.len()-1]; // Remove quotes
-            return Ok(Type::Raw(raw_type.to_string()));
-        }
         
         if s.chars().all(|c| c.is_alphanumeric() || c == '_') { return Ok(Type::Atom(s.to_string())); }
         Err(format!("Invalid type expression: {}", s))
