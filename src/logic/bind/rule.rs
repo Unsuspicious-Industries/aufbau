@@ -1,9 +1,9 @@
 use crate::logic::ast::{ASTNode, NonTerminal};
 use crate::logic::typing::{Type, TypingRule, Premise, TypingJudgment, TypeSetting, Conclusion};
-use super::utils::{get_nt_binding, get_type_binding};
+use super::utils::{get_nt_binding, get_type_binding, collect_nt_bindings_same_level, collect_type_bindings_same_level};
 
 /// A bound typing rule where all rule variables have been resolved to actual AST nodes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub struct BoundTypingRule {
     pub name: String,
     pub premises: Vec<BoundPremise>,
@@ -11,35 +11,35 @@ pub struct BoundTypingRule {
 }
 
 /// A bound premise where rule variables are resolved to nodes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BoundPremise {
     pub setting: Option<BoundTypeSetting>,
     pub judgment: BoundTypingJudgment,
 }
 
 /// A bound type setting with resolved node references
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BoundTypeSetting {
     pub name: String,
     pub extensions: Vec<BoundTypeAscription>,
 }
 
 /// A bound type ascription linking a node to a type
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub struct BoundTypeAscription {
     pub node: NonTerminal,  // The actual AST node (instead of rule variable)
     pub ty: Type,          // Regular type, no need for special bound type
 }
 
 /// A bound typing judgment with resolved nodes
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub enum BoundTypingJudgment {
     Ascription(BoundTypeAscription),
     Membership(NonTerminal, String), // (resolved node, context)
 }
 
 /// A bound conclusion with resolved components
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub enum BoundConclusion {
     Type(Type),  // Regular type, no need for bound type
     ContextLookup(String, NonTerminal), // (context, resolved variable node)
@@ -65,7 +65,9 @@ impl BindingResolver for DefaultBindingResolver {
         let mut bound_premises = Vec::new();
         
         for premise in &rule.premises {
-            bound_premises.push(self.resolve_premise(premise, node)?);
+            // Expand a single schematic premise into N premises if the bound term/var repeats at same level
+            let many = self.resolve_premise_many(premise, node)?;
+            bound_premises.extend(many);
         }
         
         let bound_conclusion = self.resolve_conclusion(&rule.conclusion, node)?;
@@ -137,7 +139,7 @@ impl DefaultBindingResolver {
         let mut bound_extensions = Vec::new();
         
         for (term, ty) in &setting.extensions {
-            // Resolve the term variable to an actual node
+            // Resolve the term variable to an actual node (single binding in settings semantics)
             let var_node = get_nt_binding(node, term.clone())
                 .ok_or_else(|| format!("Could not resolve binding variable {} in type setting", term))?;
             
@@ -154,6 +156,46 @@ impl DefaultBindingResolver {
             name: setting.name.clone(),
             extensions: bound_extensions,
         })
+    }
+
+    /// Resolve a premise possibly into multiple bound premises if the bound variable repeats at the same AST level.
+    fn resolve_premise_many(&self, premise: &Premise, node: &NonTerminal) -> Result<Vec<BoundPremise>, String> {
+        // Pre-resolve the setting (same for all expanded premises)
+        let bound_setting = if let Some(setting) = &premise.setting {
+            Some(self.resolve_type_setting(setting, node)?)
+        } else { None };
+
+        match &premise.judgment {
+            TypingJudgment::Ascription((term, ty)) => {
+                // Try to expand by repetition at same level
+                let reps = collect_nt_bindings_same_level(node, term);
+                let resolved_type = get_type_binding(node, ty.clone()).unwrap_or_else(|| ty.clone());
+                if !reps.is_empty() {
+                    Ok(reps.into_iter().map(|var_node| BoundPremise {
+                        setting: bound_setting.clone(),
+                        judgment: BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type.clone() })
+                    }).collect())
+                } else {
+                    // Fallback to single binding
+                    let var_node = get_nt_binding(node, term.clone())
+                        .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
+                    Ok(vec![BoundPremise { setting: bound_setting, judgment: BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type }) }])
+                }
+            }
+            TypingJudgment::Membership(var, ctx) => {
+                let reps = collect_nt_bindings_same_level(node, var);
+                if !reps.is_empty() {
+                    Ok(reps.into_iter().map(|var_node| BoundPremise {
+                        setting: bound_setting.clone(),
+                        judgment: BoundTypingJudgment::Membership(var_node, ctx.clone())
+                    }).collect())
+                } else {
+                    let var_node = get_nt_binding(node, var.clone())
+                        .ok_or_else(|| format!("Could not resolve binding variable {} in membership", var))?;
+                    Ok(vec![BoundPremise { setting: bound_setting, judgment: BoundTypingJudgment::Membership(var_node, ctx.clone()) }])
+                }
+            }
+        }
     }
 }
 

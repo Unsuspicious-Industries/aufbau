@@ -5,7 +5,7 @@
 
 #[cfg(test)]
 pub mod enhanced_type_features_tests {
-    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker, typing::Type};
+    use crate::logic::{grammar::Grammar, parser::Parser, check::TypeChecker, typing::{Type, TypeSyntaxConfig, ArraySize}};
     use crate::debug_info;
 
     /// Test C-like pointer and array types in parsing and display
@@ -30,8 +30,8 @@ pub mod enhanced_type_features_tests {
                     // For basic C-like types, formatting should be consistent
                     match type_str {
                         "*Int" | "*char" => assert!(matches!(parsed_type, Type::Pointer(_))),
-                        "Int[10]" => assert!(matches!(parsed_type, Type::Array(_, Some(10)))),
-                        "char[]" => assert!(matches!(parsed_type, Type::Array(_, None))),
+                        "Int[10]" => assert!(matches!(parsed_type, Type::Array(_, ArraySize::Const(10)))),
+                        "char[]" => assert!(matches!(parsed_type, Type::Array(_, ArraySize::Dynamic))),
                         _ => {}
                     }
                 }
@@ -221,6 +221,30 @@ pub mod enhanced_type_features_tests {
             }
         } else {
             debug_info!("test", "Grammar loading failed, but enhanced types are still working");
+        }
+    }
+
+    /// Test that type parsing features work as expected
+    #[test]
+    fn test_type_parsing_features() {
+        let cfg = TypeSyntaxConfig::default();
+        let examples = vec![
+            "Int ∨ Bool",
+            "Int ∧ String",
+            "*Int",
+            "Int[10]",
+            "char[]",
+        ];
+        for ex in examples {
+            let parsed_type = Type::parse_with_config(ex, &cfg).unwrap();
+            match ex {
+                "Int ∨ Bool" => assert!(matches!(parsed_type, Type::Union(_, _))),
+                "Int ∧ String" => assert!(matches!(parsed_type, Type::Intersection(_, _))),
+                "*Int" => assert!(matches!(parsed_type, Type::Pointer(_))),
+                "Int[10]" => assert!(matches!(parsed_type, Type::Array(_, ArraySize::Const(10)))),
+                "char[]" => assert!(matches!(parsed_type, Type::Array(_, ArraySize::Dynamic))),
+                _ => unreachable!(),
+            }
         }
     }
 }

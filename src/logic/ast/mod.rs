@@ -4,7 +4,9 @@ use std::{fs, io};
 use std::path::Path;
 use std::collections::HashSet;
 
-use super::serialize::*;
+pub mod serialize;
+use serialize::*;
+pub mod utils;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceSpan {
@@ -13,7 +15,7 @@ pub struct SourceSpan {
 }
 
 /// Nonterminal-specific data from an ASTNode
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NonTerminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -66,7 +68,7 @@ impl NonTerminal {
 }
 
 /// Terminal-specific data from an ASTNode
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone,PartialEq)]
 pub struct Terminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -84,7 +86,7 @@ impl Terminal {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ASTNode {
     Terminal(Terminal),
     Nonterminal(NonTerminal)

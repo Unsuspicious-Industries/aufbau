@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 pub mod advanced_type_system_tests {
-    use crate::logic::typing::Type;
+    use crate::logic::typing::{Type, ArraySize};
 
     #[test] 
     fn test_type_parsing_advanced() {
@@ -22,10 +22,13 @@ pub mod advanced_type_system_tests {
         
         // Test Array type parsing
         let array_type = Type::parse("Int[10]").unwrap();
-        assert!(matches!(array_type, Type::Array(_, Some(10))));
+        assert!(matches!(array_type, Type::Array(_, ArraySize::Const(10))));
         
         let dynamic_array_type = Type::parse("Int[]").unwrap();
-        assert!(matches!(dynamic_array_type, Type::Array(_, None)));
+        assert!(matches!(dynamic_array_type, Type::Array(_, ArraySize::Dynamic)));
+
+        let symbolic_array_type = Type::parse("Int[N]").unwrap();
+        assert!(matches!(symbolic_array_type, Type::Array(_, ArraySize::Var(_))));
     }
     
     #[test]
@@ -116,10 +119,10 @@ pub mod advanced_type_system_tests {
         // Test complex nested types - first build it step by step
         let union_type = Type::parse("Int ∨ Bool").unwrap();
         let pointer_union = Type::Pointer(Box::new(union_type));
-        let array_of_pointer_union = Type::Array(Box::new(pointer_union), Some(10));
+        let array_of_pointer_union = Type::Array(Box::new(pointer_union), ArraySize::Const(10));
         
         // Verify the structure
-        assert!(matches!(array_of_pointer_union, Type::Array(_, Some(10))));
+        assert!(matches!(array_of_pointer_union, Type::Array(_, ArraySize::Const(10))));
         
         if let Type::Array(elem_type, _) = array_of_pointer_union {
             assert!(matches!(elem_type.as_ref(), Type::Pointer(_)));
@@ -145,5 +148,8 @@ pub mod advanced_type_system_tests {
         
         let dynamic_array_type = Type::parse("Int[]").unwrap();
         assert_eq!(format!("{}", dynamic_array_type), "Int[]");
+
+        let symbolic_array_type = Type::parse("Int[N]").unwrap();
+        assert_eq!(format!("{}", symbolic_array_type), "Int[N]");
     }
 }

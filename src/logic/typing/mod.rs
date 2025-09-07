@@ -7,16 +7,28 @@ pub mod rule;   // typing rules (inference rule structures & parsing)
 /// Type Representation
 ///---------------
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArraySize {
+    // Unknown/dynamic size (e.g., T[])
+    Dynamic,
+    // Concrete constant size
+    Const(u64),
+    // Symbolic size variable to be resolved via binding (e.g., T[N])
+    Var(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
     // Base types
     Atom(String),
     // Function types (τ₁ → τ₂)
     Arrow(Box<Type>, Box<Type>),
+    // N-ary function types: (τ1, …, τn) → τret
+    Fn { params: Vec<Type>, ret: Box<Type> },
     // Pointer types (*τ) - for C-like languages
     Pointer(Box<Type>),
-    // Array types (τ[n] or τ[]) - for C-like languages
-    Array(Box<Type>, Option<u64>),
+    // Array types (τ[n], τ[], or τ[N]) - for C-like languages
+    Array(Box<Type>, ArraySize),
     // Negation type (¬τ) - "anything that is not τ"
     Not(Box<Type>),
     // Intersection (τ₁ ∧ τ₂) - "both τ₁ and τ₂"
@@ -45,6 +57,7 @@ impl Type {
     /// Check if this type is a subtype of another type
     pub fn is_subtype_of(&self, other: &Type) -> bool {
         use Type::*;
+        use ArraySize::*;
         
         match (self, other) {
             // Reflexivity: τ <: τ
@@ -61,14 +74,31 @@ impl Type {
                 b1.is_subtype_of(a1) && a2.is_subtype_of(b2)
             }
             
+            // N-ary function types: (τ⃗) → ρ <: (σ⃗) → ρ'  iff  ρ <: ρ'  and  ∀i. σi <: τi
+            (Fn { params: a_ps, ret: a_r }, Fn { params: b_ps, ret: b_r }) => {
+                if a_ps.len() != b_ps.len() { return false; }
+                let ret_ok = a_r.is_subtype_of(b_r);
+                let params_ok = a_ps.iter().zip(b_ps.iter()).all(|(a, b)| b.is_subtype_of(a));
+                ret_ok && params_ok
+            }
+            
             // Pointer types: *τ <: *σ if τ <: σ (covariant)
             (Pointer(a), Pointer(b)) => {
                 a.is_subtype_of(b)
             }
             
-            // Array types: τ[n] <: σ[m] if τ <: σ and n = m (exact size match for safety)
+            // Array types: element-wise and size-wise
             (Array(a, n), Array(b, m)) => {
-                a.is_subtype_of(b) && n == m
+                let size_ok = match (n, m) {
+                    (Dynamic, Dynamic) => true,
+                    (Const(x), Const(y)) => x == y,
+                    (Var(x), Var(y)) => x == y,
+                    // supertype with variable size accepts any subtype size
+                    (_, Var(_)) => true,
+                    // everything else must match exactly
+                    _ => false,
+                };
+                a.is_subtype_of(b) && size_ok
             }
             
             // Union types: τ <: (σ₁ ∨ σ₂) if τ <: σ₁ or τ <: σ₂
@@ -114,6 +144,7 @@ impl Type {
     /// Check if two types overlap (have common values)
     pub fn overlaps_with(&self, other: &Type) -> bool {
         use Type::*;
+        use ArraySize::*;
         
         match (self, other) {
             // Same types always overlap
@@ -141,14 +172,27 @@ impl Type {
                 a1.overlaps_with(b1) && a2.overlaps_with(b2)
             }
             
+            // N-ary function types overlap pairwise
+            (Fn { params: a_ps, ret: a_r }, Fn { params: b_ps, ret: b_r }) => {
+                a_ps.len() == b_ps.len()
+                    && a_ps.iter().zip(b_ps.iter()).all(|(a, b)| a.overlaps_with(b))
+                    && a_r.overlaps_with(b_r)
+            }
+            
             // Pointer types overlap if their pointed-to types overlap
             (Pointer(a), Pointer(b)) => {
                 a.overlaps_with(b)
             }
             
-            // Array types overlap if their element types overlap and sizes match
+            // Array types overlap if their element types overlap and sizes match strictly
             (Array(a, n), Array(b, m)) => {
-                a.overlaps_with(b) && n == m
+                let size_ok = match (n, m) {
+                    (Dynamic, Dynamic) => true,
+                    (Const(x), Const(y)) => x == y,
+                    (Var(x), Var(y)) => x == y,
+                    _ => false,
+                };
+                a.overlaps_with(b) && size_ok
             }
             
             // Negation: τ overlaps ¬σ if τ doesn't overlap σ
@@ -203,6 +247,9 @@ impl Type {
 // Re-export frequently used items for external users of the module.
 pub use syntax::{TypeSyntaxConfig, validate_type_expr};
 pub use rule::{TypingRule, Premise, TypingJudgment, TypeSetting, Term, TypeAscription, Conclusion};
+
+// Export ArraySize for external modules
+pub use ArraySize as ArrayLen;
 
 #[cfg(test)]
 mod tests;

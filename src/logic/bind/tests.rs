@@ -1,8 +1,11 @@
 #[cfg(test)]
 mod tests {
+    use std::fmt::format;
+
     use crate::logic::ast::{ASTNode, NonTerminal, SourceSpan, Terminal};
     use crate::logic::typing::{Type, TypingJudgment, Premise};
     use crate::logic::bind::{extract_terminal_value, get_nt_binding, get_type_binding, get_var_binding, BindingResolver, BoundConclusion, BoundTypingJudgment, BoundTypingRule, DefaultBindingResolver};
+    use crate::{debug_info, set_debug_input, set_debug_level};
 
     /// Helper function to create a test NonTerminal node
     fn create_test_nonterminal(value: &str, binding: Option<String>) -> NonTerminal {
@@ -218,5 +221,40 @@ mod tests {
         };
         
         assert!(bound_rule.is_well_formed());
+    }
+
+    #[test]
+    fn complete_test() {
+        let expr = "(λy:a->a.y)((λx:a->a.x)z)";
+
+        // Enable debug output for this test
+        set_debug_level(crate::DebugLevel::Info);
+        set_debug_input(Some(expr.to_string()));
+
+        let mut parser = crate::logic::parser::Parser::new(
+            crate::logic::grammar::Grammar::load(
+                crate::logic::grammar::tests::STLC_SPEC)
+                    .unwrap()
+        );  
+
+        let term = parser.parse(expr).unwrap();
+        debug_info!("test", "AST: {}", term.pretty());
+
+        // assert is has one child and that child is a NonTerminal
+        assert_eq!(term.nonterminal_children().len(), 1);
+        let nt = &term.nonterminal_children()[0];
+
+        let r = if let Some(r) = nt.bound_typing_rule.as_ref() {
+            r
+        } else {
+            panic!("Expected NonTerminal to have a bound typing rule");
+        };
+        
+        let typing_rule_str = format!("{}",r.as_ref());
+        println!("{}",typing_rule_str);
+
+        assert_eq!(typing_rule_str,"Γ ⊢ (λy:a->a.y) : a → a, Γ ⊢ ((λx:a->a.x)z) : a ⇒ a")
+
+
     }
 }

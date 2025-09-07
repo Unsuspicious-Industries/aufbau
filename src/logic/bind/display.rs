@@ -8,11 +8,11 @@ use super::{
     BoundTypingJudgment,
     BoundTypingRule,
 };
-use super::utils::extract_terminal_value;
+use super::utils::{extract_terminal_value,extract_terminals};
 
 impl fmt::Display for BoundTypeAscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let term = extract_terminal_value(&self.node.as_node()).unwrap_or_else(|| self.node.value.clone());
+        let term = extract_terminals(&self.node.as_node()).join("");
         write!(f, "{} : {}", term, self.ty)
     }
 }
@@ -67,10 +67,10 @@ impl fmt::Display for BoundConclusion {
 impl fmt::Display for BoundTypingRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.premises.is_empty() {
-            write!(f, "[BOUND:{}] 0 premises ⇒ {}", self.name, self.conclusion)
+            write!(f, "{} ⇒ {}", self.name, self.conclusion)
         } else {
             let parts: Vec<String> = self.premises.iter().map(|p| p.to_string()).collect();
-            write!(f, "[BOUND:{}] {} premises ⇒ {} ⇒ {}", self.name, self.premises.len(), parts.join(", "), self.conclusion)
+            write!(f, "{} ⇒ {}", parts.join(", "), self.conclusion)
         }
     }
 }

@@ -24,9 +24,18 @@ Building upon the work detailed in the reports and test files, we have successfu
 - **Memory Safety**: Foundation for address-of and dereference type checking
 - **Display**: Proper formatting for complex pointer expressions
 
-### 4. **Array Types (τ[n], τ[]) - C Language Support**
-- **Parsing**: Support for both fixed-size (`Int[10]`) and dynamic (`char[]`) arrays
-- **Subtyping**: Size-aware array subtyping (τ[n] <: σ[m] if τ <: σ and n = m)
+### 4. **Array Types (τ[n], τ[], τ[N]) - C Language Support**
+- **Parsing**: Support for fixed (`Int[10]`), dynamic (`char[]`), and symbolic (`Int[N]`) arrays
+- **Representation**:
+  - `enum ArraySize { Dynamic, Const(u64), Var(String) }`
+  - `Type::Array(Box<Type>, ArraySize)`
+- **Subtyping**:
+  - Element covariance as before
+  - Size rules:
+    - `τ[n] <: σ[m]` if `τ <: σ` and `n == m`
+    - `τ[k] <: σ[N]` for any `k` if `N` is a size variable (schematic supertype)
+    - `τ[] <: σ[]` if `τ <: σ`
+    - No subtyping between `[]` and concrete sizes by default
 - **Safety**: Prevents unsafe array size conversions
 - **Display**: Clear formatting for array type expressions
 

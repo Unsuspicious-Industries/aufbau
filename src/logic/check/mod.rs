@@ -99,15 +99,6 @@ impl TypeChecker {
             let ty = self.apply_bound_rule(rule, node)?;
             Ok(Some(ty))
         } else {
-            // For nodes without typing rules, try context lookup if it's a variable
-            if node.value == "Variable" {
-                // Extract variable name and look up in context
-                if let Some(var_name) = extract_terminal_value(&node.as_node()) {
-                    if let Some(ty) = self.context.lookup(&var_name) {
-                        return Ok(Some(ty.clone()));
-                    }
-                }
-            }
             
             let nt_children = node.nonterminal_children();
             if nt_children.len() == 1 {

@@ -1,5 +1,5 @@
 use std::fmt;
-use super::Type;
+use super::{Type, ArraySize};
 
 #[derive(Debug, Clone)]
 pub struct TypeSyntaxConfig {
@@ -37,9 +37,20 @@ impl fmt::Display for Type {
         match self {
             Type::Atom(s) => write!(f, "{}", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
+            Type::Fn { params, ret } => {
+                write!(f, "(")?;
+                for (i, p) in params.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ") → {}", ret)
+            }
             Type::Pointer(t) => write!(f, "*{}", t),
-            Type::Array(t, Some(size)) => write!(f, "{}[{}]", t, size),
-            Type::Array(t, None) => write!(f, "{}[]", t),
+            Type::Array(t, size) => match size {
+                ArraySize::Dynamic => write!(f, "{}[]", t),
+                ArraySize::Const(n) => write!(f, "{}[{}]", t, n),
+                ArraySize::Var(v) => write!(f, "{}[{}]", t, v),
+            },
             Type::Not(t) => write!(f, "¬{}", t),
             Type::Intersection(l, r) => write!(f, "{} ∧ {}", l, r),
             Type::Union(l, r) => write!(f, "{} ∨ {}", l, r),
@@ -52,7 +63,7 @@ impl fmt::Display for Type {
 
 impl TypeSyntaxConfig {
     pub fn allowed_chars(&self) -> String {
-        let mut chars = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ₁₂₃₄₅₆₇₈₉₀ ()[]");
+        let mut chars = String::from("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ₁₂₃₄₅₆₇₈₉₀ ()[],");
         for token in self.arrow.iter().chain(self.union.iter()).chain(self.intersection.iter()).chain(self.negation.iter()).chain(self.pointer.iter()) {
             for c in token.chars() { if !chars.contains(c) { chars.push(c); } }
         }
@@ -73,16 +84,20 @@ impl Type {
         if s == cfg.empty_kw { return Ok(Type::Empty); }
         if s.starts_with('(') && s.ends_with(')') && is_outer_paren_pair(s) { return Self::parse_with_config(&s[1..s.len()-1], cfg); }
         
-        // Parse array types (e.g., "int[10]" or "int[]")
+        // Parse array types (e.g., "int[10]", "int[]", or "int[N]")
         if let Some(open_bracket) = s.rfind(cfg.array_open) {
             if s.ends_with(cfg.array_close) {
                 let base_type = s[..open_bracket].trim();
                 let size_str = s[open_bracket+1..s.len()-1].trim();
                 let base = Self::parse_with_config(base_type, cfg)?;
                 let size = if size_str.is_empty() {
-                    None
+                    ArraySize::Dynamic
+                } else if let Ok(n) = size_str.parse::<u64>() {
+                    ArraySize::Const(n)
+                } else if size_str.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    ArraySize::Var(size_str.to_string())
                 } else {
-                    Some(size_str.parse::<u64>().map_err(|_| format!("Invalid array size: {}", size_str))?)
+                    return Err(format!("Invalid array size: {}", size_str));
                 };
                 return Ok(Type::Array(Box::new(base), size));
             }
@@ -104,7 +119,7 @@ impl Type {
     }
 }
 
-const TYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀ ∧∨()!¬*[] where";
+const TYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀ ∧∨()!¬*[] where,";
 pub fn validate_type_expr(expr: &str) -> bool { !expr.is_empty() && expr.chars().all(|c| TYPE_CHARS.contains(c)) }
 
 fn is_outer_paren_pair(s: &str) -> bool {
