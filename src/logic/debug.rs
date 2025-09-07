@@ -230,6 +230,9 @@ impl DebugUtils {
         match ty {
             Type::Atom(name) => name.clone(),
             Type::Arrow(t1, t2) => format!("{} → {}", Self::type_summary(t1), Self::type_summary(t2)),
+            Type::Pointer(t) => format!("*{}", Self::type_summary(t)),
+            Type::Array(t, Some(size)) => format!("{}[{}]", Self::type_summary(t), size),
+            Type::Array(t, None) => format!("{}[]", Self::type_summary(t)),
             Type::Universe => "𝒰".to_string(),
             Type::Not(t) => format!("¬{}", Self::type_summary(t)),
             Type::Intersection(t1, t2) => format!("{} ∧ {}", Self::type_summary(t1), Self::type_summary(t2)),

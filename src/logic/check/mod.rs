@@ -181,21 +181,23 @@ impl TypeChecker {
         match &premise.judgment {
             BoundTypingJudgment::Ascription(ascr) => {
                 let var_nt = &ascr.node;
-                let ty = ascr.ty.clone();
+                let expected_ty = ascr.ty.clone();
 
                 if let Some(inferred_ty) = self.check(&var_nt.as_node())? {
-                    if inferred_ty == ty {
+                    // Use type compatibility checking instead of strict equality
+                    if inferred_ty.is_compatible_with(&expected_ty) {
                         Ok(())
                     } else {
                         let value = self.extract_text(&var_nt.as_node());
                         Err(self.format_error(&var_nt.as_node(),
-                            &format!("Type mismatch for {}: expected {}, found {}", value, ty, inferred_ty)))
+                            &format!("Type mismatch for {}: expected {}, found {} (incompatible types)", 
+                                    value, expected_ty, inferred_ty)))
                     }
                 } else {
                     // Strict mode: no fallback to context lookup; nodes in ascriptions must type-check to a concrete type
                     let value = self.extract_text(&var_nt.as_node());
                     Err(self.format_error(&var_nt.as_node(),
-                        &format!("No type inferred for {}, required {}", value, ty)))
+                        &format!("No type inferred for {}, required {}", value, expected_ty)))
                 }
             }
             BoundTypingJudgment::Membership(var_node, ctx) => {

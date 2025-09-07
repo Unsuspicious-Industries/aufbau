@@ -70,6 +70,14 @@ pub fn  get_type_binding(node: &NonTerminal, type_var: Type) -> Option<Type> {
             let b2 = get_type_binding(node, *t2)?;
             Some(Type::Arrow(Box::new(b1), Box::new(b2)))
         }
+        Type::Pointer(t) => {
+            let b = get_type_binding(node, *t)?;
+            Some(Type::Pointer(Box::new(b)))
+        }
+        Type::Array(t, size) => {
+            let b = get_type_binding(node, *t)?;
+            Some(Type::Array(Box::new(b), size))
+        }
         Type::Empty => Some(Type::Empty),
         Type::Not(t) => {
             let b = get_type_binding(node, *t)?;
