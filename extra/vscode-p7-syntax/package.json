@@ -1,0 +1,62 @@
+{
+  "name": "p7-syntax",
+  "displayName": "P7 Grammar & Type Rules Syntax",
+  "description": "Syntax highlighting for P7 EBNF-like grammar and typing rules",
+  "version": "0.1.0",
+  "publisher": "p7-project",
+  "icon": "short.png",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Unsuspicious-Industries/p7.git"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "grammar",
+    "ebnf",
+    "typing",
+    "type-theory",
+    "parser"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:p7-spec"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "p7-spec",
+        "aliases": [
+          "P7 Spec",
+          "p7-spec"
+        ],
+        "extensions": [
+          ".spec",
+          ".p7"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "p7-spec",
+        "scopeName": "source.p7-spec",
+        "path": "./syntaxes/p7-spec.tmLanguage.json"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^16.x",
+    "@types/vscode": "^1.60.0",
+    "typescript": "^4.9.4",
+    "vsce": "^2.15.0"
+  }
+}

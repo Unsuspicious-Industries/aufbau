@@ -119,6 +119,43 @@ impl TypingContext {
     pub fn with_extended_scope<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
         self.create_child_with(iter)
     }
+
+    /// Dump the full hierarchical context chain (ancestor first) suitable for TRACE level
+    pub fn dump(&self) -> String {
+        let mut chain: Vec<&TypingContext> = Vec::new();
+        self.collect_chain(&mut chain);
+        let mut out = String::new();
+        for (depth, ctx) in chain.iter().enumerate() {
+            use std::fmt::Write;
+            let _ = writeln!(out, "#{} {{", depth);
+            if ctx.bindings.is_empty() {
+                let _ = writeln!(out, "  <empty>");
+            } else {
+                for (k, v) in ctx.bindings.iter() {
+                    let _ = writeln!(out, "  {} : {:?}", k, v);
+                }
+            }
+            let _ = writeln!(out, "}}\n");
+        }
+        out
+    }
+
+    fn collect_chain<'a>(&'a self, out: &mut Vec<&'a TypingContext>) {
+        if let Some(parent) = &self.parent { parent.collect_chain(out); }
+        out.push(self);
+    }
 }
 
 
+impl BoundType {
+
+    pub fn resolve(&mut self, context: &TypingContext) -> () {
+        println!("Resolving type: {:?}", self);
+        if let BoundType::ContextCall(_ctx, var) = self {
+            if let Some(bound) = context.lookup(var).cloned() {
+                println!("Resolved context call {} to type {}", var, bound);
+                *self = bound;
+            }
+        }
+    }
+}

@@ -9,11 +9,12 @@ use crate::logic::typing::TypingRule;
 
 /// A recursive-descent parser that uses a grammar to build an AST.
 pub struct Parser {
-    grammar: Grammar,
+    pub grammar: Grammar,
     pub tokenizer: Tokenizer,
-    tokens: Vec<String>,
-    pos: usize,
-    recursion_tracker: RecursionTracker,
+    pub tokens: Vec<String>,
+    pub pos: usize,
+    pub recursion_tracker: RecursionTracker,
+    pub token_spans: Vec<(usize, usize)>,
 }
 
 impl Parser {
@@ -30,11 +31,13 @@ impl Parser {
             tokens: vec![],
             pos: 0,
             recursion_tracker: RecursionTracker::new(),
+            token_spans: vec![],
         }
     }
 
-    pub fn parse(&mut self, input: &str) -> Result<ASTNode, String> {
-        crate::debug_info!("parser", "Starting parse of input: '{}'", input);
+    /// Initialize the parser with input, performing tokenization and setting up internal state
+    pub fn init(&mut self, input: &str) -> Result<(), String> {
+        crate::debug_info!("parser", "Initializing parser with input: '{}'", input);
         
         // Add a simple tokenization fallback to detect issues
         crate::debug_info!("parser", "About to tokenize with {} special tokens", self.grammar.special_tokens.len());
@@ -42,34 +45,40 @@ impl Parser {
             crate::debug_info!("parser", "Special token: '{}'", token);
         }
         
-        // Use proper tokenizer with STLC special tokens
-        let token_ids = match self.tokenizer.tokenize(input.to_string()) {
-            Ok(ids) => ids,
+        // Use tokenizer with spans
+        let token_occ = match self.tokenizer.tokenize_with_spans(input) {
+            Ok(v) => v,
             Err(_) => return Err("Tokenization failed".to_string()),
         };
         
-        // Convert token IDs back to strings for the parser
+        // Convert token IDs back to strings for the parser and collect spans
         let mut tokens = Vec::new();
-        for id in token_ids {
+        let mut spans = Vec::new();
+        for (id, s, e) in token_occ {
             if let Some(token_str) = self.tokenizer.str(id) {
                 tokens.push(token_str);
+                spans.push((s, e));
             } else {
                 return Err(format!("Invalid token ID: {}", id));
             }
         }
         
         self.tokens = tokens;
+        self.token_spans = spans;
         self.pos = 0;
         self.recursion_tracker.reset();
         
         crate::debug_info!("parser", "Proper tokenization resulted in {} tokens: {:?}", self.tokens.len(), self.tokens);
+    
         
-        if self.tokens.is_empty() {
-            return Err("Empty input after tokenization".to_string());
-        }
-        
-        return self.parse_with_tokens();
+        Ok(())
     }
+
+    pub fn parse(&mut self, input: &str) -> Result<ASTNode, String> {
+        self.init(input)?;
+        self.parse_with_tokens()
+    }
+
 
     fn parse_with_tokens(&mut self) -> Result<ASTNode, String> {
         
@@ -99,7 +108,10 @@ impl Parser {
                         // Check if all tokens were consumed
                         if self.pos >= self.tokens.len() {
                             crate::debug_info!("parser", "All tokens consumed, building result AST");
-                            let span = SourceSpan { start: 0, end: self.pos };
+                            // Span from first to last token
+                            let span = if !self.token_spans.is_empty() { 
+                                SourceSpan { start: self.token_spans.first().unwrap().0, end: self.token_spans.last().unwrap().1 }
+                            } else { SourceSpan { start: 0, end: self.pos } };
                             
                             // debug output gated
                             crate::debug_debug!("parser", "Parsed production: {:?}", production);
@@ -176,7 +188,14 @@ impl Parser {
                 let initial_pos = self.pos;
                 match self.try_production(&production) {
                     Ok(children) => {
-                        let span = SourceSpan { start: initial_pos, end: self.pos };
+                        // Map token indices to character spans
+                        let span = if initial_pos < self.token_spans.len() {
+                            let start_char = self.token_spans[initial_pos].0;
+                            let end_char = if self.pos > 0 && self.pos - 1 < self.token_spans.len() { self.token_spans[self.pos - 1].1 } else { start_char };
+                            SourceSpan { start: start_char, end: end_char }
+                        } else {
+                            SourceSpan { start: initial_pos, end: self.pos }
+                        };
                         
                         debug_debug!("parser", "Matched production for {}: {:?}", nt, production);
 
@@ -223,161 +242,98 @@ impl Parser {
     }
 
     fn try_production(&mut self, production: &Production) -> Result<Vec<ASTNode>, String> {
-        // debug output gated to avoid flooding tests
         crate::debug_trace!("parser", "Trying production: {:?}", production);
+        self.parse_sequence(&production.rhs)
+    }
 
+    /// Parse a sequence of symbols (supports repetitions). Used for productions and group bodies.
+    fn parse_sequence(&mut self, symbols: &[Symbol]) -> Result<Vec<ASTNode>, String> {
         let mut children = Vec::new();
-        
-        for symbol in &production.rhs {
-            if let Some(ref repetition) = symbol.repetition {
-                // Handle repetition
-                match repetition {
+        for symbol in symbols {
+            if let Some(rep) = symbol.repetition() {
+                match rep {
                     RepetitionKind::ZeroOrMore => {
-                        // Parse zero or more occurrences
                         loop {
                             let before = self.pos;
                             match self.parse_symbol_no_repetition(symbol) {
                                 Ok(child) => {
-                                    // Prevent infinite loops on zero-length matches
-                                    if self.pos == before {
-                                        // Do not push zero-length child; break to avoid infinite loop
-                                        break;
-                                    }
+                                    if self.pos == before { break; }
                                     children.push(child);
                                 }
-                                Err(_) => {
-                                    // Backtrack and break
-                                    self.pos = before;
-                                    break;
-                                }
+                                Err(_) => { self.pos = before; break; }
                             }
                         }
                     }
                     RepetitionKind::OneOrMore => {
-                        // Parse one or more occurrences
-                        let mut found_at_least_one = false;
+                        let mut found = false;
                         loop {
                             let before = self.pos;
                             match self.parse_symbol_no_repetition(symbol) {
                                 Ok(child) => {
-                                    // Prevent infinite loops on zero-length matches
-                                    if self.pos == before {
-                                        // Stop if no progress is made
-                                        break;
-                                    }
+                                    if self.pos == before { break; }
                                     children.push(child);
-                                    found_at_least_one = true;
+                                    found = true;
                                 }
-                                Err(_) => {
-                                    // Backtrack and break
-                                    self.pos = before;
-                                    break;
-                                }
+                                Err(_) => { self.pos = before; break; }
                             }
                         }
-                        if !found_at_least_one {
-                            return Err(format!("Expected at least one occurrence of '{}'", symbol.value));
-                        }
+                        if !found { return Err(format!("Expected at least one occurrence of '{}'", symbol.value())); }
                     }
                     RepetitionKind::ZeroOrOne => {
-                        // Parse zero or one occurrence
                         let before = self.pos;
-                        match self.parse_symbol_no_repetition(symbol) {
-                            Ok(child) => {
-                                // Only push if there was progress
-                                if self.pos != before {
-                                    children.push(child);
-                                }
-                            }
-                            Err(_) => {
-                                // Backtrack - zero occurrences is okay
-                                self.pos = before;
-                            }
-                        }
+                        if let Ok(child) = self.parse_symbol_no_repetition(symbol) {
+                            if self.pos != before { children.push(child); }
+                        } else { self.pos = before; }
                     }
                 }
             } else {
-                // No repetition, parse normally
                 let before = self.pos;
-                match self.parse_symbol(symbol) {
-                    Ok(child) => {
-                        // If no progress was made, fail to avoid infinite loops on epsilon-like paths
-                        if self.pos == before {
-                            return Err(format!(
-                                "Parser made no progress while matching symbol '{}' in production {:?}",
-                                symbol.value, production
-                            ));
-                        }
-                        children.push(child)
-                    }
-                    Err(e) => return Err(e),
-                }
+                let child = self.parse_symbol_no_repetition(symbol)?;
+                if self.pos == before { return Err(format!("Parser made no progress on '{}'", symbol.value())); }
+                children.push(child);
             }
         }
-        
         Ok(children)
     }
 
     fn parse_symbol(&mut self, symbol: &Symbol) -> Result<ASTNode, String> {
-        // Delegate to the non-repetition version since repetition is handled in try_production
+        // Delegate to the non-repetition version since repetition is handled in parse_sequence / try_production
         self.parse_symbol_no_repetition(symbol)
     }
 
     fn parse_symbol_no_repetition(&mut self, symbol: &Symbol) -> Result<ASTNode, String> {
-        if self.pos >= self.tokens.len() {
-            return Err("Unexpected end of input".to_string());
+        // Groups first (single required occurrence of the grouped body; repetition handled externally)
+        if symbol.is_group() {
+            let start_pos = self.pos;
+            let inner_syms = symbol.group_symbols().unwrap();
+            let group_children = self.parse_sequence(inner_syms)?; // handles repetitions inside group
+            let span = if start_pos < self.token_spans.len() { let start_c = self.token_spans[start_pos].0; let end_c = if self.pos>0 && self.pos-1 < self.token_spans.len(){ self.token_spans[self.pos-1].1 } else { start_c }; SourceSpan{start:start_c,end:end_c} } else { SourceSpan{start:start_pos,end:self.pos} };
+            return Ok(ASTNode::Nonterminal(NonTerminal { value: "<group>".into(), span: Some(span), children: group_children, binding: None, bound_typing_rule: None }));
         }
-
+        if self.pos >= self.tokens.len() { return Err("Unexpected end of input".into()); }
         let token = &self.tokens[self.pos];
-        
-        // Check if this symbol is a nonterminal (exists in productions)
-        let is_nonterminal = self.grammar.productions.contains_key(&symbol.value);
-        
+        let val = symbol.value();
+        let is_nonterminal = self.grammar.productions.contains_key(val);
         if is_nonterminal {
-            // It's a nonterminal, parse recursively and propagate binding from RHS symbol
-            let mut node = self.parse_nonterminal(&symbol.value)?;
-            // Propagate binding from the symbol reference to the produced nonterminal node
-            if symbol.binding.is_some() {
-                if let ASTNode::Nonterminal(ref mut nt) = node {
-                    nt.binding = symbol.binding.clone();
-                }
-            }
-            Ok(node)
-        } else {
-            // It's a terminal, check if it matches
-            let matches = if symbol.value.starts_with('\'') && symbol.value.ends_with('\'') {
-                // Quoted terminal like 'λ' or '+'
-                let expected = symbol.value.trim_matches('\'');
-                expected == token
-            } else if symbol.value.starts_with('/') && symbol.value.ends_with('/') {
-                // Regex pattern like /[0-9]+/ - but first check if token is a special token
-                if self.grammar.special_tokens.contains(token) {
-                    // Token is a special token, so regex shouldn't match it
-                    false
-                } else {
-                    let pattern = symbol.value.trim_matches('/');
-                    match regex::Regex::new(pattern) {
-                        Ok(re) => re.is_match(token),
-                        Err(_) => false,
-                    }
-                }
-            } else {
-                // Direct match
-                &symbol.value == token
-            };
-            
-            if matches {
-                let node = ASTNode::Terminal(Terminal { span: Some(SourceSpan { start: self.pos, end: self.pos + 1 }), value: token.clone(), binding: symbol.binding.clone() });
-                self.pos += 1;
-                Ok(node)
-            } else {
-                Err(format!("Expected '{}', found '{}'", symbol.value, token))
-            }
+            let mut node = self.parse_nonterminal(&val.to_string())?;
+            if let Some(b) = symbol.binding() { if let ASTNode::Nonterminal(ref mut nt)=node { nt.binding = Some(b.clone()); } }
+            return Ok(node);
         }
+        // Terminal matching
+        let matches = if val.starts_with('\'') && val.ends_with('\'') {
+            val.trim_matches('\'') == token
+        } else if val.starts_with('/') && val.ends_with('/') {
+            if self.grammar.special_tokens.contains(token) { false } else { regex::Regex::new(val.trim_matches('/')).map(|re| re.is_match(token)).unwrap_or(false) }
+        } else { val == token };
+        if matches {
+            let (s,e)=self.token_spans[self.pos];
+            let node = ASTNode::Terminal(Terminal { span: Some(SourceSpan{start:s,end:e}), value: token.clone(), binding: symbol.binding().cloned() });
+            self.pos += 1; Ok(node)
+        } else { Err(format!("Expected '{}', found '{}'", val, token)) }
     }
 
     /// Resolve and create a bound rule for a node, if possible
-    fn resolve_and_attach_bound_rule(&self, node: &ASTNode, rule_name: &str, rule: &TypingRule) -> Result<Option<BoundTypingRule>, String> {
+    pub fn resolve_and_attach_bound_rule(&self, node: &ASTNode, rule_name: &str, rule: &TypingRule) -> Result<Option<BoundTypingRule>, String> {
         // Only for nonterminals
         let nt = if let Some(nt) = node.as_nonterminal() { nt } else { return Ok(None) };
 
@@ -393,4 +349,20 @@ impl Parser {
             Err(e) => Err(format!("Failed to resolve bound typing rule '{}': {}", rule_name, e))
         }
     }
+
+    /// Expose internal grammar immutably for sibling modules (partial parsing etc.).
+    pub fn grammar(&self) -> &Grammar { &self.grammar }
+    /// Expose internal grammar mutably if future partial parsing wants to augment analysis state.
+    pub fn grammar_mut(&mut self) -> &mut Grammar { &mut self.grammar }
+
+    /// Accessor for the parsed tokens (public for partial parser implementation)
+    pub fn tokens(&self) -> &[String] { &self.tokens }
+    /// Accessor for the token spans (public for partial parser implementation)
+    pub fn token_spans(&self) -> &[(usize, usize)] { &self.token_spans }
+    /// Current token position (for partial parsing utilities)
+    pub fn position(&self) -> usize { self.pos }
+    /// Set current token position (used by partial parsing to backtrack independently)
+    pub fn set_position(&mut self, new_pos: usize) { self.pos = new_pos; }
+    /// Advance by n tokens (safe wrapper)
+    pub fn advance_position(&mut self, n: usize) { self.pos += n; }
 }

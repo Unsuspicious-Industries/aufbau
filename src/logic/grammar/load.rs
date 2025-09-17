@@ -1,5 +1,5 @@
 use crate::logic::grammar::{ Grammar, Production, TypingRule};
-use super::utils::{parse_nonterminal, parse_production, parse_rhs, special_tokens,parse_inference_rule};
+use super::utils::{parse_nonterminal, parse_production, special_tokens,parse_inference_rule, parse_rhs_with_groups};
 
 impl Grammar {
     /// Parse the textual specification into a `Grammar`.
@@ -7,7 +7,6 @@ impl Grammar {
         let mut grammar = Grammar::new();
         // Track first-seen order of nonterminals to pick a deterministic start symbol
         let mut nt_order: Vec<String> = Vec::new();
-        
         // Split input into blocks separated by blank lines
         let blocks: Vec<&str> = input.split("\n\n").filter(|b| !b.trim().is_empty()).collect();
         
@@ -40,10 +39,11 @@ impl Grammar {
                         }
                         
                         // Parse this production
-                        let production_str = production_lines.join(" ");
-                        let (lhs_str, rhs_str) = parse_production(&production_str)?;
+                        let production_str = production_lines.join("\n");
+                        let (lhs_str, rhs_str) = parse_production(&production_str.replace('\n', " "))?;
                         let (name, rule_name) = parse_nonterminal(&lhs_str)?;
-                        let rhs_alternatives = parse_rhs(&rhs_str)?;
+                        // Use inline group aware parser
+                        let rhs_alternatives = parse_rhs_with_groups(&rhs_str)?;
                         
                         // Record first time we see this nonterminal (declaration order)
                         if !nt_order.contains(&name) {
@@ -51,7 +51,7 @@ impl Grammar {
                             grammar.production_order.push(name.clone());
                         }
                         
-                        // Extract special tokens
+                        // Extract special tokens (groups may introduce quoted tokens inside, still covered by rhs_str scan)
                         let new_specials = special_tokens(&rhs_str);
                         for sym in new_specials {
                             grammar.add_special_token(sym);
@@ -78,8 +78,8 @@ impl Grammar {
         
         // By convention, set the start symbol to the last declared production LHS
         if grammar.start_nonterminal().is_none() {
-            if let Some(last) = grammar.production_order.last().cloned() {
-                grammar.set_start(last);
+            if let Some(last) = grammar.production_order.last() {
+                grammar.set_start(last.clone());
             }
         }
         

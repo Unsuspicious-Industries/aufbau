@@ -44,6 +44,7 @@ impl fmt::Display for Type {
             Type::Not(t) => write!(f, "¬{}", t),
             Type::Intersection(l, r) => write!(f, "{} ∧ {}", l, r),
             Type::Union(l, r) => write!(f, "{} ∨ {}", l, r),
+            Type::ContextCall(ctx, var) => write!(f, "{}({})", ctx, var),
             Type::Universe => write!(f, "⊤"),
             Type::Empty => write!(f, "∅"),
         }
@@ -113,6 +114,22 @@ impl Type {
         if let Some(tok) = cfg.negation.iter().find(|t| s.starts_with(**t)) { return Ok(Type::Not(Box::new(Self::parse_with_config(&s[tok.len()..], cfg)?))); }
         if let Some((pos, tok_len)) = find_first_outside_parens(s, &cfg.intersection) { return Ok(Type::Intersection(Box::new(Self::parse_with_config(&s[..pos], cfg)?), Box::new(Self::parse_with_config(&s[pos+tok_len..], cfg)?))); }
         if let Some((pos, tok_len)) = find_first_outside_parens(s, &cfg.union) { return Ok(Type::Union(Box::new(Self::parse_with_config(&s[..pos], cfg)?), Box::new(Self::parse_with_config(&s[pos+tok_len..], cfg)?))); }
+        
+        // Parse context calls (e.g., "Γ(x)", "Delta(y)")
+        if let Some(paren_start) = s.find('(') {
+            if let Some(paren_end) = s.find(')') {
+                if paren_end > paren_start && paren_end == s.len() - 1 {
+                    let context = s[..paren_start].trim();
+                    let var = s[paren_start + 1..paren_end].trim();
+                    if !context.is_empty() && !var.is_empty() {
+                        // Validate context name contains only valid characters
+                        if context.chars().all(|c| c.is_alphanumeric() || c == '_' || "ΓΔΘΛΣΦΨΩΞΠΡΤΥΧδγτλσφψωξπρυχ₁₂₃₄₅₆₇₈₉₀".contains(c)) {
+                            return Ok(Type::ContextCall(context.to_string(), var.to_string()));
+                        }
+                    }
+                }
+            }
+        }
         
         if s.chars().all(|c| c.is_alphanumeric() || c == '_') { return Ok(Type::Atom(s.to_string())); }
         Err(format!("Invalid type expression: {}", s))

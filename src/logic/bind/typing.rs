@@ -20,6 +20,8 @@ pub enum BoundType {
     Intersection(Box<BoundType>, Box<BoundType>),
     // Union (τ₁ ∨ τ₂) - "either τ₁ or τ₂"  
     Union(Box<BoundType>, Box<BoundType>),
+    // Context call (Γ(x)) - lookup the type of variable x in context Γ
+    ContextCall(String, String), // (context_name, variable_name) 
     // The universe of all types (needed for negation to make sense)
     Universe,
     // Empty type (∅)
@@ -30,7 +32,7 @@ impl BoundType {
     /// Check if this type is compatible with another type
     /// This implements basic subtyping and type compatibility rules
     pub fn is_compatible_with(&self, other: &BoundType) -> bool {
-        self.is_subtype_of(other)
+        self.is_subtype_of(other) || other.is_subtype_of(self)
     }
     
     /// Check if this type is a subtype of another type
@@ -91,6 +93,11 @@ impl BoundType {
                 !t.overlaps_with(n)
             }
             
+            // Context calls: Γ(x) is subtype of itself only
+            (ContextCall(ctx1, var1), ContextCall(ctx2, var2)) => {
+                ctx1 == ctx2 && var1 == var2
+            }
+            
             // No other subtyping relations
             _ => false,
         }
@@ -144,6 +151,11 @@ impl BoundType {
             // Different atom types don't overlap
             (Atom(a), Atom(b)) => a == b,
             
+            // Context calls overlap only if they are identical
+            (ContextCall(ctx1, var1), ContextCall(ctx2, var2)) => {
+                ctx1 == ctx2 && var1 == var2
+            }
+            
             // By default, assume different constructors don't overlap
             _ => false,
         }
@@ -174,4 +186,5 @@ impl BoundType {
             BoundType::Intersection(Box::new(self), Box::new(other))
         }
     }
+
 }

@@ -72,7 +72,8 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
                     return None;
                 }
             }
-            debug_debug!("bind::utils", "get_type_binding: no node binding found for {}", var);
+            // No fallback for other unbound atoms
+            debug_warn!("bind::utils", "get_type_binding: unbound type variable '{}'", var);
             None
         }
         Type::Raw(concrete_type) => {
@@ -139,6 +140,19 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
             let b1 = bind_type(node, *t1)?;
             let b2 = bind_type(node, *t2)?;
             Some(BoundType::Union(Box::new(b1), Box::new(b2)))
+        }
+        Type::ContextCall(ctx, var) => {
+            // Context calls need to bind the variable parameter
+            debug_trace!("bind::utils", "get_type_binding: binding context call {}({})", ctx, var);
+            
+            // Try to resolve the variable name through the binding system
+            if let Some(bound_var) = get_var_binding(node, var.clone()).ok().flatten() {
+                debug_trace!("bind::utils", "get_type_binding: resolved context call variable {} to {}", var, bound_var);
+                Some(BoundType::ContextCall(ctx.clone(), bound_var))
+            } else {
+                debug_warn!("bind::utils", "get_type_binding: unbound context call variable '{}'", var);
+                None
+            }
         }
         Type::Universe => Some(BoundType::Universe),
     }

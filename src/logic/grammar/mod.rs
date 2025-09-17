@@ -5,10 +5,9 @@ pub mod save;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub struct Symbol {
-    pub value: String,
-    pub binding: Option<String>,
-    pub repetition: Option<RepetitionKind>,
+pub enum Symbol {
+    Simple { value: String, binding: Option<String>, repetition: Option<RepetitionKind> },
+    Group  { symbols: Vec<Symbol>, repetition: Option<RepetitionKind> },
 }
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
@@ -19,27 +18,23 @@ pub enum RepetitionKind {
 }
 
 impl Symbol {
-    pub fn new(value: String) -> Self {
-        Symbol { value, binding: None, repetition: None }
-    }
-    
-    pub fn with_binding(value: String, binding: String) -> Self {
-        Symbol { value, binding: Some(binding), repetition: None }
-    }
-    
-    pub fn with_repetition(value: String, repetition: RepetitionKind) -> Self {
-        Symbol { value, binding: None, repetition: Some(repetition) }
-    }
-    
-    pub fn with_binding_and_repetition(value: String, binding: String, repetition: RepetitionKind) -> Self {
-        Symbol { value, binding: Some(binding), repetition: Some(repetition) }
-    }
+    pub fn new(value: String) -> Self { Self::Simple { value, binding: None, repetition: None } }
+    pub fn with_binding(value: String, binding: String) -> Self { Self::Simple { value, binding: Some(binding), repetition: None } }
+    pub fn with_repetition(value: String, repetition: RepetitionKind) -> Self { Self::Simple { value, binding: None, repetition: Some(repetition) } }
+    pub fn with_binding_and_repetition(value: String, binding: String, repetition: RepetitionKind) -> Self { Self::Simple { value, binding: Some(binding), repetition: Some(repetition) } }
+    pub fn group(symbols: Vec<Symbol>, repetition: Option<RepetitionKind>) -> Self { Self::Group { symbols, repetition } }
+
+    pub fn value(&self) -> &str { match self { Symbol::Simple { value, .. } => value, Symbol::Group { .. } => "<group>" } }
+    pub fn binding(&self) -> Option<&String> { match self { Symbol::Simple { binding, .. } => binding.as_ref(), Symbol::Group { .. } => None } }
+    pub fn repetition(&self) -> Option<&RepetitionKind> { match self { Symbol::Simple { repetition, .. } => repetition.as_ref(), Symbol::Group { repetition, .. } => repetition.as_ref() } }
+    pub fn group_symbols(&self) -> Option<&[Symbol]> { match self { Symbol::Group { symbols, .. } => Some(symbols.as_slice()), _ => None } }
+    pub fn group_symbols_mut(&mut self) -> Option<&mut Vec<Symbol>> { match self { Symbol::Group { symbols, .. } => Some(symbols), _ => None } }
+    pub fn is_group(&self) -> bool { matches!(self, Symbol::Group { .. }) }
+    pub fn has_binding(&self) -> bool { self.binding().is_some() }
 }
 
 /// Convenience alias for non-terminal symbols.
 pub type Nonterminal = String;
-/// Convenience alias for terminal symbols.
-pub type Terminal = String;
 /// A single production rule `left ::= right₀ right₁ …`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Production {
@@ -107,7 +102,7 @@ pub(crate) mod tests {
     // Type names (supports Unicode type variables like τ₁, τ₂)
     TypeName ::= Identifier
 
-    // Base types
+    // Base types (parentheses are literals, hence quoted)
     BaseType ::= TypeName | '(' Type ')'
 
     // Function types (right-associative)
@@ -116,11 +111,11 @@ pub(crate) mod tests {
     // Typed parameter
     TypedParam ::= Variable[x] ':' Type[τ]
 
-    // Lambda abstraction
+    // Lambda abstraction (dot is a literal)
     Lambda(lambda) ::= 'λ' TypedParam '.' Term[e]
     
 
-    // Base terms (cannot be applications)
+    // Base terms (cannot be applications; parentheses are literal tokens)
     BaseTerm ::= Variable | Lambda | '(' Term ')'
 
     // Applications (left-associative via iteration)
@@ -155,8 +150,8 @@ pub(crate) mod tests {
         assert_eq!(lambda_prods[0].rule, Some("lambda".to_string()));
         
         let typed_param_prod = grammar.productions.get("TypedParam").unwrap();
-        let var_symbol = typed_param_prod[0].rhs.iter().find(|s| s.value == "Variable").unwrap();
-        assert_eq!(var_symbol.binding, Some("x".to_string()));
+        let var_symbol = typed_param_prod[0].rhs.iter().find(|s| s.value() == "Variable").unwrap();
+        assert_eq!(var_symbol.binding().cloned(), Some("x".to_string()));
 
         // Check typing rules
         assert_eq!(grammar.typing_rules.len(), 3);
@@ -165,7 +160,13 @@ pub(crate) mod tests {
         assert!(grammar.typing_rules.contains_key("app"));
         
         let var_rule = grammar.typing_rules.get("var").unwrap();
-        assert_eq!(var_rule.conclusion, typing::Conclusion::ContextLookup("Γ".to_string(), "x".to_string()));
+        match &var_rule.conclusion.kind {
+            typing::rule::ConclusionKind::ContextLookup(ctx, v) => {
+                assert_eq!(ctx, "Γ");
+                assert_eq!(v, "x");
+            }
+            _ => panic!("Expected context lookup conclusion for var rule"),
+        }
         assert_eq!(var_rule.premises.len(), 1);
         match &var_rule.premises[0] {
             typing::Premise { setting: None, judgment: Some(typing::TypingJudgment::Membership(var, ctx)) } => {
@@ -176,7 +177,10 @@ pub(crate) mod tests {
         }
         
         let lambda_rule = grammar.typing_rules.get("lambda").unwrap();
-        assert_eq!(lambda_rule.conclusion, typing::Conclusion::Type(typing::Type::parse("τ₁ → τ₂").unwrap()));
+        match &lambda_rule.conclusion.kind {
+            typing::rule::ConclusionKind::Type(ty) => assert_eq!(format!("{}", ty), "τ₁ → τ₂"),
+            _ => panic!("Expected type conclusion for lambda rule"),
+        }
         assert_eq!(lambda_rule.premises.len(), 1);
         match &lambda_rule.premises[0] {
             typing::Premise { setting, judgment: Some(typing::TypingJudgment::Ascription((term, ty))) } => {
@@ -192,7 +196,10 @@ pub(crate) mod tests {
         }
         
         let app_rule = grammar.typing_rules.get("app").unwrap();
-        assert_eq!(app_rule.conclusion, typing::Conclusion::Type(typing::Type::parse("τ₂").unwrap()));
+        match &app_rule.conclusion.kind {
+            typing::rule::ConclusionKind::Type(ty) => assert_eq!(format!("{}", ty), "τ₂"),
+            _ => panic!("Expected type conclusion for app rule"),
+        }
         assert_eq!(app_rule.premises.len(), 2);
         match &app_rule.premises[0] {
             typing::Premise { setting, judgment: Some(typing::TypingJudgment::Ascription((term, ty))) } => {
@@ -218,95 +225,76 @@ pub(crate) mod tests {
 
     #[test]
     fn roundtrip_write_and_parse() {
-        let grammar1 = Grammar::load(STLC_SPEC).expect("parse");
-        let spec = grammar1.to_spec_string();
-        // Removed debug print - use unified debug system if needed
-        let grammar2 = Grammar::load(&spec).expect("re-parse");
+        let g1 = Grammar::load(STLC_SPEC).expect("parse");
+        let spec = g1.to_spec_string();
+        let g2 = Grammar::load(&spec).expect("re-parse");
 
-        // Compare essential parts instead of direct equality (HashMap ordering can differ)
-        assert_eq!(grammar1.productions.len(), grammar2.productions.len());
-        assert_eq!(grammar1.typing_rules.len(), grammar2.typing_rules.len());
+        assert_eq!(g1.productions.len(), g2.productions.len());
+        assert_eq!(g1.typing_rules.len(), g2.typing_rules.len());
         
-        // Check that all production keys exist in both
-        for key in grammar1.productions.keys() {
-            assert!(grammar2.productions.contains_key(key), "Missing production key: {}", key);
-            assert_eq!(grammar1.productions[key], grammar2.productions[key], "Production mismatch for key: {}", key);
+        for key in g1.productions.keys() {
+            assert!(g2.productions.contains_key(key));
+            assert_eq!(g1.productions[key], g2.productions[key]);
         }
-        
-        // Check that all typing rule keys exist in both
-        for key in grammar1.typing_rules.keys() {
-            assert!(grammar2.typing_rules.contains_key(key), "Missing typing rule key: {}", key);
-            assert_eq!(grammar1.typing_rules[key], grammar2.typing_rules[key], "Typing rule mismatch for key: {}", key);
+        for key in g1.typing_rules.keys() {
+            assert!(g2.typing_rules.contains_key(key));
+            assert_eq!(g1.typing_rules[key], g2.typing_rules[key]);
         }
-        
-        // Special tokens should be the same (order doesn't matter)
-        let mut tokens1 = grammar1.special_tokens.clone();
-        let mut tokens2 = grammar2.special_tokens.clone();
-        tokens1.sort();
-        tokens2.sort();
-        assert_eq!(tokens1, tokens2);
-
-        // Start symbol preserved through roundtrip
-        assert_eq!(grammar1.start_nonterminal(), grammar2.start_nonterminal());
+        let mut t1 = g1.special_tokens.clone();
+        let mut t2 = g2.special_tokens.clone();
+        t1.sort();
+        t2.sort();
+        assert_eq!(t1, t2);
+        assert_eq!(g1.start_nonterminal(), g2.start_nonterminal());
     }
 
     #[test]
     fn test_parse_repetition_suffix() {
         use crate::logic::grammar::utils::parse_repetition_suffix;
         
-        // Test parsing repetition operators
-        let (base, rep) = parse_repetition_suffix("Stmt*");
-        assert_eq!(base, "Stmt");
-        assert_eq!(rep, Some(RepetitionKind::ZeroOrMore));
+        let (b,r)=parse_repetition_suffix("Stmt*");
+        assert_eq!(b,"Stmt");
+        assert_eq!(r,Some(RepetitionKind::ZeroOrMore));
 
-        let (base, rep) = parse_repetition_suffix("Term+");
-        assert_eq!(base, "Term");
-        assert_eq!(rep, Some(RepetitionKind::OneOrMore));
+        let (b,r)=parse_repetition_suffix("Term+");
+        assert_eq!(b,"Term");
+        assert_eq!(r,Some(RepetitionKind::OneOrMore));
 
-        let (base, rep) = parse_repetition_suffix("Expr?");
-        assert_eq!(base, "Expr");
-        assert_eq!(rep, Some(RepetitionKind::ZeroOrOne));
+        let (b,r)=parse_repetition_suffix("Expr?");
+        assert_eq!(b,"Expr");
+        assert_eq!(r,Some(RepetitionKind::ZeroOrOne));
 
-        let (base, rep) = parse_repetition_suffix("Variable");
-        assert_eq!(base, "Variable");
-        assert_eq!(rep, None);
+        let (b,r)=parse_repetition_suffix("Variable");
+        assert_eq!(b,"Variable");
+        assert_eq!(r,None);
     }
 
     #[test]
     fn test_parse_rhs_with_repetition() {
         use crate::logic::grammar::utils::parse_rhs;
         
-        // Test parsing RHS with repetition operators
-        let result = parse_rhs("Stmt*").expect("Failed to parse RHS");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].len(), 1);
-        assert_eq!(result[0][0].value, "Stmt");
-        assert_eq!(result[0][0].repetition, Some(RepetitionKind::ZeroOrMore));
+        let result = parse_rhs("Stmt*").unwrap();
+        assert_eq!(result[0][0].value(), "Stmt");
+        assert_eq!(result[0][0].repetition(), Some(&RepetitionKind::ZeroOrMore));
 
-        let result = parse_rhs("'{' Stmt* '}'").expect("Failed to parse RHS");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].len(), 3);
-        assert_eq!(result[0][0].value, "{");
-        assert_eq!(result[0][1].value, "Stmt");
-        assert_eq!(result[0][1].repetition, Some(RepetitionKind::ZeroOrMore));
-        assert_eq!(result[0][2].value, "}");
+        let result = parse_rhs("'{' Stmt* '}'").unwrap();
+        assert_eq!(result[0][0].value(), "{");
+        assert_eq!(result[0][1].value(), "Stmt");
+        assert_eq!(result[0][1].repetition(), Some(&RepetitionKind::ZeroOrMore));
+        assert_eq!(result[0][2].value(), "}");
     }
 
     #[test]
     fn test_parse_rhs_with_binding_and_repetition() {
         use crate::logic::grammar::utils::parse_rhs;
         
-        // Test parsing with both binding and repetition
-        let result = parse_rhs("'{' Stmt[s]* '}'").expect("Failed to parse RHS");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].len(), 3);
-        assert_eq!(result[0][1].value, "Stmt");
-        assert_eq!(result[0][1].binding, Some("s".to_string()));
-        assert_eq!(result[0][1].repetition, Some(RepetitionKind::ZeroOrMore));
+        let result = parse_rhs("'{' Stmt[s]* '}'").unwrap();
+        assert_eq!(result[0][1].value(), "Stmt");
+        assert_eq!(result[0][1].binding().cloned(), Some("s".into()));
+        assert_eq!(result[0][1].repetition(), Some(&RepetitionKind::ZeroOrMore));
     }
 
     const REPETITION_GRAMMAR: &str = r#"
-    // Grammar with repetition for testing
     Stmt ::= 'print' Expr ';'
     Expr ::= Number | Variable
     Number ::= /[0-9]+/
@@ -316,36 +304,24 @@ pub(crate) mod tests {
 
     #[test]
     fn test_grammar_with_repetition_loads() {
-        let grammar = Grammar::load(REPETITION_GRAMMAR);
-        assert!(grammar.is_ok(), "Grammar should load successfully: {:?}", grammar.err());
-        
-        let grammar = grammar.unwrap();
-        
-        // Check that Block production has correct repetition
-        let block_productions = grammar.productions.get("Block").unwrap();
-        assert_eq!(block_productions.len(), 1);
-        assert_eq!(block_productions[0].rhs.len(), 3);
-        assert_eq!(block_productions[0].rhs[1].value, "Stmt");
-        assert_eq!(block_productions[0].rhs[1].repetition, Some(RepetitionKind::ZeroOrMore));
+        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
+        let block = g.productions.get("Block").unwrap();
+        assert_eq!(block[0].rhs[1].value(), "Stmt");
+        assert_eq!(block[0].rhs[1].repetition(), Some(&RepetitionKind::ZeroOrMore));
     }
 
-    #[test] 
+    #[test]
     fn test_parse_empty_block() {
         use crate::logic::parser::Parser;
         
-        let grammar = Grammar::load(REPETITION_GRAMMAR).expect("Failed to load grammar");
-        let mut parser = Parser::new(grammar);
-        
-        // Test parsing empty block "{}"
-        let ast = parser.parse("{ }");
-        assert!(ast.is_ok(), "Should parse empty block: {:?}", ast.err());
-        
-        let ast = ast.unwrap();
-        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast {
+        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
+        let mut p = Parser::new(g);
+        let ast = p.parse("{ }").unwrap();
+        if let crate::logic::ast::ASTNode::Nonterminal(nt)=ast {
             assert_eq!(nt.value, "Block");
-            assert_eq!(nt.children.len(), 2); // Only '{' and '}', no statements
+            assert_eq!(nt.children.len(),2);
         } else {
-            panic!("Expected nonterminal node");
+            panic!("Expected nonterminal")
         }
     }
 
@@ -353,19 +329,14 @@ pub(crate) mod tests {
     fn test_parse_block_with_statements() {
         use crate::logic::parser::Parser;
         
-        let grammar = Grammar::load(REPETITION_GRAMMAR).expect("Failed to load grammar");
-        let mut parser = Parser::new(grammar);
-        
-        // Test parsing block with statements "{ print x ; print y ; }"
-        let ast = parser.parse("{ print x ; print y ; }");
-        assert!(ast.is_ok(), "Should parse block with statements: {:?}", ast.err());
-        
-        let ast = ast.unwrap();
-        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast {
+        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
+        let mut p = Parser::new(g);
+        let ast = p.parse("{ print x ; print y ; }").unwrap();
+        if let crate::logic::ast::ASTNode::Nonterminal(nt)=ast {
             assert_eq!(nt.value, "Block");
-            assert!(nt.children.len() > 2); // '{', statements, '}'
+            assert!(nt.children.len()>2);
         } else {
-            panic!("Expected nonterminal node");
+            panic!("Expected nonterminal")
         }
     }
 
@@ -373,18 +344,55 @@ pub(crate) mod tests {
     fn test_parse_all_repetition_operators() {
         use crate::logic::grammar::utils::parse_rhs;
         
-        // Test all three repetition operators
-        let result = parse_rhs("Term* Expr+ Stmt?").expect("Failed to parse RHS");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].len(), 3);
-        
-        assert_eq!(result[0][0].value, "Term");
-        assert_eq!(result[0][0].repetition, Some(RepetitionKind::ZeroOrMore));
-        
-        assert_eq!(result[0][1].value, "Expr");
-        assert_eq!(result[0][1].repetition, Some(RepetitionKind::OneOrMore));
-        
-        assert_eq!(result[0][2].value, "Stmt");
-        assert_eq!(result[0][2].repetition, Some(RepetitionKind::ZeroOrOne));
+        let r = parse_rhs("Term* Expr+ Stmt?").unwrap();
+        assert_eq!(r[0][0].repetition(), Some(&RepetitionKind::ZeroOrMore));
+        assert_eq!(r[0][1].repetition(), Some(&RepetitionKind::OneOrMore));
+        assert_eq!(r[0][2].repetition(), Some(&RepetitionKind::ZeroOrOne));
+    }
+
+    #[test]
+    fn test_grouped_repetition_parsing_inline() {
+        let spec = r#"
+        ArgList ::= (Arg (',' Arg)*)?
+        Arg ::= Identifier
+        Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
+        "#;
+        let g = Grammar::load(spec).unwrap();
+        assert!(g.productions.contains_key("ArgList"));
+        assert!(!g.productions.keys().any(|k| k.starts_with("__group")));
+        let rhs=&g.productions.get("ArgList").unwrap()[0].rhs;
+        assert_eq!(rhs.len(),1);
+        assert!(rhs[0].is_group());
+        assert_eq!(rhs[0].repetition(), Some(&RepetitionKind::ZeroOrOne));
+        let inner = rhs[0].group_symbols().unwrap();
+        assert_eq!(inner.len(),2);
+        assert_eq!(inner[0].value(), "Arg");
+        assert_eq!(inner[1].repetition(), Some(&RepetitionKind::ZeroOrMore));
+    }
+
+    #[test]
+    fn test_grouped_repetition_runtime_inline() {
+        use crate::logic::parser::Parser;
+        use crate::{set_debug_level,set_debug_input,debug_info};
+        use crate::logic::debug::DebugLevel;
+        let spec = r#"
+        Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
+        Arg ::= Identifier
+        ArgList ::= (Arg (',' Arg)*)?
+        "#;
+        let g = Grammar::load(spec).unwrap();
+        assert_eq!(g.start_nonterminal().cloned(), Some("ArgList".into()));
+        set_debug_level(DebugLevel::None);
+        let run = |gr:&Grammar, input:&str| {
+            set_debug_input(Some(input.into()));
+            let mut p = Parser::new(gr.clone());
+            match p.parse(input){
+                Ok(ast)=> if let Some(nt)=ast.as_nonterminal(){ debug_info!("test","Parsed '{}': {}", input, nt.value)},
+                Err(e)=> panic!("Failed to parse '{}': {}", input, e)
+            };
+        };
+        run(&g,"x");
+        run(&g,"x, y");
+        run(&g,"x, y, z");
     }
 }

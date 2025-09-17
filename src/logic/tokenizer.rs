@@ -98,6 +98,64 @@ impl Tokenizer {
 
         Ok(result)
     }
+
+    /// Tokenize the input string and return token ids with character spans (start,end)
+    pub fn tokenize_with_spans(&mut self, input: &str) -> Result<Vec<(TokenId, usize, usize)>, Error> {
+        let mut out: Vec<(TokenId, usize, usize)> = Vec::new();
+        let mut i = 0;
+        let chars: Vec<char> = input.chars().collect();
+        let input_len = chars.len();
+
+        while i < input_len {
+            // Try to match a special token at the current position
+            let mut matched: Option<(String, usize)> = None; // (token, len)
+            for special in &self.special_tokens {
+                let special_chars: Vec<char> = special.chars().collect();
+                if i + special_chars.len() <= input_len &&
+                    &chars[i..i + special_chars.len()] == special_chars.as_slice()
+                {
+                    matched = Some((special.clone(), special_chars.len()));
+                    break;
+                }
+            }
+            if let Some((tok, len)) = matched {
+                let start = i;
+                let end = i + len;
+                let id = self.token(tok);
+                out.push((id, start, end));
+                i = end;
+                continue;
+            }
+
+            // If not a special token, check for delimiter (whitespace)
+            if self.delimiters.contains(&chars[i]) {
+                i += 1;
+                continue;
+            }
+
+            // Otherwise, accumulate a normal token
+            let start = i;
+            let mut current = String::new();
+            while i < input_len
+                && !self.delimiters.contains(&chars[i])
+                && !self.special_tokens.iter().any(|s| {
+                    let s_chars: Vec<char> = s.chars().collect();
+                    i + s_chars.len() <= input_len &&
+                        &chars[i..i + s_chars.len()] == s_chars.as_slice()
+                })
+            {
+                current.push(chars[i]);
+                i += 1;
+            }
+            if !current.is_empty() {
+                let end = i;
+                let id = self.token(current);
+                out.push((id, start, end));
+            }
+        }
+
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -119,5 +177,19 @@ pub(crate) mod tests {
 
         // Removed debug print - use unified debug system if needed
         assert_eq!(token_strs, vec!["x", "=", "r", "+", "4", "print", "x"]);
+    }
+
+    #[test]
+    fn test_tokenize_with_spans_positions() {
+        let input = "int x = 5;";
+        let special_tokens = vec!["int".to_string(), "=".to_string(), ";".to_string()];
+        let delimiters = vec![' ', '\t', '\n'];
+        let mut tokenizer = Tokenizer::new(special_tokens.clone(), delimiters);
+        let occ = tokenizer.tokenize_with_spans(input).unwrap();
+        let strs: Vec<_> = occ.iter().map(|(id, _, _)| tokenizer.str(*id).unwrap()).collect();
+        assert_eq!(strs, vec!["int", "x", "=", "5", ";"]);
+        // Check spans map to substrings
+        let pieces: Vec<_> = occ.iter().map(|(_, s, e)| &input[*s..*e]).collect();
+        assert_eq!(pieces, vec!["int", "x", "=", "5", ";"]);
     }
 }

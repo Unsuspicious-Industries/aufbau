@@ -46,163 +46,139 @@ pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) 
 
 /// Split a RHS string by | but respect quoted strings
 fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
-    // First check if this contains any quoted segments at all
-    let has_quotes = rhs.contains('\'') || rhs.contains('"');
-    
-    // If no quotes, use simple split - this handles regex patterns correctly
-    if !has_quotes {
-        return Ok(rhs.split('|').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
-    }
-    
     let mut alternatives = Vec::new();
     let mut current = String::new();
     let mut in_single_quotes = false;
     let mut in_double_quotes = false;
+    let mut depth: i32 = 0; // parenthesis depth
     let mut chars = rhs.chars().peekable();
-    
     while let Some(ch) = chars.next() {
-        // Check if we're starting a regex pattern (starts with /)
-        if ch == '/' && !in_single_quotes && !in_double_quotes {
-            // Consume the entire regex pattern
+        if ch == '/' && !in_single_quotes && !in_double_quotes { // regex literal
             current.push(ch);
             while let Some(regex_ch) = chars.next() {
                 current.push(regex_ch);
-                if regex_ch == '/' {
-                    break; // End of regex
-                }
+                if regex_ch == '/' { break; }
             }
             continue;
         }
-        
         match ch {
-            '\'' if !in_double_quotes => {
-                in_single_quotes = !in_single_quotes;
-                current.push(ch);
-            }
-            '"' if !in_single_quotes => {
-                in_double_quotes = !in_double_quotes;
-                current.push(ch);
-            }
-            '|' if !in_single_quotes && !in_double_quotes => {
-                // This is an alternative separator, not part of a quoted string
-                alternatives.push(current.trim().to_string());
-                current.clear();
-            }
-            _ => {
-                current.push(ch);
-            }
+            '\'' if !in_double_quotes => { in_single_quotes = !in_single_quotes; current.push(ch); }
+            '"' if !in_single_quotes => { in_double_quotes = !in_double_quotes; current.push(ch); }
+            '(' if !in_single_quotes && !in_double_quotes => { depth += 1; current.push(ch); }
+            ')' if !in_single_quotes && !in_double_quotes => { depth -= 1; current.push(ch); }
+            '|' if !in_single_quotes && !in_double_quotes && depth == 0 => { alternatives.push(current.trim().to_string()); current.clear(); }
+            _ => current.push(ch),
         }
     }
-    
-    // Add the last alternative
-    alternatives.push(current.trim().to_string());
-    
-    // Check for unclosed quotes (but don't count quotes inside regex patterns)
-    if in_single_quotes || in_double_quotes {
-        return Err(format!("Unclosed quotes in grammar rule: {}", rhs));
-    }
-    
-    // Filter out empty alternatives
-    Ok(alternatives.into_iter().filter(|s| !s.is_empty()).collect())
+    if in_single_quotes || in_double_quotes { return Err(format!("Unclosed quotes in grammar rule: {}", rhs)); }
+    if !current.trim().is_empty() { alternatives.push(current.trim().to_string()); }
+    Ok(alternatives)
 }
 
 /// Parse RHS with bindings like "'λ' Variable[x] ':' Type[τ₁] '.' Term[e]"
 pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     let mut alternatives = Vec::new();
-    
-    // Split by | for alternatives, but handle quoted strings properly
     let alt_strings = split_alternatives(rhs)?;
     for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
         let mut symbols_in_alt = Vec::new();
         for token in alt.split_whitespace() {
-            // Parse repetition suffix first
             let (base_token, repetition) = parse_repetition_suffix(token);
-            
-            // Check if it's a regex pattern first (before checking for bindings)
             if is_regex(&base_token) {
-                // It's a regex pattern like /[a-zA-Z]+/ - treat as regular symbol
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
-                }
+                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(base_token, rep)); } else { symbols_in_alt.push(Symbol::new(base_token)); }
             } else if let Some(open_bracket) = base_token.find('[') {
-                if let Some(close_bracket) = base_token.rfind(']') {
-                    if close_bracket > open_bracket {
-                        // Symbol with binding like "Variable[x]"
-                        let value = base_token[..open_bracket].to_string();
-                        let binding = base_token[open_bracket + 1..close_bracket].to_string();
-                        
-                        // Strip quotes from the value if it's a quoted terminal
-                        let clean_value = if (value.starts_with('\'') && value.ends_with('\'')) || 
-                                           (value.starts_with('"') && value.ends_with('"')) {
-                            value.trim_matches('\'').trim_matches('"').to_string()
-                        } else {
-                            value
-                        };
-                        
-                        if let Some(rep) = repetition {
-                            symbols_in_alt.push(Symbol::with_binding_and_repetition(clean_value, binding, rep));
-                        } else {
-                            symbols_in_alt.push(Symbol::with_binding(clean_value, binding));
-                        }
-                        continue;
-                    }
-                }
-                // If we get here, it has brackets but not a valid binding - treat as regular symbol
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || 
-                                   (base_token.starts_with('"') && base_token.ends_with('"')) {
-                    base_token.trim_matches('\'').trim_matches('"').to_string()
-                } else {
-                    base_token
-                };
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(clean_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(clean_token));
-                }
+                if let Some(close_bracket) = base_token.rfind(']') { if close_bracket > open_bracket {
+                    let value = base_token[..open_bracket].to_string();
+                    let binding = base_token[open_bracket + 1..close_bracket].to_string();
+                    let clean_value = if (value.starts_with('\'') && value.ends_with('\'')) || (value.starts_with('"') && value.ends_with('"')) { value.trim_matches('\'').trim_matches('"').to_string() } else { value };
+                    if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_binding_and_repetition(clean_value, binding, rep)); } else { symbols_in_alt.push(Symbol::with_binding(clean_value, binding)); }
+                    continue; } }
+                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
+                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
             } else {
-                // Regular symbol without binding - strip quotes if it's a terminal
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || 
-                                   (base_token.starts_with('"') && base_token.ends_with('"')) {
-                    base_token.trim_matches('\'').trim_matches('"').to_string()
-                } else {
-                    base_token
-                };
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(clean_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(clean_token));
-                }
+                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
+                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
             }
         }
         alternatives.push(symbols_in_alt);
     }
-    
+    Ok(alternatives)
+}
+
+/// Inline-group aware parser. Ignores parentheses that are inside quoted literals.
+pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
+    let mut alternatives: Vec<Vec<Symbol>> = Vec::new();
+    let alt_strings = split_alternatives(rhs)?;
+    for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
+        let mut symbols_in_alt: Vec<Symbol> = Vec::new();
+        let mut chars = alt.chars().peekable();
+        let mut in_single = false;
+        let mut in_double = false;
+        while let Some(ch) = chars.peek().cloned() {
+            if ch.is_whitespace() { chars.next(); continue; }
+            match ch {
+                '\'' => { in_single = !in_single; }
+                '"' => { in_double = !in_double; }
+                _ => {}
+            }
+            if ch == '(' && !in_single && !in_double { // real group
+                chars.next(); // consume '('
+                let mut depth = 1usize;
+                let mut group_content = String::new();
+                while let Some(c2) = chars.next() {
+                    if c2 == '(' { depth += 1; }
+                    else if c2 == ')' { depth -= 1; if depth == 0 { break; } }
+                    if depth > 0 { group_content.push(c2); }
+                }
+                if depth != 0 { return Err(format!("Unclosed group in RHS: {}", alt)); }
+                // Optional repetition suffix
+                let repetition = match chars.peek().cloned() {
+                    Some('*') => { chars.next(); Some(RepetitionKind::ZeroOrMore) },
+                    Some('+') => { chars.next(); Some(RepetitionKind::OneOrMore) },
+                    Some('?') => { chars.next(); Some(RepetitionKind::ZeroOrOne) },
+                    _ => None,
+                };
+                let inner = parse_rhs_with_groups(group_content.trim())?;
+                let inner_seq = if inner.is_empty() { Vec::new() } else { inner.into_iter().next().unwrap() };
+                symbols_in_alt.push(Symbol::group(inner_seq, repetition));
+                continue;
+            }
+            // token path
+            let mut token = String::new();
+            while let Some(c2) = chars.peek().cloned() {
+                if c2.is_whitespace() || (!in_single && !in_double && (c2 == '(' || c2 == ')')) { break; }
+                token.push(c2); chars.next();
+                if token.starts_with('\'') { // single quoted literal
+                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '\'' { break; } }
+                } else if token.starts_with('"') { // double quoted literal
+                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '"' { break; } }
+                } else if token == "/" { // regex
+                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '/' { break; } }
+                } else if !token.starts_with('\'') && !token.starts_with('"') && token.contains('[') && !token.contains(']') {
+                    while let Some(c3) = chars.next() { token.push(c3); if c3 == ']' { break; } }
+                }
+                if chars.peek().map(|c| c.is_whitespace() || *c == '(' || *c == ')').unwrap_or(true) { break; }
+            }
+            if token.is_empty() { chars.next(); continue; }
+            let parsed = parse_rhs(&token)?; if parsed.len() != 1 || parsed[0].len() != 1 { return Err(format!("Unexpected token decomposition for '{}': parsed={:?}", token, parsed)); }
+            symbols_in_alt.push(parsed[0][0].clone());
+        }
+        alternatives.push(symbols_in_alt);
+    }
     Ok(alternatives)
 }
 
 /// Find special tokens in a right-hand side string.
 pub fn special_tokens(rhs: &str) -> Vec<String> {
     let mut found = Vec::new();
-    
-    // Use the same alternative splitting logic to avoid issues with quoted |
-    if let Ok(alt_strings) = split_alternatives(rhs) {
-        for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
-            for sym in alt.split_whitespace() {
-                // Any token surrounded by single quotes is a special token
-                if (sym.starts_with('\'') && sym.ends_with('\'')) || 
-                    (sym.starts_with('"') && sym.ends_with('"')) {
-                    let sym_stripped = sym.trim_matches('\'').trim_matches('"');
-                    if !found.contains(&sym_stripped.to_string()) {
-                        found.push(sym_stripped.to_string());
-                    }
-                }
-                // Skip regex patterns - they're not special tokens
-                else if is_regex(sym) {
-                    continue;
-                }
-            }
+    // Regex to capture quoted substrings irrespective of adjacency to parentheses
+    let re = Regex::new(r#"'([^']*)'|"([^"]*)""#).unwrap();
+    for cap in re.captures_iter(rhs) {
+        if let Some(m) = cap.get(1) { // single quoted
+            let v = m.as_str().to_string();
+            if !found.contains(&v) { found.push(v); }
+        } else if let Some(m) = cap.get(2) { // double quoted
+            let v = m.as_str().to_string();
+            if !found.contains(&v) { found.push(v); }
         }
     }
     found

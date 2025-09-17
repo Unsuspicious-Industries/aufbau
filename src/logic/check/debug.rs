@@ -3,6 +3,7 @@ use crate::logic::debug::DebugUtils;
 
 /// Debugging utilities for the type checker
 /// Now uses the global debug configuration instead of maintaining its own input
+#[derive(Debug, Clone)]
 pub struct TypeCheckerDebug;
 
 impl TypeCheckerDebug {

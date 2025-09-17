@@ -15,6 +15,8 @@ pub use rule::{
     BoundTypeAscription,
     BoundTypingJudgment, 
     BoundConclusion,
+    BoundConclusionKind,
+    BoundConclusionContext,
     BindingResolver, 
     DefaultBindingResolver,
     BindableNonTerminal, 

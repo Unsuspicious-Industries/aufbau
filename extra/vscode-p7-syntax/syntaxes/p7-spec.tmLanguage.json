@@ -1,0 +1,621 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "P7 Spec",
+  "scopeName": "source.p7-spec",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#typing-rule"
+    },
+    {
+      "include": "#grammar-production"
+    },
+    {
+      "include": "#literals"
+    },
+    {
+      "include": "#type-expressions"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.p7-spec",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "typing-rule": {
+      "patterns": [
+        {
+          "name": "meta.typing-rule.p7-spec",
+          "begin": "^(?=.*\\n\\s*-+\\s*\\([^)]+\\))",
+          "end": "(?=^\\s*$|^\\S|^//)",
+          "patterns": [
+            {
+              "include": "#typing-rule-premise"
+            },
+            {
+              "include": "#typing-rule-line"
+            },
+            {
+              "include": "#typing-rule-conclusion"
+            }
+          ]
+        },
+        {
+          "name": "meta.typing-rule-simple.p7-spec",
+          "match": "^\\s*(.+?)\\s*\\n\\s*(-+)\\s*\\(([^)]+)\\)\\s*\\n\\s*(.+?)\\s*$",
+          "captures": {
+            "1": {
+              "name": "meta.premise.p7-spec",
+              "patterns": [
+                {
+                  "include": "#context-expression"
+                },
+                {
+                  "include": "#turnstile"
+                },
+                {
+                  "include": "#membership"
+                },
+                {
+                  "include": "#type-expressions"
+                },
+                {
+                  "include": "#ascription"
+                }
+              ]
+            },
+            "2": {
+              "name": "punctuation.separator.rule-line.p7-spec"
+            },
+            "3": {
+              "name": "entity.name.function.rule-name.p7-spec"
+            },
+            "4": {
+              "name": "meta.conclusion.p7-spec",
+              "patterns": [
+                {
+                  "include": "#context-expression"
+                },
+                {
+                  "include": "#context-lookup"
+                },
+                {
+                  "include": "#type-expressions"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "typing-rule-premise": {
+      "patterns": [
+        {
+          "name": "meta.premise.p7-spec",
+          "match": "([^,-\\n]+?)(?=\\s*,|\\s*$|\\s*\\n\\s*-)",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#context-expression"
+                },
+                {
+                  "include": "#turnstile"
+                },
+                {
+                  "include": "#membership"
+                },
+                {
+                  "include": "#type-expressions"
+                },
+                {
+                  "include": "#ascription"
+                },
+                {
+                  "include": "#identifiers"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "punctuation.separator.premise.p7-spec",
+          "match": ","
+        }
+      ]
+    },
+    "typing-rule-line": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.rule-line.p7-spec",
+          "match": "^\\s*-+\\s*\\(([^)]+)\\)\\s*$",
+          "captures": {
+            "1": {
+              "name": "entity.name.function.rule-name.p7-spec"
+            }
+          }
+        }
+      ]
+    },
+    "typing-rule-conclusion": {
+      "patterns": [
+        {
+          "name": "meta.conclusion.p7-spec",
+          "match": "^\\s*([^\\n-]+?)\\s*$",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#context-expression"
+                },
+                {
+                  "include": "#context-lookup"
+                },
+                {
+                  "include": "#type-expressions"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "grammar-production": {
+      "patterns": [
+        {
+          "name": "meta.grammar-production.p7-spec",
+          "match": "^\\s*([\\p{L}][\\p{L}\\p{N}_]*)(\\(([^)]+)\\))?\\s*(::=)\\s*(.*)$",
+          "captures": {
+            "1": {
+              "name": "entity.name.type.nonterminal.p7-spec"
+            },
+            "2": {
+              "name": "meta.rule-annotation.p7-spec"
+            },
+            "3": {
+              "name": "entity.name.function.rule-name.p7-spec"
+            },
+            "4": {
+              "name": "keyword.operator.production.p7-spec"
+            },
+            "5": {
+              "patterns": [
+                {
+                  "include": "#production-rhs"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "production-rhs": {
+      "patterns": [
+        {
+          "include": "#binding"
+        },
+        {
+          "include": "#repetition"
+        },
+        {
+          "include": "#alternatives"
+        },
+        {
+          "include": "#literals"
+        },
+        {
+          "include": "#nonterminals"
+        },
+        {
+          "include": "#regex"
+        }
+      ]
+    },
+    "binding": {
+      "patterns": [
+        {
+          "name": "meta.binding.p7-spec",
+          "match": "\\[([^\\]]+)\\]",
+          "captures": {
+            "1": {
+              "name": "variable.other.binding.p7-spec"
+            }
+          }
+        }
+      ]
+    },
+    "repetition": {
+      "patterns": [
+        {
+          "name": "keyword.operator.repetition.p7-spec",
+          "match": "[*+?]"
+        }
+      ]
+    },
+    "alternatives": {
+      "patterns": [
+        {
+          "name": "keyword.operator.alternative.p7-spec",
+          "match": "\\|"
+        }
+      ]
+    },
+    "nonterminals": {
+      "patterns": [
+        {
+          "name": "entity.name.type.nonterminal.p7-spec",
+          "match": "\\b[A-Z][\\p{L}\\p{N}_]*\\b"
+        }
+      ]
+    },
+    "regex": {
+      "patterns": [
+        {
+          "name": "string.regexp.p7-spec",
+          "begin": "/",
+          "end": "/",
+          "patterns": [
+            {
+              "name": "constant.character.escape.p7-spec",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "literals": {
+      "patterns": [
+        {
+          "name": "string.quoted.single.p7-spec",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.p7-spec",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.p7-spec",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.p7-spec",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "type-expressions": {
+      "patterns": [
+        {
+          "include": "#universe-type"
+        },
+        {
+          "include": "#empty-type"
+        },
+        {
+          "include": "#raw-type"
+        },
+        {
+          "include": "#function-type"
+        },
+        {
+          "include": "#pointer-type"
+        },
+        {
+          "include": "#array-type"
+        },
+        {
+          "include": "#union-type"
+        },
+        {
+          "include": "#intersection-type"
+        },
+        {
+          "include": "#negation-type"
+        },
+        {
+          "include": "#tuple-type"
+        },
+        {
+          "include": "#type-variable"
+        }
+      ]
+    },
+    "universe-type": {
+      "patterns": [
+        {
+          "name": "constant.language.universe.p7-spec",
+          "match": "⊤"
+        }
+      ]
+    },
+    "empty-type": {
+      "patterns": [
+        {
+          "name": "constant.language.empty.p7-spec",
+          "match": "∅"
+        }
+      ]
+    },
+    "raw-type": {
+      "patterns": [
+        {
+          "name": "storage.type.raw.p7-spec",
+          "match": "'[^']+'"
+        }
+      ]
+    },
+    "function-type": {
+      "patterns": [
+        {
+          "name": "keyword.operator.function-type.p7-spec",
+          "match": "→|->|→"
+        }
+      ]
+    },
+    "pointer-type": {
+      "patterns": [
+        {
+          "name": "keyword.operator.pointer.p7-spec",
+          "match": "\\*(?=[\\p{L}\\(*])"
+        }
+      ]
+    },
+    "array-type": {
+      "patterns": [
+        {
+          "name": "meta.array-type.p7-spec",
+          "begin": "\\[",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.array.begin.p7-spec"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.array.end.p7-spec"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#type-expressions"
+            },
+            {
+              "include": "#identifiers"
+            }
+          ]
+        }
+      ]
+    },
+    "union-type": {
+      "patterns": [
+        {
+          "name": "keyword.operator.union.p7-spec",
+          "match": "∨|v|\\|"
+        }
+      ]
+    },
+    "intersection-type": {
+      "patterns": [
+        {
+          "name": "keyword.operator.intersection.p7-spec",
+          "match": "∧|\\^|&"
+        }
+      ]
+    },
+    "negation-type": {
+      "patterns": [
+        {
+          "name": "keyword.operator.negation.p7-spec",
+          "match": "¬|!"
+        }
+      ]
+    },
+    "tuple-type": {
+      "patterns": [
+        {
+          "name": "meta.tuple-type.p7-spec",
+          "match": "\\(([^)]+)\\.\\.\\.",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#type-expressions"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "type-variable": {
+      "patterns": [
+        {
+          "name": "variable.other.type.greek.p7-spec",
+          "match": "\\b[τσρλμνΤΣΡΛΜΝ][\\p{L}\\p{N}₁₂₃₄₅₆₇₈₉₀]*\\b"
+        },
+        {
+          "name": "variable.other.type.subscript.p7-spec",
+          "match": "\\b[a-zA-Z][a-zA-Z0-9]*[₁₂₃₄₅₆₇₈₉₀]+\\b"
+        },
+        {
+          "name": "variable.other.type.generic.p7-spec",
+          "match": "\\b[a-z][a-zA-Z0-9_']*\\b"
+        },
+        {
+          "name": "entity.name.type.custom.p7-spec",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    },
+    "context-expression": {
+      "patterns": [
+        {
+          "include": "#context-extension"
+        },
+        {
+          "include": "#context-transform"
+        },
+        {
+          "include": "#context-name"
+        }
+      ]
+    },
+    "context-extension": {
+      "patterns": [
+        {
+          "name": "meta.context-extension.p7-spec",
+          "match": "([ΓΔΘ][\\p{L}\\p{N}_]*)(\\[([^\\]]+)\\])*",
+          "captures": {
+            "1": {
+              "name": "variable.other.context.p7-spec"
+            },
+            "2": {
+              "name": "meta.extension.p7-spec"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#variable-binding"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "context-transform": {
+      "patterns": [
+        {
+          "name": "keyword.operator.context-transform.p7-spec",
+          "match": "→|->(?=\\s*[ΓΔΘ])"
+        }
+      ]
+    },
+    "context-name": {
+      "patterns": [
+        {
+          "name": "variable.other.context.p7-spec",
+          "match": "\\b[ΓΔΘ][\\p{L}\\p{N}_]*\\b"
+        }
+      ]
+    },
+    "context-lookup": {
+      "patterns": [
+        {
+          "name": "meta.context-lookup.p7-spec",
+          "match": "([ΓΔΘ][\\p{L}\\p{N}_]*)\\(([^)]+)\\)",
+          "captures": {
+            "1": {
+              "name": "variable.other.context.p7-spec"
+            },
+            "2": {
+              "name": "variable.other.identifier.p7-spec"
+            }
+          }
+        }
+      ]
+    },
+    "variable-binding": {
+      "patterns": [
+        {
+          "name": "meta.variable-binding.p7-spec",
+          "match": "([^:,\\]]+)(:)([^,\\]]+)",
+          "captures": {
+            "1": {
+              "name": "variable.other.identifier.p7-spec"
+            },
+            "2": {
+              "name": "punctuation.separator.type.p7-spec"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#type-expressions"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "turnstile": {
+      "patterns": [
+        {
+          "name": "keyword.operator.turnstile.p7-spec",
+          "match": "⊢"
+        }
+      ]
+    },
+    "membership": {
+      "patterns": [
+        {
+          "name": "keyword.operator.membership.p7-spec",
+          "match": "∈"
+        }
+      ]
+    },
+    "ascription": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.type-ascription.p7-spec",
+          "match": "\\s+:\\s+"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "include": "#turnstile"
+        },
+        {
+          "include": "#membership"
+        },
+        {
+          "include": "#function-type"
+        },
+        {
+          "include": "#union-type"
+        },
+        {
+          "include": "#intersection-type"
+        },
+        {
+          "include": "#negation-type"
+        },
+        {
+          "include": "#pointer-type"
+        },
+        {
+          "include": "#context-transform"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.identifier.p7-spec",
+          "match": "\\b[\\p{L}][\\p{L}\\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*\\b"
+        }
+      ]
+    }
+  }
+}

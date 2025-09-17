@@ -28,10 +28,29 @@ pub struct Premise {
     pub judgment: Option<TypingJudgment>,
 }
 
+/// Context specification for a conclusion (optional input/output context transforms)
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ConclusionContext {
+    pub input: String,                 // context variable name (previously Option<TypeSetting>)
+    pub output: Option<TypeSetting>,   // possibly enriched context after transformation
+}
+
+impl ConclusionContext {
+    pub fn is_empty(&self) -> bool { self.input.is_empty() && self.output.is_none() }
+}
+
+/// The kind of conclusion: either a type or a context lookup Γ(x)
 #[derive(Debug, Clone, PartialEq)]
-pub enum Conclusion {
+pub enum ConclusionKind {
     Type(Type),
     ContextLookup(String, String), // (context, var) for Γ(x)
+}
+
+/// A conclusion consisting of an optional context transform and a concrete kind
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conclusion {
+    pub context: ConclusionContext,
+    pub kind: ConclusionKind,
 }
 
 impl Conclusion {
@@ -67,26 +86,55 @@ impl TypingRule {
         Ok(Self { name, premises, conclusion })
     }
 
-    /// Parse a conclusion string into a Conclusion enum
+    /// Parse a conclusion string into a Conclusion struct
     pub fn parse_conclusion(conclusion_str: &str) -> Result<Conclusion, String> {
         let s = conclusion_str.trim();
+
+        // 1) If it contains ⊢ then it's a (possibly context-transforming) type conclusion
+        if let Some((lhs, rhs)) = s.split_once('⊢') {
+            let lhs = lhs.trim();
+            let rhs = rhs.trim();
+            let ty = Type::parse(rhs)?;
+
+            // Helper to parse an optional context setting (Γ or Γ[...])
+            let parse_ctx = |part: &str| -> Result<Option<TypeSetting>, String> {
+                let t = part.trim();
+                if t.is_empty() { return Ok(None); }
+                Self::parse_setting(t).map(Some)
+            };
+
+            let mut ctx = ConclusionContext::default();
+            if !lhs.is_empty() {
+                if let Some((l, r)) = lhs.split_once('→') {
+                    ctx.input = parse_ctx(l)?.map(|ts| ts.name).unwrap_or_default();
+                    ctx.output = parse_ctx(r)?;
+                } else if let Some((l, r)) = lhs.split_once("->") {
+                    ctx.input = parse_ctx(l)?.map(|ts| ts.name).unwrap_or_default();
+                    ctx.output = parse_ctx(r)?;
+                } else {
+                    // No arrow: treat as only input provided (Γ_in ⊢ τ)
+                    ctx.input = parse_ctx(lhs)?.map(|ts| ts.name).unwrap_or_default();
+                }
+            }
+            return Ok(Conclusion { context: ctx, kind: ConclusionKind::Type(ty) });
+        }
         
-        // Check for context lookup pattern: Γ(x)
+        // 2) Check for context lookup pattern: Γ(x)
         if let Some(paren_start) = s.find('(') {
             if let Some(paren_end) = s.find(')') {
                 if paren_end > paren_start && paren_end == s.len() - 1 {
                     let context = s[..paren_start].trim().to_string();
                     let var = s[paren_start + 1..paren_end].trim().to_string();
                     if !context.is_empty() && !var.is_empty() {
-                        return Ok(Conclusion::ContextLookup(context, var));
+                        return Ok(Conclusion { context: ConclusionContext::default(), kind: ConclusionKind::ContextLookup(context, var) });
                     }
                 }
             }
         }
         
-        // Otherwise, parse as a type
+        // 3) Otherwise, parse as a bare type (no context transform)
         let ty = Type::parse(s)?;
-        Ok(Conclusion::Type(ty))
+        Ok(Conclusion { context: ConclusionContext::default(), kind: ConclusionKind::Type(ty) })
     }
 
 
@@ -179,9 +227,23 @@ impl TypingRule {
 
 impl fmt::Display for Conclusion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Conclusion::Type(ty) => write!(f, "{}", ty),
-            Conclusion::ContextLookup(context, var) => write!(f, "{}({})", context, var),
+        match &self.kind {
+            ConclusionKind::Type(ty) => {
+                // Formatting helpers
+                let fmt_output_ctx = |s: &TypeSetting| -> String { format!("{}", s) };
+
+                if self.context.is_empty() {
+                    return write!(f, "{}", ty);
+                }
+                let input = self.context.input.as_str();
+                match (input.is_empty(), &self.context.output) {
+                    (false, Some(o)) => write!(f, "{} -> {} ⊢ {}", input, fmt_output_ctx(o), ty),
+                    (false, None) => write!(f, "{}[] ⊢ {}", input, ty), // unchanged context
+                    (true, Some(o)) => write!(f, "{} -> {} ⊢ {}", o.name, fmt_output_ctx(o), ty),
+                    (true, None) => write!(f, "{}", ty),
+                }
+            }
+            ConclusionKind::ContextLookup(context, var) => write!(f, "{}({})", context, var),
         }
     }
 }

@@ -1,5 +1,5 @@
 use std::path::Path;
-use super::{Grammar, Symbol};
+use super::{Grammar, Symbol, RepetitionKind};
 use crate::logic::typing::Conclusion;
 
 
@@ -63,25 +63,31 @@ impl Grammar {
 
     /// Helper to format the right-hand side of a production
     fn format_rhs(&self, rhs_symbols: &[Symbol]) -> String {
-        rhs_symbols.iter().map(|symbol| {
-            if let Some(binding) = &symbol.binding {
-                format!("{}[{}]", symbol.value, binding)
-            } else {
-                // Handle special tokens that need quotes
-                if symbol.value.len() > 1 && (symbol.value.starts_with('\'') || symbol.value.starts_with('"')) {
-                     symbol.value.clone()
-                } else if symbol.value.starts_with('/') && symbol.value.ends_with('/') {
-                     // Do not quote regex patterns that start with '/'
-                     symbol.value.clone()
-                } else if self.productions.contains_key(&symbol.value) {
-                     // Do not quote nonterminals
-                     symbol.value.clone()
-                } else {
-                     // Quote everything else (terminals)
-                     format!("'{}'", symbol.value)
-                }
+        rhs_symbols.iter().map(|s| self.format_symbol(s)).collect::<Vec<_>>().join(" ")
+    }
+
+    fn format_symbol(&self, symbol: &Symbol) -> String {
+        match symbol {
+            Symbol::Group { symbols, repetition } => {
+                let inner = symbols.iter().map(|s| self.format_symbol(s)).collect::<Vec<_>>().join(" ");
+                let rep = match repetition { Some(RepetitionKind::ZeroOrMore)=>"*", Some(RepetitionKind::OneOrMore)=>"+", Some(RepetitionKind::ZeroOrOne)=>"?", None=>"" };
+                format!("({}){}", inner, rep)
             }
-        }).collect::<Vec<_>>().join(" ")
+            Symbol::Simple { value, binding, repetition } => {
+                let base = self.base_symbol_str(value);
+                let rep = match repetition { Some(RepetitionKind::ZeroOrMore)=>"*", Some(RepetitionKind::OneOrMore)=>"+", Some(RepetitionKind::ZeroOrOne)=>"?", None=>"" };
+                if let Some(b) = binding { format!("{}[{}]{}", base, b, rep) } else { format!("{}{}", base, rep) }
+            }
+        }
+    }
+
+    fn base_symbol_str(&self, value: &str) -> String {
+        if value.starts_with('/') && value.ends_with('/') { return value.to_string(); }
+        let is_nt = self.productions.contains_key(value);
+        if is_nt { return value.to_string(); }
+        if value.starts_with('\'') && value.ends_with('\'') { return value.to_string(); }
+        if value.starts_with('"') && value.ends_with('"') { return value.to_string(); }
+        format!("'{}'", value)
     }
 
     /// Write the textual specification to a file on disk.

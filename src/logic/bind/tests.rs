@@ -4,7 +4,7 @@ mod tests {
 
     use crate::logic::ast::{ASTNode, NonTerminal, SourceSpan, Terminal};
     use crate::logic::typing::{Type, TypingJudgment, Premise};
-    use crate::logic::bind::{extract_terminal_value, get_nt_binding, bind_type, get_var_binding, BindingResolver, BoundConclusion, BoundTypingJudgment, BoundTypingRule, DefaultBindingResolver};
+    use crate::logic::bind::{extract_terminal_value, get_nt_binding, bind_type, get_var_binding, BindingResolver, BoundConclusion, BoundConclusionKind, BoundConclusionContext, BoundTypingJudgment, BoundTypingRule, DefaultBindingResolver};
     use crate::{debug_info, set_debug_input, set_debug_level};
     use crate::logic::bind::typing::BoundType;
 
@@ -205,12 +205,17 @@ mod tests {
         let bound_rule = BoundTypingRule {
             name: "display_test".to_string(),
             premises: vec![],
-            conclusion: BoundConclusion::Type(BoundType::Atom("Result".to_string())),
+            conclusion: BoundConclusion { context: BoundConclusionContext::default(), kind: BoundConclusionKind::Type(BoundType::Atom("Result".to_string())) },
         };
         
+        // Display should print only the logical content (no BOUND: prefix)
         let display_string = format!("{}", bound_rule);
-        assert!(display_string.contains("BOUND:display_test"));
-        assert!(display_string.contains("0 premises"));
+        assert!(display_string.contains("display_test ⇒ Result"));
+
+        // Debug provides a prefixed, verbose form with premise count for diagnostics
+        let debug_string = format!("{:?}", bound_rule);
+        assert!(debug_string.contains("BOUND:display_test"));
+        assert!(debug_string.contains("0 premises"));
     }
 
     #[test]
@@ -218,7 +223,7 @@ mod tests {
         let bound_rule = BoundTypingRule {
             name: "empty_rule".to_string(),
             premises: vec![],
-            conclusion: BoundConclusion::Type(BoundType::Atom("Result".to_string())),
+            conclusion: BoundConclusion { context: BoundConclusionContext::default(), kind: BoundConclusionKind::Type(BoundType::Atom("Result".to_string())) },
         };
         
         assert!(bound_rule.is_well_formed());

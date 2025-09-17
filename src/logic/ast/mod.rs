@@ -198,6 +198,30 @@ impl ASTNode {
         }
     }
 
+    /// Calculate the depth of this AST node (maximum depth of any subtree)
+    pub fn depth(&self) -> usize {
+        match self {
+            ASTNode::Terminal(_) => 1,
+            ASTNode::Nonterminal(nt) => {
+                if nt.children.is_empty() {
+                    1
+                } else {
+                    1 + nt.children.iter().map(|child| child.depth()).max().unwrap_or(0)
+                }
+            }
+        }
+    }
+
+    /// Count the total number of nodes in this AST (including this node)
+    pub fn node_count(&self) -> usize {
+        match self {
+            ASTNode::Terminal(_) => 1,
+            ASTNode::Nonterminal(nt) => {
+                1 + nt.children.iter().map(|child| child.node_count()).sum::<usize>()
+            }
+        }
+    }
+
 
     // ---- Lisp-style serialization API as methods ----
     pub fn serialize(&self) -> String {
@@ -318,5 +342,23 @@ impl ASTNode {
             }
             _ => false,
         }
+    }
+    pub fn show_simple(&self) -> String {
+        fn go(node: &ASTNode, indent: usize, out: &mut String) {
+            for _ in 0..indent { out.push_str("  "); }
+            match node {
+                ASTNode::Terminal(t) => out.push_str(&t.value),
+                ASTNode::Nonterminal(nt) => out.push_str(&nt.value),
+            }
+            out.push('\n');
+            if let ASTNode::Nonterminal(nt) = node {
+                for child in &nt.children {
+                    go(child, indent + 1, out);
+                }
+            }
+        }
+        let mut s = String::new();
+        go(self, 0, &mut s);
+        s
     }
 }

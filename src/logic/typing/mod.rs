@@ -27,6 +27,8 @@ pub enum Type {
     Intersection(Box<Type>, Box<Type>),
     // Union (τ₁ ∨ τ₂) - "either τ₁ or τ₂"  
     Union(Box<Type>, Box<Type>),
+    // Context call (Γ(x)) - lookup the type of variable x in context Γ
+    ContextCall(String, String), // (context_name, variable_name)
     // The universe of all types (needed for negation to make sense)
     Universe,
     // Empty type (∅)

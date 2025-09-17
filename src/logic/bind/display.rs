@@ -25,6 +25,7 @@ impl fmt::Display for BoundType {
             BoundType::Not(inner) => write!(f, "¬{}", inner),
             BoundType::Intersection(left, right) => write!(f, "{} ∧ {}", left, right),
             BoundType::Union(left, right) => write!(f, "{} ∨ {}", left, right),
+            BoundType::ContextCall(ctx, var) => write!(f, "{}({})", ctx, var),
             BoundType::Universe => write!(f, "⊤"),
             BoundType::Empty => write!(f, "∅"),
         }
@@ -77,9 +78,15 @@ impl fmt::Display for BoundPremise {
 
 impl fmt::Display for BoundConclusion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            BoundConclusion::Type(ty) => write!(f, "{}", ty),
-            BoundConclusion::ContextLookup(ctx, var_node) => {
+        use super::rule::BoundConclusionKind;
+        match &self.kind {
+            BoundConclusionKind::Type(ty) => {
+                match (&self.context.input, &self.context.output) {
+                    (i, Some(o)) => write!(f, "{} -> {} ⊢ {}", i, o, ty),
+                    (i, None) => write!(f, "{}[] ⊢ {}", i, ty),
+                }
+            }
+            BoundConclusionKind::ContextLookup(ctx, var_node) => {
                 let term = extract_terminal_value(&var_node.as_node()).unwrap_or_else(|| var_node.value.clone());
                 write!(f, "{}({})", ctx, term)
             }
@@ -95,5 +102,19 @@ impl fmt::Display for BoundTypingRule {
             let parts: Vec<String> = self.premises.iter().map(|p| p.to_string()).collect();
             write!(f, "{} ⇒ {}", parts.join(", "), self.conclusion)
         }
+    }
+}
+
+impl fmt::Debug for BoundTypingRule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let n = self.premises.len();
+        // Verbose, stable debug representation for tests and logs
+        write!(
+            f,
+            "BOUND:{} ({} premises): {}",
+            self.name,
+            n,
+            self
+        )
     }
 }

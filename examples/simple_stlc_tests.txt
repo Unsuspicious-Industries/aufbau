@@ -1,0 +1,22 @@
+# Test expressions for Simple Typed Lambda Calculus
+
+# Simple variable
+x
+
+# Lambda abstraction (identity function for integers)
+λx:Int.x
+
+# Function application
+f x
+
+# More complex lambda (function composition)
+λf:Int→Int.λx:Int.f x
+
+# Nested application
+(λx:Int.x) (λy:Int.y)
+
+# Function type
+Int → Bool
+
+# Higher-order function type
+(Int → Int) → Int → Int

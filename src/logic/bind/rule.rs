@@ -1,10 +1,11 @@
 use crate::logic::ast::{ASTNode, NonTerminal};
-use crate::logic::typing::{Type, TypingRule, Premise, TypingJudgment, TypeSetting, Conclusion};
+use crate::logic::typing::{TypingRule, Premise, TypingJudgment, TypeSetting, Conclusion};
+use crate::logic::typing::rule::ConclusionKind;
 use super::typing::BoundType;
-use super::utils::{get_nt_binding, bind_type, collect_nt_bindings_same_level, get_type_value};
+use super::utils::{get_nt_binding, bind_type, collect_nt_bindings_same_level};
 
 /// A bound typing rule where all rule variables have been resolved to actual AST nodes
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Clone,PartialEq)]
 pub struct BoundTypingRule {
     pub name: String,
     pub premises: Vec<BoundPremise>,
@@ -39,11 +40,26 @@ pub enum BoundTypingJudgment {
     Membership(NonTerminal, String), // (resolved node, context)
 }
 
+/// Context specification for a bound conclusion (optional input/output context transforms)
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BoundConclusionContext {
+    pub input: String,
+    pub output: Option<BoundTypeSetting>,
+}
+
+
+/// The kind of bound conclusion: either a type or a context lookup Γ(x)
+#[derive(Debug, Clone, PartialEq)]
+pub enum BoundConclusionKind {
+    Type(BoundType),
+    ContextLookup(String, NonTerminal), // (context, resolved variable node)
+}
+
 /// A bound conclusion with resolved components
 #[derive(Debug, Clone,PartialEq)]
-pub enum BoundConclusion {
-    Type(BoundType),  // Regular type, no need for bound type
-    ContextLookup(String, NonTerminal), // (context, resolved variable node)
+pub struct BoundConclusion {
+    pub context: BoundConclusionContext,
+    pub kind: BoundConclusionKind,
 }
 
 /// Trait for resolving rule bindings to create bound rules
@@ -94,7 +110,8 @@ impl BindingResolver for DefaultBindingResolver {
                     .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
                 
                 // For types, try to resolve type variables but keep the type structure
-                let resolved_type = bind_type(node, ty.clone()).unwrap();
+                let resolved_type = bind_type(node, ty.clone())
+                    .ok_or_else(|| format!("Could not resolve type binding for type {:?} in ascription", ty))?;
 
                 BoundTypingJudgment::Ascription(BoundTypeAscription {
                     node: var_node,
@@ -120,18 +137,25 @@ impl BindingResolver for DefaultBindingResolver {
     }
     
     fn resolve_conclusion(&self, conclusion: &Conclusion, node: &NonTerminal) -> Result<BoundConclusion, String> {
-        match conclusion {
-            Conclusion::Type(ty) => {
-                // For types, try to resolve type variables but keep the type structure
-                let resolved_type = bind_type(node, ty.clone()).unwrap();
-                Ok(BoundConclusion::Type(resolved_type))
+        match &conclusion.kind {
+            ConclusionKind::Type(ty) => {
+                let resolved_type = bind_type(node, ty.clone())
+                    .ok_or_else(|| format!("Could not resolve type binding for type {:?} in conclusion", ty))?;
+                // Map context transforms if any (input is now just a context name String with no extensions)
+                let ctx = if !conclusion.context.input.is_empty() || conclusion.context.output.is_some() {
+                    BoundConclusionContext {
+                        input: conclusion.context.input.clone(),
+                        output: if let Some(s) = &conclusion.context.output { Some(self.resolve_type_setting(s, node)?) } else { None },
+                    }
+                } else { BoundConclusionContext::default() };
+                Ok(BoundConclusion { context: ctx, kind: BoundConclusionKind::Type(resolved_type) })
             }
-            Conclusion::ContextLookup(context, var) => {
+            ConclusionKind::ContextLookup(context, var) => {
                 // Resolve the variable to an actual node
                 let var_node = get_nt_binding(node, var.clone())
                     .ok_or_else(|| format!("Could not resolve binding variable {} in context lookup", var))?;
                 
-                Ok(BoundConclusion::ContextLookup(context.clone(), var_node))
+                Ok(BoundConclusion { context: BoundConclusionContext::default(), kind: BoundConclusionKind::ContextLookup(context.clone(), var_node) })
             }
         }
     }
@@ -174,17 +198,20 @@ impl DefaultBindingResolver {
             Some(TypingJudgment::Ascription((term, ty))) => {
                 // Try to expand by repetition at same level
                 let reps = collect_nt_bindings_same_level(node, term);
-                let resolved_type = bind_type(node, ty.clone()).unwrap();
+                let resolved_type = bind_type(node, ty.clone())
+                    .ok_or_else(|| format!("Could not resolve type binding for type {:?} in ascription", ty))?;
                 if !reps.is_empty() {
                     Ok(reps.into_iter().map(|var_node| BoundPremise {
                         setting: bound_setting.clone(),
                         judgment: Some(BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type.clone() })),
                     }).collect())
                 } else {
-                    // Fallback to single binding
-                    let var_node = get_nt_binding(node, term.clone())
-                        .ok_or_else(|| format!("Could not resolve binding variable {} in ascription", term))?;
-                    Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type })) }])
+                    // Fallback: attempt a single binding; if not found, treat as zero premises (e.g., zero repetitions)
+                    if let Some(var_node) = get_nt_binding(node, term.clone()) {
+                        Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Ascription(BoundTypeAscription { node: var_node, ty: resolved_type })) }])
+                    } else {
+                        Ok(vec![])
+                    }
                 }
             }
             Some(TypingJudgment::Membership(var, ctx)) => {
@@ -195,9 +222,11 @@ impl DefaultBindingResolver {
                         judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())),
                     }).collect())
                 } else {
-                    let var_node = get_nt_binding(node, var.clone())
-                        .ok_or_else(|| format!("Could not resolve binding variable {} in membership", var))?;
-                    Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())) }])
+                    if let Some(var_node) = get_nt_binding(node, var.clone()) {
+                        Ok(vec![BoundPremise { setting: bound_setting, judgment: Some(BoundTypingJudgment::Membership(var_node, ctx.clone())) }])
+                    } else {
+                        Ok(vec![])
+                    }
                 }
             }
             None => Ok(vec![BoundPremise { setting: bound_setting, judgment: None }]),
@@ -280,15 +309,12 @@ impl BoundTypingRule {
             }
         }
         
-        match &self.conclusion {
-            BoundConclusion::ContextLookup(_, node) => {
-                nodes.push(node);
-            }
-            BoundConclusion::Type(_) => {
-                // Type conclusions don't directly reference nodes
-            }
+        match &self.conclusion.kind {
+            BoundConclusionKind::ContextLookup(_, node) => nodes.push(node),
+            BoundConclusionKind::Type(_) => {}
         }
-        
+        // Updated: input is now a plain String (no extensions to collect)
+        if let Some(s) = &self.conclusion.context.output { for ext in &s.extensions { nodes.push(&ext.node); } }
         nodes
     }
     

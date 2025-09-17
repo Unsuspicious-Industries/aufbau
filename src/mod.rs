@@ -1,7 +1,5 @@
 pub mod logic;
-
-#[cfg(test)]
-pub mod test;
+pub mod engine;
 
 // Re-export debug macros at crate level
 pub use logic::debug::*;
