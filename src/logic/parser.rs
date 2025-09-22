@@ -313,9 +313,9 @@ impl Parser {
         if self.pos >= self.tokens.len() { return Err("Unexpected end of input".into()); }
         let token = &self.tokens[self.pos];
         let val = symbol.value();
-        let is_nonterminal = self.grammar.productions.contains_key(val);
+        let is_nonterminal = self.grammar.productions.contains_key(&val);
         if is_nonterminal {
-            let mut node = self.parse_nonterminal(&val.to_string())?;
+            let mut node = self.parse_nonterminal(&val)?;
             if let Some(b) = symbol.binding() { if let ASTNode::Nonterminal(ref mut nt)=node { nt.binding = Some(b.clone()); } }
             return Ok(node);
         }
@@ -324,7 +324,7 @@ impl Parser {
             val.trim_matches('\'') == token
         } else if val.starts_with('/') && val.ends_with('/') {
             if self.grammar.special_tokens.contains(token) { false } else { regex::Regex::new(val.trim_matches('/')).map(|re| re.is_match(token)).unwrap_or(false) }
-        } else { val == token };
+        } else { val == *token };
         if matches {
             let (s,e)=self.token_spans[self.pos];
             let node = ASTNode::Terminal(Terminal { span: Some(SourceSpan{start:s,end:e}), value: token.clone(), binding: symbol.binding().cloned() });
