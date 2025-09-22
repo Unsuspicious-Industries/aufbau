@@ -24,7 +24,15 @@ impl Symbol {
     pub fn with_binding_and_repetition(value: String, binding: String, repetition: RepetitionKind) -> Self { Self::Simple { value, binding: Some(binding), repetition: Some(repetition) } }
     pub fn group(symbols: Vec<Symbol>, repetition: Option<RepetitionKind>) -> Self { Self::Group { symbols, repetition } }
 
-    pub fn value(&self) -> &str { match self { Symbol::Simple { value, .. } => value, Symbol::Group { .. } => "<group>" } }
+    pub fn value(&self) -> String { 
+        match self { 
+            Symbol::Simple { value, .. } => value.clone(),
+            Symbol::Group { symbols, .. } => {
+                let values: Vec<String> = symbols.iter().map(|s| s.value()).collect();
+                format!("({})", values.join(" "))
+            }
+        } 
+    }
     pub fn binding(&self) -> Option<&String> { match self { Symbol::Simple { binding, .. } => binding.as_ref(), Symbol::Group { .. } => None } }
     pub fn repetition(&self) -> Option<&RepetitionKind> { match self { Symbol::Simple { repetition, .. } => repetition.as_ref(), Symbol::Group { repetition, .. } => repetition.as_ref() } }
     pub fn group_symbols(&self) -> Option<&[Symbol]> { match self { Symbol::Group { symbols, .. } => Some(symbols.as_slice()), _ => None } }
