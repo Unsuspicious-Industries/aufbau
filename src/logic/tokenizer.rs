@@ -1,4 +1,4 @@
-use std::fmt::Error;
+use std::{fmt::Error, hash::Hash};
 
 use bimap::BiMap;
 

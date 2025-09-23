@@ -1,271 +1,410 @@
-use crate::logic::parser::Parser;
-use crate::{debug_info, debug_debug};
-use crate::logic::grammar::{RepetitionKind};
+use crate::debug_trace;
+use crate::logic::grammar::Symbol;
+use super::*;
+use crate::logic::grammar::Grammar;
+use crate::logic::tokenizer::Tokenizer;
+use crate::logic::ast::{ASTNode as CompleteAST, SourceSpan};
+use crate::logic::grammar::RepetitionKind;
 
-use super::{PartialOutcome, PartialProduction, PartialState, ParseResult, State, PartialASTNode, PartialNonTerminal};
+#[derive(Clone, Debug)]
+pub struct Segment {
+    pub text: String,
+    pub start: usize,
+    pub end: usize,
+}
 
-impl Parser {
-    /// Entry point: perform a partial parse. Always returns a `PartialOutcome` wrapped in Result
-    /// (Result only reflects tokenizer/init failures). Grammar exploration result is encoded in `PartialOutcome`.
-    pub fn partial(&mut self, input: &str) -> Result<PartialOutcome, String> {
-        debug_info!("partial", "Starting partial parse of: '{}'", input);
-        self.init(input)?;
+impl Segment {
+    pub fn new(text: String, start: usize, end: usize) -> Self {
+        Self { text, start, end }
+    }
+    pub fn span(&self) -> SourceSpan {
+        SourceSpan { start: self.start, end: self.end }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum ParseStep {
+    Continue { nodes: Vec<PartialAST>, next_pos: usize, symbols_parsed: usize },
+    Stop { nodes: Vec<PartialAST>, next_pos: usize, symbols_parsed: usize }, // stop current parallel branch
+}
+
+pub struct PartialParser {
+    grammar: Grammar,
+    tokenizer: Tokenizer,
+}
+
+impl PartialParser {
+    
+    pub fn new(grammar: Grammar) -> Self {
+        let specials = grammar.special_tokens.clone();
+        Self {
+            grammar,
+            tokenizer: Tokenizer::new(specials, vec![' ', '\n', '\t']),
+        }
+    }
+    
+    pub fn parse(&mut self, input: &str) -> Result<CompleteAST, String> {
+        debug_trace!("parser", "Starting complete parse of input: '{}'", input);
+        let partial_ast = self.partial(input)?;
+        debug_trace!("parser", "Partial AST generated: {:#?}", partial_ast);
+        debug_trace!("parser", "Converting partial AST to complete AST");
+        let complete_ast = partial_ast.into_complete()?;
+        debug_trace!("parser", "Successfully generated complete AST");
+        Ok(complete_ast)
+    }
+
+    pub fn partial(&mut self, input: &str) -> Result<PartialAST, String> {
+        debug_trace!("parser", "Starting partial parse of input: '{}'", input);
+        // Build segments first - this is the key change!
+        let segments = self.build_segments(input)?;
+        debug_trace!("parser", "Built {} segments from input", segments.len());
+        
+        // Determine start nonterminal from grammar
         let start_nt = self
             .grammar
             .start_nonterminal()
-            .ok_or("No start nonterminal defined in grammar")?
-            .clone();
-        debug_info!("partial", "Start nonterminal: {}", start_nt);
-
-        let (states, _final_pos) = match self.partial_recursive_at_pos(start_nt.as_str(), None, self.position()) {
-            Ok(res) => res,
-            Err(e) => return Ok(PartialOutcome::Error(e)),
-        };
-
-        let mut partials: Vec<PartialState> = Vec::new();
-        let mut completes: Vec<PartialASTNode> = Vec::new();
-        let mut expandables: Vec<PartialASTNode> = Vec::new();
-        for s in states.into_iter() {
-            match s {
-                State::Partial(p) => partials.push(p),
-                State::Complete(n) => completes.push(n),
-                State::Expandable(n) => expandables.push(n),
-            }
-        }
-
-        // Prefer returning Expandable/Complete parses when available
-        if let Some(node) = expandables.into_iter().next() {
-            match node.clone().into_ast() {
-                Ok(ast) => return Ok(PartialOutcome::Expandable { node: ast }),
-                Err(e) => return Ok(PartialOutcome::Error(e)),
-            }
-        }
-        if let Some(node) = completes.into_iter().next() {
-            match node.clone().into_ast() {
-                Ok(ast) => return Ok(PartialOutcome::Complete { node: ast }),
-                Err(e) => return Ok(PartialOutcome::Error(e)),
-            }
-        }
-
-        // Otherwise, return all partial states if any exist
-        if !partials.is_empty() {
-            let mut filtered: Vec<PartialState> = Vec::new();
-            let mut seen_semantic_hashes: std::collections::HashSet<u64> = std::collections::HashSet::new();
-            for st in partials.into_iter() {
-                let semantic_hash = st.calculate_semantic_hash();
-                if seen_semantic_hashes.insert(semantic_hash) {
-                    filtered.push(st);
-                } else {
-                    debug_debug!("partial", "Filtered duplicate semantic state with hash: {}", semantic_hash);
-                }
-            }
-            return Ok(PartialOutcome::Incomplete { states: filtered });
-        }
-
-        Ok(PartialOutcome::Error(format!(
-            "Syntax error at start symbol '{}'",
-            start_nt
-        )))
-    }
-
-    /// Recursively attempt to (partially) parse a nonterminal.
-    /// Returns all possible states (Complete or Partial) for the given nonterminal.
-    pub fn partial_recursive(&mut self, nonterminal: &str, binding: Option<String>) -> ParseResult {
-        Ok(match self.partial_recursive_at_pos(nonterminal, binding, self.position()) {
-            Ok((states, _final_pos)) => states,
-            Err(e) => return Err(e),
-        })
-    }
-
-    /// Recursively attempt to (partially) parse a nonterminal starting at a specific position.
-    /// This allows for scoped position management instead of global position tracking.
-    pub(super) fn partial_recursive_at_pos(&mut self, symbol: &str, binding: Option<String>, pos: usize) -> Result<(Vec<State>, usize), String> {
-        let nonterminal = symbol;
-        let start_pos = pos;
+            .cloned()
+            .ok_or_else(|| "No start nonterminal defined in grammar".to_string())?;
         
-        debug_debug!(
-            "partial",
-            "Entering partial_recursive for '{}' at pos {}",
-            nonterminal,
-            start_pos
-        );
-        let productions = match self.grammar.productions.get(nonterminal).cloned() { Some(p)=>p, None=> return Err(format!("No productions found for symbol '{}'", nonterminal)) };
-
-        let mut states: Vec<State> = Vec::new();
-        let mut last_err: Option<String> = None;
-        let mut max_pos_reached = start_pos; // Track the maximum position reached
-
-        for production in productions.iter() {
-            debug_debug!("partial", "Trying production: {:?}", production);
-            let mut children: Vec<PartialASTNode> = Vec::new();
-            let mut current_pos = start_pos; // Track position for this production attempt
-            let mut failed = false;
-            for (idx, symbol) in production.rhs.iter().enumerate() {
-                debug_debug!("partial", "Matching symbol {} (idx {}): {:?}", symbol.value(), idx, symbol);
-                
-                let outcomes = match self.partial_match_symbol_at_pos(symbol, current_pos) { 
-                    Ok((o, new_pos)) => {
-                        debug_debug!("partial", "Symbol {} consumed position {} -> {}", symbol.value(), current_pos, new_pos);
-                        current_pos = new_pos; // Update position based on consumption
-                        max_pos_reached = max_pos_reached.max(new_pos); // Track maximum position
-                        o
-                    },
-                    Err(e) => { 
-                        last_err = Some(e); 
-                        failed = true; 
-                        break; 
-                    } 
-                };
-
-                // Separate complete, expandable, and partial outcomes
-                let mut complete_outcomes = Vec::new();
-                let mut expandable_outcomes = Vec::new();
-                let mut partial_outcomes = Vec::new();
-                for st in outcomes {
-                    match st {
-                        State::Complete(node) => complete_outcomes.push(node),
-                        State::Expandable(node) => expandable_outcomes.push(node),
-                        State::Partial(partial) => partial_outcomes.push(partial),
-                    }
-                }
-
-                // Check if we have meaningful partial outcomes before processing them
-                let has_meaningful_partials = !partial_outcomes.is_empty();
-
-                // Create partial states for each partial outcome
-                for child_partial in partial_outcomes {
-                    let mut tmp_children = children.clone();
-                    tmp_children.push(child_partial.ast.clone());
-                    let partial_ast = self.build_partial_ast(nonterminal, binding.clone(), &tmp_children, start_pos, current_pos);
-                    let mut partial_production = PartialProduction::from_index(production.clone(), idx);
-                    // Mark symbols as parsed up to current index
-                    for i in 0..idx {
-                        if let Some(sym) = production.rhs.get(i) {
-                            partial_production.advance_parsed(sym.clone());
-                        }
-                    }
-                    // Mark current symbol as partial since it didn't complete
-                    if let Some(symbol) = production.rhs.get(idx) {
-                        partial_production.set_partial(symbol.clone());
-                    }
-                    let pstate = PartialState { ast: partial_ast, final_production: partial_production };
-                    states.push(State::Partial(pstate));
-                }
-
-                // Create partial states for each expandable outcome (they're expandable, so mark as partial)
-                for expandable_node in &expandable_outcomes {
-                    let mut tmp_children = children.clone();
-                    tmp_children.push(expandable_node.clone());
-                    let partial_ast = self.build_partial_ast(nonterminal, binding.clone(), &tmp_children, start_pos, current_pos);
-                    let mut partial_production = PartialProduction::from_index(production.clone(), idx);
-                    // Mark symbols as parsed up to current index
-                    for i in 0..idx {
-                        if let Some(sym) = production.rhs.get(i) {
-                            partial_production.advance_parsed(sym.clone());
-                        }
-                    }
-                    // Mark current symbol as partial since it's expandable
-                    if let Some(symbol) = production.rhs.get(idx) {
-                        partial_production.set_partial(symbol.clone());
-                    }
-                    let pstate = PartialState { ast: partial_ast, final_production: partial_production };
-                    states.push(State::Partial(pstate));
-                }
-
-                // Create partial states for complete outcomes only at EOF if there are remaining symbols
-                if current_pos >= self.tokens.len() && idx + 1 < production.rhs.len() {
-                    for complete_node in &complete_outcomes {
-                        let mut tmp_children = children.clone();
-                        tmp_children.push(complete_node.clone());
-                        // Create state showing expected next symbol without redundant Missing nodes
-                        let partial_ast = self.build_partial_ast(nonterminal, binding.clone(), &tmp_children, start_pos, current_pos);
-                        let mut partial_production = PartialProduction::from_index(production.clone(), idx + 1);
-                        for i in 0..=idx {
-                            if let Some(sym) = production.rhs.get(i) {
-                                partial_production.advance_parsed(sym.clone());
-                            }
-                        }
-                        let pstate = PartialState { ast: partial_ast, final_production: partial_production };
-                        states.push(State::Partial(pstate));
-                    }
-                }
-
-                // Use the first complete or expandable outcome to advance this production (if any)
-                let advance_node = complete_outcomes.into_iter().next()
-                    .or_else(|| expandable_outcomes.into_iter().next());
-                
-                if let Some(advance_node) = advance_node {
-                    debug_debug!("partial", "Symbol {} completed: {}", symbol.value(), advance_node.value());
-                    children.push(advance_node);
-                    continue;
+        debug_trace!("parser", "Start nonterminal: {}", start_nt);
+        let step = self.partial_nt(&segments, &start_nt, 0, None)?;
+        match step {
+            ParseStep::Continue { nodes, next_pos, symbols_parsed: _ } => {
+                debug_trace!("parser", "Start nonterminal parsed successfully, final position: {}", next_pos);
+                // Extract the first (and should be only) node which should be a NonTerminal
+                if let Some(PartialAST::NonTerminal(children)) = nodes.into_iter().next() {
+                    debug_trace!("parser", "Parsed {} parallel branches for start nonterminal", children.len());
+                    Ok(PartialAST::NonTerminal(children))
                 } else {
-                    // Create a shallow partial state if we haven't already created meaningful partial states
-                    // and we're at EOF or have made some progress, but only if we would add meaningful Missing information
-                    let at_eof = current_pos >= self.tokens.len();
-                    
-                    if !has_meaningful_partials && (at_eof || !children.is_empty()) {
-                        let partial_ast = self.build_partial_ast(nonterminal, binding.clone(), &children, start_pos, current_pos);
-                        let mut partial_production = PartialProduction::from_index(production.clone(), idx);
-                        for i in 0..idx {
-                            if let Some(sym) = production.rhs.get(i) {
-                                partial_production.advance_parsed(sym.clone());
-                            }
-                        }
-                        let pstate = PartialState { ast: partial_ast, final_production: partial_production };
-                        states.push(State::Partial(pstate));
-                    }
-                    
-                    // Also create specific missing token states when at EOF and we know what's expected
-                    if at_eof && idx < production.rhs.len() {
-                        if let Some(expected_symbol) = production.rhs.get(idx) {
-                            let mut tmp_children = children.clone();
-                            tmp_children.push(PartialASTNode::Missing(expected_symbol.value().to_string()));
-                            let partial_ast = self.build_partial_ast(nonterminal, binding.clone(), &tmp_children, start_pos, current_pos);
-                            let mut partial_production = PartialProduction::from_index(production.clone(), idx + 1);
-                            for i in 0..idx {
-                                if let Some(sym) = production.rhs.get(i) {
-                                    partial_production.advance_parsed(sym.clone());
-                                }
-                            }
-                            // Mark the missing symbol
-                            partial_production.advance_parsed(expected_symbol.clone());
-                            let pstate = PartialState { ast: partial_ast, final_production: partial_production };
-                            states.push(State::Partial(pstate));
-                        }
-                    }
-                    
-                    failed = true; 
-                    break;
+                    Err("Expected NonTerminal AST from start nonterminal".to_string())
                 }
             }
-            if failed { continue; }
+            ParseStep::Stop { nodes: _, next_pos, symbols_parsed: _ } => {
+                debug_trace!("parser", "Start nonterminal failed to parse, stopped at position: {}", next_pos);
+                Err(format!("Failed to parse start nonterminal '{}'", start_nt))
+            }
+        }
+    }
 
-            // If we consumed all symbols successfully, we have a complete node.
-            if children.len() == production.rhs.len() {
-                debug_info!("partial", "Production complete for '{}' with {} children", nonterminal, children.len());
-                let span = self.children_span_partial(&children);
-                let node = PartialASTNode::Nonterminal(PartialNonTerminal { value: nonterminal.to_string(), span, children: children.clone(), binding: binding.clone() });
-                let has_trailing_repetition = production.rhs.iter().rev().any(|symbol| {
-                    match symbol.repetition() {
-                        Some(RepetitionKind::ZeroOrMore) | Some(RepetitionKind::OneOrMore) => true,
-                        _ => false,
-                    }
+    /// Build segments from input using the tokenizer
+    fn build_segments(&mut self, input: &str) -> Result<Vec<Segment>, String> {
+        debug_trace!("parser", "Tokenizing input of length {}", input.len());
+        let token_spans = self
+            .tokenizer
+            .tokenize_with_spans(input)
+            .map_err(|e| format!("tokenization failed: {:?}", e))?;
+        
+        // Convert character indices to byte indices for safe string slicing
+        let chars: Vec<char> = input.chars().collect();
+        let segments: Vec<Segment> = token_spans
+            .into_iter()
+            .map(|(_, char_start, char_end)| {
+                // Convert character indices to byte indices
+                let byte_start = chars.iter().take(char_start).map(|c| c.len_utf8()).sum::<usize>();
+                let byte_end = chars.iter().take(char_end).map(|c| c.len_utf8()).sum::<usize>();
+                
+                // Extract text using character-based slicing to be safe
+                let text: String = chars[char_start..char_end].iter().collect();
+                
+                Segment::new(text, byte_start, byte_end)
+            })
+            .collect();
+        
+        debug_trace!("parser", "Created {} segments: {:?}", segments.len(), segments.iter().map(|s| &s.text).collect::<Vec<_>>());
+        Ok(segments)
+    }
+
+    pub fn partial_nt(&mut self, segments: &[Segment], nt: &str, seg_pos: usize, binding: Option<String>) -> Result<ParseStep, String> {
+        debug_trace!("parser", "Parsing nonterminal '{}' at segment position {} with binding {:?}", nt, seg_pos, binding);
+        let productions = self
+            .grammar
+            .productions
+            .get(nt)
+            .cloned()
+            .ok_or_else(|| format!("No productions found for nonterminal '{}'", nt))?;
+
+        debug_trace!("parser", "Found {} productions for nonterminal '{}'", productions.len(), nt);
+
+        let mut parallels: Vec<PartialNonTerminal> = Vec::new();
+        let mut max_pos = seg_pos; // Track the maximum position consumed
+
+        for (prod_idx, prod) in productions.iter().enumerate() {
+            debug_trace!("parser", "Parsing production {}/{} for '{}': {:?} at segment position {}", prod_idx + 1, productions.len(), nt, prod.rhs, seg_pos);
+            // Parse the entire RHS as one sequence; Stop will end this branch early, Continue means full sequence processed
+            let step = self.parse_symbols_once(segments, &prod.rhs, seg_pos, None)?;
+            let (nt_children, current_seg_pos, production_succeeded, symbols_parsed) = match step {
+                ParseStep::Continue { nodes, next_pos, symbols_parsed } => {
+                    debug_trace!("parser", "Production {}/{} completed successfully, consumed {} segments", prod_idx + 1, productions.len(), next_pos - seg_pos);
+                    (nodes, next_pos, true, symbols_parsed)
+                }
+                ParseStep::Stop { nodes, next_pos, symbols_parsed } => {
+                    debug_trace!("parser", "Production {}/{} stopped/failed, consumed {} segments", prod_idx + 1, productions.len(), next_pos - seg_pos);
+                    (nodes, next_pos, false, symbols_parsed)
+                }
+            };
+            
+            // Track the maximum position reached by any production
+            max_pos = max_pos.max(current_seg_pos);
+            
+            // Create a partial nonterminal for both successful and partially successful productions
+            if production_succeeded || symbols_parsed > 0 {
+                // Build a partial nonterminal for this production
+                let mut partial_prod = PartialProduction::new(prod.clone());
+                // Set cursor to the actual number of symbols parsed
+                partial_prod.set_cursor(symbols_parsed);
+                
+                debug_trace!("parser", "Created partial nonterminal with {} children, cursor at {}/{} symbols", nt_children.len(), symbols_parsed, prod.rhs.len());
+                
+                parallels.push(PartialNonTerminal {
+                    production: partial_prod,
+                    children: nt_children,
+                    value: nt.to_string(),
+                    span: if current_seg_pos > seg_pos {
+                        segments
+                            .get(seg_pos)
+                            .and_then(|start_seg| segments.get(current_seg_pos - 1)
+                            .map(|end_seg| SourceSpan { start: start_seg.start, end: end_seg.end }))
+                    } else { None },
+                    binding: binding.clone(),
+                    bound_typing_rule: None,
                 });
-                if has_trailing_repetition {
-                    states.push(State::Expandable(node));
-                } else {
-                    states.push(State::Complete(node));
-                }
+            } else {
+                debug_trace!("parser", "Skipping failed production {}/{} for '{}' (no symbols parsed)", prod_idx + 1, productions.len(), nt);
             }
         }
 
-        // Return the collected states - prefer expandable over complete over partial
-        if !states.is_empty() {
-            debug_info!("partial", "Returning {} states for '{}'", states.len(), nonterminal);
-            Ok((states, max_pos_reached))
+        debug_trace!("parser", "Nonterminal '{}' produced {} successful parallel branches out of {} total productions, max position: {}", nt, parallels.len(), productions.len(), max_pos);
+        
+        if parallels.is_empty() {
+            // No successful productions, return Stop
+            Ok(ParseStep::Stop { nodes: Vec::new(), next_pos: max_pos, symbols_parsed: 0 })
         } else {
-            debug_info!("partial", "No viable states for '{}'", nonterminal);
-            Err(last_err.unwrap_or_else(|| format!("Unable to partially parse '{}'", nonterminal)))
+            // At least one successful production, return Continue with NonTerminal containing all parallels
+            Ok(ParseStep::Continue { 
+                nodes: vec![PartialAST::NonTerminal(parallels)], 
+                next_pos: max_pos,
+                symbols_parsed: 1  // We successfully parsed one nonterminal
+            })
         }
+    }
+
+    /// Parse a single grammar symbol from segments and return control flow
+    fn parse_symbol(&mut self, segments: &[Segment], symbol: &Symbol, seg_pos: usize, parent_binding: Option<String>) -> Result<ParseStep, String> {
+        debug_trace!("parser", "Parsing symbol {:?} at position {} with binding {:?}", symbol, seg_pos, parent_binding);
+        // If no next segment stop parsing
+        if segments.get(seg_pos).is_none() {
+            debug_trace!("parser", "No segment at position {}, stopping", seg_pos);
+             return Ok(ParseStep::Stop { nodes: Vec::new(), next_pos: seg_pos, symbols_parsed: 0 });
+        }
+        let segment = segments[seg_pos].clone();
+        debug_trace!("parser", "Current segment: '{}'", segment.text);
+        match symbol {
+            Symbol::Litteral(value) => {
+                // Must match the NEXT segment exactly; do not scan ahead.
+                // - If next segment exists but doesn't match, just stop without adding any node.
+                debug_trace!("parser", "Trying to match literal '{}' with segment '{}' at position {}", value, segment.text, seg_pos);
+                if &segment.text == value {
+                    debug_trace!("parser", "Literal match successful");
+                    let ast_node = PartialAST::Terminal(PartialTerminal {
+                        value: segment.text.clone(),
+                        span: Some(segment.span()),
+                        binding: parent_binding,
+                    });
+                    Ok(ParseStep::Continue { nodes: vec![ast_node], next_pos: seg_pos + 1, symbols_parsed: 1 })
+                } else {
+                    debug_trace!("parser", "Literal match failed: '{}' != '{}'", segment.text, value);
+                    Ok(ParseStep::Stop { nodes: Vec::new(), next_pos: seg_pos, symbols_parsed: 0 })
+                }
+            } 
+            Symbol::Expression(value) => {
+                debug_trace!("parser", "Parsing nonterminal expression '{}'", value);
+                // Parse the nonterminal and return its ParseStep directly
+                let step = self.partial_nt(segments, value, seg_pos, parent_binding)?;
+                match step {
+                    ParseStep::Continue { nodes, next_pos, symbols_parsed } => {
+                        debug_trace!("parser", "Nonterminal expression '{}' parsed successfully, consumed {} segments", value, next_pos - seg_pos);
+                        Ok(ParseStep::Continue { nodes, next_pos, symbols_parsed })
+                    }
+                    ParseStep::Stop { nodes, next_pos, symbols_parsed } => {
+                        debug_trace!("parser", "Nonterminal expression '{}' failed to parse, consumed {} segments", value, next_pos - seg_pos);
+                        Ok(ParseStep::Stop { nodes, next_pos, symbols_parsed })
+                    }
+                }
+            }   
+            Symbol::Regex(re) => {
+                debug_trace!("parser", "Trying to match regex pattern against segment '{}'", segment.text);
+                let full_match = re
+                    .find(&segment.text)
+                    .map(|m| m.start() == 0 && m.end() == segment.text.len())
+                    .unwrap_or(false);
+                if full_match {
+                    debug_trace!("parser", "Regex match successful");
+                    let ast_node = PartialAST::Terminal(PartialTerminal {
+                        value: segment.text.clone(),
+                        span: Some(segment.span()),
+                        binding: parent_binding,
+                    });
+                    Ok(ParseStep::Continue { nodes: vec![ast_node], next_pos: seg_pos + 1, symbols_parsed: 1 })
+                } else {
+                    debug_trace!("parser", "Regex match failed");
+                    Ok(ParseStep::Stop { nodes: Vec::new(), next_pos: seg_pos, symbols_parsed: 0 })
+                }
+            }
+            Symbol::Single { value, binding, repetition } => {
+                debug_trace!("parser", "Parsing single symbol with binding {:?} and repetition {:?}", binding, repetition);
+                // Use the binding from this symbol, or fall back to parent binding
+                let effective_binding = binding.clone().or(parent_binding);
+                
+                match repetition {
+                    None => {
+                        debug_trace!("parser", "No repetition, parsing once");
+                        // No repetition, parse exactly once and propagate control flow
+                        self.parse_symbol(segments, value.as_ref(), seg_pos, effective_binding)
+                    }
+                    Some(rep_kind) => {
+                        debug_trace!("parser", "Handling repetition: {:?}", rep_kind);
+                        // Handle repetition for a single symbol
+                        let single_symbol_vec = vec![value.as_ref().clone()];
+                        self.parse_symbols_with_repetition(segments, &single_symbol_vec, seg_pos, effective_binding, rep_kind)
+                    }
+                }
+            }
+            Symbol::Group { symbols, repetition } => {
+                debug_trace!("parser", "Parsing group of {} symbols with repetition {:?}", symbols.len(), repetition);
+                match repetition {
+                    None => {
+                        debug_trace!("parser", "No repetition, parsing group once");
+                        // No repetition, parse the group exactly once using the unified method
+                        let step = self.parse_symbols_once(segments, symbols, seg_pos, parent_binding)?;
+                        Ok(step)
+                    }
+                    Some(rep_kind) => {
+                        debug_trace!("parser", "Handling group repetition: {:?}", rep_kind);
+                        // Handle repetition for a group of symbols
+                        self.parse_symbols_with_repetition(segments, symbols, seg_pos, parent_binding, rep_kind)
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Parse symbols with repetition (generalized for both single symbols and groups)
+    fn parse_symbols_with_repetition(&mut self, segments: &[Segment], symbols: &[Symbol], seg_pos: usize, binding: Option<String>, rep_kind: &RepetitionKind) -> Result<ParseStep, String> {
+        debug_trace!("parser", "Parsing symbols with repetition {:?} starting at position {}", rep_kind, seg_pos);
+        let mut acc: Vec<PartialAST> = Vec::new();
+        let mut current_pos = seg_pos;
+        
+        match rep_kind {
+            RepetitionKind::ZeroOrMore => {
+                debug_trace!("parser", "ZeroOrMore: parsing as many times as possible");
+                // Parse as many times as possible; Stop just means we're done, not failure
+                loop {
+                    let step = self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
+                    match step {
+                        ParseStep::Continue { mut nodes, next_pos, symbols_parsed: _ } => {
+                            if next_pos == current_pos && nodes.is_empty() { // safety: avoid infinite loop
+                                debug_trace!("parser", "ZeroOrMore: no progress made, breaking loop");
+                                break;
+                            }
+                            debug_trace!("parser", "ZeroOrMore: iteration successful, got {} nodes", nodes.len());
+                            acc.append(&mut nodes);
+                            current_pos = next_pos;
+                        }
+                        ParseStep::Stop { nodes, next_pos: _, symbols_parsed: _ } => {
+                            debug_trace!("parser", "ZeroOrMore: iteration stopped naturally (not failure), got {} nodes", nodes.len());
+                            // For ZeroOrMore, Stop just means we're done - don't include partial nodes from failed attempt
+                            // and don't update position since this attempt didn't succeed
+                            break;
+                        }
+                    }
+                }
+                debug_trace!("parser", "ZeroOrMore: completed successfully with {} total nodes", acc.len());
+                let symbols_parsed = if acc.is_empty() { 0 } else { 1 };
+                Ok(ParseStep::Continue { nodes: acc, next_pos: current_pos, symbols_parsed })
+            }
+            RepetitionKind::OneOrMore => {
+                // Must parse at least once; if first attempt Stops, propagate Stop
+                let step = self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
+                match step {
+                    ParseStep::Continue { mut nodes, next_pos, symbols_parsed: _ } => {
+                        acc.append(&mut nodes);
+                        current_pos = next_pos;
+                    }
+                    ParseStep::Stop { mut nodes, next_pos, symbols_parsed } => {
+                        acc.append(&mut nodes);
+                        current_pos = next_pos;
+                        return Ok(ParseStep::Stop { nodes: acc, next_pos: current_pos, symbols_parsed });
+                    }
+                }
+
+                // Then try to parse as many more as possible
+                loop {
+                    let step = self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
+                    match step {
+                        ParseStep::Continue { mut nodes, next_pos, symbols_parsed: _ } => {
+                            if next_pos == current_pos && nodes.is_empty() { break; }
+                            acc.append(&mut nodes);
+                            current_pos = next_pos;
+                        }
+                        ParseStep::Stop { mut nodes, next_pos, symbols_parsed } => {
+                            acc.append(&mut nodes);
+                            current_pos = next_pos;
+                            return Ok(ParseStep::Stop { nodes: acc, next_pos: current_pos, symbols_parsed });
+                        }
+                    }
+                }
+                Ok(ParseStep::Continue { nodes: acc, next_pos: current_pos, symbols_parsed: 1 })
+            }
+            RepetitionKind::ZeroOrOne => {
+                // Try to parse once; Stop just means we get zero items, which is fine for ZeroOrOne
+                let step = self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
+                match step {
+                    ParseStep::Continue { mut nodes, next_pos, symbols_parsed: _ } => {
+                        debug_trace!("parser", "ZeroOrOne: successfully parsed one iteration");
+                        acc.append(&mut nodes);
+                        current_pos = next_pos;
+                        Ok(ParseStep::Continue { nodes: acc, next_pos: current_pos, symbols_parsed: 1 })
+                    }
+                    ParseStep::Stop { nodes: _, next_pos: _, symbols_parsed: _ } => {
+                        debug_trace!("parser", "ZeroOrOne: parsing stopped, accepting zero items");
+                        // For ZeroOrOne, Stop means we successfully parsed zero items
+                        Ok(ParseStep::Continue { nodes: acc, next_pos: current_pos, symbols_parsed: 0 })
+                    }
+                }
+            }
+        }
+    }
+
+    /// Parse symbols once (unified for both single symbols and groups)
+    /// Returns ParseStep with nodes and the number of symbols successfully parsed
+    fn parse_symbols_once(&mut self, segments: &[Segment], symbols: &[Symbol], seg_pos: usize, binding: Option<String>) -> Result<ParseStep, String> {
+        let mut acc: Vec<PartialAST> = Vec::new();
+        let mut current_pos = seg_pos;
+        let mut symbols_parsed = 0;
+        
+        for s in symbols {
+            let step = self.parse_symbol(segments, s, current_pos, binding.clone())?;
+            match step {
+                ParseStep::Continue { mut nodes, next_pos, symbols_parsed: step_symbols_parsed } => {
+                    acc.append(&mut nodes);
+                    let old_pos = current_pos;
+                    current_pos = next_pos;
+                    // Only count as parsed if we actually parsed something meaningful
+                    if step_symbols_parsed > 0 || next_pos > old_pos || !nodes.is_empty() {
+                        symbols_parsed += 1;
+                    }
+                }
+                ParseStep::Stop { mut nodes, next_pos, symbols_parsed: step_symbols_parsed } => {
+                    acc.append(&mut nodes);
+                    current_pos = next_pos;
+                    // Count partially parsed symbols
+                    if step_symbols_parsed > 0 {
+                        symbols_parsed += 1;
+                    }
+                    return Ok(ParseStep::Stop { nodes: acc, next_pos: current_pos, symbols_parsed });
+                }
+            }
+        }
+        Ok(ParseStep::Continue { nodes: acc, next_pos: current_pos, symbols_parsed })
     }
 }

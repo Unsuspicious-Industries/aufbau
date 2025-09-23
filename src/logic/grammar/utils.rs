@@ -89,14 +89,11 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
                 if let Some(close_bracket) = base_token.rfind(']') { if close_bracket > open_bracket {
                     let value = base_token[..open_bracket].to_string();
                     let binding = base_token[open_bracket + 1..close_bracket].to_string();
-                    let clean_value = if (value.starts_with('\'') && value.ends_with('\'')) || (value.starts_with('"') && value.ends_with('"')) { value.trim_matches('\'').trim_matches('"').to_string() } else { value };
-                    if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_binding_and_repetition(clean_value, binding, rep)); } else { symbols_in_alt.push(Symbol::with_binding(clean_value, binding)); }
+                    if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_binding_and_repetition(value, binding, rep)); } else { symbols_in_alt.push(Symbol::with_binding(value, binding)); }
                     continue; } }
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
-                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
+                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(base_token, rep)); } else { symbols_in_alt.push(Symbol::new(base_token)); }
             } else {
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
-                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
+                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(base_token, rep)); } else { symbols_in_alt.push(Symbol::new(base_token)); }
             }
         }
         alternatives.push(symbols_in_alt);
