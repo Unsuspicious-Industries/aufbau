@@ -146,9 +146,6 @@ x ∈ Γ
 ----------------------- (funcdef)
 (in_tys...) -> ret_ty
 
-
-
-
 // More complex rules would be needed for pointers, structs, etc.
 "#;
 

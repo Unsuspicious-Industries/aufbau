@@ -1,7 +1,6 @@
 pub mod tokenizer;
 pub mod ast;
 pub mod grammar;
-pub mod parser;
 pub mod partial;
 
 pub mod check;
@@ -12,10 +11,10 @@ pub mod recursion;
 
 pub mod tests;
 
-
-pub mod advanced_type_tests;
-pub mod type_edge_cases;
-pub mod focused_fail_tests;
+pub mod parser {
+    pub use crate::logic::partial::parse::PartialParser;
+    pub type Parser = PartialParser;
+}
 
 
 

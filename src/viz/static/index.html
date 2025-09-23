@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>P7 Partial Parse Viz</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Partial Parse Visualization</h1>
+    </header>
+    <main>
+      <section class="input-panel">
+        <label class="file-row">
+          <span>Spec file:</span>
+          <input id="spec" type="file" accept=".spec,.txt" />
+          <button id="clear-spec" type="button" title="Clear selected spec">×</button>
+        </label>
+        <textarea id="code" placeholder="Type code to parse..."></textarea>
+        <div class="controls">
+          <button id="parse">Parse</button>
+          <span id="status"></span>
+        </div>
+      </section>
+      <section class="viz-panel">
+        <div id="tree"></div>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
+
+

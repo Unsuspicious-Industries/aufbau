@@ -16,6 +16,8 @@ pub struct LogicCmd {
 pub enum LogicSubcommand {
     /// Typecheck a source file given a grammar spec
     Check(CheckArgs),
+    /// Launch the visualization server
+    Viz(VizArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -31,6 +33,17 @@ pub struct CheckArgs {
     /// Explicit start symbol override
     #[arg(long = "start")] 
     pub start: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VizArgs {
+    /// Path to grammar specification file
+    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    pub spec_path: PathBuf,
+
+    /// Optional port to bind the server
+    #[arg(short = 'p', long = "port", default_value_t = 5173)]
+    pub port: u16,
 }
 
 pub fn dispatch(cli: &crate::cli::Cli) {
@@ -57,6 +70,7 @@ pub fn dispatch(cli: &crate::cli::Cli) {
     match &cli.command {
         crate::cli::Commands::Logic(cmd) => match &cmd.command {
             LogicSubcommand::Check(args) => run_check(args, cli.with_input, level),
+            LogicSubcommand::Viz(args) => run_viz(args, level),
         },
     }
 }
@@ -129,6 +143,28 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
             std::process::exit(1);
         }
     }
+}
+
+fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
+    let spec = match fs::read_to_string(&args.spec_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
+            std::process::exit(2);
+        }
+    };
+    let grammar = match Grammar::load(&spec) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("error: failed to parse grammar spec: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // Start HTTP server
+    let address = format!("127.0.0.1:{}", args.port);
+    println!("viz server listening on http://{}", address);
+    beam::viz::server::serve(address, grammar, debug_level);
 }
 
 

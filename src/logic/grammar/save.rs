@@ -73,11 +73,14 @@ impl Grammar {
                 let rep = match repetition { Some(RepetitionKind::ZeroOrMore)=>"*", Some(RepetitionKind::OneOrMore)=>"+", Some(RepetitionKind::ZeroOrOne)=>"?", None=>"" };
                 format!("({}){}", inner, rep)
             }
-            Symbol::Simple { value, binding, repetition } => {
-                let base = self.base_symbol_str(value);
+            Symbol::Single { value, binding, repetition } => {
+                let base = self.format_symbol(value);
                 let rep = match repetition { Some(RepetitionKind::ZeroOrMore)=>"*", Some(RepetitionKind::OneOrMore)=>"+", Some(RepetitionKind::ZeroOrOne)=>"?", None=>"" };
                 if let Some(b) = binding { format!("{}[{}]{}", base, b, rep) } else { format!("{}{}", base, rep) }
             }
+            Symbol::Litteral(value) => format!("'{}'", value),
+            Symbol::Regex(value) => format!("/{}/", value),
+            Symbol::Expression(value) => self.base_symbol_str(value),
         }
     }
 
