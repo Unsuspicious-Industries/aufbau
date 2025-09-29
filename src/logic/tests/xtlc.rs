@@ -44,11 +44,9 @@ fn test_pass_xtlc() {
         let mut tc = TypeChecker::new();
         debug_info!("test", "Initialized type checker");
 
-        let ast = parser.parse(expr).unwrap();
-        debug_info!("test", "AST: {}", ast.pretty());
-        let rt = tc.check(&ast).unwrap();
+        let past = parser.partial(expr).unwrap();
+        let rt = tc.check_partial(past.root()).unwrap();
 
-        // if type is some print, else not
         if let Some(ty) = rt {
             println!("return type: {:?}", ty);
         } else {

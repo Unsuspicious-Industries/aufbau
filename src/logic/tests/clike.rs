@@ -84,9 +84,7 @@ fn test_pass_clike() {
         let past = parser.partial(expr).unwrap();
         println!("Partial AST: {:#?}", past.root);
 
-        let ast = past.into_complete().unwrap();
-
-        let rt = tc.check(&ast).unwrap();
+        let rt = tc.check_partial(past.root()).unwrap();
         if let Some(ty) = rt {
             println!("return type: {:?}", ty);
         } else {
@@ -94,6 +92,7 @@ fn test_pass_clike() {
         }
         println!("---");
 
+        let ast = past.into_complete().unwrap();
         println!("AST: {}", ast.pretty());
 
     }
@@ -130,7 +129,7 @@ fn test_fail_clike() {
         let mut tc = TypeChecker::new();
         debug_info!("test", "Initialized type checker");
 
-        let ast = parser.parse(expr).unwrap_err();
+        let _ = parser.parse(expr).unwrap_err();
         println!("---");
     }
 }

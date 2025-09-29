@@ -92,6 +92,7 @@ impl PartialProduction {
     pub fn cursor_value(&self) -> usize { self.fully_parsed_symbols + self.partially_parsed_symbols }
     pub fn is_complete_state(&self, children_count: usize) -> bool { self.complete(children_count) }
     pub fn rhs_symbols(&self) -> &Vec<Symbol> { &self.production.rhs }
+    pub fn rule_name(&self) -> Option<&String> { self.production.rule.as_ref() }
 }
 
 impl PartialNonTerminal {
@@ -132,7 +133,8 @@ impl PartialNonTerminal {
                 value: self.value,
                 span: self.span,
                 binding: self.binding,
-                bound_typing_rule: self.bound_typing_rule,
+                // Complete AST is used only for pretty printing; we do not carry partial bound rules over
+                bound_typing_rule: None,
             }
         ))
     }
@@ -301,3 +303,5 @@ impl PartialASTNode {
         }   
     }
 }
+
+// moved NextExpectations and helpers to completion.rs

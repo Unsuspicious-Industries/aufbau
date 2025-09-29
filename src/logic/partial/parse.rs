@@ -5,6 +5,9 @@ use crate::logic::grammar::Grammar;
 use crate::logic::tokenizer::Tokenizer;
 use crate::logic::ast::{ASTNode as CompleteAST, SourceSpan};
 use crate::logic::grammar::RepetitionKind;
+use std::collections::HashMap;
+use crate::logic::typing::{TypingRule, Type};
+use crate::logic::bind::partial::select_branches_by_type;
 
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -32,6 +35,8 @@ pub enum ParseOutcome {
 pub struct PartialParser {
     grammar: Grammar,
     tokenizer: Tokenizer,
+    /// Optional per-nonterminal type guidance: (rules, expected type)
+    type_guidance: HashMap<String, (Vec<TypingRule>, Type)>,
 }
 
 impl PartialParser {
@@ -41,7 +46,15 @@ impl PartialParser {
         Self {
             grammar,
             tokenizer: Tokenizer::new(specials, vec![' ', '\n', '\t']),
+            type_guidance: HashMap::new(),
         }
+    }
+
+    /// Configure expected type and rules for a given nonterminal name.
+    /// During parsing that nonterminal, only branches compatible with the expected type
+    /// (under any of the provided rules) will be kept.
+    pub fn set_type_guidance(&mut self, nonterminal: &str, rules: Vec<TypingRule>, expected: Type) {
+        self.type_guidance.insert(nonterminal.to_string(), (rules, expected));
     }
     
     pub fn parse(&mut self, input: &str) -> Result<CompleteAST, String> {
@@ -199,7 +212,17 @@ impl PartialParser {
         }
 
         debug_trace!("parser", "NT '{}' result: complete={}, partial={}, last_full_pos={}", nt, complete_parallels.len(), partial_parallels.len(), max_complete_pos);
-
+        // Apply optional type-based pruning if guidance is configured for this nonterminal
+        if let Some((rules, expected)) = self.type_guidance.get(nt) {
+            if !complete_parallels.is_empty() {
+                let selected = select_branches_by_type(&complete_parallels, rules, expected);
+                complete_parallels = selected.into_iter().cloned().collect();
+            }
+            if !partial_parallels.is_empty() {
+                let selected = select_branches_by_type(&partial_parallels, rules, expected);
+                partial_parallels = selected.into_iter().cloned().collect();
+            }
+        }
 
         // If there is at least one complete alternative, return FULL, but include
         // both complete and partial alternatives so the caller can visualize the full tree.
@@ -353,7 +376,7 @@ impl PartialParser {
     fn parse_symbols_repetition(&mut self, segments: &[Segment], symbols: &[Symbol], seg_pos: usize, binding: Option<String>, rep_kind: &RepetitionKind) -> Result<ParseOutcome, String> {
         debug_trace!("parser", "REPEAT {:?} start_pos {}", rep_kind, seg_pos);
         let mut acc: Vec<PartialASTNode> = Vec::new();
-        let mut partial_acc: Vec<PartialASTNode> = Vec::new();
+        let _partial_acc: Vec<PartialASTNode> = Vec::new(); // kept for future use in more granular partial propagation
         let mut current_pos = seg_pos;
         let mut last_before_pos = seg_pos;
         
@@ -469,11 +492,11 @@ impl PartialParser {
     /// Returns ParseStep with nodes and the number of symbols successfully parsed
     fn parse_symbols_once(&mut self, segments: &[Segment], symbols: &[Symbol], seg_pos: usize, binding: Option<String>) -> Result<ParseOutcome, String> {
         let mut acc: Vec<PartialASTNode> = Vec::new();
-        let mut partial_acc: Vec<PartialASTNode> = Vec::new();
+        let partial_acc: Vec<PartialASTNode> = Vec::new();
         let mut current_pos = seg_pos;
         let mut symbols_parsed = 0;
 
-        for (_i,s) in symbols.iter().enumerate() {
+        for s in symbols.iter() {
             let step = self.parse_symbol(segments, s, current_pos, binding.clone())?;
             match step {
                 ParseOutcome::Full { mut nodes, next_pos, symbols_parsed: step_symbols_parsed } => {
@@ -494,9 +517,7 @@ impl PartialParser {
                     // Do not accumulate partial_nodes at the sequence level; we prefer the fully-parsed path
                     // so the sequence can still finish as FULL if subsequent symbols succeed.
                     current_pos = next_pos; // do not advance beyond the partial point
-                    if !full_nodes.is_empty() {
-                        symbols_parsed += 1; // count as parsed if we got any full nodes
-                    }
+                    if !full_nodes.is_empty() { symbols_parsed += 1; }
                 }
                 ParseOutcome::Error { next_pos, symbols_parsed: step_symbols_parsed } => {
                     debug_trace!("parser", "SYMBOLS_ONCE ERROR: pos {} -> {} (symbols={})", current_pos, next_pos, step_symbols_parsed);
