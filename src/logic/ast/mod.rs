@@ -12,6 +12,8 @@ pub mod utils;
 pub struct SourceSpan {
     pub start: usize,
     pub end: usize,
+
+    //pub full: bool,
 }
 
 /// Nonterminal-specific data from an ASTNode

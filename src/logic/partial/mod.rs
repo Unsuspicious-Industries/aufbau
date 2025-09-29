@@ -14,9 +14,10 @@ mod tests {
         crate::set_debug_level(crate::logic::debug::DebugLevel::Trace);
         
         let spec = r#"
+        U ::= 'barcbarcu'
         A ::= 'a' 
         B ::= 'b' A 'r'
-        start ::= (B 'c')* | 't'
+        start ::= U | (B 'c')* | 't' 
         "#;
 
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
