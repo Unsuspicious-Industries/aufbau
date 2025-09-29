@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
 use beam::logic::debug::{DebugLevel, set_debug_level, add_module_filter, set_debug_input};
 use anstyle::{AnsiColor, Style};
+use beam::engine::{Synthesizer};
+use beam::engine::rank::{DefaultRanker, StlcRanker};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -18,6 +20,8 @@ pub enum LogicSubcommand {
     Check(CheckArgs),
     /// Launch the visualization server
     Viz(VizArgs),
+    /// Synthesize a well-typed program from a grammar
+    Synthesize(SynthArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -46,6 +50,29 @@ pub struct VizArgs {
     pub port: u16,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct SynthArgs {
+    /// Path to grammar specification file
+    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    pub spec_path: PathBuf,
+
+    /// Beam width (number of candidates kept)
+    #[arg(short = 'k', long = "beam", default_value_t = 5)]
+    pub beam_width: i32,
+
+    /// Maximum expansion steps
+    #[arg(long = "steps", default_value_t = 128)]
+    pub steps: usize,
+
+    /// Ranker backend to use (random)
+    #[arg(long = "backend", default_value = "random")]
+    pub backend: String,
+
+    /// Optional initial prompt/seed code
+    #[arg(long = "seed", default_value = "")]
+    pub seed: String,
+}
+
 pub fn dispatch(cli: &crate::cli::Cli) {
     // Wire verbosity to debug level, with --trace overriding verbose count
     let level = if cli.trace {
@@ -71,6 +98,7 @@ pub fn dispatch(cli: &crate::cli::Cli) {
         crate::cli::Commands::Logic(cmd) => match &cmd.command {
             LogicSubcommand::Check(args) => run_check(args, cli.with_input, level),
             LogicSubcommand::Viz(args) => run_viz(args, level),
+            LogicSubcommand::Synthesize(args) => run_synthesize(args),
         },
     }
 }
@@ -105,28 +133,19 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
     };
     if with_input { set_debug_input(Some(code.clone())); }
 
-    // Parse
+    // Parse (partial-first)
     let mut parser = Parser::new(grammar);
-    let ast = match parser.parse(&code) {
-        Ok(ast) => ast,
+    let past = match parser.partial(&code) {
+        Ok(p) => p,
         Err(e) => {
             eprintln!("parse error: {}", e);
             std::process::exit(1);
         }
     };
 
-    // if debug level is trace, print the AST
-    if matches!(debug_level, DebugLevel::Trace) {
-        println!("AST: {}", ast.show_simple());
-    }
-    
-
-    // Typecheck
+    // Typecheck using partial checker
     let mut checker = TypeChecker::new();
-
-    checker.debug_at_span(&ast, "typechecking...");
-
-    match checker.check(&ast) {
+    match checker.check_partial(past.root()) {
         Ok(Some(ty)) => {
             let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
             println!("{ok}Type:{ok:#} {:?}", ty);
@@ -134,7 +153,7 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
         }
         Ok(None) => {
             let warn = Style::new().fg_color(Some(AnsiColor::Yellow.into()));
-            println!("{warn}No type inferred{warn:#} (terminal-only or missing typing rule)");
+            println!("{warn}No type inferred{warn:#} (no applicable rule)");
             std::process::exit(0);
         }
         Err(e) => {
@@ -148,11 +167,51 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
 fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     let bind = format!("127.0.0.1:{}", args.port);
     eprintln!("Starting viz server on http://{}", bind);
-    // Fire up the server. It serves an HTML that lets the user upload the spec and type input.
-    // Even though a spec path is provided here, we keep server stateless and accept spec per request.
-    // The provided spec_path is used to prefill only when running without browser interaction in the future.
     let _ = debug_level; // silence for now; wired globally above
     beam::viz::serve(&bind);
+}
+
+fn run_synthesize(args: &SynthArgs) {
+    // Load grammar spec text
+    let spec = match fs::read_to_string(&args.spec_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
+            std::process::exit(2);
+        }
+    };
+
+    // Select ranker backend
+    let ranker: Box<dyn beam::engine::rank::Ranker> = match args.backend.as_str() {
+        "random" => Box::new(DefaultRanker),
+        "stlc" => Box::new(StlcRanker),
+        other => {
+            eprintln!("error: unknown backend '{}'. Available: random, stlc", other);
+            std::process::exit(2);
+        }
+    };
+
+    let mut synth = match Synthesizer::new(&spec, ranker) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to initialize synthesizer: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // Provide seed as debug input for better tracing context
+    set_debug_input(Some(args.seed.clone()));
+
+    match synth.run_with(&args.seed, args.beam_width, args.steps) {
+        Ok(program) => {
+            println!("{}", program);
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("synthesis failed: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 

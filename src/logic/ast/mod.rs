@@ -17,7 +17,7 @@ pub struct SourceSpan {
 }
 
 /// Nonterminal-specific data from an ASTNode
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct NonTerminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -70,7 +70,7 @@ impl NonTerminal {
 }
 
 /// Terminal-specific data from an ASTNode
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Terminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -88,7 +88,7 @@ impl Terminal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ASTNode {
     Terminal(Terminal),
     Nonterminal(NonTerminal)
