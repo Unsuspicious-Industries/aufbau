@@ -50,8 +50,16 @@ impl PartialProduction {
         }
     }
 
+    /// Build a `PartialProduction` from a `Production` and parse progress numbers.
+    /// `partially_parsed` will be clamped to {0,1} to indicate an in-progress symbol.
+    pub fn from_progress(production: Production, fully_parsed: usize, partially_parsed: usize) -> Self {
+        let mut pp = Self::new(production);
+        pp.set_progress(fully_parsed, partially_parsed);
+        pp
+    }
+
     fn is_finished(&self) -> bool {
-        self.fully_parsed_symbols >= self.production.rhs.len()
+        self.fully_parsed_symbols == self.production.rhs.len() && self.partially_parsed_symbols == 0
     }
 
     /// A production is complete if it has parsed all its symbols AND
@@ -243,19 +251,21 @@ impl PartialASTNode {
                 debug_trace!("PartialASTNode::into_complete_node", "Converting NonTerminal with {} parallel productions", parallels.len());
                 
                 // Find a strictly complete production
-                for p in &parallels {
+                'alts: for p in &parallels {
                     if p.is_strict_complete() {
                         debug_trace!("PartialASTNode::into_complete_node", "Found complete production with {} children", p.children.len());
                         let mut children = Vec::new();
                         for child in &p.children {
                             match child.clone().into_complete_node() {
                                 Ok(complete_child) => children.push(complete_child),
-                                Err(_) => {
-                                    debug_trace!("PartialASTNode::into_complete_node", "Child could not be converted to CompleteAST");
-                                    continue;
+                                Err(e) => {
+                                    debug_trace!("PartialASTNode::into_complete_node", "Rejecting alternative due to child conversion error: {}", e);
+                                    // Reject this alternative and try the next one
+                                    continue 'alts;
                                 }
                             }
                         }
+                        // All children converted successfully
                         return Ok(CompleteAST::Nonterminal(
                             NonTerminal {
                                 children,
