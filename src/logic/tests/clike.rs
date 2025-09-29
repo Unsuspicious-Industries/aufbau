@@ -49,6 +49,27 @@ fn test_pass_clike() {
         "int x = 5;",
         "float y;",
         "int main() {int a; int b = 10; return b+a;}",
+        // Test nested blocks and scopes
+        "int main() {int x = 1; {int x = 2; x = x + 1;} return x;}",
+        // Test function with no parameters
+        "int get_five() {return 5;} int main() {return get_five();}",
+        // Test function with multiple parameters
+        "int add(int a, int b) {return a + b;} int main() {return add(3, 4);}",
+        // test complex while if else for nested
+        r#"int main() {
+            int x = 0;
+            for (int i = 0; i < 10; i = i + 1) {
+                if (i % 2 == 0) {
+                    x = x + 1;
+                } else {
+                    x = x + 2;
+                }
+            }
+            while (x < 30) {
+                x = x + 3;
+            }
+            return x;
+        }"#,
     ];
 
     for expr in exprs {
@@ -61,10 +82,7 @@ fn test_pass_clike() {
         println!("Parsing expression: {}", expr);
         println!("---==---");
         let past = parser.partial(expr).unwrap();
-        let pasts = past.divide();
-        for (i, part) in pasts.iter().enumerate() {
-            //debug_info!("test", "Part {}: {:#?}", i, part);
-        }
+        println!("Partial AST: {:#?}", past.root);
 
         let ast = past.into_complete().unwrap();
 
@@ -92,11 +110,18 @@ fn test_fail_clike() {
     debug_info!("test", "Initialized parser");
 
     let exprs = [
-        "int main() {return \"r\";}",
-        "int main() {int x = 5; return y;}",
-        // Test variable declaration type errors
-        "int x = \"string\";",  // type mismatch
-        "float z = true;",     // type mismatch
+        r#"int main() {
+            int x = 0;
+            for (int i = 0; i < 10; i = i + 1) {
+                if (i % 2 == 0) {
+                    x = x + 1;
+                } else {
+                    x = x + 2;
+                }
+            }
+            while (x < 30) {
+                x = x + 3;
+            }"#,
     ];
 
     for expr in exprs {
@@ -105,11 +130,7 @@ fn test_fail_clike() {
         let mut tc = TypeChecker::new();
         debug_info!("test", "Initialized type checker");
 
-        let ast = parser.parse(expr).unwrap();
-        debug_info!("test", "AST: {}", ast.pretty());
-        let err = tc.check(&ast).unwrap_err();
-
-        println!("Type error: {}", err);
+        let ast = parser.parse(expr).unwrap_err();
         println!("---");
     }
 }

@@ -14,7 +14,7 @@ pub fn xtlc_spec() -> String {
 }
 
 #[test]
-fn test_pass() {
+fn test_pass_xtlc() {
 
     // Enable debug output for this test
     set_debug_level(DebugLevel::Debug);

@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use crate::logic::partial::{PartialAST, PartialASTNode, PartialNonTerminal};
+use crate::{logic::partial::{PartialAST, PartialASTNode, PartialNonTerminal}, set_debug_level};
 use rouille::{router, Request, Response};
 use std::sync::{Arc, Mutex};
 
@@ -191,6 +191,7 @@ pub fn serve(bind_addr: &str) {
                 // Build grammar and partial AST
                 let grammar = match crate::logic::grammar::Grammar::load(&spec) { Ok(g) => g, Err(e) => return Response::text(format!("spec error: {}", e)).with_status_code(400) };
                 let mut parser = crate::logic::partial::PartialParser::new(grammar);
+                set_debug_level(crate::logic::debug::DebugLevel::Trace);
                 let partial = match parser.partial(&input) { Ok(p) => p, Err(e) => return Response::text(format!("parse error: {}", e)).with_status_code(400) };
                 let graph = build_graph(&partial);
                 Response::json(&graph)
