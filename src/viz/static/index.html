@@ -3,32 +3,37 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>P7 Partial Parse Viz</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>PartialAST Radial Viz</title>
+    <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <header>
-      <h1>Partial Parse Visualization</h1>
+    <header class="topbar">
+      <div class="brand">PartialAST Viz</div>
+      <div class="spacer"></div>
+      <a class="link" href="https://github.com/" target="_blank" rel="noreferrer">Docs</a>
     </header>
-    <main>
-      <section class="input-panel">
-        <label class="file-row">
-          <span>Spec file:</span>
-          <input id="spec" type="file" accept=".spec,.txt" />
-          <button id="clear-spec" type="button" title="Clear selected spec">×</button>
-        </label>
-        <textarea id="code" placeholder="Type code to parse..."></textarea>
-        <div class="controls">
-          <button id="parse">Parse</button>
-          <span id="status"></span>
+    <main class="layout">
+      <section class="sidebar">
+        <div class="group">
+          <label class="label">Spec file</label>
+          <input id="specFile" type="file" accept=".spec,.txt" />
         </div>
+        <div class="group">
+          <label class="label">Input</label>
+          <textarea id="input" class="code" placeholder="Type code to parse"></textarea>
+        </div>
+        <div class="row">
+          <button id="render" class="btn">Render</button>
+          <span id="status" class="status"></span>
+        </div>
+        <pre id="err" class="error"></pre>
       </section>
-      <section class="viz-panel">
-        <div id="tree"></div>
+      <section class="stage">
+        <svg id="viz"></svg>
       </section>
     </main>
-    <script src="/app.js"></script>
+    <script src="/static/app.js"></script>
   </body>
-</html>
+  </html>
 
 

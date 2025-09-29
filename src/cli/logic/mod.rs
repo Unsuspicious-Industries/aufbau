@@ -146,25 +146,13 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
 }
 
 fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
-    let spec = match fs::read_to_string(&args.spec_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
-            std::process::exit(2);
-        }
-    };
-    let grammar = match Grammar::load(&spec) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("error: failed to parse grammar spec: {}", e);
-            std::process::exit(2);
-        }
-    };
-
-    // Start HTTP server
-    let address = format!("127.0.0.1:{}", args.port);
-    println!("viz server listening on http://{}", address);
-    beam::viz::server::serve(address, grammar, debug_level);
+    let bind = format!("127.0.0.1:{}", args.port);
+    eprintln!("Starting viz server on http://{}", bind);
+    // Fire up the server. It serves an HTML that lets the user upload the spec and type input.
+    // Even though a spec path is provided here, we keep server stateless and accept spec per request.
+    // The provided spec_path is used to prefill only when running without browser interaction in the future.
+    let _ = debug_level; // silence for now; wired globally above
+    beam::viz::serve(&bind);
 }
 
 
