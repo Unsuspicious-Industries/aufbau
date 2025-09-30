@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anstyle::{AnsiColor, Style};
 use beam::engine::Synthesizer;
-use beam::engine::rank::{DefaultRanker, StlcRanker};
+use beam::engine::rank::{DefaultRanker, MixtralRanker, StlcRanker};
 use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
 use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
 
@@ -199,9 +199,16 @@ fn run_synthesize(args: &SynthArgs) {
     let ranker: Box<dyn beam::engine::rank::Ranker> = match args.backend.as_str() {
         "random" => Box::new(DefaultRanker),
         "stlc" => Box::new(StlcRanker),
+        "mixtral" => match MixtralRanker::new("mixtral") {
+            Ok(r) => Box::new(r),
+            Err(e) => {
+                eprintln!("error: failed to initialize Mixtral backend: {}", e);
+                std::process::exit(2);
+            }
+        },
         other => {
             eprintln!(
-                "error: unknown backend '{}'. Available: random, stlc",
+                "error: unknown backend '{}'. Available: random, stlc, mixtral",
                 other
             );
             std::process::exit(2);
