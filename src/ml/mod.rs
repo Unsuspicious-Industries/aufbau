@@ -3,6 +3,7 @@ use anyhow::{Context, Error as E, Result};
 use candle_nn::VarBuilder;
 use hf_hub::{Repo, RepoType, api::sync::ApiBuilder};
 use once_cell::sync::OnceCell;
+use serde_json;
 use std::any::Any;
 use std::collections::HashMap;
 use std::env;
@@ -11,14 +12,39 @@ use tokenizers::Tokenizer;
 
 use candle_core::{DType, Device, Tensor};
 pub use candle_transformers::models::mixtral::{Config as MixtralConfig, Model as MixtralModel};
+pub use candle_transformers::models::phi3::{Config as Phi3Config, Model as Phi3Model};
 
 // Thread-safe model cache
 static MODEL_CACHE: OnceCell<Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>> =
     OnceCell::new();
 
+/// Enum to handle different model types
+pub enum Model {
+    Mixtral(MixtralModel),
+    Phi3(Phi3Model),
+}
+
+impl Model {
+    pub fn forward(&mut self, input: &Tensor, pos: usize) -> Result<Tensor> {
+        match self {
+            Model::Mixtral(model) => Ok(model.forward(input, pos)?),
+            Model::Phi3(model) => Ok(model.forward(input, pos)?),
+        }
+    }
+
+    pub fn clear_kv_cache(&mut self) {
+        match self {
+            Model::Mixtral(_model) => {
+                // Mixtral doesn't have clear_kv_cache, but we can implement if needed
+            },
+            Model::Phi3(model) => model.clear_kv_cache(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LogitsProvider {
-    pub model: Arc<Mutex<MixtralModel>>,
+    pub model: Arc<Mutex<Model>>,
     pub tokenizer: Arc<Tokenizer>,
     pub device: Device,
 }
@@ -28,7 +54,15 @@ impl LogitsProvider {
         let input = Tensor::new(token_ids, &self.device)?.unsqueeze(0)?;
         let mut model = self.model.lock().unwrap();
         let logits = model.forward(&input, 0)?;
-        let logits = logits.squeeze(0)?.squeeze(0)?.to_dtype(DType::F32)?;
+        
+        // Handle different output shapes for different models
+        let logits = match logits.dims().len() {
+            3 => logits.squeeze(0)?.squeeze(0)?,
+            2 => logits.squeeze(0)?,
+            _ => logits,
+        };
+        
+        let logits = logits.to_dtype(DType::F32)?;
         let logits_vec = logits.to_vec1::<f32>()?;
         Ok(logits_vec)
     }
@@ -73,7 +107,7 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
             let model = MixtralModel::new(&config, vb)?;
 
             let provider = LogitsProvider {
-                model: Arc::new(Mutex::new(model)),
+                model: Arc::new(Mutex::new(Model::Mixtral(model))),
                 tokenizer: Arc::new(tokenizer),
                 device,
             };
@@ -86,7 +120,77 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
 
             Ok(provider)
         }
-        _ => Err(E::msg(format!("Unknown model: {}", name))),
+        "phi3" | "phi3-mini" => {
+            let api = ApiBuilder::new().build()?;
+            let repo = api.repo(Repo::with_revision(
+                "microsoft/Phi-3-mini-4k-instruct".to_string(),
+                RepoType::Model,
+                "main".to_string(),
+            ));
+            
+            let tokenizer_filename = repo.get("tokenizer.json")?;
+            let filenames = candle_examples::hub_load_safetensors(&repo, "model.safetensors.index.json")?;
+            let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+            
+            let config_filename = repo.get("config.json")?;
+            let config_str = std::fs::read_to_string(config_filename)?;
+            let config: Phi3Config = serde_json::from_str(&config_str)?;
+            
+            let device = candle_examples::device(false)?;
+            let dtype = device.bf16_default_to_f32();
+            let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
+            let model = Phi3Model::new(&config, vb)?;
+
+            let provider = LogitsProvider {
+                model: Arc::new(Mutex::new(Model::Phi3(model))),
+                tokenizer: Arc::new(tokenizer),
+                device,
+            };
+
+            // Store in cache
+            {
+                let mut cache_guard = cache.lock().unwrap();
+                cache_guard.insert(name.to_string(), Box::new(provider.clone()));
+            }
+
+            Ok(provider)
+        }
+        "phi3-medium" => {
+            let api = ApiBuilder::new().build()?;
+            let repo = api.repo(Repo::with_revision(
+                "microsoft/Phi-3-medium-4k-instruct".to_string(),
+                RepoType::Model,
+                "main".to_string(),
+            ));
+            
+            let tokenizer_filename = repo.get("tokenizer.json")?;
+            let filenames = candle_examples::hub_load_safetensors(&repo, "model.safetensors.index.json")?;
+            let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
+            
+            let config_filename = repo.get("config.json")?;
+            let config_str = std::fs::read_to_string(config_filename)?;
+            let config: Phi3Config = serde_json::from_str(&config_str)?;
+            
+            let device = candle_examples::device(false)?;
+            let dtype = device.bf16_default_to_f32();
+            let vb = unsafe { VarBuilder::from_mmaped_safetensors(&filenames, dtype, &device)? };
+            let model = Phi3Model::new(&config, vb)?;
+
+            let provider = LogitsProvider {
+                model: Arc::new(Mutex::new(Model::Phi3(model))),
+                tokenizer: Arc::new(tokenizer),
+                device,
+            };
+
+            // Store in cache
+            {
+                let mut cache_guard = cache.lock().unwrap();
+                cache_guard.insert(name.to_string(), Box::new(provider.clone()));
+            }
+
+            Ok(provider)
+        }
+        _ => Err(E::msg(format!("Unknown model: {}. Supported models: mixtral, phi3, phi3-mini, phi3-medium", name))),
     }
 }
 
@@ -100,9 +204,43 @@ pub fn get_logits(model_name: &str, input: &str) -> Result<Vec<f32>> {
     provider.get_logits(&token_ids)
 }
 
-#[test]
-fn test_get_logits() -> Result<()> {
-    let logits = get_logits("mixtral", "Hello, world!")?;
-    println!("Logits length: {}", logits.len());
-    Ok(())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_logits_mixtral() -> Result<()> {
+        let logits = get_logits("mixtral", "Hello, world!")?;
+        println!("Mixtral logits length: {}", logits.len());
+        assert!(!logits.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_logits_phi3() -> Result<()> {
+        let logits = get_logits("phi3", "Hello, world!")?;
+        println!("Phi-3 logits length: {}", logits.len());
+        assert!(!logits.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_phi3_tokenization() -> Result<()> {
+        let provider = get_logits_provider("phi3")?;
+        let tokens = provider.tokenize("The quick brown fox")?;
+        println!("Phi-3 tokens: {:?}", tokens);
+        assert!(!tokens.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn test_model_caching() -> Result<()> {
+        // Load the same model twice - should use cache on second call
+        let provider1 = get_logits_provider("phi3")?;
+        let provider2 = get_logits_provider("phi3")?;
+        
+        // Both should have the same tokenizer (Arc should be the same)
+        assert!(Arc::ptr_eq(&provider1.tokenizer, &provider2.tokenizer));
+        Ok(())
+    }
 }

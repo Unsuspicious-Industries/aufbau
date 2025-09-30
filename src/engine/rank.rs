@@ -193,14 +193,15 @@ impl Ranker for StlcRanker {
     }
 }
 
-pub struct MixtralRanker {
+pub struct LLMRanker {
     provider: LogitsProvider,
     id_to_token: Arc<Vec<Option<String>>>,
     special_token_ids: Arc<HashSet<u32>>,
     top_k: usize,
+    model_name: String,
 }
 
-impl MixtralRanker {
+impl LLMRanker {
     pub fn new(model_name: &str) -> Result<Self> {
         let provider = ml::get_logits_provider(model_name)
             .with_context(|| format!("failed to load logits provider '{}'", model_name))?;
@@ -235,6 +236,7 @@ impl MixtralRanker {
             id_to_token: Arc::new(id_to_token),
             special_token_ids: Arc::new(special_token_ids),
             top_k: 64,
+            model_name: model_name.to_string(),
         })
     }
 
@@ -257,7 +259,7 @@ impl MixtralRanker {
     }
 }
 
-impl Ranker for MixtralRanker {
+impl Ranker for LLMRanker {
     fn vocab(&self) -> Vec<String> {
         self.id_to_token
             .iter()
@@ -300,3 +302,5 @@ impl Ranker for MixtralRanker {
         Ok(results)
     }
 }
+
+
