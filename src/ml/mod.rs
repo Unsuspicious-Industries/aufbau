@@ -1,19 +1,20 @@
 // run ML inference
+use anyhow::{Context, Error as E, Result};
 use candle_nn::VarBuilder;
-use hf_hub::{Repo, api::sync::Api, RepoType,api::sync::ApiBuilder};
+use hf_hub::{Repo, RepoType, api::sync::ApiBuilder};
 use once_cell::sync::OnceCell;
-use tokenizers::Tokenizer;
 use std::any::Any;
 use std::collections::HashMap;
 use std::env;
 use std::sync::{Arc, Mutex};
-use anyhow::{Error as E, Result};
+use tokenizers::Tokenizer;
 
-use candle_core::{Device, Tensor, DType};
+use candle_core::{DType, Device, Tensor};
 pub use candle_transformers::models::mixtral::{Config as MixtralConfig, Model as MixtralModel};
 
 // Thread-safe model cache
-static MODEL_CACHE: OnceCell<Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>> = OnceCell::new();
+static MODEL_CACHE: OnceCell<Arc<Mutex<HashMap<String, Box<dyn Any + Send + Sync>>>>> =
+    OnceCell::new();
 
 #[derive(Clone)]
 pub struct LogitsProvider {
@@ -31,7 +32,7 @@ impl LogitsProvider {
         let logits_vec = logits.to_vec1::<f32>()?;
         Ok(logits_vec)
     }
-    
+
     pub fn tokenize(&self, text: &str) -> Result<Vec<u32>> {
         let encoding = self.tokenizer.encode(text, true).map_err(E::msg)?;
         Ok(encoding.get_ids().to_vec())
@@ -40,7 +41,6 @@ impl LogitsProvider {
 
 fn load_model(name: &str) -> Result<LogitsProvider> {
     let cache = MODEL_CACHE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
-    
 
     // Try to get from cache first
     {
@@ -51,17 +51,20 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
             }
         }
     }
-    
+
     match name {
         "mixtral" => {
-            let api = ApiBuilder::new().with_token(env::var("HUGGINGFACE_TOKEN").ok()).build()?;
+            let token = env::var("HUGGINGFACE_TOKEN")
+                .context("HUGGINGFACE_TOKEN must be set to access Mixtral weights")?;
+            let api = ApiBuilder::new().with_token(Some(token)).build()?;
             let repo = api.repo(Repo::with_revision(
                 "mistralai/Mixtral-8x7B-v0.1".to_string(),
                 RepoType::Model,
                 "main".to_string(),
             ));
             let tokenizer_filename = repo.get("tokenizer.json")?;
-            let filenames = candle_examples::hub_load_safetensors(&repo, "model.safetensors.index.json")?;
+            let filenames =
+                candle_examples::hub_load_safetensors(&repo, "model.safetensors.index.json")?;
             let tokenizer = Tokenizer::from_file(tokenizer_filename).map_err(E::msg)?;
             let config = MixtralConfig::v0_1_8x7b(true);
             let device = candle_examples::device(false)?;
@@ -74,13 +77,13 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
                 tokenizer: Arc::new(tokenizer),
                 device,
             };
-            
+
             // Store in cache
             {
                 let mut cache_guard = cache.lock().unwrap();
                 cache_guard.insert(name.to_string(), Box::new(provider.clone()));
             }
-            
+
             Ok(provider)
         }
         _ => Err(E::msg(format!("Unknown model: {}", name))),
