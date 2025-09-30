@@ -1,13 +1,15 @@
 use super::typing::BoundType;
-use crate::logic::typing::Type;
 use crate::logic::ast::{ASTNode, NonTerminal};
-use crate::{debug_trace, debug_debug, debug_warn};
+use crate::logic::typing::Type;
+use crate::{debug_debug, debug_trace, debug_warn};
 
 fn collect_terminals(node: &ASTNode, out: &mut Vec<String>) {
     match node {
         ASTNode::Terminal(t) => out.push(t.value.clone()),
         ASTNode::Nonterminal(nt) => {
-            for ch in &nt.children { collect_terminals(ch, out); }
+            for ch in &nt.children {
+                collect_terminals(ch, out);
+            }
         }
     }
 }
@@ -18,10 +20,14 @@ fn find_parent_with_binding_level(root: &NonTerminal, var: &str) -> Option<NonTe
     // If current node has any direct children with binding = var, return it
     let direct = root.nonterminal_children();
     let has_any = direct.iter().any(|ch| ch.binding.as_deref() == Some(var));
-    if has_any { return Some(root.clone()); }
+    if has_any {
+        return Some(root.clone());
+    }
     // Otherwise recurse; prefer the first shallowest occurrence in preorder
     for ch in direct {
-        if let Some(p) = find_parent_with_binding_level(&ch, var) { return Some(p); }
+        if let Some(p) = find_parent_with_binding_level(&ch, var) {
+            return Some(p);
+        }
     }
     None
 }
@@ -52,33 +58,56 @@ pub fn get_type_value(nt: &NonTerminal) -> Option<BoundType> {
 }
 
 pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
-    debug_trace!("bind::utils", "get_type_binding: looking for type_var={:?}", type_var);
+    debug_trace!(
+        "bind::utils",
+        "get_type_binding: looking for type_var={:?}",
+        type_var
+    );
     match type_var {
         Type::Atom(var) => {
             // Check if this is a quoted concrete type (e.g., 'int', 'float')
             if var.starts_with('\'') && var.ends_with('\'') {
-                let concrete_type = &var[1..var.len()-1]; // Remove quotes
-                debug_trace!("bind::utils", "get_type_binding: found concrete type '{}'", concrete_type);
+                let concrete_type = &var[1..var.len() - 1]; // Remove quotes
+                debug_trace!(
+                    "bind::utils",
+                    "get_type_binding: found concrete type '{}'",
+                    concrete_type
+                );
                 return Some(BoundType::Atom(concrete_type.to_string()));
             }
-            
+
             // Single binding resolution path
             if let Some(nt) = get_nt_binding(&node, var.clone()) {
                 if let Some(full_ty) = get_type_value(&nt) {
-                    debug_trace!("bind::utils", "get_type_binding: found structured type={:?}", full_ty);
+                    debug_trace!(
+                        "bind::utils",
+                        "get_type_binding: found structured type={:?}",
+                        full_ty
+                    );
                     return Some(full_ty);
                 } else {
-                    debug_warn!("bind::utils", "get_type_binding: failed to parse structured type from subtree");
+                    debug_warn!(
+                        "bind::utils",
+                        "get_type_binding: failed to parse structured type from subtree"
+                    );
                     return None;
                 }
             }
             // No fallback for other unbound atoms
-            debug_warn!("bind::utils", "get_type_binding: unbound type variable '{}'", var);
+            debug_warn!(
+                "bind::utils",
+                "get_type_binding: unbound type variable '{}'",
+                var
+            );
             None
         }
         Type::Raw(concrete_type) => {
             // Raw/concrete types are bound directly without variable resolution
-            debug_trace!("bind::utils", "get_type_binding: binding raw type '{}'", concrete_type);
+            debug_trace!(
+                "bind::utils",
+                "get_type_binding: binding raw type '{}'",
+                concrete_type
+            );
             Some(BoundType::Atom(concrete_type.clone()))
         }
         Type::Arrow(t1, t2) => {
@@ -90,7 +119,11 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
         Type::Tuple(v) => {
             let elements = collect_nt_bindings_same_level(node, &v);
             if elements.is_empty() {
-                debug_debug!("bind::utils", "get_type_binding: no tuple elements found for {}, returning empty tuple", v);
+                debug_debug!(
+                    "bind::utils",
+                    "get_type_binding: no tuple elements found for {}, returning empty tuple",
+                    v
+                );
                 return Some(BoundType::Tuple(Vec::new()));
             }
             let tuple_elem_types: Vec<BoundType> = elements
@@ -108,7 +141,10 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
             // Try to resolve symbolic size variables via get_var_binding
             let size_str = get_var_binding(node, size);
             if size_str.is_err() {
-                debug_warn!("bind::utils", "get_type_binding: failed to resolve array size variable");
+                debug_warn!(
+                    "bind::utils",
+                    "get_type_binding: failed to resolve array size variable"
+                );
                 return None;
             }
             // parse as u64
@@ -118,13 +154,15 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
                 None
             };
             match size_u64 {
-                    Some(n) => Some(BoundType::Array(Box::new(b), n)),
-                    None => {
-                        debug_warn!("bind::utils", "get_type_binding: failed to parse array size as u64");
-                        None
-                    }
+                Some(n) => Some(BoundType::Array(Box::new(b), n)),
+                None => {
+                    debug_warn!(
+                        "bind::utils",
+                        "get_type_binding: failed to parse array size as u64"
+                    );
+                    None
                 }
-
+            }
         }
         Type::Empty => Some(BoundType::Empty),
         Type::Not(t) => {
@@ -143,14 +181,28 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
         }
         Type::ContextCall(ctx, var) => {
             // Context calls need to bind the variable parameter
-            debug_trace!("bind::utils", "get_type_binding: binding context call {}({})", ctx, var);
-            
+            debug_trace!(
+                "bind::utils",
+                "get_type_binding: binding context call {}({})",
+                ctx,
+                var
+            );
+
             // Try to resolve the variable name through the binding system
             if let Some(bound_var) = get_var_binding(node, var.clone()).ok().flatten() {
-                debug_trace!("bind::utils", "get_type_binding: resolved context call variable {} to {}", var, bound_var);
+                debug_trace!(
+                    "bind::utils",
+                    "get_type_binding: resolved context call variable {} to {}",
+                    var,
+                    bound_var
+                );
                 Some(BoundType::ContextCall(ctx.clone(), bound_var))
             } else {
-                debug_warn!("bind::utils", "get_type_binding: unbound context call variable '{}'", var);
+                debug_warn!(
+                    "bind::utils",
+                    "get_type_binding: unbound context call variable '{}'",
+                    var
+                );
                 None
             }
         }
@@ -159,33 +211,60 @@ pub fn bind_type(node: &NonTerminal, type_var: Type) -> Option<BoundType> {
 }
 
 /// Bind a variable to a type in the current context
-pub fn get_nt_binding(node: &NonTerminal,var: String) -> Option<NonTerminal> {
-    debug_trace!("bind::utils", "get_nt_binding: looking for {} in node {}", var, node.value);
-    
+pub fn get_nt_binding(node: &NonTerminal, var: String) -> Option<NonTerminal> {
+    debug_trace!(
+        "bind::utils",
+        "get_nt_binding: looking for {} in node {}",
+        var,
+        node.value
+    );
+
     // First pass: check if any direct children have the binding we're looking for
     for child in &node.nonterminal_children() {
-        debug_trace!("bind::utils", "get_nt_binding: checking direct child {} (binding: {:?})", child.value, child.binding);
+        debug_trace!(
+            "bind::utils",
+            "get_nt_binding: checking direct child {} (binding: {:?})",
+            child.value,
+            child.binding
+        );
         if let Some(binding) = &child.binding {
             if *binding == var {
-                debug_trace!("bind::utils", "get_nt_binding: DIRECT MATCH! Found {} in child {}", var, child.value);
+                debug_trace!(
+                    "bind::utils",
+                    "get_nt_binding: DIRECT MATCH! Found {} in child {}",
+                    var,
+                    child.value
+                );
                 return Some(child.clone());
             }
         }
     }
-    
+
     // Second pass: if no direct match, recurse into children
     for child in &node.nonterminal_children() {
-        debug_trace!("bind::utils", "get_nt_binding: recursing into child {}", child.value);
+        debug_trace!(
+            "bind::utils",
+            "get_nt_binding: recursing into child {}",
+            child.value
+        );
         if let Some(binding) = child.bind(var.clone()) {
-            debug_trace!("bind::utils", "get_nt_binding: found binding in child {}", child.value);
+            debug_trace!(
+                "bind::utils",
+                "get_nt_binding: found binding in child {}",
+                child.value
+            );
             return Some(binding);
         }
     }
-    debug_trace!("bind::utils", "get_nt_binding: no binding found for {}", var);
+    debug_trace!(
+        "bind::utils",
+        "get_nt_binding: no binding found for {}",
+        var
+    );
     None
 }
 
-pub fn get_var_binding(node: &NonTerminal,var: String) -> Result<Option<String>, String> {
+pub fn get_var_binding(node: &NonTerminal, var: String) -> Result<Option<String>, String> {
     if let Some(binding) = get_nt_binding(node, var) {
         if let Some(value) = extract_terminal_value(&binding.as_node()) {
             return Ok(Some(value));
@@ -200,14 +279,13 @@ pub fn extract_terminals(node: &ASTNode) -> Vec<String> {
     match node {
         ASTNode::Terminal(t) => vec![t.value.clone()],
         ASTNode::Nonterminal(nt) => {
-            
             let mut terminals = vec![];
             for child in &nt.children {
                 // all extract_terminals on all childrens and merge vecs
                 let extracted = extract_terminals(child);
                 terminals.extend(extracted);
             }
-            
+
             terminals
         }
     }
@@ -217,10 +295,7 @@ pub fn extract_terminals(node: &ASTNode) -> Vec<String> {
 pub fn extract_terminal_value(node: &ASTNode) -> Option<String> {
     let terms = extract_terminals(node);
     // Filter out structural parentheses
-    let filtered: Vec<String> = terms
-        .into_iter()
-        .filter(|t| t != "(" && t != ")")
-        .collect();
+    let filtered: Vec<String> = terms.into_iter().filter(|t| t != "(" && t != ")").collect();
     match filtered.len() {
         1 => Some(filtered[0].clone()),
         _ => None,
@@ -229,17 +304,31 @@ pub fn extract_terminal_value(node: &ASTNode) -> Option<String> {
 
 impl NonTerminal {
     pub fn bind(&self, var: String) -> Option<Self> {
-        debug_trace!("bind::utils", "NonTerminal::bind: checking node {} for binding {}", self.value, var);
+        debug_trace!(
+            "bind::utils",
+            "NonTerminal::bind: checking node {} for binding {}",
+            self.value,
+            var
+        );
         if let Some(binding) = self.binding() {
             debug_trace!("bind::utils", "NonTerminal::bind: {} =? {}", binding, var);
             if *binding == var {
-                debug_trace!("bind::utils", "NonTerminal::bind: MATCH! Returning node {}", self.value);
+                debug_trace!(
+                    "bind::utils",
+                    "NonTerminal::bind: MATCH! Returning node {}",
+                    self.value
+                );
                 return Some(self.clone());
             }
         }
         for child in &self.nonterminal_children() {
             if let Some(binding) = child.bind(var.clone()) {
-                debug_trace!("bind::utils", "NonTerminal::bind: found {} in child, returning from {}", var, self.value);
+                debug_trace!(
+                    "bind::utils",
+                    "NonTerminal::bind: found {} in child, returning from {}",
+                    var,
+                    self.value
+                );
                 return Some(binding);
             }
         }

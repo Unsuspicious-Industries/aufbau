@@ -1,15 +1,10 @@
 use std::fmt;
 
-use super::{
-    BoundConclusion,
-    BoundPremise,
-    BoundType,
-    BoundTypeAscription,
-    BoundTypeSetting,
-    BoundTypingJudgment,
-    BoundTypingRule,
-};
 use super::partial::extract_terminal_value_partial;
+use super::{
+    BoundConclusion, BoundPremise, BoundType, BoundTypeAscription, BoundTypeSetting,
+    BoundTypingJudgment, BoundTypingRule,
+};
 
 impl fmt::Display for BoundType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -34,7 +29,8 @@ impl fmt::Display for BoundType {
 
 impl fmt::Display for BoundTypeAscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let term = extract_terminal_value_partial(&self.node.as_node()).unwrap_or_else(|| self.node.value.clone());
+        let term = extract_terminal_value_partial(&self.node.as_node())
+            .unwrap_or_else(|| self.node.value.clone());
         write!(f, "{} : {}", term, self.ty)
     }
 }
@@ -44,7 +40,8 @@ impl fmt::Display for BoundTypingJudgment {
         match self {
             BoundTypingJudgment::Ascription(ascr) => write!(f, "{}", ascr),
             BoundTypingJudgment::Membership(var_node, ctx) => {
-                let term = extract_terminal_value_partial(&var_node.as_node()).unwrap_or_else(|| var_node.value.clone());
+                let term = extract_terminal_value_partial(&var_node.as_node())
+                    .unwrap_or_else(|| var_node.value.clone());
                 write!(f, "{} ∈ {}", term, ctx)
             }
         }
@@ -56,10 +53,15 @@ impl fmt::Display for BoundTypeSetting {
         if self.extensions.is_empty() {
             write!(f, "{}", self.name)
         } else {
-            let parts: Vec<String> = self.extensions.iter().map(|e| {
-                let term = extract_terminal_value_partial(&e.node.as_node()).unwrap_or_else(|| e.node.value.clone());
-                format!("{}:{}", term, e.ty)
-            }).collect();
+            let parts: Vec<String> = self
+                .extensions
+                .iter()
+                .map(|e| {
+                    let term = extract_terminal_value_partial(&e.node.as_node())
+                        .unwrap_or_else(|| e.node.value.clone());
+                    format!("{}:{}", term, e.ty)
+                })
+                .collect();
             write!(f, "{}[{}]", self.name, parts.join(", "))
         }
     }
@@ -80,14 +82,13 @@ impl fmt::Display for BoundConclusion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use super::partial::BoundConclusionKind;
         match &self.kind {
-            BoundConclusionKind::Type(ty) => {
-                match (&self.context.input, &self.context.output) {
-                    (i, Some(o)) => write!(f, "{} -> {} ⊢ {}", i, o, ty),
-                    (i, None) => write!(f, "{}[] ⊢ {}", i, ty),
-                }
-            }
+            BoundConclusionKind::Type(ty) => match (&self.context.input, &self.context.output) {
+                (i, Some(o)) => write!(f, "{} -> {} ⊢ {}", i, o, ty),
+                (i, None) => write!(f, "{}[] ⊢ {}", i, ty),
+            },
             BoundConclusionKind::ContextLookup(ctx, var_node) => {
-                let term = extract_terminal_value_partial(&var_node.as_node()).unwrap_or_else(|| var_node.value.clone());
+                let term = extract_terminal_value_partial(&var_node.as_node())
+                    .unwrap_or_else(|| var_node.value.clone());
                 write!(f, "{}({})", ctx, term)
             }
         }
@@ -109,12 +110,6 @@ impl fmt::Debug for BoundTypingRule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let n = self.premises.len();
         // Verbose, stable debug representation for tests and logs
-        write!(
-            f,
-            "BOUND:{} ({} premises): {}",
-            self.name,
-            n,
-            self
-        )
+        write!(f, "BOUND:{} ({} premises): {}", self.name, n, self)
     }
 }

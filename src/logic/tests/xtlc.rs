@@ -1,8 +1,7 @@
-
+use crate::logic::check::TypeChecker;
 use crate::logic::grammar::Grammar;
 use crate::logic::parser::Parser;
-use crate::logic::check::TypeChecker;
-use crate::{debug_info, set_debug_level, set_debug_input, DebugLevel};
+use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
 
 // Extended Typed Lambda Calculus
 pub fn xtlc_spec() -> String {
@@ -15,12 +14,15 @@ pub fn xtlc_spec() -> String {
 
 #[test]
 fn test_pass_xtlc() {
-
     // Enable debug output for this test
     set_debug_level(DebugLevel::Debug);
 
     let grammar = Grammar::load(&xtlc_spec()).expect("Failed to load XTLC grammar");
-    debug_info!("test", "Loaded grammar with {} rules", grammar.typing_rules.len());
+    debug_info!(
+        "test",
+        "Loaded grammar with {} rules",
+        grammar.typing_rules.len()
+    );
     let mut parser = Parser::new(grammar.clone());
     debug_info!("test", "Initialized parser");
     // Debug: Print all loaded productions
@@ -32,11 +34,8 @@ fn test_pass_xtlc() {
         }
     }
     println!("=== END PRODUCTIONS ===");
-    
 
-    let exprs = [
-        "λx:a->b.x",
-    ];
+    let exprs = ["λx:a->b.x"];
 
     for expr in exprs {
         set_debug_input(Some(expr.to_string()));

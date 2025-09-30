@@ -1,6 +1,6 @@
-use std::fmt::{self, Display};
 use crate::logic::ast::{ASTNode, SourceSpan};
-use crate::logic::typing::Type;
+
+use std::fmt::{self, Display};
 
 /// Debug level for controlling output verbosity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -92,7 +92,10 @@ pub fn is_debug_enabled(level: DebugLevel, module: &str) -> bool {
         if config.module_filters.is_empty() {
             return true;
         }
-        config.module_filters.iter().any(|filter| module.contains(filter))
+        config
+            .module_filters
+            .iter()
+            .any(|filter| module.contains(filter))
     })
 }
 
@@ -124,7 +127,7 @@ macro_rules! debug_warn {
 #[macro_export]
 macro_rules! debug_info {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::logic::debug::DebugLevel::Info, $module, $($arg)*);
+        $crate::debug!($crate::logic::debug::DebugLevel::Info, $module, $($arg)*)
     };
 }
 
@@ -155,19 +158,28 @@ impl DebugUtils {
                     // Calculate line and column numbers properly
                     let chars_before_start: Vec<char> = input.chars().take(span.start).collect();
                     let start_line = chars_before_start.iter().filter(|&&c| c == '\n').count() + 1;
-                    let start_col = chars_before_start.iter().rev()
+                    let start_col = chars_before_start
+                        .iter()
+                        .rev()
                         .take_while(|&&c| c != '\n')
-                        .count() + 1;
-                    
+                        .count()
+                        + 1;
+
                     let chars_before_end: Vec<char> = input.chars().take(span.end).collect();
                     let end_line = chars_before_end.iter().filter(|&&c| c == '\n').count() + 1;
-                    let end_col = chars_before_end.iter().rev()
+                    let end_col = chars_before_end
+                        .iter()
+                        .rev()
                         .take_while(|&&c| c != '\n')
-                        .count() + 1;
-                    
+                        .count()
+                        + 1;
+
                     let snippet = Self::extract_span_text(span, input);
-                    
-                    format!("line {}:{}-{}:{} '{}'", start_line, start_col, end_line, end_col, snippet)
+
+                    format!(
+                        "line {}:{}-{}:{} '{}'",
+                        start_line, start_col, end_line, end_col, snippet
+                    )
                 }
                 (Some(span), None) => {
                     format!("span {}..{}", span.start, span.end)
@@ -181,9 +193,7 @@ impl DebugUtils {
     fn extract_span_text(span: &SourceSpan, input: &str) -> String {
         if span.start <= input.len() && span.end <= input.len() && span.start <= span.end {
             match input.get(span.start..span.end) {
-                Some(text) => {
-                    text.replace('\n', "\\n").replace('\t', "\\t")
-                }
+                Some(text) => text.replace('\n', "\\n").replace('\t', "\\t"),
                 None => {
                     format!("<invalid UTF-8 span: {}..{}>", span.start, span.end)
                 }
@@ -204,9 +214,7 @@ impl DebugUtils {
         DEBUG_CONFIG.with(|config| {
             let config = config.borrow();
             match (node.span(), &config.input) {
-                (Some(span), Some(input)) => {
-                    Self::extract_span_text(span, input)
-                }
+                (Some(span), Some(input)) => Self::extract_span_text(span, input),
                 (Some(span), None) => {
                     format!("<span {}..{}, no input>", span.start, span.end)
                 }
@@ -224,8 +232,6 @@ impl DebugUtils {
             ASTNode::Nonterminal(nt) => format!("NT({})", nt.value),
         }
     }
-
-
 
     /// Pretty print an AST node tree with indentation
     pub fn pretty_print_ast(node: &ASTNode, indent: usize) -> String {

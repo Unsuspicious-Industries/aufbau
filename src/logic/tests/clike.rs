@@ -1,11 +1,6 @@
 #[cfg(test)]
-
-use crate::logic::{
-    grammar::Grammar, 
-    parser::Parser, 
-    check::TypeChecker, 
-};
-use crate::{debug_info, set_debug_level, set_debug_input, DebugLevel};
+use crate::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
+use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
 
 pub fn c_like_spec() -> String {
     use std::path::Path;
@@ -17,12 +12,15 @@ pub fn c_like_spec() -> String {
 
 #[test]
 fn test_pass_clike() {
-
     // Enable debug output for this test
     set_debug_level(DebugLevel::Trace);
 
     let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
-    debug_info!("test", "Loaded grammar with {} rules", grammar.typing_rules.len());
+    debug_info!(
+        "test",
+        "Loaded grammar with {} rules",
+        grammar.typing_rules.len()
+    );
     let mut parser = Parser::new(grammar.clone());
     debug_info!("test", "Initialized parser");
     // Debug: Print all loaded psroductions
@@ -34,7 +32,6 @@ fn test_pass_clike() {
         }
     }
     println!("=== END PRODUCTIONS ===");
-    
 
     let exprs = [
         "int main() {return 10;}",
@@ -77,7 +74,6 @@ fn test_pass_clike() {
 
         let mut tc = TypeChecker::new();
         debug_info!("test", "Initialized type checker");
-        
 
         println!("Parsing expression: {}", expr);
         println!("---==---");
@@ -94,7 +90,6 @@ fn test_pass_clike() {
 
         let ast = past.into_complete().unwrap();
         println!("AST: {}", ast.pretty());
-
     }
 }
 
@@ -104,12 +99,15 @@ fn test_fail_clike() {
     set_debug_level(DebugLevel::Debug);
 
     let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
-    debug_info!("test", "Loaded grammar with {} rules", grammar.typing_rules.len());
+    debug_info!(
+        "test",
+        "Loaded grammar with {} rules",
+        grammar.typing_rules.len()
+    );
     let mut parser = Parser::new(grammar.clone());
     debug_info!("test", "Initialized parser");
 
-    let exprs = [
-        r#"int main() {
+    let exprs = [r#"int main() {
             int x = 0;
             for (int i = 0; i < 10; i = i + 1) {
                 if (i % 2 == 0) {
@@ -120,8 +118,7 @@ fn test_fail_clike() {
             }
             while (x < 30) {
                 x = x + 3;
-            }"#,
-    ];
+            }"#];
 
     for expr in exprs {
         set_debug_input(Some(expr.to_string()));

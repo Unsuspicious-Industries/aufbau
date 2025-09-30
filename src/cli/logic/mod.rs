@@ -2,11 +2,11 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
-use beam::logic::debug::{DebugLevel, set_debug_level, add_module_filter, set_debug_input};
 use anstyle::{AnsiColor, Style};
-use beam::engine::{Synthesizer};
+use beam::engine::Synthesizer;
 use beam::engine::rank::{DefaultRanker, StlcRanker};
+use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -27,22 +27,22 @@ pub enum LogicSubcommand {
 #[derive(Args, Debug, Clone)]
 pub struct CheckArgs {
     /// Path to grammar specification file
-    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
     pub spec_path: PathBuf,
 
     /// Path to source code file to typecheck
-    #[arg(value_name = "CODE_FILE")] 
+    #[arg(value_name = "CODE_FILE")]
     pub code_path: PathBuf,
 
     /// Explicit start symbol override
-    #[arg(long = "start")] 
+    #[arg(long = "start")]
     pub start: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct VizArgs {
     /// Path to grammar specification file
-    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
     pub spec_path: PathBuf,
 
     /// Optional port to bind the server
@@ -53,7 +53,7 @@ pub struct VizArgs {
 #[derive(Args, Debug, Clone)]
 pub struct SynthArgs {
     /// Path to grammar specification file
-    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
     pub spec_path: PathBuf,
 
     /// Beam width (number of candidates kept)
@@ -108,7 +108,11 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
     let spec = match fs::read_to_string(&args.spec_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
+            eprintln!(
+                "error: failed to read spec '{}': {}",
+                args.spec_path.display(),
+                e
+            );
             std::process::exit(2);
         }
     };
@@ -127,11 +131,17 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
     let code = match fs::read_to_string(&args.code_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: failed to read code '{}': {}", args.code_path.display(), e);
+            eprintln!(
+                "error: failed to read code '{}': {}",
+                args.code_path.display(),
+                e
+            );
             std::process::exit(2);
         }
     };
-    if with_input { set_debug_input(Some(code.clone())); }
+    if with_input {
+        set_debug_input(Some(code.clone()));
+    }
 
     // Parse (partial-first)
     let mut parser = Parser::new(grammar);
@@ -176,7 +186,11 @@ fn run_synthesize(args: &SynthArgs) {
     let spec = match fs::read_to_string(&args.spec_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
+            eprintln!(
+                "error: failed to read spec '{}': {}",
+                args.spec_path.display(),
+                e
+            );
             std::process::exit(2);
         }
     };
@@ -186,7 +200,10 @@ fn run_synthesize(args: &SynthArgs) {
         "random" => Box::new(DefaultRanker),
         "stlc" => Box::new(StlcRanker),
         other => {
-            eprintln!("error: unknown backend '{}'. Available: random, stlc", other);
+            eprintln!(
+                "error: unknown backend '{}'. Available: random, stlc",
+                other
+            );
             std::process::exit(2);
         }
     };
@@ -213,5 +230,3 @@ fn run_synthesize(args: &SynthArgs) {
         }
     }
 }
-
-

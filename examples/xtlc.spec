@@ -31,9 +31,11 @@ Application(app) ::= BaseTerm[f] BaseTerm[e]
 
 
 // Terms
-Term ::= Let | Application[e] | BaseTerm[e] 
+Term ::=  Application[e] | BaseTerm[e] 
 
-Program ::= Term+
+Expr ::= Term | Let
+
+Program ::= Expr+
 
 // Typing Rules
 x ∈ Γ

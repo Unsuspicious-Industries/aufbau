@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use crate::logic::bind::typing::BoundType;
-
-
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypingContext {
@@ -13,20 +11,20 @@ pub struct TypingContext {
 
 impl TypingContext {
     /// Create a new empty context
-    pub fn new() -> Self { 
-        Self { 
+    pub fn new() -> Self {
+        Self {
             bindings: HashMap::new(),
             parent: None,
-        } 
+        }
     }
 
     /// Create a new context with the given references
-    pub fn with_references<I: IntoIterator<Item=(String, BoundType)>>(iter: I) -> Self {
+    pub fn with_references<I: IntoIterator<Item = (String, BoundType)>>(iter: I) -> Self {
         let mut bindings = HashMap::new();
         for (k, v) in iter {
             bindings.insert(k, v);
         }
-        Self { 
+        Self {
             bindings,
             parent: None,
         }
@@ -42,7 +40,7 @@ impl TypingContext {
     }
 
     /// Create a new child context with the given bindings
-    pub fn create_child_with<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
+    pub fn create_child_with<I: IntoIterator<Item = (String, BoundType)>>(&self, iter: I) -> Self {
         let mut bindings = HashMap::new();
         for (k, v) in iter {
             bindings.insert(k, v);
@@ -59,19 +57,19 @@ impl TypingContext {
     }
 
     /// Extend this context with new references
-    pub fn extend<I: IntoIterator<Item=(String, BoundType)>>(&mut self, iter: I) { 
-        for (k, v) in iter { 
-            self.bindings.insert(k, v); 
-        } 
+    pub fn extend<I: IntoIterator<Item = (String, BoundType)>>(&mut self, iter: I) {
+        for (k, v) in iter {
+            self.bindings.insert(k, v);
+        }
     }
 
     /// Look up a variable, searching in this context then parent contexts
-    pub fn lookup(&self, v: &str) -> Option<&BoundType> { 
+    pub fn lookup(&self, v: &str) -> Option<&BoundType> {
         // First search in this context's bindings
         if let Some(ty) = self.bindings.get(v) {
             return Some(ty);
         }
-        
+
         // If not found, search in parent context
         if let Some(parent) = &self.parent {
             parent.lookup(v)
@@ -86,7 +84,7 @@ impl TypingContext {
     }
 
     /// Get all references from this context and all parent contexts (inner contexts shadow outer ones)
-    /// 
+    ///
     /// **WARNING**: This is expensive for deep hierarchies as it traverses the entire parent chain
     /// and creates a new HashMap. Prefer using `lookup()` for individual variable lookups.
     /// This method is mainly useful for debugging or when you actually need all variables.
@@ -95,14 +93,14 @@ impl TypingContext {
         self.collect_all_references(&mut result);
         result
     }
-    
+
     /// Efficiently collect all references by traversing the hierarchy once
     fn collect_all_references<'a>(&'a self, result: &mut HashMap<String, &'a BoundType>) {
         // First collect from parent (so child bindings can override)
         if let Some(parent) = &self.parent {
             parent.collect_all_references(result);
         }
-        
+
         // Then add/override with this context's bindings
         for (var, ty) in &self.bindings {
             result.insert(var.clone(), ty);
@@ -116,7 +114,10 @@ impl TypingContext {
 
     /// Create a new child context with the given references
     /// This replaces the old with_extended_scope method
-    pub fn with_extended_scope<I: IntoIterator<Item=(String, BoundType)>>(&self, iter: I) -> Self {
+    pub fn with_extended_scope<I: IntoIterator<Item = (String, BoundType)>>(
+        &self,
+        iter: I,
+    ) -> Self {
         self.create_child_with(iter)
     }
 
@@ -141,14 +142,14 @@ impl TypingContext {
     }
 
     fn collect_chain<'a>(&'a self, out: &mut Vec<&'a TypingContext>) {
-        if let Some(parent) = &self.parent { parent.collect_chain(out); }
+        if let Some(parent) = &self.parent {
+            parent.collect_chain(out);
+        }
         out.push(self);
     }
 }
 
-
 impl BoundType {
-
     pub fn resolve(&mut self, context: &TypingContext) -> () {
         println!("Resolving type: {:?}", self);
         if let BoundType::ContextCall(_ctx, var) = self {
