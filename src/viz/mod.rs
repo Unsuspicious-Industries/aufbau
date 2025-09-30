@@ -1,6 +1,9 @@
-use serde::{Serialize, Deserialize};
-use crate::{logic::partial::{PartialAST, PartialASTNode, PartialNonTerminal}, set_debug_level};
-use rouille::{router, Request, Response};
+use crate::{
+    logic::partial::{PartialAST, PartialASTNode, PartialNonTerminal},
+    set_debug_level,
+};
+use rouille::{Request, Response, router};
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Serialize, Clone)]
@@ -34,7 +37,10 @@ pub struct NodeMeta {
 }
 
 #[derive(Debug, Serialize, Clone)]
-pub struct SpanView { pub start: usize, pub end: usize }
+pub struct SpanView {
+    pub start: usize,
+    pub end: usize,
+}
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ProductionInfo {
@@ -58,7 +64,13 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
 
-    fn walk(node_id: &str, node: &PartialASTNode, nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>, _is_parallel_child: bool) {
+    fn walk(
+        node_id: &str,
+        node: &PartialASTNode,
+        nodes: &mut Vec<GraphNode>,
+        edges: &mut Vec<GraphEdge>,
+        _is_parallel_child: bool,
+    ) {
         match node {
             PartialASTNode::Terminal(t) => {
                 nodes.push(GraphNode {
@@ -69,35 +81,74 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
                         kind: "terminal".to_string(),
                         value: Some(t.value.clone()),
                         binding: t.binding.clone(),
-                        span: t.span.as_ref().map(|s| SpanView { start: s.start, end: s.end }),
+                        span: t.span.as_ref().map(|s| SpanView {
+                            start: s.start,
+                            end: s.end,
+                        }),
                         production: None,
-                    }
+                    },
                 });
             }
             PartialASTNode::NonTerminal(parallels) => {
                 // A NonTerminal is a set of parallel alternatives. This container will be represented by a synthetic node.
-                let label = if let Some(first) = parallels.first() { first.value.clone() } else { "?".to_string() };
+                let label = if let Some(first) = parallels.first() {
+                    first.value.clone()
+                } else {
+                    "?".to_string()
+                };
                 // Container status is complete if any parallel is complete
-                let is_complete = parallels.iter().any(|p| p.production().is_complete_state(p.children().len()));
-                let has_partial_child = parallels.iter().any(|p| p.children().iter().any(|ch| match ch { PartialASTNode::NonTerminal(inner) => !inner.iter().any(|alt| alt.production().is_complete_state(alt.children().len()) || !alt.children().is_empty()), _ => false }));
+                let is_complete = parallels
+                    .iter()
+                    .any(|p| p.production().is_complete_state(p.children().len()));
+                let has_partial_child = parallels.iter().any(|p| {
+                    p.children().iter().any(|ch| match ch {
+                        PartialASTNode::NonTerminal(inner) => !inner.iter().any(|alt| {
+                            alt.production().is_complete_state(alt.children().len())
+                                || !alt.children().is_empty()
+                        }),
+                        _ => false,
+                    })
+                });
                 nodes.push(GraphNode {
                     id: node_id.to_string(),
                     label,
-                    status: if is_complete && !has_partial_child { "complete" } else if is_complete { "warning" } else { "partial" }.to_string(),
-                    meta: NodeMeta { kind: "nonterminal-container".to_string(), value: None, binding: None, span: None, production: None }
+                    status: if is_complete && !has_partial_child {
+                        "complete"
+                    } else if is_complete {
+                        "warning"
+                    } else {
+                        "partial"
+                    }
+                    .to_string(),
+                    meta: NodeMeta {
+                        kind: "nonterminal-container".to_string(),
+                        value: None,
+                        binding: None,
+                        span: None,
+                        production: None,
+                    },
                 });
 
                 for (idx, alt) in parallels.iter().enumerate() {
                     let alt_id = format!("{node_id}::alt{idx}");
                     // Parallel edges from the container are dashed
-                    edges.push(GraphEdge { from: node_id.to_string(), to: alt_id.clone(), style: "dashed".to_string() });
+                    edges.push(GraphEdge {
+                        from: node_id.to_string(),
+                        to: alt_id.clone(),
+                        style: "dashed".to_string(),
+                    });
                     walk_alt(&alt_id, alt, nodes, edges);
                 }
             }
         }
     }
 
-    fn walk_alt(alt_id: &str, alt: &PartialNonTerminal, nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
+    fn walk_alt(
+        alt_id: &str,
+        alt: &PartialNonTerminal,
+        nodes: &mut Vec<GraphNode>,
+        edges: &mut Vec<GraphEdge>,
+    ) {
         // Determine completion and partial descendants
         fn has_partial_desc(node: &PartialASTNode) -> bool {
             match node {
@@ -105,9 +156,13 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
                 PartialASTNode::NonTerminal(alts) => {
                     for a in alts {
                         let a_complete = a.production().is_complete_state(a.children().len());
-                        if !a_complete { return true; }
+                        if !a_complete {
+                            return true;
+                        }
                         for ch in a.children() {
-                            if has_partial_desc(ch) { return true; }
+                            if has_partial_desc(ch) {
+                                return true;
+                            }
                         }
                     }
                     false
@@ -120,8 +175,18 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
         fn child_has_literal(children: &[PartialASTNode], lit: &str) -> bool {
             for ch in children {
                 match ch {
-                    PartialASTNode::Terminal(t) => { if t.value == lit { return true; } }
-                    PartialASTNode::NonTerminal(alts) => { for a in alts { if child_has_literal(a.children(), lit) { return true; } } }
+                    PartialASTNode::Terminal(t) => {
+                        if t.value == lit {
+                            return true;
+                        }
+                    }
+                    PartialASTNode::NonTerminal(alts) => {
+                        for a in alts {
+                            if child_has_literal(a.children(), lit) {
+                                return true;
+                            }
+                        }
+                    }
                 }
             }
             false
@@ -129,16 +194,31 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
         let mut literals_missing = false;
         for sym in alt.production().rhs_symbols() {
             if let crate::logic::grammar::Symbol::Litteral(l) = sym {
-                if !child_has_literal(alt.children(), l) { literals_missing = true; break; }
+                if !child_has_literal(alt.children(), l) {
+                    literals_missing = true;
+                    break;
+                }
             }
         }
         let is_complete_strict = is_complete && !literals_missing;
         let has_valid_child = !alt.children().is_empty();
-        let status = if is_complete_strict && !has_partial_descendant { "complete" } else if is_complete_strict { "warning" } else if has_valid_child { "partial" } else { "error" };
+        let status = if is_complete_strict && !has_partial_descendant {
+            "complete"
+        } else if is_complete_strict {
+            "warning"
+        } else if has_valid_child {
+            "partial"
+        } else {
+            "error"
+        };
         let label = format!("{}", alt.value());
         let prod = alt.production();
         let prod_info = ProductionInfo {
-            rhs: prod.rhs_symbols().iter().map(|s| format!("{:?}", s)).collect(),
+            rhs: prod
+                .rhs_symbols()
+                .iter()
+                .map(|s| format!("{:?}", s))
+                .collect(),
             cursor: prod.cursor_value(),
             rhs_len: prod.rhs_len(),
             complete: prod.is_complete_state(alt.children().len()),
@@ -148,14 +228,26 @@ fn collect_graph_from_partial(root_id: &str, ast: &PartialAST) -> GraphData {
             kind: "nonterminal".to_string(),
             value: Some(alt.value().clone()),
             binding: alt.binding().clone(),
-            span: alt.span().as_ref().map(|s| SpanView { start: s.start, end: s.end }),
+            span: alt.span().as_ref().map(|s| SpanView {
+                start: s.start,
+                end: s.end,
+            }),
             production: Some(prod_info),
         };
-        nodes.push(GraphNode { id: alt_id.to_string(), label, status: status.to_string(), meta });
+        nodes.push(GraphNode {
+            id: alt_id.to_string(),
+            label,
+            status: status.to_string(),
+            meta,
+        });
         for (i, child) in alt.children().iter().enumerate() {
             let child_id = format!("{alt_id}.{i}");
             // Children edges are solid
-            edges.push(GraphEdge { from: alt_id.to_string(), to: child_id.clone(), style: "solid".to_string() });
+            edges.push(GraphEdge {
+                from: alt_id.to_string(),
+                to: child_id.clone(),
+                style: "solid".to_string(),
+            });
             walk(&child_id, child, nodes, edges, false);
         }
     }
@@ -213,4 +305,3 @@ pub fn serve(bind_addr: &str) {
         )
     });
 }
-

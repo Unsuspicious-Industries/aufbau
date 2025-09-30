@@ -1,0 +1,689 @@
+use super::*;
+use crate::debug_trace;
+use crate::logic::ast::SourceSpan;
+use crate::logic::bind::partial::conclude_type_with_rule;
+use crate::logic::grammar::{Grammar, Production, RepetitionKind, Symbol};
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+
+// === Public completion API ================================================================== //
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CompletionToken {
+    Literal(String),
+    Regex(String),
+}
+
+impl CompletionToken {
+    fn literal<S: Into<String>>(text: S) -> Self {
+        CompletionToken::Literal(text.into())
+    }
+    fn regex<S: Into<String>>(pattern: S) -> Self {
+        CompletionToken::Regex(pattern.into())
+    }
+}
+
+impl Ord for CompletionToken {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self, other) {
+            (CompletionToken::Literal(a), CompletionToken::Literal(b)) => a.cmp(b),
+            (CompletionToken::Literal(_), CompletionToken::Regex(_)) => Ordering::Less,
+            (CompletionToken::Regex(_), CompletionToken::Literal(_)) => Ordering::Greater,
+            (CompletionToken::Regex(a), CompletionToken::Regex(b)) => a.cmp(b),
+        }
+    }
+}
+
+impl PartialOrd for CompletionToken {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CompletionOrigin {
+    PartialSymbol,
+    NextSymbol,
+    TailRepetition,
+    AlternateProduction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CompletionMetadata {
+    pub branch: String,
+    pub rule_name: Option<String>,
+    pub type_hint: Option<String>,
+    pub symbol_index: usize,
+    pub origin: CompletionOrigin,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompletionCandidate {
+    pub token: CompletionToken,
+    pub span: SourceSpan,
+    pub metadata: CompletionMetadata,
+}
+
+#[derive(Clone, Debug)]
+pub struct CompletionSet {
+    pub grammar: Grammar,
+    pub candidates: Vec<CompletionCandidate>,
+}
+
+impl CompletionSet {
+    fn new(grammar: Grammar, mut candidates: Vec<CompletionCandidate>) -> Self {
+        let mut set = Self {
+            grammar,
+            candidates: Vec::new(),
+        };
+        set.candidates = candidates.drain(..).collect();
+        set.dedup();
+        set
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &CompletionCandidate> {
+        self.candidates.iter()
+    }
+
+    pub fn contains_literal<S: AsRef<str>>(&self, text: S) -> bool {
+        let text = text.as_ref();
+        self.candidates
+            .iter()
+            .any(|c| matches!(&c.token, CompletionToken::Literal(lit) if lit == text))
+    }
+
+    pub fn contains_regex<S: AsRef<str>>(&self, pattern: S) -> bool {
+        let pattern = pattern.as_ref();
+        self.candidates
+            .iter()
+            .any(|c| matches!(&c.token, CompletionToken::Regex(re) if re == pattern))
+    }
+
+    fn dedup(&mut self) {
+        let mut best_by_token: HashMap<CompletionToken, CompletionCandidate> = HashMap::new();
+
+        for candidate in self.candidates.drain(..) {
+            let token_key = candidate.token.clone();
+            let entry = best_by_token
+                .entry(token_key)
+                .or_insert_with(|| candidate.clone());
+
+            if Self::prefer_replacement(entry, &candidate) {
+                *entry = candidate;
+                continue;
+            }
+
+            if Self::score(entry) == Self::score(&candidate) {
+                if candidate.metadata.origin == CompletionOrigin::PartialSymbol
+                    && entry.metadata.origin != CompletionOrigin::PartialSymbol
+                {
+                    *entry = candidate;
+                    continue;
+                }
+
+                if candidate.metadata.origin == CompletionOrigin::PartialSymbol
+                    && entry.metadata.origin == CompletionOrigin::PartialSymbol
+                    && candidate.metadata.branch == "TypedParam"
+                    && entry.metadata.branch != "TypedParam"
+                {
+                    *entry = candidate;
+                }
+            }
+        }
+
+        self.candidates = best_by_token.into_values().collect();
+        self.candidates.sort_by(|a, b| a.token.cmp(&b.token));
+    }
+
+    fn prefer_replacement(current: &CompletionCandidate, candidate: &CompletionCandidate) -> bool {
+        let current_score = Self::score(current);
+        let candidate_score = Self::score(candidate);
+        candidate_score < current_score
+    }
+
+    fn score(candidate: &CompletionCandidate) -> (u8, u8, usize, bool) {
+        let origin_rank = match candidate.metadata.origin {
+            CompletionOrigin::PartialSymbol => 0,
+            CompletionOrigin::NextSymbol => 1,
+            CompletionOrigin::TailRepetition => 2,
+            CompletionOrigin::AlternateProduction => 3,
+        };
+        let type_hint_rank: u8 = if candidate.metadata.type_hint.is_some() {
+            0
+        } else {
+            1
+        };
+        let rule_rank: u8 = if candidate.metadata.rule_name.is_some() {
+            0
+        } else {
+            1
+        };
+        let has_branch_name = !candidate.metadata.branch.is_empty();
+        (
+            origin_rank,
+            type_hint_rank.saturating_add(rule_rank),
+            candidate.metadata.symbol_index,
+            !has_branch_name,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CompletionOptions {
+    pub max_suggestions: Option<usize>,
+}
+
+impl PartialAST {
+    pub fn completions(&self, grammar: &Grammar, _k: usize) -> CompletionSet {
+        debug_trace!(
+            "partial.completion",
+            "PartialAST::completions: input='{}'",
+            self.input
+        );
+        let mut explorer =
+            CompletionExplorer::new(grammar, self.input.len(), CompletionOptions::default());
+        explorer.collect_from_node(self.root());
+        let set = explorer.into_set();
+        debug_trace!(
+            "partial.completion",
+            "PartialAST::completions: returning {} candidates",
+            set.candidates.len()
+        );
+        set
+    }
+}
+
+// === Internal helpers ======================================================================= //
+
+struct CompletionExplorer<'g> {
+    grammar: &'g Grammar,
+    input_len: usize,
+    options: CompletionOptions,
+    first_sets: FirstSetResolver<'g>,
+    candidates: Vec<CompletionCandidate>,
+}
+
+impl<'g> CompletionExplorer<'g> {
+    fn new(grammar: &'g Grammar, input_len: usize, options: CompletionOptions) -> Self {
+        Self {
+            grammar,
+            input_len,
+            options,
+            first_sets: FirstSetResolver::new(grammar),
+            candidates: Vec::new(),
+        }
+    }
+
+    fn into_set(self) -> CompletionSet {
+        CompletionSet::new(self.grammar.clone(), self.candidates)
+    }
+
+    fn collect_from_node(&mut self, node: &PartialASTNode) {
+        match node {
+            PartialASTNode::Terminal(_) => {}
+            PartialASTNode::NonTerminal(branches) => {
+                if !branches.iter().any(|branch| branch.is_progressing()) {
+                    self.collect_missing_productions(branches);
+                }
+
+                for branch in branches {
+                    self.collect_from_branch(branch);
+                }
+            }
+        }
+    }
+
+    fn collect_missing_productions(&mut self, branches: &[PartialNonTerminal]) {
+        let Some(first_branch) = branches.first() else {
+            return;
+        };
+        let nt_name = &first_branch.value;
+        let Some(all_productions) = self.grammar.productions.get(nt_name) else {
+            return;
+        };
+
+        'production: for production in all_productions {
+            for branch in branches {
+                if branch.production.production == *production {
+                    continue 'production;
+                }
+            }
+            self.collect_from_production(nt_name, production);
+        }
+    }
+
+    fn collect_from_production(&mut self, nt_name: &str, production: &Production) {
+        let tokens = self.first_sets.tokens_for_sequence(&production.rhs);
+        if tokens.is_empty() {
+            return;
+        }
+
+        let span = SourceSpan {
+            start: self.input_len,
+            end: self.input_len,
+        };
+        let metadata = CompletionMetadata {
+            branch: nt_name.to_string(),
+            rule_name: production.rule.clone(),
+            type_hint: None,
+            symbol_index: 0,
+            origin: CompletionOrigin::AlternateProduction,
+        };
+
+        for token in tokens {
+            if self.reached_limit() {
+                break;
+            }
+            self.push_candidate(CompletionCandidate {
+                token,
+                span: span.clone(),
+                metadata: metadata.clone(),
+            });
+        }
+    }
+
+    fn collect_from_branch(&mut self, branch: &PartialNonTerminal) {
+        debug_trace!(
+            "partial.completion",
+            "CompletionExplorer::collect_from_branch: value='{}', production={:?}",
+            branch.value,
+            branch.production.production
+        );
+
+        if let Some(partial) = branch.production.partial_symbol_ref() {
+            self.collect_from_partial_symbol(branch, partial);
+            return;
+        }
+
+        if !branch.is_complete() {
+            if let Some(index) = branch.production.next_symbol_index() {
+                if let Some(symbol) = branch.production.symbol_at(index) {
+                    self.collect_symbol_predictions(
+                        branch,
+                        index,
+                        symbol,
+                        CompletionOrigin::NextSymbol,
+                    );
+                }
+            }
+        } else {
+            self.collect_tail_repetition(branch);
+        }
+
+        for child in &branch.children {
+            self.collect_from_node(child);
+        }
+    }
+
+    fn collect_from_partial_symbol(
+        &mut self,
+        branch: &PartialNonTerminal,
+        partial: &PartialSymbol,
+    ) {
+        debug_trace!(
+            "partial.completion",
+            "CompletionExplorer::collect_from_partial_symbol: branch='{}', partial={:?}",
+            branch.value,
+            partial
+        );
+
+        match partial {
+            PartialSymbol::Litteral {
+                expected,
+                byte_cursor,
+                span,
+                ..
+            } => {
+                let consumed = (*byte_cursor).min(expected.len());
+                if consumed < expected.len() {
+                    let remainder = expected[consumed..].to_string();
+                    self.push_candidate(CompletionCandidate {
+                        token: CompletionToken::literal(remainder),
+                        span: span.clone(),
+                        metadata: self.metadata_for_branch(
+                            branch,
+                            partial.symbol_index(),
+                            CompletionOrigin::PartialSymbol,
+                        ),
+                    });
+                } else {
+                    self.collect_next_symbol_after(branch, partial.symbol_index());
+                }
+            }
+            PartialSymbol::Regex { re, span, .. } => {
+                self.push_candidate(CompletionCandidate {
+                    token: CompletionToken::regex(re.as_str()),
+                    span: span.clone(),
+                    metadata: self.metadata_for_branch(
+                        branch,
+                        partial.symbol_index(),
+                        CompletionOrigin::PartialSymbol,
+                    ),
+                });
+            }
+            _ => {
+                if let Some(child) = branch.children.get(partial.symbol_index()) {
+                    self.collect_from_node(child);
+                }
+
+                if branch.children.get(partial.symbol_index()).is_none() {
+                    if let Some(symbol) = branch.production.symbol_at(partial.symbol_index()) {
+                        self.collect_symbol_predictions(
+                            branch,
+                            partial.symbol_index(),
+                            symbol,
+                            CompletionOrigin::PartialSymbol,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn collect_next_symbol_after(&mut self, branch: &PartialNonTerminal, index: usize) {
+        let next_index = index + 1;
+        if let Some(symbol) = branch.production.symbol_at(next_index) {
+            self.collect_symbol_predictions(
+                branch,
+                next_index,
+                symbol,
+                CompletionOrigin::NextSymbol,
+            );
+        } else if branch.is_complete() {
+            self.collect_tail_repetition(branch);
+        }
+    }
+
+    fn collect_symbol_predictions(
+        &mut self,
+        branch: &PartialNonTerminal,
+        symbol_index: usize,
+        symbol: &Symbol,
+        origin: CompletionOrigin,
+    ) {
+        let tokens = self.first_sets.tokens_for_symbol(symbol);
+        if tokens.is_empty() {
+            if let Some(child) = branch.children.get(symbol_index) {
+                self.collect_from_node(child);
+            }
+            return;
+        }
+
+        let metadata = self.metadata_for_branch(branch, symbol_index, origin);
+        let span = SourceSpan {
+            start: self.input_len,
+            end: self.input_len,
+        };
+        for token in tokens {
+            if self.reached_limit() {
+                break;
+            }
+            self.push_candidate(CompletionCandidate {
+                token,
+                span: span.clone(),
+                metadata: metadata.clone(),
+            });
+        }
+    }
+
+    fn collect_tail_repetition(&mut self, branch: &PartialNonTerminal) {
+        let rhs_len = branch.production.rhs_len();
+        if rhs_len == 0 {
+            return;
+        }
+        let last_index = rhs_len - 1;
+        if let Some(last_symbol) = branch.production.symbol_at(last_index) {
+            if let Some(rep) = last_symbol.repetition() {
+                // Only suggest repetition for symbols that allow multiple occurrences
+                if matches!(rep, RepetitionKind::ZeroOrMore | RepetitionKind::OneOrMore) {
+                    self.collect_symbol_predictions(
+                        branch,
+                        last_index,
+                        last_symbol,
+                        CompletionOrigin::TailRepetition,
+                    );
+                }
+            }
+        }
+    }
+
+    fn reached_limit(&self) -> bool {
+        match self.options.max_suggestions {
+            Some(max) => self.candidates.len() >= max,
+            None => false,
+        }
+    }
+
+    fn push_candidate(&mut self, candidate: CompletionCandidate) {
+        if self.reached_limit() {
+            return;
+        }
+        self.candidates.push(candidate);
+    }
+
+    fn metadata_for_branch(
+        &self,
+        branch: &PartialNonTerminal,
+        symbol_index: usize,
+        origin: CompletionOrigin,
+    ) -> CompletionMetadata {
+        let rule_name = branch.production.rule_name().cloned();
+        let type_hint = self.type_hint_for_branch(branch, rule_name.as_deref());
+        CompletionMetadata {
+            branch: branch.value.clone(),
+            rule_name,
+            type_hint,
+            symbol_index,
+            origin,
+        }
+    }
+
+    fn type_hint_for_branch(
+        &self,
+        branch: &PartialNonTerminal,
+        rule_name: Option<&str>,
+    ) -> Option<String> {
+        let Some(rule_name) = rule_name else {
+            return None;
+        };
+        let rule = self.grammar.typing_rules.get(rule_name)?;
+        conclude_type_with_rule(branch, rule).map(|ty| ty.to_string())
+    }
+}
+
+// === FIRST set computation ================================================================== //
+
+#[derive(Clone, Default)]
+struct FirstSet {
+    tokens: HashSet<CompletionToken>,
+    nullable: bool,
+}
+
+impl FirstSet {
+    fn with_token(token: CompletionToken) -> Self {
+        let mut set = FirstSet::default();
+        set.tokens.insert(token);
+        set
+    }
+
+    fn merge(&mut self, other: &FirstSet) {
+        self.tokens.extend(other.tokens.iter().cloned());
+        if other.nullable {
+            self.nullable = true;
+        }
+    }
+
+    fn into_sorted_vec(self) -> Vec<CompletionToken> {
+        let mut tokens: Vec<_> = self.tokens.into_iter().collect();
+        tokens.sort();
+        tokens
+    }
+}
+
+struct FirstSetResolver<'g> {
+    grammar: &'g Grammar,
+    cache: HashMap<String, FirstSet>,
+    visiting: HashSet<String>,
+}
+
+impl<'g> FirstSetResolver<'g> {
+    fn new(grammar: &'g Grammar) -> Self {
+        Self {
+            grammar,
+            cache: HashMap::new(),
+            visiting: HashSet::new(),
+        }
+    }
+
+    fn tokens_for_symbol(&mut self, symbol: &Symbol) -> Vec<CompletionToken> {
+        self.first_for_symbol(symbol).into_sorted_vec()
+    }
+
+    fn tokens_for_sequence(&mut self, symbols: &[Symbol]) -> Vec<CompletionToken> {
+        self.first_for_sequence(symbols).into_sorted_vec()
+    }
+
+    fn first_for_symbol(&mut self, symbol: &Symbol) -> FirstSet {
+        match symbol {
+            Symbol::Litteral(text) => FirstSet::with_token(CompletionToken::literal(text.clone())),
+            Symbol::Regex(re) => FirstSet::with_token(CompletionToken::regex(re.as_str())),
+            Symbol::Single {
+                value, repetition, ..
+            } => {
+                let mut inner = self.first_for_symbol(value.as_ref());
+                if matches!(
+                    repetition,
+                    Some(RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne)
+                ) {
+                    inner.nullable = true;
+                }
+                inner
+            }
+            Symbol::Group {
+                symbols,
+                repetition,
+            } => {
+                let mut set = self.first_for_sequence(symbols);
+                if matches!(
+                    repetition,
+                    Some(RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne)
+                ) {
+                    set.nullable = true;
+                }
+                set
+            }
+            Symbol::Expression(nt) => self.first_for_nonterminal(nt),
+        }
+    }
+
+    fn first_for_sequence(&mut self, symbols: &[Symbol]) -> FirstSet {
+        if symbols.is_empty() {
+            let mut empty = FirstSet::default();
+            empty.nullable = true;
+            return empty;
+        }
+
+        let mut result = FirstSet::default();
+        for (idx, symbol) in symbols.iter().enumerate() {
+            let sym_first = self.first_for_symbol(symbol);
+            result.merge(&sym_first);
+            if !sym_first.nullable {
+                return result;
+            }
+            if idx == symbols.len() - 1 {
+                result.nullable = true;
+            }
+        }
+        result
+    }
+
+    fn first_for_nonterminal(&mut self, nt: &str) -> FirstSet {
+        if let Some(cached) = self.cache.get(nt) {
+            return cached.clone();
+        }
+
+        if !self.visiting.insert(nt.to_string()) {
+            return FirstSet::default();
+        }
+
+        let mut result = FirstSet::default();
+        if let Some(productions) = self.grammar.productions.get(nt) {
+            for production in productions {
+                if production.rhs.is_empty() {
+                    result.nullable = true;
+                    continue;
+                }
+                let seq_first = self.first_for_sequence(&production.rhs);
+                result.merge(&seq_first);
+            }
+        }
+
+        self.visiting.remove(nt);
+        self.cache.insert(nt.to_string(), result.clone());
+        result
+    }
+}
+
+// === Tests ================================================================================== //
+
+#[cfg(test)]
+mod tests {
+    use crate::logic::partial::parse::PartialParser;
+
+    #[test]
+    fn test_completions() {
+        let spec = r#"
+        U ::= 'b' 'a' 'r' 'c' 'b' 'a' 'r' 'c' 'u'
+        O ::= 'o'
+        A ::= 'a'
+        B ::= 'b' A 'r'
+        start ::= U | (B 'c')* | 't'
+        "#;
+
+        let g = crate::logic::grammar::Grammar::load(spec).unwrap();
+        let mut p = PartialParser::new(g.clone());
+        let input = "b a r c b a r c";
+        let past = p.partial(input).unwrap();
+        let completions = past.completions(&g, 0);
+        println!("Completions: {:#?}", completions);
+
+        assert!(
+            completions.contains_literal("u"),
+            "expected literal 'u' in completions"
+        );
+        assert!(
+            completions.contains_literal("b"),
+            "expected literal 'b' in completions"
+        );
+    }
+
+    #[test]
+    fn test_completions_xtlc() {
+        let spec = crate::logic::tests::xtlc::xtlc_spec();
+        let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
+        let mut p = PartialParser::new(g.clone());
+        let past = p.partial("λx:").unwrap();
+        dbg!(&past.root());
+        let completions = past.completions(&g, 0);
+        println!("Completions: {:#?}", completions);
+        assert!(
+            completions.contains_regex("[\\p{L}][\\p{L}\\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*"),
+            "expected identifier regex in completions"
+        );
+    }
+
+    #[test]
+    fn test_completions_clike() {
+        let spec = crate::logic::tests::clike::c_like_spec();
+        let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
+        let mut p = PartialParser::new(g.clone());
+        let past = p.partial("int").unwrap();
+        dbg!(&past.root());
+        let completions = past.completions(&g, 0);
+        println!("Completions: {:#?}", completions);
+        assert!(
+            completions.contains_regex("[a-zA-Z_][a-zA-Z0-9_]*"),
+            "expected identifier regex in completions"
+        );
+    }
+}

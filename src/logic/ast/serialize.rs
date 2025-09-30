@@ -1,4 +1,4 @@
-use crate::logic::ast::{ASTNode, Terminal, NonTerminal};
+use crate::logic::ast::{ASTNode, NonTerminal, Terminal};
 use crate::logic::grammar::Grammar;
 // ---------------- S-expression parsing helpers ----------------
 
@@ -25,34 +25,48 @@ pub fn strip_headers(input: &str) -> &str {
 }
 
 pub fn parse_sexpr(input: &str) -> Result<SExpr, String> {
-    enum Tok<'a> { LParen, RParen, Atom(&'a str), Str(String) }
+    enum Tok<'a> {
+        LParen,
+        RParen,
+        Atom(&'a str),
+        Str(String),
+    }
 
     fn tokenize(s: &str) -> Result<Vec<Tok<'_>>, String> {
         let mut toks = Vec::new();
         let mut chars = s.char_indices().peekable();
-        
+
         while let Some((byte_idx, ch)) = chars.next() {
             match ch {
-                c if c.is_whitespace() => { continue; }
-                ';' => { // comment to end of line
+                c if c.is_whitespace() => {
+                    continue;
+                }
+                ';' => {
+                    // comment to end of line
                     while let Some((_, ch)) = chars.peek() {
-                        if *ch == '\n' { break; }
+                        if *ch == '\n' {
+                            break;
+                        }
                         chars.next();
                     }
                 }
-                '(' => { toks.push(Tok::LParen); }
-                ')' => { toks.push(Tok::RParen); }
+                '(' => {
+                    toks.push(Tok::LParen);
+                }
+                ')' => {
+                    toks.push(Tok::RParen);
+                }
                 '"' => {
                     let mut buf = String::new();
                     let mut escaped = false;
                     while let Some((_, ch)) = chars.next() {
                         if escaped {
-                            match ch { 
-                                '"' => buf.push('"'), 
-                                '\\' => buf.push('\\'), 
-                                'n' => buf.push('\n'), 
-                                't' => buf.push('\t'), 
-                                other => buf.push(other) 
+                            match ch {
+                                '"' => buf.push('"'),
+                                '\\' => buf.push('\\'),
+                                'n' => buf.push('\n'),
+                                't' => buf.push('\t'),
+                                other => buf.push(other),
                             }
                             escaped = false;
                         } else if ch == '\\' {
@@ -68,15 +82,15 @@ pub fn parse_sexpr(input: &str) -> Result<SExpr, String> {
                 _ => {
                     let start_byte = byte_idx;
                     let mut end_byte = byte_idx + ch.len_utf8();
-                    
+
                     while let Some((byte_idx, ch)) = chars.peek() {
-                        if ch.is_whitespace() || *ch == '(' || *ch == ')' || *ch == '"' { 
-                            break; 
+                        if ch.is_whitespace() || *ch == '(' || *ch == ')' || *ch == '"' {
+                            break;
                         }
                         end_byte = *byte_idx + ch.len_utf8();
                         chars.next();
                     }
-                    
+
                     let atom = &s[start_byte..end_byte];
                     toks.push(Tok::Atom(atom));
                 }
@@ -89,10 +103,22 @@ pub fn parse_sexpr(input: &str) -> Result<SExpr, String> {
         let mut items = Vec::new();
         while *pos < toks.len() {
             match toks[*pos] {
-                Tok::RParen => { *pos += 1; break; }
-                Tok::LParen => { *pos += 1; items.push(parse_list(toks, pos)?); }
-                Tok::Atom(a) => { *pos += 1; items.push(SExpr::Atom(a.to_string())); }
-                Tok::Str(ref s) => { *pos += 1; items.push(SExpr::Str(s.clone())); }
+                Tok::RParen => {
+                    *pos += 1;
+                    break;
+                }
+                Tok::LParen => {
+                    *pos += 1;
+                    items.push(parse_list(toks, pos)?);
+                }
+                Tok::Atom(a) => {
+                    *pos += 1;
+                    items.push(SExpr::Atom(a.to_string()));
+                }
+                Tok::Str(ref s) => {
+                    *pos += 1;
+                    items.push(SExpr::Str(s.clone()));
+                }
             }
         }
         Ok(SExpr::List(items))
@@ -101,7 +127,10 @@ pub fn parse_sexpr(input: &str) -> Result<SExpr, String> {
     let toks = tokenize(input)?;
     let mut pos = 0;
     match toks.get(pos) {
-        Some(Tok::LParen) => { pos += 1; parse_list(&toks, &mut pos) }
+        Some(Tok::LParen) => {
+            pos += 1;
+            parse_list(&toks, &mut pos)
+        }
         _ => Err("Expected '('".into()),
     }
 }
@@ -111,7 +140,9 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar) -> Result<ASTNode, String>
         SExpr::List(items) if !items.is_empty() => {
             match &items[0] {
                 SExpr::Atom(tag) if tag == "T" => {
-                    if items.len() < 2 { return Err("(T ...) requires a value".into()); }
+                    if items.len() < 2 {
+                        return Err("(T ...) requires a value".into());
+                    }
                     let value = match &items[1] {
                         SExpr::Str(s) => s.clone(),
                         SExpr::Atom(a) => a.clone(),
@@ -123,17 +154,25 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar) -> Result<ASTNode, String>
                             if pair.len() == 2 {
                                 if let SExpr::Atom(k) = &pair[0] {
                                     match k.as_str() {
-                                        "b" => { binding = Some(sexpr_atom_or_str(&pair[1])?); }
+                                        "b" => {
+                                            binding = Some(sexpr_atom_or_str(&pair[1])?);
+                                        }
                                         _ => {}
                                     }
                                 }
                             }
                         }
                     }
-                    Ok(ASTNode::Terminal(Terminal { value, span: None, binding }))
+                    Ok(ASTNode::Terminal(Terminal {
+                        value,
+                        span: None,
+                        binding,
+                    }))
                 }
                 SExpr::Atom(tag) if tag == "N" => {
-                    if items.len() < 2 { return Err("(N ...) requires a name".into()); }
+                    if items.len() < 2 {
+                        return Err("(N ...) requires a name".into());
+                    }
                     let name = sexpr_atom(&items[1])?;
                     let mut binding: Option<String> = None;
                     let mut children: Vec<ASTNode> = Vec::new();
@@ -142,7 +181,9 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar) -> Result<ASTNode, String>
                             SExpr::List(pair) if pair.len() == 2 => {
                                 if let SExpr::Atom(k) = &pair[0] {
                                     match k.as_str() {
-                                        "b" => { binding = Some(sexpr_atom_or_str(&pair[1])?); }
+                                        "b" => {
+                                            binding = Some(sexpr_atom_or_str(&pair[1])?);
+                                        }
                                         "rule" => {
                                             // Rules will be resolved during parsing/binding phase
                                             let _rname = sexpr_atom_or_str(&pair[1])?;
@@ -157,10 +198,18 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar) -> Result<ASTNode, String>
                                     children.push(sexpr_to_ast(extra, grammar)?);
                                 }
                             }
-                            other => { children.push(sexpr_to_ast(other, grammar)?); }
+                            other => {
+                                children.push(sexpr_to_ast(other, grammar)?);
+                            }
                         }
                     }
-                    Ok(ASTNode::Nonterminal(NonTerminal { value: name, span: None, children, binding, bound_typing_rule: None }))
+                    Ok(ASTNode::Nonterminal(NonTerminal {
+                        value: name,
+                        span: None,
+                        children,
+                        binding,
+                        bound_typing_rule: None,
+                    }))
                 }
                 other => Err(format!("Unknown node tag: {:?}", other)),
             }
@@ -170,9 +219,16 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar) -> Result<ASTNode, String>
 }
 
 pub fn sexpr_atom(s: &SExpr) -> Result<String, String> {
-    match s { SExpr::Atom(a) => Ok(a.clone()), _ => Err("expected atom".into()) }
+    match s {
+        SExpr::Atom(a) => Ok(a.clone()),
+        _ => Err("expected atom".into()),
+    }
 }
 
 pub fn sexpr_atom_or_str(s: &SExpr) -> Result<String, String> {
-    match s { SExpr::Atom(a) => Ok(a.clone()), SExpr::Str(t) => Ok(t.clone()), _ => Err("expected atom or string".into()) }
+    match s {
+        SExpr::Atom(a) => Ok(a.clone()),
+        SExpr::Str(t) => Ok(t.clone()),
+        _ => Err("expected atom or string".into()),
+    }
 }

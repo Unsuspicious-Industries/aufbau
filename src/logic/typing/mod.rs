@@ -1,7 +1,7 @@
 // Type system core definitions and re-exports
 
-pub mod syntax; // parsing / pretty-printing of types
-pub mod rule;   // typing rules (inference rule structures & parsing)
+pub mod rule;
+pub mod syntax; // parsing / pretty-printing of types // typing rules (inference rule structures & parsing)
 
 ///---------------
 /// Type Representation
@@ -25,7 +25,7 @@ pub enum Type {
     Not(Box<Type>),
     // Intersection (τ₁ ∧ τ₂) - "both τ₁ and τ₂"
     Intersection(Box<Type>, Box<Type>),
-    // Union (τ₁ ∨ τ₂) - "either τ₁ or τ₂"  
+    // Union (τ₁ ∨ τ₂) - "either τ₁ or τ₂"
     Union(Box<Type>, Box<Type>),
     // Context call (Γ(x)) - lookup the type of variable x in context Γ
     ContextCall(String, String), // (context_name, variable_name)
@@ -35,14 +35,11 @@ pub enum Type {
     Empty,
 }
 
-
-
-
 // Re-export frequently used items for external users of the module.
+pub use rule::{
+    Conclusion, Premise, Term, TypeAscription, TypeSetting, TypingJudgment, TypingRule,
+};
 pub use syntax::{TypeSyntaxConfig, validate_type_expr};
-pub use rule::{TypingRule, Premise, TypingJudgment, TypeSetting, Term, TypeAscription, Conclusion};
-
 
 #[cfg(test)]
 mod tests;
-
