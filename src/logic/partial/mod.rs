@@ -19,6 +19,9 @@ pub use structure::{
 pub mod completion;
 pub use completion::*;
 
+pub mod typecheck;
+pub use typecheck::*;
+
 mod tests {
     #[test]
     fn test_debug() {

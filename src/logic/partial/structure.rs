@@ -23,6 +23,18 @@ impl PartialAST {
         &self.input 
     }
     
+    /// Get type checking errors for this AST
+    pub fn type_errors(&self, grammar: &crate::logic::grammar::Grammar) -> Vec<crate::logic::partial::typecheck::TypeCheckError> {
+        // Clone the AST and filter to collect errors
+        let mut ast_clone = self.clone();
+        crate::logic::partial::typecheck::filter_typeable_ast(&mut ast_clone, grammar)
+    }
+    
+    /// Check if this AST has any type errors
+    pub fn has_type_errors(&self, grammar: &crate::logic::grammar::Grammar) -> bool {
+        !self.type_errors(grammar).is_empty()
+    }
+    
     /// Check if the AST is complete (has at least one complete alternative)
     pub fn complete(&self) -> bool {
         self.root.is_complete()
