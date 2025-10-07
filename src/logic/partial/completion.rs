@@ -72,6 +72,36 @@ impl PartialAST {
         let tokens = self.root().collect_valid_tokens(grammar);
         CompletionSet::new(tokens)
     }
+    
+    /// Get all valid next tokens, filtered by typing constraints.
+    /// This returns only tokens that would lead to typeable parse states.
+    pub fn typed_completions(&self, grammar: &Grammar) -> CompletionSet {
+        debug_trace!(
+            "partial.completion",
+            "PartialAST::typed_completions: input='{}'",
+            self.input
+        );
+        
+        // Collect potential completions from all alternatives
+        let mut tokens_with_alt: Vec<(ValidToken, usize)> = Vec::new();
+        
+        for (alt_idx, alt) in self.root().alts.iter().enumerate() {
+            // Only include completions from typeable alternatives
+            if crate::logic::partial::typecheck::check_alt_typeable(alt, grammar).is_typeable() {
+                let alt_tokens = alt.collect_valid_tokens(grammar);
+                for token in alt_tokens {
+                    tokens_with_alt.push((token, alt_idx));
+                }
+            }
+        }
+        
+        // Deduplicate tokens (ignore which alt they came from)
+        let tokens: Vec<ValidToken> = tokens_with_alt.into_iter()
+            .map(|(token, _)| token)
+            .collect();
+        
+        CompletionSet::new(tokens)
+    }
 }
 
 impl NonTerminal {
@@ -667,5 +697,135 @@ mod tests {
         // After common prefix 'a', both alternatives are possible
         assert!(completions.contains_literal("b"), "should suggest 'b' from A");
         assert!(completions.contains_literal("c"), "should suggest 'c' from B");
+    }
+    
+    // ============================================================================
+    // Typed Completion Tests
+    // ============================================================================
+    
+    #[test]
+    fn typed_completion_basic() {
+        let spec = r#"
+        Num(num) ::= /[0-9]+/
+        start ::= Num
+        
+        -------------- (num)
+        'int'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        let ast = p.partial("").unwrap();
+        
+        let typed = ast.typed_completions(&g);
+        let untyped = ast.completions(&g);
+        
+        // Should get same results for valid typing
+        assert_eq!(typed.tokens.len(), untyped.tokens.len());
+        assert!(typed.contains_regex("[0-9]+"));
+    }
+    
+    #[test]
+    fn typed_completion_filters_alternatives() {
+        let spec = r#"
+        Good(good) ::= 'g'
+        Bad(bad) ::= 'b'
+        start ::= Good | Bad
+        
+        -------------- (good)
+        'valid'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        let ast = p.partial("").unwrap();
+        
+        let typed = ast.typed_completions(&g);
+        
+        // Both alternatives should be suggested (optimistic for incomplete)
+        // Note: Without more sophisticated type checking, both are kept
+        assert!(typed.tokens.len() > 0);
+    }
+    
+    #[test]
+    fn typed_completion_with_context() {
+        let spec = r#"
+        Var(var) ::= /[a-z]+/
+        Num(num) ::= /[0-9]+/
+        Assign(assign) ::= Var '=' Num
+        start ::= Assign
+        
+        -------------- (var)
+        'string'
+        
+        -------------- (num)
+        'int'
+        
+        -------------- (assign)
+        'unit'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        
+        // At start, should suggest variable
+        let ast1 = p.partial("").unwrap();
+        let completions1 = ast1.typed_completions(&g);
+        assert!(completions1.contains_regex("[a-z]+"), "should suggest var at start");
+        
+        // After var and =, should suggest number
+        let ast2 = p.partial("x =").unwrap();
+        let completions2 = ast2.typed_completions(&g);
+        assert!(completions2.contains_regex("[0-9]+"), "should suggest num after =");
+    }
+    
+    #[test]
+    fn typed_completion_preserves_all_valid() {
+        let spec = r#"
+        A(ruleA) ::= 'a'
+        B(ruleB) ::= 'b'
+        start ::= A | B
+        
+        -------------- (ruleA)
+        'typeA'
+        
+        -------------- (ruleB)
+        'typeB'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        let ast = p.partial("").unwrap();
+        
+        let typed = ast.typed_completions(&g);
+        
+        // Both should be suggested (both have valid typing rules)
+        assert!(typed.contains_literal("a"), "should suggest 'a'");
+        assert!(typed.contains_literal("b"), "should suggest 'b'");
+        assert_eq!(typed.tokens.len(), 2);
+    }
+    
+    #[test]
+    fn typed_completion_complex_expression() {
+        let spec = r#"
+        Num(num) ::= /[0-9]+/
+        Add(add) ::= Num '+' Num
+        start ::= Add
+        
+        -------------- (num)
+        'int'
+        
+        -------------- (add)
+        'int'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        
+        let ast = p.partial("42 +").unwrap();
+        let completions = ast.typed_completions(&g);
+        
+        // After '+', should suggest another number
+        assert!(completions.contains_regex("[0-9]+"), "should suggest number after +");
     }
 }

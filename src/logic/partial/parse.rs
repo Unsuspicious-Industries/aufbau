@@ -84,7 +84,20 @@ impl Parser {
         // Parse from start
         let root = self.parse_nonterminal(&segments, start_nt, 0, None)?;
         
-        Ok(PartialAST::new(root, input.to_string()))
+        let mut ast = PartialAST::new(root, input.to_string());
+        
+        // Filter alternatives based on typing rules
+        let errors = crate::logic::partial::typecheck::filter_typeable_ast(&mut ast, &self.grammar);
+        
+        // Log type checking errors if debug enabled
+        if !errors.is_empty() {
+            debug_trace!("parser2.typecheck", "Type checking filtered {} alternatives:", errors.len());
+            for (i, err) in errors.iter().enumerate() {
+                debug_trace!("parser2.typecheck", "  {}. {}", i + 1, err);
+            }
+        }
+        
+        Ok(ast)
     }
 
     /// Tokenize input into segments
