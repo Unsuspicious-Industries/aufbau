@@ -22,6 +22,8 @@ pub enum LogicSubcommand {
     Viz(VizArgs),
     /// Synthesize a well-typed program from a grammar
     Synthesize(SynthArgs),
+    /// Get valid completions for partial input
+    Complete(CompleteArgs),
 }
 
 #[derive(Args, Debug, Clone)]
@@ -41,10 +43,6 @@ pub struct CheckArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct VizArgs {
-    /// Path to grammar specification file
-    #[arg(short = 's', long = "spec", value_name = "FILE")]
-    pub spec_path: PathBuf,
-
     /// Optional port to bind the server
     #[arg(short = 'p', long = "port", default_value_t = 5173)]
     pub port: u16,
@@ -73,6 +71,33 @@ pub struct SynthArgs {
     pub seed: String,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct CompleteArgs {
+    /// Path to grammar specification file
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec_path: PathBuf,
+
+    /// Partial input to complete (as string argument)
+    #[arg(short = 'i', long = "input", value_name = "TEXT")]
+    pub input: Option<String>,
+
+    /// Path to file containing partial input (alternative to --input)
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    pub input_file: Option<PathBuf>,
+
+    /// Explicit start symbol override
+    #[arg(long = "start")]
+    pub start: Option<String>,
+
+    /// Maximum number of completions to show (default: unlimited)
+    #[arg(short = 'k', long = "max", value_name = "NUM")]
+    pub max_completions: Option<usize>,
+
+    /// Show detailed metadata for each completion
+    #[arg(long = "show-details")]
+    pub show_details: bool,
+}
+
 pub fn dispatch(cli: &crate::cli::Cli) {
     // Wire verbosity to debug level, with --trace overriding verbose count
     let level = if cli.trace {
@@ -99,6 +124,7 @@ pub fn dispatch(cli: &crate::cli::Cli) {
             LogicSubcommand::Check(args) => run_check(args, cli.with_input, level),
             LogicSubcommand::Viz(args) => run_viz(args, level),
             LogicSubcommand::Synthesize(args) => run_synthesize(args),
+            LogicSubcommand::Complete(args) => run_complete(args, cli.with_input, level),
         },
     }
 }
@@ -236,4 +262,114 @@ fn run_synthesize(args: &SynthArgs) {
             std::process::exit(1);
         }
     }
+}
+
+fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
+    let _ = debug_level; // wired globally above
+
+    // Load grammar spec
+    let spec = match fs::read_to_string(&args.spec_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "error: failed to read spec '{}': {}",
+                args.spec_path.display(),
+                e
+            );
+            std::process::exit(2);
+        }
+    };
+    let mut grammar = match Grammar::load(&spec) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("error: failed to parse grammar spec: {}", e);
+            std::process::exit(2);
+        }
+    };
+    if let Some(start) = &args.start {
+        grammar.set_start(start.clone());
+    }
+
+    // Get input from either --input or --file
+    let input = match (&args.input, &args.input_file) {
+        (Some(text), None) => text.clone(),
+        (None, Some(path)) => match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: failed to read input file '{}': {}", path.display(), e);
+                std::process::exit(2);
+            }
+        },
+        (Some(_), Some(_)) => {
+            eprintln!("error: cannot specify both --input and --file");
+            std::process::exit(2);
+        }
+        (None, None) => {
+            eprintln!("error: must specify either --input or --file");
+            std::process::exit(2);
+        }
+    };
+
+    if with_input {
+        set_debug_input(Some(input.clone()));
+    }
+
+    // Parse partial input
+    let mut parser = Parser::new(grammar.clone());
+    let past = match parser.partial(&input) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("parse error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Get completions
+    let completions = past.completions(&grammar, 0);
+    let mut candidates = completions.candidates.clone();
+
+    // Apply max limit if specified
+    if let Some(max) = args.max_completions {
+        candidates.truncate(max);
+    }
+
+    // Display results
+    if candidates.is_empty() {
+        println!("No completions available");
+        std::process::exit(0);
+    }
+
+    let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
+    let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
+    
+    println!("{ok}Found {} completion(s):{ok:#}", candidates.len());
+    println!();
+
+    for (idx, candidate) in candidates.iter().enumerate() {
+        match &candidate.token {
+            beam::logic::partial::completion::CompletionToken::Literal(text) => {
+                print!("  {}. '{}'", idx + 1, text);
+            }
+            beam::logic::partial::completion::CompletionToken::Regex(pattern) => {
+                print!("  {}. /{}/", idx + 1, pattern);
+            }
+        }
+
+        if args.show_details {
+            println!();
+            println!("     {dim}branch:{dim:#} {}", candidate.metadata.branch);
+            println!("     {dim}origin:{dim:#} {:?}", candidate.metadata.origin);
+            if let Some(rule) = &candidate.metadata.rule_name {
+                println!("     {dim}rule:{dim:#} {}", rule);
+            }
+            if let Some(ty) = &candidate.metadata.type_hint {
+                println!("     {dim}type:{dim:#} {}", ty);
+            }
+            println!("     {dim}symbol_index:{dim:#} {}", candidate.metadata.symbol_index);
+        } else {
+            println!();
+        }
+    }
+
+    std::process::exit(0);
 }

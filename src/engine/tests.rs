@@ -107,7 +107,7 @@ fn test_clike_phi() {
 
     set_debug_level(crate::DebugLevel::Debug);
 
-    let ranker: Box<dyn Ranker> = Box::new(LLMRanker::new("phi3-medium").expect("init phi3"));
+    let ranker: Box<dyn Ranker> = Box::new(LLMRanker::new("phi3-mini").expect("init phi3"));
     let mut synth = Synthesizer::new(&spec.clone(), ranker).expect("init synth");
 
     // Seed with a lambda to bias synthesis toward non-trivial terms

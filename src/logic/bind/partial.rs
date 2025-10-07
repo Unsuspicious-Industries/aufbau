@@ -524,39 +524,3 @@ pub fn conclude_type_with_rule(node: &PartialNonTerminal, rule: &TypingRule) -> 
         BoundConclusionKind::ContextLookup(_, _) => None,
     }
 }
-
-/// Check if a branch matches an expected type expression under the same binding environment
-pub fn branch_matches_expected_type(
-    node: &PartialNonTerminal,
-    rule: &TypingRule,
-    expected: &crate::logic::typing::Type,
-) -> bool {
-    let expected_bound = bind_type_partial(node, expected.clone());
-    let concluded = conclude_type_with_rule(node, rule);
-    match (expected_bound, concluded) {
-        (Some(e), Some(c)) => c.is_compatible_with(&e),
-        _ => false,
-    }
-}
-
-/// Select alternatives that match the expected type with at least one of the provided rules
-pub fn select_branches_by_type<'a>(
-    alts: &'a [PartialNonTerminal],
-    rules: &[TypingRule],
-    expected: &crate::logic::typing::Type,
-) -> Vec<&'a PartialNonTerminal> {
-    let mut out = Vec::new();
-    for alt in alts {
-        let mut ok = false;
-        for rule in rules {
-            if branch_matches_expected_type(alt, rule, expected) {
-                ok = true;
-                break;
-            }
-        }
-        if ok {
-            out.push(alt);
-        }
-    }
-    out
-}

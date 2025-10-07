@@ -624,11 +624,49 @@ impl<'g> FirstSetResolver<'g> {
     }
 }
 
+#[test]
+fn test_completions_xtlc() {
+    let spec = crate::logic::tests::xtlc::xtlc_spec();
+    let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
+    let mut p = PartialParser::new(g.clone());
+    let past = p.partial("λx:").unwrap();
+    dbg!(&past.root());
+    let completions = past.completions(&g, 0);
+    println!("Completions: {:#?}", completions);
+    assert!(
+        completions.contains_regex("[\\p{L}][\\p{L}\\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*"),
+        "expected identifier regex in completions"
+    );
+}
+
+#[test]
+fn test_completions_clike() {
+    let spec = crate::logic::tests::clike::c_like_spec();
+    let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
+    let mut p = PartialParser::new(g.clone());
+    let past = p.partial("int").unwrap();
+    dbg!(&past.root());
+    let completions = past.completions(&g, 0);
+    println!("Completions: {:#?}", completions);
+    assert!(
+        completions.contains_regex("[a-zA-Z_][a-zA-Z0-9_]*"),
+        "expected identifier regex in completions"
+    );
+}
+
 // === Tests ================================================================================== //
 
 #[cfg(test)]
 mod tests {
     use crate::logic::partial::parse::PartialParser;
+    use super::*;
+
+    fn complete(spec: &str, input: &str) -> CompletionSet {
+        let g = crate::logic::grammar::Grammar::load(spec).unwrap();
+        let mut p = PartialParser::new(g.clone());
+        let past = p.partial(input).unwrap();
+        past.completions(&g, 0)
+    }
 
     #[test]
     fn test_completions() {
@@ -657,33 +695,134 @@ mod tests {
         );
     }
 
+
+
     #[test]
-    fn test_completions_xtlc() {
-        let spec = crate::logic::tests::xtlc::xtlc_spec();
-        let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
-        let mut p = PartialParser::new(g.clone());
-        let past = p.partial("λx:").unwrap();
-        dbg!(&past.root());
-        let completions = past.completions(&g, 0);
-        println!("Completions: {:#?}", completions);
+    fn completion_first_sets_with_alternatives() {
+        let spec = r#"
+        A(ruleA) ::= 'a' 'x'?
+        B(ruleB) ::= 'b'
+        start ::= A | B
+        "#;
+
+        let completions = complete(spec, "");
+        assert!(completions.contains_literal("a"), "expected 'a' from FIRST(start)");
+        assert!(completions.contains_literal("b"), "expected 'b' from FIRST(start)");
+    }
+
+    #[test]
+    fn completion_next_symbol_prediction() {
+        let spec = r#"
+        start ::= 'a' 'b'
+        "#;
+        let completions = complete(spec, "a");
+        assert!(completions.contains_literal("b"), "expected next literal 'b'");
+    }
+
+    #[test]
+    fn completion_tail_repetition_plus() {
+        let spec = r#"
+        start ::= 'a'+
+        "#;
+        let completions = complete(spec, "a");
         assert!(
-            completions.contains_regex("[\\p{L}][\\p{L}\\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*"),
-            "expected identifier regex in completions"
+            completions.contains_literal("a"),
+            "expected tail repetition to suggest another 'a'"
         );
     }
 
     #[test]
-    fn test_completions_clike() {
-        let spec = crate::logic::tests::clike::c_like_spec();
-        let g = crate::logic::grammar::Grammar::load(spec.as_str()).unwrap();
-        let mut p = PartialParser::new(g.clone());
-        let past = p.partial("int").unwrap();
-        dbg!(&past.root());
-        let completions = past.completions(&g, 0);
-        println!("Completions: {:#?}", completions);
+    fn completion_nullable_group_lookahead() {
+        let spec = r#"
+        start ::= ('a')? 'b'
+        "#;
+        let completions = complete(spec, "");
+        println!("{:#?}", completions);
+        assert!(completions.contains_literal("a"), "nullable group allows 'a'");
+        assert!(completions.contains_literal("b"), "nullable group allows lookahead 'b'");
+    }
+
+    #[test]
+    fn completion_group_repetition_tail() {
+        let spec = r#"
+        start ::= ('a' 'b')* 'c'
+        "#;
+        let completions = complete(spec, "ab");
+        // For group repetition, FIRST set for the group starts with 'a'
         assert!(
-            completions.contains_regex("[a-zA-Z_][a-zA-Z0-9_]*"),
-            "expected identifier regex in completions"
+            completions.contains_literal("a"),
+            "expected to suggest restarting the group with 'a'"
+        );
+    }
+
+    #[test]
+    fn completion_regex_identifier() {
+        let spec = r#"
+        Identifier ::= /[a-z][a-z0-9]*/
+        start ::= Identifier
+        "#;
+        let completions = complete(spec, "");
+        assert!(
+            completions.contains_regex("[a-z][a-z0-9]*"),
+            "expected identifier regex completion"
+        );
+    }
+
+    #[test]
+    fn completion_single_wrapped_regex() {
+        let spec = r#"
+        Identifier ::= /[A-Z][a-z]+/
+        // Single wraps the inner regex (with a binding)
+        Name(name) ::= Identifier[x]
+        start ::= Name
+        "#;
+        let completions = complete(spec, "");
+        assert!(
+            completions.contains_regex("[A-Z][a-z]+"),
+            "expected FIRST(Name) to expose inner Identifier regex"
+        );
+    }
+
+    #[test]
+    fn completion_deduplicates_identical_tokens() {
+        let spec = r#"
+        S1(r1) ::= 'x'
+        S2(r2) ::= 'x' 'y'
+        start ::= S1 | S2
+        "#;
+        let completions = complete(spec, "");
+        // Only a single 'x' token should appear after dedup
+        let count_x = completions
+            .iter()
+            .filter(|c| matches!(c.token, CompletionToken::Literal(ref s) if s == "x"))
+            .count();
+        assert_eq!(count_x, 1, "expected deduplication of identical 'x' suggestions");
+    }
+
+    #[test]
+    fn completion_metadata_rule_and_type_hint() {
+        let spec = r#"
+        start(lit) ::= 'x'
+
+        -------------- (lit)
+        'void'
+        "#;
+
+        let completions = complete(spec, "");
+        let cand = completions
+            .iter()
+            .find(|c| matches!(c.token, CompletionToken::Literal(ref s) if s == "x"))
+            .expect("expected 'x' completion");
+
+    assert_eq!(cand.metadata.rule_name.as_deref(), Some("lit"));
+        // Type hint should be derivable from the rule with no premises
+        assert!(
+            cand.metadata
+                .type_hint
+                .as_deref()
+                .map(|t| t.contains("void"))
+                .unwrap_or(false),
+            "expected type hint containing 'void'"
         );
     }
 }

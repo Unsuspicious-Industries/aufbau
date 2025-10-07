@@ -75,7 +75,9 @@ svg { width: 100%; height: 100%; background: #0e131b; }
 .edge.dashed { stroke-dasharray: 4 3; }
 .node circle { stroke: #232a36; stroke-width: 1; }
 .label { font-size: 12px; text-anchor: middle; fill: var(--muted); }
+.rule-indicator { stroke: none; }
 
 .node:hover circle { filter: brightness(1.2); }
+.node:hover .rule-indicator { filter: brightness(1.3); }
 
 

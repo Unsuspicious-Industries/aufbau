@@ -1,4 +1,12 @@
 // run ML inference
+// 
+// Environment variables:
+// - HF_HOME: Sets the cache directory for Hugging Face models (default: ~/.cache/huggingface)
+// - HUGGINGFACE_TOKEN: Required for accessing gated models like Mixtral
+//
+// Example usage:
+// export HF_HOME="/path/to/your/cache"
+// export HUGGINGFACE_TOKEN="your_token_here"
 use anyhow::{Context, Error as E, Result};
 use candle_nn::VarBuilder;
 use hf_hub::{Repo, RepoType, api::sync::ApiBuilder};
@@ -90,7 +98,7 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
         "mixtral" => {
             let token = env::var("HUGGINGFACE_TOKEN")
                 .context("HUGGINGFACE_TOKEN must be set to access Mixtral weights")?;
-            let api = ApiBuilder::new().with_token(Some(token)).build()?;
+            let api = ApiBuilder::from_env().with_token(Some(token)).build()?;
             let repo = api.repo(Repo::with_revision(
                 "mistralai/Mixtral-8x7B-v0.1".to_string(),
                 RepoType::Model,
@@ -121,7 +129,7 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
             Ok(provider)
         }
         "phi3" | "phi3-mini" => {
-            let api = ApiBuilder::new().build()?;
+            let api = ApiBuilder::from_env().build()?;
             let repo = api.repo(Repo::with_revision(
                 "microsoft/Phi-3-mini-4k-instruct".to_string(),
                 RepoType::Model,
@@ -156,7 +164,7 @@ fn load_model(name: &str) -> Result<LogitsProvider> {
             Ok(provider)
         }
         "phi3-medium" => {
-            let api = ApiBuilder::new().build()?;
+            let api = ApiBuilder::from_env().build()?;
             let repo = api.repo(Repo::with_revision(
                 "microsoft/Phi-3-medium-4k-instruct".to_string(),
                 RepoType::Model,

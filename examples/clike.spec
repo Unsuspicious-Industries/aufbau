@@ -40,9 +40,11 @@ Expr ::= ArOpExpr
 VarDeclInit(vardecl) ::= Type[type] Variable[var] '=' Expr[init] ';'
 VarDeclNoInit(vardecl_noinit) ::= Type[type] Variable[var] ';'
 VarDecl ::= VarDeclInit | VarDeclNoInit
+
 VarInitForInit(vardecl) ::= Type[type] Variable[var] '=' Expr[init]
 VarInitForNoInit(vardecl_noinit) ::= Type[type] Variable[var]
 VarInitFor ::= VarInitForInit | VarInitForNoInit
+
 Assignment(assign) ::= Expr[target] '=' Expr[value]
 AssignmentStmt(assignstmt) ::= Assignment[a] ';'
 // Introduce Else nonterminal to avoid grouped optional
