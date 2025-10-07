@@ -10,6 +10,11 @@ pub use production::{PartialProduction, PartialSymbol};
 pub mod completion;
 pub use completion::*;
 
+pub mod structure;
+pub use structure::*;
+
+
+
 mod tests {
     #[test]
     fn test_debug() {
