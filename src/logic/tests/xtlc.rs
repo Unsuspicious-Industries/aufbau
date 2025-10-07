@@ -1,6 +1,6 @@
-use crate::logic::check::TypeChecker;
+
 use crate::logic::grammar::Grammar;
-use crate::logic::parser::Parser;
+use crate::logic::Parser;
 use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
 
 // Extended Typed Lambda Calculus
@@ -40,17 +40,7 @@ fn test_pass_xtlc() {
     for expr in exprs {
         set_debug_input(Some(expr.to_string()));
 
-        let mut tc = TypeChecker::new();
-        debug_info!("test", "Initialized type checker");
-
         let past = parser.partial(expr).unwrap();
-        let rt = tc.check_partial(past.root()).unwrap();
-
-        if let Some(ty) = rt {
-            println!("return type: {:?}", ty);
-        } else {
-            println!("no return type");
-        }
-        println!("---");
+        println!("Partial AST: {:#?}", past.root);
     }
 }

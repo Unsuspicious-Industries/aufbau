@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use super::rank::Ranker;
 use super::regex::{RegexAnalyzer, RegexResult};
 use crate::logic::grammar::Grammar;
-use crate::logic::parser::Parser;
-use crate::logic::partial::{CompletionSet, CompletionToken, PartialAST};
+use crate::logic::Parser;
+use crate::logic::partial::{CompletionSet, ValidToken, PartialAST};
 
 /// Context information for token building during synthesis
 #[derive(Debug, Clone)]
@@ -15,7 +15,7 @@ struct TokenBuildingContext {
     /// The current partial token being built (if any)
     current_partial_token: String,
     /// Expected completions for the current context
-    expected_completions: Vec<CompletionToken>,
+    expected_completions: Vec<ValidToken>,
     /// Position in the code where current token started
     token_start_position: usize,
     /// Whether the current context allows delimiters
@@ -121,11 +121,10 @@ impl Synthesizer {
         if !current_token.is_empty() {
             // We might be in the middle of a token - analyze what completions might apply
             let expected_completions = if let Some(current_ast) = ast {
-                let completions = current_ast.completions(&self.grammar, 10);
+                let completions = current_ast.completions(&self.grammar);
                 completions
-                    .candidates
+                    .tokens
                     .into_iter()
-                    .map(|c| c.token)
                     .collect()
             } else {
                 Vec::new()
@@ -133,8 +132,8 @@ impl Synthesizer {
 
             // Check if current token could match any regex patterns using the new analyzer
             let is_regex_prefix = expected_completions.iter().any(|completion| {
-                if let CompletionToken::Regex(pattern) = completion {
-                    match self.regex_analyzer.analyze(pattern, current_token) {
+                if let ValidToken::Regex(pattern) = completion {
+                    match self.regex_analyzer.analyze(&pattern, current_token) {
                         RegexResult::Match { .. } | RegexResult::Prefix { .. } => return true,
                         RegexResult::Mismatch => return false,
                     }
@@ -178,12 +177,12 @@ impl Synthesizer {
             "Step {}: Context-aware filtering - mid_token: {}, completions: {}, code: '{}'",
             step,
             is_mid_token,
-            completions.candidates.len(),
+            completions.tokens.len(),
             code
         );
 
         // If we have completions, only accept tokens that match them
-        let has_completions = !completions.candidates.is_empty();
+        let has_completions = !completions.tokens.is_empty();
 
         for (token, score) in proposals {
             let completion_boost =
@@ -250,7 +249,7 @@ impl Synthesizer {
                 let combined = format!("{}{}", ctx.current_partial_token, token);
                 // Check if the combined token would be valid for any expected regex patterns
                 return ctx.expected_completions.iter().any(|completion| {
-                    if let CompletionToken::Regex(pattern) = completion {
+                    if let ValidToken::Regex(pattern) = completion {
                         match self.regex_analyzer.analyze(pattern, &combined) {
                             RegexResult::Match { .. } | RegexResult::Prefix { .. } => return true,
                             RegexResult::Mismatch => return false,
@@ -285,9 +284,9 @@ impl Synthesizer {
         }
 
         // Standard completion matching - require actual matches
-        for candidate in &completions.candidates {
-            match &candidate.token {
-                CompletionToken::Literal(expected) => {
+        for token_type in &completions.tokens {
+            match token_type {
+                ValidToken::Literal(expected) => {
                     if token == expected {
                         best_boost = best_boost.max(3.0);
                     } else if expected.starts_with(token) {
@@ -296,7 +295,7 @@ impl Synthesizer {
                         best_boost = best_boost.max(2.0);
                     }
                 }
-                CompletionToken::Regex(pattern) => {
+                ValidToken::Regex(pattern) => {
                     if self.token_matches_regex_pattern(token, pattern) {
                         best_boost = best_boost.max(1.8);
                     }
@@ -306,8 +305,8 @@ impl Synthesizer {
 
         // Check if token is a delimiter that appears in completions
         if self.is_delimiter(token) {
-            for candidate in &completions.candidates {
-                if let CompletionToken::Literal(expected) = &candidate.token {
+            for token_type in &completions.tokens {
+                if let ValidToken::Literal(expected) = token_type {
                     if expected == token {
                         best_boost = best_boost.max(1.5);
                         break;
@@ -484,7 +483,7 @@ impl Synthesizer {
             // Get grammar-aware completions
             let completions = self.get_completions(&ast, &code, k as usize)?;
 
-            if completions.candidates.is_empty() {
+            if completions.tokens.is_empty() {
                 return Err(format!(
                     "No valid completions available at step {} with code: '{}'. AST may be in an unrecoverable state.",
                     step, code
@@ -493,9 +492,9 @@ impl Synthesizer {
 
             crate::debug_debug!(
                 "synthesizer",
-                "Step {}: Found {} completion candidates",
+                "Step {}: Found {} completion tokens",
                 step,
-                completions.candidates.len()
+                completions.tokens.len()
             );
 
             // Get ranker proposals
@@ -529,7 +528,7 @@ impl Synthesizer {
                         step,
                         consecutive_failed_attempts,
                         code,
-                        completions.candidates.iter().map(|c| format!("{:?}", c.token)).collect::<Vec<_>>()
+                        completions.tokens.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>()
                     ));
                 }
                 continue;
@@ -597,7 +596,7 @@ impl Synthesizer {
                         step,
                         consecutive_failed_attempts,
                         code,
-                        completions.candidates.iter().map(|c| format!("{:?}", c.token)).collect::<Vec<_>>()
+                        completions.tokens.iter().map(|c| format!("{:?}", c)).collect::<Vec<_>>()
                     ));
                 }
             }
@@ -621,7 +620,7 @@ impl Synthesizer {
         k: usize,
     ) -> Result<CompletionSet, String> {
         if let Some(current_ast) = ast {
-            return Ok(current_ast.completions(&self.grammar, k));
+            return Ok(current_ast.completions(&self.grammar));
         } else {
             return Err("No valid AST available for computing completions".to_string());
         }

@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use crate::logic::ast::SourceSpan;
-use crate::logic::bind::BoundTypingRule;
-use crate::logic::grammar::{Production, Symbol, RepetitionKind};
+use crate::logic::grammar::{Production, RepetitionKind};
 use crate::logic::partial::production::PartialSymbol;
-use crate::logic::partial::PartialTerminal;
 
 /// Top-level partial AST result
 #[derive(Clone, Debug)]
@@ -30,10 +28,65 @@ impl PartialAST {
         self.root.is_complete()
     }
     
-    /// Convert to a complete AST (temporary - will be replaced)
+    /// Convert to a completed AST by selecting a fully matched alternative path
     pub fn into_complete(self) -> Result<crate::logic::ast::ASTNode, String> {
-        // TODO: Implement proper conversion once we replace the old PartialAST completely
-        Err("into_complete not yet implemented for new PartialAST".to_string())
+        use crate::logic::ast::{ASTNode, NonTerminal as FullNT};
+
+        fn pick_complete_alt<'a>(alts: &'a [Alt]) -> Option<&'a Alt> {
+            alts.iter().find(|alt| alt.is_complete())
+        }
+
+        fn convert_nonterminal(nt: &NonTerminal) -> Result<crate::logic::ast::NonTerminal, String> {
+            let alt = pick_complete_alt(&nt.alts)
+                .ok_or_else(|| format!("No complete alternative for nonterminal '{}'", nt.name))?;
+            let mut children: Vec<ASTNode> = Vec::new();
+
+            let mut indices: Vec<usize> = alt.slots.keys().cloned().collect();
+            indices.sort_unstable();
+            for idx in indices {
+                if let Some(slots) = alt.slots.get(&idx) {
+                    for slot in slots {
+                        match slot {
+                            Slot::Filled(nodes) => {
+                                for node in nodes {
+                                    match node {
+                                        ParsedNode::Terminal(t) => {
+                                            children.push(ASTNode::Terminal(crate::logic::ast::Terminal {
+                                                value: t.value.clone(),
+                                                span: t.span.clone(),
+                                                binding: t.binding.clone(),
+                                            }));
+                                        }
+                                        ParsedNode::NonTerminal(child_nt) => {
+                                            children.push(ASTNode::Nonterminal(convert_nonterminal(child_nt)?));
+                                        }
+                                    }
+                                }
+                            }
+                            Slot::Partial { .. } => {
+                                return Err(format!(
+                                    "Incomplete symbol remained in complete alternative '{}' at slot {}",
+                                    nt.name, idx
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+
+            let full = FullNT {
+                value: nt.name.clone(),
+                span: nt.span.clone(),
+                children,
+                binding: nt.binding.clone(),
+                bound_typing_rule: None,
+            };
+
+            Ok(full)
+        }
+
+        let root = convert_nonterminal(&self.root)?;
+        Ok(ASTNode::Nonterminal(root))
     }
 }
 
@@ -49,6 +102,14 @@ pub struct NonTerminal {
     /// Span covering the parsed input
     pub span: Option<SourceSpan>,
 }
+
+#[derive(Clone, Debug)]
+pub struct Terminal {
+    pub value: String,
+    pub span: Option<SourceSpan>,
+    pub binding: Option<String>,
+}
+
 
 impl NonTerminal {
     pub fn new(name: String, alts: Vec<Alt>, binding: Option<String>) -> Self {
@@ -79,7 +140,7 @@ impl NonTerminal {
 /// A node that is already fully parsed (terminal or non-terminal complete subtree).
 #[derive(Clone, Debug)]
 pub enum ParsedNode {
-    Terminal(PartialTerminal),
+    Terminal(Terminal),
     NonTerminal(NonTerminal),
 }
 
@@ -286,6 +347,8 @@ pub fn dummy_alt(layout: Vec<Vec<bool>>) -> Alt {
 
     // Construct a minimal RHS where every symbol is a unique expression
     // (non-terminal) so that it is as unconstrained as possible.
+    use crate::logic::grammar::Symbol;
+
     let rhs: Vec<Symbol> = layout
         .iter()
         .enumerate()
@@ -307,7 +370,7 @@ pub fn dummy_alt(layout: Vec<Vec<bool>>) -> Alt {
                     },
                 });
             } else {
-                vec.push(Slot::Filled(vec![ParsedNode::Terminal(PartialTerminal {
+                vec.push(Slot::Filled(vec![ParsedNode::Terminal(Terminal {
                     value: format!("t{}", idx),
                     span: None,
                     binding: None,
@@ -327,26 +390,24 @@ pub fn dummy_alt(layout: Vec<Vec<bool>>) -> Alt {
 
 
 mod tests {
-    use super::*;
-
     #[test]
     fn symbol_helpers_basic() {
         // One symbol, filled
-        let alt = dummy_alt(vec![vec![false]]);
+        let alt = super::dummy_alt(vec![vec![false]]);
         assert!(!alt.symbol_empty(0));
         assert!(!alt.symbol_partial(0));
         assert!(alt.symbol_complete(0));
         assert_eq!(alt.cursor(), 1);
 
         // One symbol, partial
-        let alt = dummy_alt(vec![vec![true]]);
+    let alt = super::dummy_alt(vec![vec![true]]);
         assert!(!alt.symbol_empty(0));
         assert!(alt.symbol_partial(0));
         assert!(!alt.symbol_complete(0));
         assert_eq!(alt.cursor(), 0);
 
         // One symbol, empty (no slots)
-        let alt = dummy_alt(vec![vec![]]);
+    let alt = super::dummy_alt(vec![vec![]]);
         assert!(alt.symbol_empty(0));
         assert!(!alt.symbol_partial(0));
         assert!(!alt.symbol_complete(0));
@@ -356,16 +417,16 @@ mod tests {
     #[test]
     fn cursor_advances_across_symbols() {
         // Two symbols, first complete, second partial
-        let alt = dummy_alt(vec![vec![false], vec![true]]);
+    let alt = super::dummy_alt(vec![vec![false], vec![true]]);
         assert_eq!(alt.cursor(), 1);
         println!("Alt: {:#?}", alt);
 
         // Two symbols, first empty, second filled
-        let alt = dummy_alt(vec![vec![], vec![false]]);
+    let alt = super::dummy_alt(vec![vec![], vec![false]]);
         assert_eq!(alt.cursor(), 0);
 
         // Two symbols, both complete
-        let alt = dummy_alt(vec![vec![false], vec![false]]);
+    let alt = super::dummy_alt(vec![vec![false], vec![false]]);
         assert_eq!(alt.cursor(), 2);
     }
 }

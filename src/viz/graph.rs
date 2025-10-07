@@ -1,6 +1,5 @@
 use crate::logic::partial::PartialAST;
-use crate::logic::partial::convert::convert_partial_to_alt;
-use crate::logic::partial::{NewAlt, NewParsedNode, NewNonTerminal, NewSlot, NewPartialAST};
+use crate::logic::partial::{Alt, ParsedNode, NonTerminal, Slot};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
@@ -50,11 +49,10 @@ pub struct ProductionInfo {
 }
 
 pub fn build_graph(ast: &PartialAST) -> GraphData {
-    let alt = convert_partial_to_alt(ast);
-    collect_graph_from_alt("root", &alt)
+    collect_graph_from_alt("root", &ast)
 }
 
-fn collect_graph_from_alt(root_id: &str, alt: &NewPartialAST) -> GraphData {
+fn collect_graph_from_alt(root_id: &str, alt: &PartialAST) -> GraphData {
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
 
@@ -65,7 +63,7 @@ fn collect_graph_from_alt(root_id: &str, alt: &NewPartialAST) -> GraphData {
 
 fn walk_nt(
     node_id: &str,
-    nt: &NewNonTerminal,
+    nt: &NonTerminal,
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
 ) {
@@ -111,7 +109,7 @@ fn walk_nt(
 
 fn walk_alt(
     alt_id: &str,
-    alt: &NewAlt,
+    alt: &Alt,
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
 ) {
@@ -155,7 +153,7 @@ fn walk_alt(
     for (sym_idx, slots) in &alt.slots {
         for (slot_idx, slot) in slots.iter().enumerate() {
             match slot {
-                NewSlot::Filled(parsed_nodes) => {
+                Slot::Filled(parsed_nodes) => {
                     for (node_idx, pnode) in parsed_nodes.iter().enumerate() {
                         let child_id = format!("{alt_id}.s{sym_idx}_{slot_idx}_{node_idx}");
                         edges.push(GraphEdge {
@@ -166,7 +164,7 @@ fn walk_alt(
                         walk_parsed_node(&child_id, pnode, nodes, edges);
                     }
                 }
-                NewSlot::Partial { node, partial_symbol } => {
+                Slot::Partial { node, partial_symbol } => {
                     // If there's a partial node, walk it
                     if let Some(pnode) = node {
                         let child_id = format!("{alt_id}.s{sym_idx}_{slot_idx}_partial");
@@ -216,12 +214,12 @@ fn walk_alt(
 
 fn walk_parsed_node(
     node_id: &str,
-    node: &NewParsedNode,
+    node: &ParsedNode,
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
 ) {
     match node {
-        NewParsedNode::Terminal(t) => {
+        ParsedNode::Terminal(t) => {
             nodes.push(GraphNode {
                 id: node_id.to_string(),
                 label: t.value.clone(),
@@ -239,7 +237,7 @@ fn walk_parsed_node(
                 },
             });
         }
-        NewParsedNode::NonTerminal(nt) => {
+        ParsedNode::NonTerminal(nt) => {
             walk_nt(node_id, nt, nodes, edges);
         }
     }

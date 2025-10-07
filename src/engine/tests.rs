@@ -26,7 +26,7 @@ fn synthesizes_complete_with_repetition() {
 
     // Parse back and ensure at least one complete alternative exists
     let grammar = crate::logic::grammar::Grammar::load(spec).unwrap();
-    let mut parser = crate::logic::parser::Parser::new(grammar);
+    let mut parser = crate::logic::Parser::new(grammar);
     let past = parser
         .partial(&program)
         .expect("partial parse of synthesized program");
@@ -48,7 +48,7 @@ fn synthesize_xtlc() {
 
     // Parse back and ensure at least one complete alternative exists
     let grammar = crate::logic::grammar::Grammar::load(&spec).unwrap();
-    let mut parser = crate::logic::parser::Parser::new(grammar);
+    let mut parser = crate::logic::Parser::new(grammar);
     let past = parser
         .partial(&program)
         .expect("partial parse of synthesized program");
@@ -70,7 +70,7 @@ fn synthesize_clike() {
 
     // Parse back and ensure at least one complete alternative exists
     let grammar = crate::logic::grammar::Grammar::load(&spec).unwrap();
-    let mut parser = crate::logic::parser::Parser::new(grammar);
+    let mut parser = crate::logic::Parser::new(grammar);
     let past = parser
         .partial(&program)
         .expect("partial parse of synthesized program");
@@ -94,7 +94,7 @@ fn test_clike_mixtral() {
 
     // Parse back and ensure at least one complete alternative exists
     let grammar = crate::logic::grammar::Grammar::load(&spec).unwrap();
-    let mut parser = crate::logic::parser::Parser::new(grammar);
+    let mut parser = crate::logic::Parser::new(grammar);
     let past = parser
         .partial(&program)
         .expect("partial parse of synthesized program");
@@ -116,7 +116,7 @@ fn test_clike_phi() {
 
     // Parse back and ensure at least one complete alternative exists
     let grammar = crate::logic::grammar::Grammar::load(&spec).unwrap();
-    let mut parser = crate::logic::parser::Parser::new(grammar);
+    let mut parser = crate::logic::Parser::new(grammar);
     let past = parser
         .partial(&program)
         .expect("partial parse of synthesized program");

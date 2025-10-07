@@ -1,4 +1,4 @@
-use crate::{logic::grammar::Grammar, logic::partial::PartialParser, set_debug_level};
+use crate::{logic::grammar::Grammar, logic::Parser, set_debug_level};
 use rouille::{Request, Response};
 use serde::Deserialize;
 
@@ -24,7 +24,7 @@ pub fn handle_parser_viz_request(request: &Request) -> Response {
         Ok(g) => g,
         Err(e) => return Response::text(format!("spec error: {}", e)).with_status_code(400),
     };
-    let mut parser = PartialParser::new(grammar);
+    let mut parser = Parser::new(grammar);
     set_debug_level(crate::logic::debug::DebugLevel::Trace);
     let partial = match parser.partial(&input) {
         Ok(p) => p,

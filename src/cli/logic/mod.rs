@@ -6,7 +6,7 @@ use anstyle::{AnsiColor, Style};
 use beam::engine::Synthesizer;
 use beam::engine::rank::{DefaultRanker, LLMRanker, StlcRanker};
 use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
-use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
+use beam::logic::{ grammar::Grammar, Parser};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -16,8 +16,6 @@ pub struct LogicCmd {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum LogicSubcommand {
-    /// Typecheck a source file given a grammar spec
-    Check(CheckArgs),
     /// Launch the visualization server
     Viz(VizArgs),
     /// Synthesize a well-typed program from a grammar
@@ -121,82 +119,10 @@ pub fn dispatch(cli: &crate::cli::Cli) {
 
     match &cli.command {
         crate::cli::Commands::Logic(cmd) => match &cmd.command {
-            LogicSubcommand::Check(args) => run_check(args, cli.with_input, level),
             LogicSubcommand::Viz(args) => run_viz(args, level),
             LogicSubcommand::Synthesize(args) => run_synthesize(args),
             LogicSubcommand::Complete(args) => run_complete(args, cli.with_input, level),
         },
-    }
-}
-
-fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
-    // Load grammar spec
-    let spec = match fs::read_to_string(&args.spec_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
-                "error: failed to read spec '{}': {}",
-                args.spec_path.display(),
-                e
-            );
-            std::process::exit(2);
-        }
-    };
-    let mut grammar = match Grammar::load(&spec) {
-        Ok(g) => g,
-        Err(e) => {
-            eprintln!("error: failed to parse grammar spec: {}", e);
-            std::process::exit(2);
-        }
-    };
-    if let Some(start) = &args.start {
-        grammar.set_start(start.clone());
-    }
-
-    // Load code
-    let code = match fs::read_to_string(&args.code_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
-                "error: failed to read code '{}': {}",
-                args.code_path.display(),
-                e
-            );
-            std::process::exit(2);
-        }
-    };
-    if with_input {
-        set_debug_input(Some(code.clone()));
-    }
-
-    // Parse (partial-first)
-    let mut parser = Parser::new(grammar);
-    let past = match parser.partial(&code) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("parse error: {}", e);
-            std::process::exit(1);
-        }
-    };
-
-    // Typecheck using partial checker
-    let mut checker = TypeChecker::new();
-    match checker.check_partial(past.root()) {
-        Ok(Some(ty)) => {
-            let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
-            println!("{ok}Type:{ok:#} {:?}", ty);
-            std::process::exit(0);
-        }
-        Ok(None) => {
-            let warn = Style::new().fg_color(Some(AnsiColor::Yellow.into()));
-            println!("{warn}No type inferred{warn:#} (no applicable rule)");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            let err = Style::new().fg_color(Some(AnsiColor::Red.into()));
-            eprintln!("{err}Type error:{err:#} {}", e);
-            std::process::exit(1);
-        }
     }
 }
 
@@ -325,8 +251,8 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
     };
 
     // Get completions
-    let completions = past.completions(&grammar, 0);
-    let mut candidates = completions.candidates.clone();
+    let completions = past.completions(&grammar);
+    let mut candidates = completions.tokens.clone();
 
     // Apply max limit if specified
     if let Some(max) = args.max_completions {
@@ -340,34 +266,19 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
     }
 
     let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
-    let dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
+    let _dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     
     println!("{ok}Found {} completion(s):{ok:#}", candidates.len());
     println!();
 
-    for (idx, candidate) in candidates.iter().enumerate() {
-        match &candidate.token {
-            beam::logic::partial::completion::CompletionToken::Literal(text) => {
-                print!("  {}. '{}'", idx + 1, text);
+    for (idx, token) in candidates.iter().enumerate() {
+        match token {
+            beam::logic::partial::ValidToken::Literal(text) => {
+                println!("  {}. '{}'", idx + 1, text);
             }
-            beam::logic::partial::completion::CompletionToken::Regex(pattern) => {
-                print!("  {}. /{}/", idx + 1, pattern);
+            beam::logic::partial::ValidToken::Regex(pattern) => {
+                println!("  {}. /{}/", idx + 1, pattern);
             }
-        }
-
-        if args.show_details {
-            println!();
-            println!("     {dim}branch:{dim:#} {}", candidate.metadata.branch);
-            println!("     {dim}origin:{dim:#} {:?}", candidate.metadata.origin);
-            if let Some(rule) = &candidate.metadata.rule_name {
-                println!("     {dim}rule:{dim:#} {}", rule);
-            }
-            if let Some(ty) = &candidate.metadata.type_hint {
-                println!("     {dim}type:{dim:#} {}", ty);
-            }
-            println!("     {dim}symbol_index:{dim:#} {}", candidate.metadata.symbol_index);
-        } else {
-            println!();
         }
     }
 

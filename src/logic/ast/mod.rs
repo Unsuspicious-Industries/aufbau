@@ -1,5 +1,7 @@
 use super::bind::BoundTypingRule;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::ParsedNode;
+use crate::logic::{partial, PartialAST};
 use std::collections::HashSet;
 use std::path::Path;
 use std::{fs, io};
@@ -100,6 +102,9 @@ pub enum ASTNode {
 }
 
 impl ASTNode {
+
+    // TODO: remove legacy from_partial once new conversion lives on PartialAST
+
     pub fn span(&self) -> Option<&SourceSpan> {
         match self {
             ASTNode::Terminal(t) => t.span.as_ref(),
