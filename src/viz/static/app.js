@@ -147,6 +147,18 @@ function renderRadial(data) {
     text.setAttribute('x', p.x); text.setAttribute('y', p.y - 16);
     text.setAttribute('class', 'label');
     text.textContent = n.label;
+    
+    // Add typing rule indicator if present
+    if (n.meta && n.meta.typing_rule) {
+      const ruleIndicator = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ruleIndicator.setAttribute('cx', p.x + 8);
+      ruleIndicator.setAttribute('cy', p.y - 8);
+      ruleIndicator.setAttribute('r', 3);
+      ruleIndicator.setAttribute('fill', 'var(--accent)');
+      ruleIndicator.setAttribute('class', 'rule-indicator');
+      g.appendChild(ruleIndicator);
+    }
+    
     g.addEventListener('click', (e) => {
       e.stopPropagation();
       showNodeDetails(n);
@@ -171,6 +183,9 @@ function showNodeDetails(n) {
     html += `Production: ${p.rhs.join(' ')}\n`;
     html += `Cursor: ${p.cursor}/${p.rhs_len}\n`;
     html += `Complete: ${p.complete}  Partial-In-Progress: ${p.has_partial}\n`;
+  }
+  if (meta.typing_rule) {
+    html += `\nTyping Rule:\n${meta.typing_rule}\n`;
   }
   panel.textContent = html;
 }

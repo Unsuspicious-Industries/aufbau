@@ -1,20 +1,24 @@
-// Removing legacy OG bound over complete AST; the system is centered on PartialAST now
-// pub mod rule; // removed
+//! Binding module for resolving typing rules over PartialAST nodes.
+//!
+//! This module provides the binding infrastructure for the type system,
+//! allowing typing rules to be resolved against partial AST nodes.
+//!
+//! The main types are:
+//! - `BoundTypingRule`: A typing rule with all variables resolved to concrete nodes
+//! - `BoundType`: A type expression with all type variables resolved
+//! - `BindingResolver`: Trait for resolving typing rules
+
 pub mod partial;
 pub mod typing;
-pub mod utils;
-pub use typing::BoundType;
 mod display;
 
 #[cfg(test)]
 mod tests;
 
-// Re-export the main types and traits for easy access
-// Legacy exports removed
+// Re-export the core types and traits
+pub use typing::BoundType;
 
-pub use utils::{bind_type, extract_terminal_value, get_nt_binding, get_var_binding};
-
-// Re-export partial binding API (now canonical)
+// Re-export partial binding API (main API)
 pub use partial::{
     BindablePartialNonTerminal, BindingResolver, BoundConclusion, BoundConclusionContext,
     BoundConclusionKind, BoundPremise, BoundTypeAscription, BoundTypeSetting, BoundTypingJudgment,

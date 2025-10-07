@@ -1,13 +1,11 @@
 use super::*;
 use crate::debug_trace;
 use crate::logic::ast::{ASTNode as CompleteAST, SourceSpan};
-use crate::logic::bind::partial::select_branches_by_type;
+use crate::logic::bind::{BindablePartialNonTerminal, BoundTypingRule, DefaultBindingResolver};
 use crate::logic::grammar::Grammar;
 use crate::logic::grammar::RepetitionKind;
 use crate::logic::grammar::Symbol;
 use crate::logic::tokenizer::Tokenizer;
-use crate::logic::typing::{Type, TypingRule};
-use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct Segment {
@@ -50,8 +48,6 @@ pub enum ParseOutcome {
 pub struct PartialParser {
     grammar: Grammar,
     tokenizer: Tokenizer,
-    /// Optional per-nonterminal type guidance: (rules, expected type)
-    type_guidance: HashMap<String, (Vec<TypingRule>, Type)>,
 }
 
 impl PartialParser {
@@ -60,16 +56,7 @@ impl PartialParser {
         Self {
             grammar,
             tokenizer: Tokenizer::new(specials, vec![' ', '\n', '\t']),
-            type_guidance: HashMap::new(),
         }
-    }
-
-    /// Configure expected type and rules for a given nonterminal name.
-    /// During parsing that nonterminal, only branches compatible with the expected type
-    /// (under any of the provided rules) will be kept.
-    pub fn set_type_guidance(&mut self, nonterminal: &str, rules: Vec<TypingRule>, expected: Type) {
-        self.type_guidance
-            .insert(nonterminal.to_string(), (rules, expected));
     }
 
     pub fn parse(&mut self, input: &str) -> Result<CompleteAST, String> {
@@ -112,8 +99,8 @@ impl PartialParser {
                     "parser",
                     "Start nonterminal parsed successfully, final position: {}",
                     next_pos
-                );
-                // Enforce full-input consumption: if segments remain, downgrade to Partial
+                ); 
+                // Enforce full-input consumption: if segments remain, log it
                 if next_pos < total_segments {
                     debug_trace!(
                         "parser",
@@ -121,16 +108,6 @@ impl PartialParser {
                         next_pos,
                         total_segments
                     );
-                    let mut parallels: Vec<PartialNonTerminal> = Vec::new();
-                    for n in nodes {
-                        if let PartialASTNode::NonTerminal(mut ps) = n {
-                            parallels.append(&mut ps);
-                        }
-                    }
-                    return Ok(PartialAST::new(
-                        PartialASTNode::NonTerminal(parallels),
-                        input.to_string(),
-                    ));
                 }
                 let mut parallels: Vec<PartialNonTerminal> = Vec::new();
                 for n in nodes {
@@ -216,8 +193,27 @@ impl PartialParser {
             "Created {} segments: {:?}",
             segments.len(),
             segments.iter().map(|s| &s.text).collect::<Vec<_>>()
-        );
+        );la
         Ok(segments)
+    }
+
+    fn bind_typing_rule_for(
+        &self,
+        node: &PartialNonTerminal,
+        rule_name: &str,
+    ) -> Result<BoundTypingRule, String> {
+        let typing_rule = self
+            .grammar
+            .typing_rules
+            .get(rule_name)
+            .ok_or_else(|| {
+                format!(
+                    "Typing rule '{}' referenced by production '{}' not found",
+                    rule_name, node.value
+                )
+            })?;
+        let resolver = DefaultBindingResolver;
+        node.resolve_typing_rule_with(&resolver, typing_rule)
     }
 
     pub fn partial_nt(
@@ -386,7 +382,7 @@ impl PartialParser {
                         symbols_parsed,
                         nt
                     );
-                    (Vec::new(), next_pos, false, symbols_parsed, 0, None)
+                    continue;
                 }
             };
 
@@ -398,55 +394,53 @@ impl PartialParser {
             // Create nonterminals for complete and partial productions whenever there was progress,
             // even if children are currently empty. This allows visualizing incomplete endings as
             // partial trees instead of raising a hard error at the top level.
-            if is_complete || fully_symbols_parsed > 0 || partially_symbols_parsed > 0 {
-                let partial_prod = if partial_symbol.is_some() {
-                    PartialProduction::from_progress_with_partial_symbol(
-                        prod.clone(),
-                        fully_symbols_parsed,
-                        partially_symbols_parsed,
-                        partial_symbol,
-                    )
-                } else {
-                    PartialProduction::from_progress(
-                        prod.clone(),
-                        fully_symbols_parsed,
-                        partially_symbols_parsed,
-                    )
-                };
-                let nt_node = PartialNonTerminal {
-                    production: partial_prod,
-                    children: nt_children,
-                    value: nt.to_string(),
-                    span: if current_seg_pos > seg_pos {
-                        segments.get(seg_pos).and_then(|start_seg| {
-                            segments.get(current_seg_pos - 1).map(|end_seg| SourceSpan {
-                                start: start_seg.start,
-                                end: end_seg.end,
-                            })
+            let partial_prod = if partial_symbol.is_some() {
+                PartialProduction::from_progress_with_partial_symbol(
+                    prod.clone(),
+                    fully_symbols_parsed,
+                    partially_symbols_parsed,
+                    partial_symbol,
+                )
+            } else {
+                PartialProduction::from_progress(
+                    prod.clone(),
+                    fully_symbols_parsed,
+                    partially_symbols_parsed,
+                )
+            };
+            let nt_node = PartialNonTerminal {
+                production: partial_prod,
+                children: nt_children,
+                value: nt.to_string(),
+                span: if current_seg_pos > seg_pos {
+                    segments.get(seg_pos).and_then(|start_seg| {
+                        segments.get(current_seg_pos - 1).map(|end_seg| SourceSpan {
+                            start: start_seg.start,
+                            end: end_seg.end,
                         })
-                    } else {
-                        None
-                    },
-                    binding: binding.clone(),
-                    bound_typing_rule: None,
-                };
-                if is_complete {
-                    println!(
-                        "nt {} complete children={} (prod idx {})",
-                        nt,
-                        nt_node.children.len(),
-                        prod_idx
-                    );
-                    complete_parallels.push(nt_node);
+                    })
                 } else {
-                    println!(
-                        "nt {} partial children={} (prod idx {})",
-                        nt,
-                        nt_node.children.len(),
-                        prod_idx
-                    );
-                    partial_parallels.push(nt_node);
-                }
+                    None
+                },
+                binding: binding.clone(),
+                bound_typing_rule: None,
+            };
+            if is_complete {
+                println!(
+                    "nt {} complete children={} (prod idx {})",
+                    nt,
+                    nt_node.children.len(),
+                    prod_idx
+                );
+                complete_parallels.push(nt_node);
+            } else {
+                println!(
+                    "nt {} partial children={} (prod idx {})",
+                    nt,
+                    nt_node.children.len(),
+                    prod_idx
+                );
+                partial_parallels.push(nt_node);
             }
         }
 
@@ -458,17 +452,6 @@ impl PartialParser {
             partial_parallels.len(),
             max_complete_pos
         );
-        // Apply optional type-based pruning if guidance is configured for this nonterminal
-        if let Some((rules, expected)) = self.type_guidance.get(nt) {
-            if !complete_parallels.is_empty() {
-                let selected = select_branches_by_type(&complete_parallels, rules, expected);
-                complete_parallels = selected.into_iter().cloned().collect();
-            }
-            if !partial_parallels.is_empty() {
-                let selected = select_branches_by_type(&partial_parallels, rules, expected);
-                partial_parallels = selected.into_iter().cloned().collect();
-            }
-        }
 
         // If there is at least one complete alternative, return FULL, but include
         // both complete and partial alternatives so the caller can visualize the full tree.

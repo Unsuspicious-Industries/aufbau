@@ -11,6 +11,7 @@
 
 pub mod rank;
 pub mod synthesizer;
+pub mod regex;
 
 pub mod tests;
 

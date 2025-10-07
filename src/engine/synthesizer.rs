@@ -2,6 +2,7 @@ use regex::Regex;
 use std::collections::HashMap;
 
 use super::rank::Ranker;
+use super::regex::{RegexAnalyzer, RegexResult};
 use crate::logic::grammar::Grammar;
 use crate::logic::parser::Parser;
 use crate::logic::partial::{CompletionSet, CompletionToken, PartialAST};
@@ -25,8 +26,7 @@ struct TokenBuildingContext {
 pub struct Synthesizer {
     pub(crate) grammar: Grammar,
     pub(crate) ranker: Box<dyn Ranker>,
-    /// Cache of compiled regexes for performance
-    regex_cache: HashMap<String, Regex>,
+    regex_analyzer: RegexAnalyzer,
 }
 
 // I wanted to do an album with the sounds of the '50s
@@ -72,7 +72,7 @@ impl Synthesizer {
 
     /// Analyze the current token building context based on code and AST state
     fn analyze_token_building_context(
-        &self,
+        &mut self,
         code: &str,
         ast: &Option<PartialAST>,
     ) -> Option<TokenBuildingContext> {
@@ -131,11 +131,12 @@ impl Synthesizer {
                 Vec::new()
             };
 
-            // Check if current token could match any regex patterns
+            // Check if current token could match any regex patterns using the new analyzer
             let is_regex_prefix = expected_completions.iter().any(|completion| {
                 if let CompletionToken::Regex(pattern) = completion {
-                    if let Ok(regex) = Regex::new(pattern) {
-                        return self.is_valid_regex_prefix(current_token, &regex);
+                    match self.regex_analyzer.analyze(pattern, current_token) {
+                        RegexResult::Match { .. } | RegexResult::Prefix { .. } => return true,
+                        RegexResult::Mismatch => return false,
                     }
                 }
                 false
@@ -171,61 +172,59 @@ impl Synthesizer {
 
         let context = token_context;
         let is_mid_token = context.as_ref().map_or(false, |c| c.is_mid_token);
-        let allows_delimiters = context.as_ref().map_or(true, |c| c.allows_delimiters);
 
         crate::debug_trace!(
             "synthesizer",
-            "Step {}: Context-aware filtering - mid_token: {}, allows_delimiters: {}, code: '{}'",
+            "Step {}: Context-aware filtering - mid_token: {}, completions: {}, code: '{}'",
             step,
             is_mid_token,
-            allows_delimiters,
+            completions.candidates.len(),
             code
         );
+
+        // If we have completions, only accept tokens that match them
+        let has_completions = !completions.candidates.is_empty();
 
         for (token, score) in proposals {
             let completion_boost =
                 self.calculate_completion_boost_with_context(&token, completions, token_context);
 
-            // Enhanced filtering logic based on context
-            let should_include = if is_mid_token {
-                // When building a token, be more restrictive
-                completion_boost >= 1.5 || self.could_continue_current_token(&token, token_context)
+            // Strict filtering: require positive completion boost when completions exist
+            let should_include = if has_completions {
+                if is_mid_token {
+                    // When building a token, only allow continuations that match expected patterns
+                    completion_boost >= 1.8 && self.could_continue_current_token(&token, token_context)
+                } else {
+                    // When not mid-token, require matching a completion (no free passes for delimiters)
+                    completion_boost >= 1.0
+                }
             } else {
-                // When not building a token, allow delimiters even if they have no completion boost
-                // This is crucial because delimiters are never in completions but should be allowed
-                self.is_delimiter(&token) || completion_boost > 0.0
+                // No completions available - this likely means we're in an error state
+                // Only accept delimiters as a last resort
+                false
             };
 
             if should_include {
-                // Ensure delimiters get at least a minimum boost when allowed
-                let final_boost = if self.is_delimiter(&token) && !is_mid_token {
-                    completion_boost.max(1.0) // Delimiters get at least 1.0 boost when not mid-token
-                } else {
-                    completion_boost.max(0.1) // Minimum boost to avoid zero
-                };
-
-                let boosted_score = score * final_boost;
+                let boosted_score = score * completion_boost;
                 crate::debug_trace!(
                     "synthesizer",
-                    "Step {}: ACCEPT token='{}' original={:.6} boost={:.2} final={:.6} mid_token={} allows_delim={}",
+                    "Step {}: ACCEPT token='{}' original={:.6} boost={:.2} final={:.6}",
                     step,
                     token,
                     score,
-                    final_boost,
-                    boosted_score,
-                    is_mid_token,
-                    allows_delimiters
+                    completion_boost,
+                    boosted_score
                 );
-                filtered.push((token, score, final_boost));
+                filtered.push((token, score, completion_boost));
             } else {
                 crate::debug_trace!(
                     "synthesizer",
-                    "Step {}: FILTER token='{}' (boost={:.2}, mid_token={}, allows_delim={})",
+                    "Step {}: FILTER token='{}' (boost={:.2}, has_completions={}, mid_token={})",
                     step,
                     token,
                     completion_boost,
-                    is_mid_token,
-                    allows_delimiters
+                    has_completions,
+                    is_mid_token
                 );
             }
         }
@@ -242,7 +241,7 @@ impl Synthesizer {
 
     /// Check if a token could continue the current token being built
     fn could_continue_current_token(
-        &self,
+        &mut self,
         token: &str,
         context: &Option<TokenBuildingContext>,
     ) -> bool {
@@ -252,9 +251,9 @@ impl Synthesizer {
                 // Check if the combined token would be valid for any expected regex patterns
                 return ctx.expected_completions.iter().any(|completion| {
                     if let CompletionToken::Regex(pattern) = completion {
-                        if let Ok(regex) = Regex::new(pattern) {
-                            return regex.is_match(&combined)
-                                || self.is_valid_regex_prefix(&combined, &regex);
+                        match self.regex_analyzer.analyze(pattern, &combined) {
+                            RegexResult::Match { .. } | RegexResult::Prefix { .. } => return true,
+                            RegexResult::Mismatch => return false,
                         }
                     }
                     false
@@ -264,39 +263,28 @@ impl Synthesizer {
         false
     }
 
-    /// Enhanced completion boost calculation with context awareness
+    /// Calculate completion boost with enhanced context awareness
     fn calculate_completion_boost_with_context(
         &mut self,
         token: &str,
         completions: &CompletionSet,
         context: &Option<TokenBuildingContext>,
     ) -> f32 {
-        let mut best_boost = 0.0f32;
+        let mut best_boost: f32 = 0.0;
 
-        // If we have context and are mid-token, prioritize token continuation
         if let Some(ctx) = context {
             if ctx.is_mid_token {
                 if self.could_continue_current_token(token, context) {
                     best_boost = best_boost.max(2.5);
                 }
-                // Be less generous with delimiters when mid-token
+                // Reject delimiters when mid-token (they break the token)
                 if self.is_delimiter(token) {
-                    return 0.1; // Very low boost for delimiters mid-token
+                    return 0.0;
                 }
-            } else {
-                // Not mid-token, normal delimiter handling
-                if self.is_delimiter(token) {
-                    return 1.0;
-                }
-            }
-        } else {
-            // No context, fall back to delimiter check
-            if self.is_delimiter(token) {
-                return 1.0;
             }
         }
 
-        // Standard completion matching
+        // Standard completion matching - require actual matches
         for candidate in &completions.candidates {
             match &candidate.token {
                 CompletionToken::Literal(expected) => {
@@ -316,6 +304,18 @@ impl Synthesizer {
             }
         }
 
+        // Check if token is a delimiter that appears in completions
+        if self.is_delimiter(token) {
+            for candidate in &completions.candidates {
+                if let CompletionToken::Literal(expected) = &candidate.token {
+                    if expected == token {
+                        best_boost = best_boost.max(1.5);
+                        break;
+                    }
+                }
+            }
+        }
+
         best_boost
     }
 
@@ -323,86 +323,53 @@ impl Synthesizer {
     /// Delimiters are tokens that separate other tokens but are not part of the grammar.
     fn is_delimiter(&self, token: &str) -> bool {
         // Only check for actual delimiters (whitespace, separators)
-        // Grammar special tokens are handled by completions, not here
         let delimiters = [" ", "\t", "\n", ",", ";"];
         delimiters.contains(&token)
     }
 
-    /// Check if a token matches a regex pattern using proper regex compilation.
+    /// Check if a token matches a regex pattern using the new RegexAnalyzer.
     /// Handles both full matches and prefix matches for completion support.
     fn token_matches_regex_pattern(&mut self, token: &str, pattern: &str) -> bool {
-        // Get or compile the regex, caching for performance
-        let regex = match self.regex_cache.get(pattern) {
-            Some(r) => r,
-            None => match Regex::new(pattern) {
-                Ok(r) => {
-                    self.regex_cache.insert(pattern.to_string(), r);
-                    self.regex_cache.get(pattern).unwrap()
-                }
-                Err(_) => {
-                    crate::debug_trace!(
-                        "synthesizer",
-                        "Failed to compile regex pattern: {}",
-                        pattern
-                    );
-                    return false;
-                }
-            },
-        };
-
-        // First check for exact match
-        if regex.is_match(token) {
-            return true;
+        match self.regex_analyzer.analyze(pattern, token) {
+            RegexResult::Match { .. } => {
+                crate::debug_trace!(
+                    "synthesizer",
+                    "Token '{}' matches pattern '{}'",
+                    token,
+                    pattern
+                );
+                true
+            }
+            RegexResult::Prefix { suffixes } => {
+                crate::debug_trace!(
+                    "synthesizer",
+                    "Token '{}' is a prefix for pattern '{}' (suffixes: {})",
+                    token,
+                    pattern,
+                    suffixes
+                );
+                true
+            }
+            RegexResult::Mismatch => {
+                crate::debug_trace!(
+                    "synthesizer",
+                    "Token '{}' does not match pattern '{}'",
+                    token,
+                    pattern
+                );
+                false
+            }
         }
-
-        // For completion support, check if the token could be a prefix of a valid match
-        // This is done by trying to match the pattern against progressively longer strings
-        // starting with the token as a prefix
-        self.is_valid_regex_prefix(token, regex)
     }
 
     /// Check if a token could be a valid prefix for the given regex pattern.
     /// This enables proper completion support for regex-based tokens.
-    fn is_valid_regex_prefix(&self, token: &str, regex: &Regex) -> bool {
-        // For common patterns, we can do some heuristic checks
-        let pattern_str = regex.as_str();
-
-        // Handle identifier patterns like [\p{L}][\p{L}\p{N}_...]*
-        if pattern_str.contains("\\p{L}") {
-            if token.is_empty() {
-                return true; // Empty string can start an identifier
-            }
-            // Check if first char is a letter and rest are valid identifier chars
-            let mut chars = token.chars();
-            if let Some(first) = chars.next() {
-                if !first.is_alphabetic() {
-                    return false;
-                }
-                return chars.all(|c| c.is_alphanumeric() || c == '_' || "τ₁₂₃₄₅₆₇₈₉₀".contains(c));
-            }
+    /// Now uses the RegexAnalyzer for more accurate analysis.
+    fn is_valid_regex_prefix(&mut self, token: &str, pattern: &str) -> bool {
+        match self.regex_analyzer.analyze(pattern, token) {
+            RegexResult::Prefix { .. } => true,
+            _ => false,
         }
-
-        // Handle numeric patterns
-        if pattern_str.contains("\\d") || pattern_str.contains("[0-9]") {
-            return token.chars().all(|c| c.is_numeric());
-        }
-
-        // For other patterns, try a more general approach:
-        // Generate test strings by extending the token and see if any match
-        if token.len() <= 10 {
-            // Avoid infinite loops on very long tokens
-            // Try extending with common characters
-            let test_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_τ";
-            for test_char in test_chars.chars().take(20) {
-                // Limit test cases
-                let test_string = format!("{}{}", token, test_char);
-                if regex.is_match(&test_string) {
-                    return true;
-                }
-            }
-        }
-
-        false
     }
 
     pub fn new(grammar_spec: &str, ranker: Box<dyn Ranker>) -> Result<Self, String> {
@@ -410,7 +377,7 @@ impl Synthesizer {
         Ok(Self {
             grammar,
             ranker,
-            regex_cache: HashMap::new(),
+            regex_analyzer: RegexAnalyzer::new(),
         })
     }
 
@@ -485,17 +452,15 @@ impl Synthesizer {
         let mut code = input.to_string();
         let mut ast: Option<PartialAST> = None;
         let mut consecutive_failed_attempts = 0;
-        let mut last_successful_code = code.clone();
-        let mut token_building_context: Option<TokenBuildingContext>;
 
-        // Initial parse attempt
+        // Initial parse attempt - must be valid
         match self.parse_partial(&code) {
             Ok(initial_ast) => {
                 ast = Some(initial_ast);
                 crate::debug_debug!("synthesizer", "Initial parse successful");
             }
-            Err(_) => {
-                crate::debug_debug!("synthesizer", "Initial parse failed, starting without AST");
+            Err(e) => {
+                return Err(format!("Initial parse failed: {}", e));
             }
         }
 
@@ -503,7 +468,7 @@ impl Synthesizer {
             self.log_state(step, &code, ast.as_ref());
 
             // Update token building context based on current state
-            token_building_context = self.analyze_token_building_context(&code, &ast);
+            let token_building_context = self.analyze_token_building_context(&code, &ast);
 
             if let Some(context) = &token_building_context {
                 crate::debug_trace!(
@@ -519,6 +484,13 @@ impl Synthesizer {
             // Get grammar-aware completions
             let completions = self.get_completions(&ast, &code, k as usize)?;
 
+            if completions.candidates.is_empty() {
+                return Err(format!(
+                    "No valid completions available at step {} with code: '{}'. AST may be in an unrecoverable state.",
+                    step, code
+                ));
+            }
+
             crate::debug_debug!(
                 "synthesizer",
                 "Step {}: Found {} completion candidates",
@@ -530,14 +502,13 @@ impl Synthesizer {
             let mut proposals = match self.ranker.rank(&code) {
                 Ok(p) => p,
                 Err(err) => {
-                    return Err(format!("ranker error: {}", err));
+                    return Err(format!("ranker error at step {}: {}", step, err));
                 }
             };
             proposals.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
 
             if proposals.is_empty() {
-                crate::debug_info!("synthesizer", "No ranker proposals available, stopping");
-                break;
+                return Err(format!("No ranker proposals available at step {}", step));
             }
 
             // Filter and score proposals using advanced context-aware logic
@@ -551,21 +522,15 @@ impl Synthesizer {
 
             if filtered_proposals.is_empty() {
                 consecutive_failed_attempts += 1;
-                crate::debug_info!(
-                    "synthesizer",
-                    "No valid proposals after filtering at step {} (consecutive failures: {})",
-                    step,
-                    consecutive_failed_attempts
-                );
-
-                // If we've failed too many times in a row, consider backing off or trying different strategies
-                if consecutive_failed_attempts >= 5 {
-                    crate::debug_info!(
-                        "synthesizer",
-                        "Too many consecutive failures, reverting to last successful state"
-                    );
-                    code = last_successful_code;
-                    break;
+                
+                if consecutive_failed_attempts >= 3 {
+                    return Err(format!(
+                        "No valid proposals match grammar completions at step {} (tried {} times). Code: '{}', Expected: {:?}",
+                        step,
+                        consecutive_failed_attempts,
+                        code,
+                        completions.candidates.iter().map(|c| format!("{:?}", c.token)).collect::<Vec<_>>()
+                    ));
                 }
                 continue;
             }
@@ -596,28 +561,26 @@ impl Synthesizer {
                     completion_boost
                 );
 
-                // Try to append the token
+                // Try to append the token - must result in valid partial AST
                 if let Some((new_code, new_ast)) = self.try_append(&code, &tok) {
                     crate::debug_trace!(
                         "synthesizer",
-                        "Step {}: SELECT token='{}' -> code='{}' (complete={})",
+                        "Step {}: SELECT token='{}' -> code='{}' (valid partial AST)",
                         step,
                         tok,
-                        new_code,
-                        new_ast.complete()
+                        new_code
                     );
 
-                    // Update state
+                    // Update state - the new AST is guaranteed to be valid by try_append
                     code = new_code;
                     ast = Some(new_ast);
-                    last_successful_code = code.clone();
                     consecutive_failed_attempts = 0;
                     advanced = true;
                     break;
                 } else {
                     crate::debug_trace!(
                         "synthesizer",
-                        "Step {}: REJECT token='{}' (parser error)",
+                        "Step {}: REJECT token='{}' (would create invalid partial AST)",
                         step,
                         tok
                     );
@@ -627,28 +590,24 @@ impl Synthesizer {
 
             if !advanced {
                 consecutive_failed_attempts += 1;
-                crate::debug_info!(
-                    "synthesizer",
-                    "No token led to progress at step {} (consecutive failures: {})",
-                    step,
-                    consecutive_failed_attempts
-                );
-
+                
                 if consecutive_failed_attempts >= 3 {
-                    crate::debug_info!(
-                        "synthesizer",
-                        "Multiple consecutive failures, returning current state"
-                    );
-                    break;
+                    return Err(format!(
+                        "No token led to valid partial parse at step {} after {} attempts. Code: '{}', Expected: {:?}",
+                        step,
+                        consecutive_failed_attempts,
+                        code,
+                        completions.candidates.iter().map(|c| format!("{:?}", c.token)).collect::<Vec<_>>()
+                    ));
                 }
             }
         }
 
+        // We've exhausted max_steps - return current valid state
         crate::debug_info!(
             "synthesizer",
-            "Synthesis completed: final code length={}, complete={}",
-            code.len(),
-            ast.as_ref().map_or(false, |a| a.complete())
+            "Synthesis reached max_steps ({}), returning valid partial AST",
+            max_steps
         );
 
         Ok(code)
@@ -664,13 +623,10 @@ impl Synthesizer {
         if let Some(current_ast) = ast {
             return Ok(current_ast.completions(&self.grammar, k));
         } else {
-            // If no valid AST, try to parse and get completions from any partial result
-            match self.parse_partial(code) {
-                Ok(partial_ast) => Ok(partial_ast.completions(&self.grammar, k)),
-                Err(err) => Err(format!("failed to compute completions: {}", err)),
-            }
+            return Err("No valid AST available for computing completions".to_string());
         }
     }
 }
 
+// No saved state struct: synthesizer is kept functional/pure in operation
 // No saved state struct: synthesizer is kept functional/pure in operation

@@ -1,5 +1,5 @@
 // Identifier (supports Unicode)
-Identifier ::= /[\p{L}][\p{L}\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*/
+Identifier ::= /[A-Za-z_][A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]*/
 
 // Variables with var typing rule
 Variable(var) ::= Identifier[x]

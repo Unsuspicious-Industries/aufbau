@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Synthesis Visualizer</title>
+	<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+	<div class="topbar">
+		<span class="brand">Synthesis Visualizer</span>
+		<div class="spacer"></div>
+		<a href="/" class="link">Parser Viz</a>
+	</div>
+	<div class="layout">
+		<div class="sidebar">
+			<div class="group">
+				<label class="label">Grammar Spec (.spec)</label>
+				<input type="file" id="specFile" accept=".spec">
+			</div>
+			<div class="group">
+				<label class="label">Initial Input</label>
+				<textarea id="input" class="code" placeholder="Enter initial input..."></textarea>
+			</div>
+			<div class="group">
+				<label class="label">Ranker</label>
+				<select id="ranker" class="code" style="height: auto;">
+					<option value="default">Default (Random)</option>
+					<option value="stlc">STLC (Biased)</option>
+				</select>
+			</div>
+			<div class="group">
+				<label class="label">Parameters</label>
+				<div style="margin-bottom: 6px;">
+					<label class="label" style="display: inline; margin-right: 8px;">k:</label>
+					<input type="number" id="k" value="10" min="1" max="50" style="width: 60px;">
+				</div>
+				<div style="margin-bottom: 6px;">
+					<label class="label" style="display: inline; margin-right: 8px;">Max Steps:</label>
+					<input type="number" id="maxSteps" value="20" min="1" max="200" style="width: 60px;">
+				</div>
+			</div>
+			<div class="row">
+				<button id="synthesize" class="btn">Synthesize</button>
+				<button id="stepBtn" class="btn" disabled>Step</button>
+				<button id="autoBtn" class="btn" disabled>Auto</button>
+			</div>
+			<div class="group">
+				<label class="label">Step: <span id="stepCounter">0/0</span></label>
+				<input type="range" id="stepSlider" min="0" max="0" value="0" style="width: 100%;" disabled>
+			</div>
+			<div class="group">
+				<label class="label">Current Code</label>
+				<textarea id="currentCode" class="code" readonly style="height: 100px;"></textarea>
+			</div>
+			<div class="group">
+				<label class="label">Completions</label>
+				<div id="completions" style="max-height: 200px; overflow-y: auto; background: #0e131b; border: 1px solid var(--border); border-radius: 6px; padding: 8px;">
+					<div style="color: var(--muted); font-size: 12px;">No completions</div>
+				</div>
+			</div>
+			<div class="group">
+				<span class="status" id="status"></span>
+				<pre class="error" id="err"></pre>
+			</div>
+		</div>
+		<div class="stage">
+			<svg id="viz"></svg>
+		</div>
+	</div>
+	<script src="/static/synth.js"></script>
+</body>
+</html>
