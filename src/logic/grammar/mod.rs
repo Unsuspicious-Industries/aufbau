@@ -260,7 +260,7 @@ impl Grammar {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::logic::parser::Parser;
+    use crate::logic::Parser;
     use crate::logic::typing; // Needed for tests
     use crate::set_debug_level;
 

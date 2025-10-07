@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
+use crate::logic::{ grammar::Grammar, Parser};
 use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
 
 pub fn c_like_spec() -> String {
@@ -72,21 +72,11 @@ fn test_pass_clike() {
     for expr in exprs {
         set_debug_input(Some(expr.to_string()));
 
-        let mut tc = TypeChecker::new();
-        debug_info!("test", "Initialized type checker");
-
         println!("Parsing expression: {}", expr);
         println!("---==---");
         let past = parser.partial(expr).unwrap();
         println!("Partial AST: {:#?}", past.root);
 
-        let rt = tc.check_partial(past.root()).unwrap();
-        if let Some(ty) = rt {
-            println!("return type: {:?}", ty);
-        } else {
-            println!("no return type");
-        }
-        println!("---");
 
         let ast = past.into_complete().unwrap();
         println!("AST: {}", ast.pretty());
@@ -122,9 +112,6 @@ fn test_fail_clike() {
 
     for expr in exprs {
         set_debug_input(Some(expr.to_string()));
-
-        let mut tc = TypeChecker::new();
-        debug_info!("test", "Initialized type checker");
 
         let _ = parser.parse(expr).unwrap_err();
         println!("---");

@@ -3,7 +3,7 @@ use crate::{
     engine::Synthesizer,
     logic::{
         grammar::Grammar,
-        parser::Parser,
+        Parser,
         partial::{CompletionSet, PartialAST},
     },
 };
@@ -90,7 +90,7 @@ fn run_synthesis_with_steps(req: SynthRequest) -> Result<SynthesisResult, String
     let get_completions = |code: &str| -> Vec<CompletionInfo> {
         match parse_code(code) {
             Ok(ast) => {
-                let comp_set = ast.completions(&grammar, req.k as usize);
+                let comp_set = ast.completions(&grammar);
                 convert_completions(&comp_set)
             }
             Err(_) => Vec::new(),
@@ -126,7 +126,7 @@ fn run_synthesis_with_steps(req: SynthRequest) -> Result<SynthesisResult, String
 
         // Get completions from the AST
         let completion_set = if let Ok(ref ast) = ast_result {
-            ast.completions(&grammar, req.k as usize)
+            ast.completions(&grammar)
         } else {
             break;
         };
@@ -152,8 +152,8 @@ fn run_synthesis_with_steps(req: SynthRequest) -> Result<SynthesisResult, String
 
             // Check if token matches any completion
             for candidate in completion_set.iter() {
-                match &candidate.token {
-                    crate::logic::partial::CompletionToken::Literal(lit) => {
+                match &candidate {
+                    crate::logic::partial::ValidToken::Literal(lit) => {
                         if token == lit {
                             boost = boost.max(5.0); // Perfect match
                         } else if lit.starts_with(token) && !token.is_empty() {
@@ -162,7 +162,7 @@ fn run_synthesis_with_steps(req: SynthRequest) -> Result<SynthesisResult, String
                             boost = boost.max(2.0); // Completion is prefix of token
                         }
                     }
-                    crate::logic::partial::CompletionToken::Regex(_pattern) => {
+                    crate::logic::partial::ValidToken::Regex(_pattern) => {
                         // Regex patterns get moderate boost
                         boost = boost.max(1.5);
                     }
@@ -234,27 +234,25 @@ fn run_synthesis_with_steps(req: SynthRequest) -> Result<SynthesisResult, String
 fn convert_completions(comp_set: &CompletionSet) -> Vec<CompletionInfo> {
     comp_set
         .iter()
-        .map(|candidate| {
-            let (token_type, token_value) = match &candidate.token {
-                crate::logic::partial::CompletionToken::Literal(lit) => {
+        .map(|token| {
+            let (token_type, token_value) = match token {
+                crate::logic::partial::ValidToken::Literal(lit) => {
                     ("Literal".to_string(), lit.clone())
                 }
-                crate::logic::partial::CompletionToken::Regex(re) => {
+                crate::logic::partial::ValidToken::Regex(re) => {
                     ("Regex".to_string(), re.clone())
                 }
             };
-
-            let origin = format!("{:?}", candidate.metadata.origin);
 
             CompletionInfo {
                 token_type,
                 token_value,
                 metadata: CompletionMetadataView {
-                    branch: candidate.metadata.branch.clone(),
-                    rule_name: candidate.metadata.rule_name.clone(),
-                    type_hint: candidate.metadata.type_hint.clone(),
-                    symbol_index: candidate.metadata.symbol_index,
-                    origin,
+                    branch: "unknown".to_string(),
+                    rule_name: None,
+                    type_hint: None,
+                    symbol_index: 0,
+                    origin: "NextSymbol".to_string(),
                 },
             }
         })

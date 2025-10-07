@@ -10,10 +10,10 @@
 // But i didnt realize what the impact would be
 
 pub mod rank;
-pub mod synthesizer;
+pub mod synthesizer; 
+pub use synthesizer::Synthesizer;
 pub mod regex;
+
 
 pub mod tests;
 
-// Re-export main types for convenience
-pub use synthesizer::Synthesizer;

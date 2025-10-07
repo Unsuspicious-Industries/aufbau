@@ -1,4 +1,4 @@
-use crate::logic::{grammar::Grammar, parser::Parser};
+use crate::logic::{grammar::Grammar, Parser};
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
