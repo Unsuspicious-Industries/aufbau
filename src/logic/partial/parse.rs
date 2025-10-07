@@ -193,7 +193,7 @@ impl PartialParser {
             "Created {} segments: {:?}",
             segments.len(),
             segments.iter().map(|s| &s.text).collect::<Vec<_>>()
-        );la
+        );
         Ok(segments)
     }
 
@@ -559,6 +559,7 @@ impl PartialParser {
                             symbols_parsed: 0,
                         })
                     } else {
+                        debug_trace!("parser", "No prefix match or not at end -> ERROR (seg_pos {}, len {})", seg_pos, segments.len());
                         // True mismatch: there exists a segment but it doesn't match the expected literal
                         Ok(ParseOutcome::Error {
                             next_pos: seg_pos,
