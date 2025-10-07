@@ -11,7 +11,8 @@ pub mod typing;
 
 pub mod tests;
 
+pub mod simple_parser;
+
 pub mod parser {
-    pub use crate::logic::partial::parse::PartialParser;
-    pub type Parser = PartialParser;
+    pub use crate::logic::simple_parser::Parser;
 }

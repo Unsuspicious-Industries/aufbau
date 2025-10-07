@@ -19,7 +19,7 @@ mod tests {
         U ::= 'barcbarcu'
         A ::= 'a' 
         B ::= 'b' A 'r'
-        start ::= U | (B 'c')* | 't' 
+        start ::= U | B 'c' | 't' 
         "#;
 
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();

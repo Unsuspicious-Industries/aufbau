@@ -2,7 +2,7 @@ use super::*;
 use crate::debug_trace;
 use crate::logic::ast::SourceSpan;
 use crate::logic::bind::partial::conclude_type_with_rule;
-use crate::logic::grammar::{Grammar, Production, RepetitionKind, Symbol};
+use crate::logic::grammar::{Grammar, Production, Symbol};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -427,24 +427,8 @@ impl<'g> CompletionExplorer<'g> {
     }
 
     fn collect_tail_repetition(&mut self, branch: &PartialNonTerminal) {
-        let rhs_len = branch.production.rhs_len();
-        if rhs_len == 0 {
-            return;
-        }
-        let last_index = rhs_len - 1;
-        if let Some(last_symbol) = branch.production.symbol_at(last_index) {
-            if let Some(rep) = last_symbol.repetition() {
-                // Only suggest repetition for symbols that allow multiple occurrences
-                if matches!(rep, RepetitionKind::ZeroOrMore | RepetitionKind::OneOrMore) {
-                    self.collect_symbol_predictions(
-                        branch,
-                        last_index,
-                        last_symbol,
-                        CompletionOrigin::TailRepetition,
-                    );
-                }
-            }
-        }
+        // Repetition no longer supported
+        let _ = branch;
     }
 
     fn reached_limit(&self) -> bool {
@@ -548,29 +532,14 @@ impl<'g> FirstSetResolver<'g> {
             Symbol::Litteral(text) => FirstSet::with_token(CompletionToken::literal(text.clone())),
             Symbol::Regex(re) => FirstSet::with_token(CompletionToken::regex(re.as_str())),
             Symbol::Single {
-                value, repetition, ..
+                value, ..
             } => {
-                let mut inner = self.first_for_symbol(value.as_ref());
-                if matches!(
-                    repetition,
-                    Some(RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne)
-                ) {
-                    inner.nullable = true;
-                }
-                inner
+                self.first_for_symbol(value.as_ref())
             }
             Symbol::Group {
                 symbols,
-                repetition,
             } => {
-                let mut set = self.first_for_sequence(symbols);
-                if matches!(
-                    repetition,
-                    Some(RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne)
-                ) {
-                    set.nullable = true;
-                }
-                set
+                self.first_for_sequence(symbols)
             }
             Symbol::Expression(nt) => self.first_for_nonterminal(nt),
         }

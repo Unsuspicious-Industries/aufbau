@@ -3,7 +3,6 @@ use crate::debug_trace;
 use crate::logic::ast::{ASTNode as CompleteAST, SourceSpan};
 use crate::logic::bind::{BindablePartialNonTerminal, BoundTypingRule, DefaultBindingResolver};
 use crate::logic::grammar::Grammar;
-use crate::logic::grammar::RepetitionKind;
 use crate::logic::grammar::Symbol;
 use crate::logic::tokenizer::Tokenizer;
 
@@ -193,7 +192,7 @@ impl PartialParser {
             "Created {} segments: {:?}",
             segments.len(),
             segments.iter().map(|s| &s.text).collect::<Vec<_>>()
-        );la
+        );
         Ok(segments)
     }
 
@@ -313,14 +312,12 @@ impl PartialParser {
                         // Determine terminal kind from the symbol at rhs_index (resolve through Single)
                         let mut sym = &prod.rhs[rhs_index];
                         // Capture wrapper metadata if present
-                        let (wrapper_rep, wrapper_binding) = match sym {
+                        let wrapper_binding = match sym {
                             Symbol::Single {
-                                repetition,
                                 binding,
                                 ..
-                            } => (repetition.clone(), binding.clone()),
-                            Symbol::Group { repetition, .. } => (repetition.clone(), None),
-                            _ => (None, None),
+                            } => binding.clone(),
+                            _ => None,
                         };
                         // Unwrap Single to inspect inner symbol
                         if let Symbol::Single { value, .. } = sym {
@@ -350,12 +347,10 @@ impl PartialParser {
                             Symbol::Group { .. } => Some(PartialSymbol::Group {
                                 symbol_index: rhs_index,
                                 inner_index: None,
-                                repetition: wrapper_rep.clone(),
                                 binding: wrapper_binding.clone(),
                             }),
                             Symbol::Single { .. } => Some(PartialSymbol::Single {
                                 symbol_index: rhs_index,
-                                repetition: wrapper_rep.clone(),
                                 binding: wrapper_binding.clone(),
                             }),
                         }
@@ -681,354 +676,34 @@ impl PartialParser {
             Symbol::Single {
                 value,
                 binding,
-                repetition,
             } => {
                 debug_trace!(
                     "parser",
-                    "Parsing single symbol with binding {:?} and repetition {:?}",
-                    binding,
-                    repetition
+                    "Parsing single symbol with binding {:?}",
+                    binding
                 );
                 // Use the binding from this symbol, or fall back to parent binding
                 let effective_binding = binding.clone().or(parent_binding);
-
-                match repetition {
-                    None => {
-                        debug_trace!("parser", "No repetition, parsing once");
-                        // No repetition, parse exactly once and propagate control flow
-                        self.parse_symbol(segments, value.as_ref(), seg_pos, effective_binding)
-                    }
-                    Some(rep_kind) => {
-                        debug_trace!("parser", "Handling repetition: {:?}", rep_kind);
-                        // Handle repetition for a single symbol
-                        let single_symbol_vec = vec![value.as_ref().clone()];
-                        self.parse_symbols_repetition(
-                            segments,
-                            &single_symbol_vec,
-                            seg_pos,
-                            effective_binding,
-                            rep_kind,
-                        )
-                    }
-                }
+                // Parse exactly once and propagate control flow
+                self.parse_symbol(segments, value.as_ref(), seg_pos, effective_binding)
             }
             Symbol::Group {
                 symbols,
-                repetition,
             } => {
                 debug_trace!(
                     "parser",
-                    "Parsing group of {} symbols with repetition {:?}",
-                    symbols.len(),
-                    repetition
+                    "Parsing group of {} symbols",
+                    symbols.len()
                 );
-                match repetition {
-                    None => {
-                        debug_trace!("parser", "No repetition, parsing group once");
-                        // No repetition, parse the group exactly once using the unified method
-                        let step =
-                            self.parse_symbols_once(segments, symbols, seg_pos, parent_binding)?;
-                        Ok(step)
-                    }
-                    Some(rep_kind) => {
-                        debug_trace!("parser", "Handling group repetition: {:?}", rep_kind);
-                        // Handle repetition for a group of symbols
-                        self.parse_symbols_repetition(
-                            segments,
-                            symbols,
-                            seg_pos,
-                            parent_binding,
-                            rep_kind,
-                        )
-                    }
-                }
+                // Parse the group exactly once using the unified method
+                let step =
+                    self.parse_symbols_once(segments, symbols, seg_pos, parent_binding)?;
+                Ok(step)
             }
         }
     }
 
-    /// Parse symbols with repetition (generalized for both single symbols and groups)
-    fn parse_symbols_repetition(
-        &mut self,
-        segments: &[Segment],
-        symbols: &[Symbol],
-        seg_pos: usize,
-        binding: Option<String>,
-        rep_kind: &RepetitionKind,
-    ) -> Result<ParseOutcome, String> {
-        debug_trace!("parser", "REPEAT {:?} start_pos {}", rep_kind, seg_pos);
-        let mut acc: Vec<PartialASTNode> = Vec::new();
-        let _partial_acc: Vec<PartialASTNode> = Vec::new(); // kept for future use in more granular partial propagation
-        let mut current_pos = seg_pos;
-        let mut last_before_pos = seg_pos;
 
-        match rep_kind {
-            RepetitionKind::ZeroOrMore => {
-                debug_trace!("parser", "REPEAT ZeroOrMore: loop start @{}", current_pos);
-                // Parse as many times as possible; Stop just means we're done, not failure
-                loop {
-                    let step =
-                        self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
-                    match step {
-                        ParseOutcome::Full {
-                            mut nodes,
-                            next_pos,
-                            symbols_parsed: _,
-                        } => {
-                            if next_pos == current_pos && nodes.is_empty() {
-                                // safety: avoid infinite loop
-                                debug_trace!("parser", "REPEAT ZeroOrMore: no progress, break");
-                                break;
-                            }
-                            debug_trace!(
-                                "parser",
-                                "REPEAT ZeroOrMore: FULL iteration -> pos {} -> {} (+{} nodes)",
-                                current_pos,
-                                next_pos,
-                                nodes.len()
-                            );
-                            acc.append(&mut nodes);
-                            // last fully parsed position is the end of this successful iteration
-                            last_before_pos = next_pos;
-                            current_pos = next_pos;
-                        }
-                        ParseOutcome::Error {
-                            next_pos: _,
-                            symbols_parsed: _,
-                        } => {
-                            debug_trace!("parser", "REPEAT ZeroOrMore: ERROR (natural stop)");
-                            // For ZeroOrMore, Stop just means we're done - don't include partial nodes from failed attempt
-                            // and don't update position since this attempt didn't succeed
-                            break;
-                        }
-                        ParseOutcome::Partial {
-                            mut full_nodes,
-                            mut partial_nodes,
-                            next_pos: _,
-                            symbols_parsed: _,
-                            ..
-                        } => {
-                            // Inner produced a right-completable partial. Provide two branches:
-                            // - full_nodes: the zero-or-more SKIP path (acc as-is)
-                            // - partial_nodes: the in-progress repetition attempt (combine inner full + partial)
-                            debug_trace!(
-                                "parser",
-                                "REPEAT ZeroOrMore: PARTIAL (accum {} nodes) -> parallel SKIP and PARTIAL",
-                                full_nodes.len()
-                            );
-                            let mut combined_partial = Vec::new();
-                            combined_partial.append(&mut full_nodes);
-                            combined_partial.append(&mut partial_nodes);
-                            return Ok(ParseOutcome::Partial {
-                                full_nodes: acc,
-                                partial_nodes: combined_partial,
-                                next_pos: current_pos,
-                                symbols_parsed: 1,
-                            });
-                        }
-                    }
-                }
-                debug_trace!(
-                    "parser",
-                    "REPEAT ZeroOrMore: done. last_full_pos={}, nodes_total={}",
-                    last_before_pos,
-                    acc.len()
-                );
-                Ok(ParseOutcome::Full {
-                    nodes: acc,
-                    next_pos: last_before_pos,
-                    symbols_parsed: 1,
-                })
-            }
-            RepetitionKind::OneOrMore => {
-                debug_trace!(
-                    "parser",
-                    "REPEAT OneOrMore: must parse at least once @{}",
-                    current_pos
-                );
-                // Must parse at least once; if first attempt Stops, propagate Stop
-                let step =
-                    self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
-                match step {
-                    ParseOutcome::Full {
-                        mut nodes,
-                        next_pos,
-                        symbols_parsed: _,
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT OneOrMore: first FULL -> {} -> {} (+{} nodes)",
-                            current_pos,
-                            next_pos,
-                            nodes.len()
-                        );
-                        acc.append(&mut nodes);
-                        current_pos = next_pos;
-                    }
-                    ParseOutcome::Error {
-                        next_pos,
-                        symbols_parsed,
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT OneOrMore: first ERROR -> {} (symbols={}), treat as PARTIAL zero matches",
-                            next_pos,
-                            symbols_parsed
-                        );
-                        return Ok(ParseOutcome::Partial {
-                            full_nodes: acc,
-                            partial_nodes: Vec::new(),
-                            next_pos: seg_pos,
-                            symbols_parsed,
-                        });
-                    }
-                    ParseOutcome::Partial {
-                        full_nodes,
-                        partial_nodes,
-                        next_pos,
-                        symbols_parsed: _,
-                        ..
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT OneOrMore: first PARTIAL -> propagate PARTIAL"
-                        );
-                        acc.extend(full_nodes);
-                        return Ok(ParseOutcome::Partial {
-                            full_nodes: acc,
-                            partial_nodes,
-                            next_pos,
-                            symbols_parsed: 1,
-                        });
-                    }
-                }
-
-                // Continue parsing additional repetitions from where we left off
-                let step = self.parse_symbols_repetition(
-                    segments,
-                    symbols,
-                    current_pos,
-                    binding,
-                    &RepetitionKind::ZeroOrMore,
-                )?;
-                match step {
-                    ParseOutcome::Full {
-                        mut nodes,
-                        next_pos,
-                        symbols_parsed: _,
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT OneOrMore: subsequent FULL (+{} nodes) -> pos {}",
-                            nodes.len(),
-                            next_pos
-                        );
-                        acc.append(&mut nodes);
-                        current_pos = next_pos;
-                    }
-                    ParseOutcome::Error {
-                        next_pos: _,
-                        symbols_parsed: _,
-                    } => {
-                        debug_trace!("parser", "REPEAT OneOrMore: subsequent ERROR, end");
-                        // For OneOrMore, Stop just means we're done - don't include partial nodes from failed attempt
-                        // and don't update position since this attempt didn't succeed
-                    }
-                    ParseOutcome::Partial {
-                        full_nodes,
-                        partial_nodes,
-                        next_pos,
-                        symbols_parsed: _,
-                        ..
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT OneOrMore: subsequent PARTIAL -> propagate PARTIAL"
-                        );
-                        acc.extend(full_nodes);
-                        return Ok(ParseOutcome::Partial {
-                            full_nodes: acc,
-                            partial_nodes,
-                            next_pos,
-                            symbols_parsed: 1,
-                        });
-                    }
-                }
-                debug_trace!(
-                    "parser",
-                    "REPEAT OneOrMore: done at pos {}, nodes_total={}",
-                    current_pos,
-                    acc.len()
-                );
-                Ok(ParseOutcome::Full {
-                    nodes: acc,
-                    next_pos: current_pos,
-                    symbols_parsed: 1,
-                })
-            }
-            RepetitionKind::ZeroOrOne => {
-                // Try to parse once; failure means we accept zero items and do not advance
-                let step =
-                    self.parse_symbols_once(segments, symbols, current_pos, binding.clone())?;
-                match step {
-                    ParseOutcome::Full {
-                        mut nodes,
-                        next_pos,
-                        symbols_parsed,
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT ZeroOrOne: FULL (+{} nodes) advance to {}",
-                            nodes.len(),
-                            next_pos
-                        );
-                        acc.append(&mut nodes);
-                        current_pos = next_pos;
-                        // Successful optional match: advance like a normal symbol
-                        Ok(ParseOutcome::Full {
-                            nodes: acc,
-                            next_pos: current_pos,
-                            symbols_parsed: if symbols_parsed == 0 {
-                                1
-                            } else {
-                                symbols_parsed
-                            },
-                        })
-                    }
-                    ParseOutcome::Error { .. } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT ZeroOrOne: not present, stay at {}",
-                            seg_pos
-                        );
-                        Ok(ParseOutcome::Full {
-                            nodes: Vec::new(),
-                            next_pos: seg_pos,
-                            symbols_parsed: 1,
-                        })
-                    }
-                    ParseOutcome::Partial {
-                        mut full_nodes,
-                        partial_nodes,
-                        next_pos,
-                        symbols_parsed: _,
-                        ..
-                    } => {
-                        debug_trace!(
-                            "parser",
-                            "REPEAT ZeroOrOne: inner PARTIAL -> propagate PARTIAL"
-                        );
-                        acc.append(&mut full_nodes);
-                        Ok(ParseOutcome::Partial {
-                            full_nodes: acc,
-                            partial_nodes,
-                            next_pos,
-                            symbols_parsed: 1,
-                        })
-                    }
-                }
-            }
-        }
-    }
 
     /// Parse symbols once (unified for both single symbols and groups)
     /// Returns ParseStep with nodes and the number of symbols successfully parsed

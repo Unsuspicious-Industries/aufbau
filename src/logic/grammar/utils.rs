@@ -1,4 +1,4 @@
-use super::{RepetitionKind, Symbol};
+use super::Symbol;
 use regex::Regex;
 
 // collection of utils for working with grammar definitions
@@ -36,28 +36,6 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
     }
     // No rule name
     Ok((nt_str.trim().to_string(), None))
-}
-
-/// Parse repetition suffix from a token and return (base_token, repetition_kind)
-pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) {
-    if token.ends_with('*') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::ZeroOrMore),
-        )
-    } else if token.ends_with('+') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::OneOrMore),
-        )
-    } else if token.ends_with('?') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::ZeroOrOne),
-        )
-    } else {
-        (token.to_string(), None)
-    }
 }
 
 /// Split a RHS string by | but respect quoted strings
@@ -124,38 +102,20 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     {
         let mut symbols_in_alt = Vec::new();
         for token in alt.split_whitespace() {
-            let (base_token, repetition) = parse_repetition_suffix(token);
-            if is_regex(&base_token) {
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
-                }
-            } else if let Some(open_bracket) = base_token.find('[') {
-                if let Some(close_bracket) = base_token.rfind(']') {
+            if is_regex(&token) {
+                symbols_in_alt.push(Symbol::new(token.to_string()));
+            } else if let Some(open_bracket) = token.find('[') {
+                if let Some(close_bracket) = token.rfind(']') {
                     if close_bracket > open_bracket {
-                        let value = base_token[..open_bracket].to_string();
-                        let binding = base_token[open_bracket + 1..close_bracket].to_string();
-                        if let Some(rep) = repetition {
-                            symbols_in_alt
-                                .push(Symbol::with_binding_and_repetition(value, binding, rep));
-                        } else {
-                            symbols_in_alt.push(Symbol::with_binding(value, binding));
-                        }
+                        let value = token[..open_bracket].to_string();
+                        let binding = token[open_bracket + 1..close_bracket].to_string();
+                        symbols_in_alt.push(Symbol::with_binding(value, binding));
                         continue;
                     }
                 }
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
-                }
+                symbols_in_alt.push(Symbol::new(token.to_string()));
             } else {
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
-                }
+                symbols_in_alt.push(Symbol::new(token.to_string()));
             }
         }
         alternatives.push(symbols_in_alt);
@@ -211,29 +171,13 @@ pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
                 if depth != 0 {
                     return Err(format!("Unclosed group in RHS: {}", alt));
                 }
-                // Optional repetition suffix
-                let repetition = match chars.peek().cloned() {
-                    Some('*') => {
-                        chars.next();
-                        Some(RepetitionKind::ZeroOrMore)
-                    }
-                    Some('+') => {
-                        chars.next();
-                        Some(RepetitionKind::OneOrMore)
-                    }
-                    Some('?') => {
-                        chars.next();
-                        Some(RepetitionKind::ZeroOrOne)
-                    }
-                    _ => None,
-                };
                 let inner = parse_rhs_with_groups(group_content.trim())?;
                 let inner_seq = if inner.is_empty() {
                     Vec::new()
                 } else {
                     inner.into_iter().next().unwrap()
                 };
-                symbols_in_alt.push(Symbol::group(inner_seq, repetition));
+                symbols_in_alt.push(Symbol::group(inner_seq));
                 continue;
             }
             // token path

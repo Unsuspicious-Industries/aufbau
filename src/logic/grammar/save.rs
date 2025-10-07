@@ -1,4 +1,4 @@
-use super::{Grammar, RepetitionKind, Symbol};
+use super::{Grammar, Symbol};
 use crate::logic::typing::Conclusion;
 use std::path::Path;
 
@@ -73,37 +73,23 @@ impl Grammar {
         match symbol {
             Symbol::Group {
                 symbols,
-                repetition,
             } => {
                 let inner = symbols
                     .iter()
                     .map(|s| self.format_symbol(s))
                     .collect::<Vec<_>>()
                     .join(" ");
-                let rep = match repetition {
-                    Some(RepetitionKind::ZeroOrMore) => "*",
-                    Some(RepetitionKind::OneOrMore) => "+",
-                    Some(RepetitionKind::ZeroOrOne) => "?",
-                    None => "",
-                };
-                format!("({}){}", inner, rep)
+                format!("({})", inner)
             }
             Symbol::Single {
                 value,
                 binding,
-                repetition,
             } => {
                 let base = self.format_symbol(value);
-                let rep = match repetition {
-                    Some(RepetitionKind::ZeroOrMore) => "*",
-                    Some(RepetitionKind::OneOrMore) => "+",
-                    Some(RepetitionKind::ZeroOrOne) => "?",
-                    None => "",
-                };
                 if let Some(b) = binding {
-                    format!("{}[{}]{}", base, b, rep)
+                    format!("{}[{}]", base, b)
                 } else {
-                    format!("{}{}", base, rep)
+                    base
                 }
             }
             Symbol::Litteral(value) => format!("'{}'", value),

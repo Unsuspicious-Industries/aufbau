@@ -14,11 +14,9 @@ pub enum Symbol {
     Single {
         value: Box<Symbol>,
         binding: Option<String>,
-        repetition: Option<RepetitionKind>,
     },
     Group {
         symbols: Vec<Symbol>,
-        repetition: Option<RepetitionKind>,
     },
 }
 
@@ -34,24 +32,20 @@ impl PartialEq for Symbol {
                 Symbol::Single {
                     value: va,
                     binding: ba,
-                    repetition: ra,
                 },
                 Symbol::Single {
                     value: vb,
                     binding: bb,
-                    repetition: rb,
                 },
-            ) => va == vb && ba == bb && ra == rb,
+            ) => va == vb && ba == bb,
             (
                 Symbol::Group {
                     symbols: sa,
-                    repetition: ra,
                 },
                 Symbol::Group {
                     symbols: sb,
-                    repetition: rb,
                 },
-            ) => sa == sb && ra == rb,
+            ) => sa == sb,
             _ => false,
         }
     }
@@ -75,30 +69,19 @@ impl Hash for Symbol {
             Symbol::Single {
                 value,
                 binding,
-                repetition,
             } => {
                 3u8.hash(state);
                 value.hash(state);
                 binding.hash(state);
-                repetition.hash(state);
             }
             Symbol::Group {
                 symbols,
-                repetition,
             } => {
                 4u8.hash(state);
                 symbols.hash(state);
-                repetition.hash(state);
             }
         }
     }
-}
-
-#[derive(Debug, Clone, Eq, Hash, PartialEq)]
-pub enum RepetitionKind {
-    ZeroOrMore, // *
-    OneOrMore,  // +
-    ZeroOrOne,  // ?
 }
 
 impl Symbol {
@@ -118,31 +101,11 @@ impl Symbol {
         Self::Single {
             value: Box::new(Self::new(value)),
             binding: Some(binding),
-            repetition: None,
         }
     }
-    pub fn with_repetition(value: String, repetition: RepetitionKind) -> Self {
-        Self::Single {
-            value: Box::new(Self::new(value)),
-            binding: None,
-            repetition: Some(repetition),
-        }
-    }
-    pub fn with_binding_and_repetition(
-        value: String,
-        binding: String,
-        repetition: RepetitionKind,
-    ) -> Self {
-        Self::Single {
-            value: Box::new(Self::new(value)),
-            binding: Some(binding),
-            repetition: Some(repetition),
-        }
-    }
-    pub fn group(symbols: Vec<Symbol>, repetition: Option<RepetitionKind>) -> Self {
+    pub fn group(symbols: Vec<Symbol>) -> Self {
         Self::Group {
             symbols,
-            repetition,
         }
     }
 
@@ -161,13 +124,6 @@ impl Symbol {
     pub fn binding(&self) -> Option<&String> {
         match self {
             Symbol::Single { binding, .. } => binding.as_ref(),
-            _ => None,
-        }
-    }
-    pub fn repetition(&self) -> Option<&RepetitionKind> {
-        match self {
-            Symbol::Single { repetition, .. } => repetition.as_ref(),
-            Symbol::Group { repetition, .. } => repetition.as_ref(),
             _ => None,
         }
     }
@@ -260,9 +216,7 @@ impl Grammar {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::logic::parser::Parser;
     use crate::logic::typing; // Needed for tests
-    use crate::set_debug_level;
 
     pub const STLC_SPEC: &str = r#"
 
@@ -440,156 +394,9 @@ pub(crate) mod tests {
         assert_eq!(g1.start_nonterminal(), g2.start_nonterminal());
     }
 
-    #[test]
-    fn test_parse_repetition_suffix() {
-        use crate::logic::grammar::utils::parse_repetition_suffix;
 
-        let (b, r) = parse_repetition_suffix("Stmt*");
-        assert_eq!(b, "Stmt");
-        assert_eq!(r, Some(RepetitionKind::ZeroOrMore));
 
-        let (b, r) = parse_repetition_suffix("Term+");
-        assert_eq!(b, "Term");
-        assert_eq!(r, Some(RepetitionKind::OneOrMore));
 
-        let (b, r) = parse_repetition_suffix("Expr?");
-        assert_eq!(b, "Expr");
-        assert_eq!(r, Some(RepetitionKind::ZeroOrOne));
 
-        let (b, r) = parse_repetition_suffix("Variable");
-        assert_eq!(b, "Variable");
-        assert_eq!(r, None);
-    }
 
-    #[test]
-    fn test_parse_rhs_with_repetition() {
-        use crate::logic::grammar::utils::parse_rhs;
-
-        let result = parse_rhs("Stmt*").unwrap();
-        assert_eq!(result[0][0].value(), "Stmt");
-        assert_eq!(result[0][0].repetition(), Some(&RepetitionKind::ZeroOrMore));
-
-        let result = parse_rhs("'{' Stmt* '}'").unwrap();
-        assert_eq!(result[0][0].value(), "{");
-        assert_eq!(result[0][1].value(), "Stmt");
-        assert_eq!(result[0][1].repetition(), Some(&RepetitionKind::ZeroOrMore));
-        assert_eq!(result[0][2].value(), "}");
-    }
-
-    #[test]
-    fn test_parse_rhs_with_binding_and_repetition() {
-        use crate::logic::grammar::utils::parse_rhs;
-
-        let result = parse_rhs("'{' Stmt[s]* '}'").unwrap();
-        assert_eq!(result[0][1].value(), "Stmt");
-        assert_eq!(result[0][1].binding().cloned(), Some("s".into()));
-        assert_eq!(result[0][1].repetition(), Some(&RepetitionKind::ZeroOrMore));
-    }
-
-    const REPETITION_GRAMMAR: &str = r#"
-    Stmt ::= 'print' Expr ';'
-    Expr ::= Number | Variable
-    Number ::= /[0-9]+/
-    Variable ::= /[a-zA-Z][a-zA-Z0-9]*/
-    Block ::= '{' Stmt* '}'
-    "#;
-
-    #[test]
-    fn test_grammar_with_repetition_loads() {
-        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
-        let block = g.productions.get("Block").unwrap();
-        assert_eq!(block[0].rhs[1].value(), "Stmt");
-        assert_eq!(
-            block[0].rhs[1].repetition(),
-            Some(&RepetitionKind::ZeroOrMore)
-        );
-    }
-
-    #[test]
-    fn test_parse_empty_block() {
-        crate::logic::debug::set_debug_level(crate::logic::debug::DebugLevel::Trace);
-        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
-        let mut p = Parser::new(g);
-        let ast = p.parse("{ }").unwrap();
-        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast.clone() {
-            assert_eq!(nt.value, "Block");
-            assert_eq!(nt.children.len(), 2);
-        } else {
-            panic!("Expected nonterminal")
-        }
-        println!("Parsed empty block successfully: {}", ast.pretty());
-    }
-
-    #[test]
-    fn test_parse_block_with_statements() {
-        let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
-        let mut p = Parser::new(g);
-        let ast = p.parse("{ print x ; print y ; }").unwrap();
-        if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast.clone() {
-            assert_eq!(nt.value, "Block");
-            assert!(nt.children.len() > 2);
-        } else {
-            panic!("Expected nonterminal")
-        }
-        println!("Parsed empty block successfully: {}", ast.pretty());
-    }
-
-    #[test]
-    fn test_parse_all_repetition_operators() {
-        use crate::logic::grammar::utils::parse_rhs;
-
-        let r = parse_rhs("Term* Expr+ Stmt?").unwrap();
-        assert_eq!(r[0][0].repetition(), Some(&RepetitionKind::ZeroOrMore));
-        assert_eq!(r[0][1].repetition(), Some(&RepetitionKind::OneOrMore));
-        assert_eq!(r[0][2].repetition(), Some(&RepetitionKind::ZeroOrOne));
-    }
-
-    #[test]
-    fn test_grouped_repetition_parsing_inline() {
-        let spec = r#"
-        ArgList ::= (Arg (',' Arg)*)?
-        Arg ::= Identifier
-        Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        assert!(g.productions.contains_key("ArgList"));
-        assert!(!g.productions.keys().any(|k| k.starts_with("__group")));
-        let rhs = &g.productions.get("ArgList").unwrap()[0].rhs;
-        assert_eq!(rhs.len(), 1);
-        assert!(rhs[0].is_group());
-        assert_eq!(rhs[0].repetition(), Some(&RepetitionKind::ZeroOrOne));
-        let inner = rhs[0].group_symbols().unwrap();
-        assert_eq!(inner.len(), 2);
-        assert_eq!(inner[0].value(), "Arg");
-        assert_eq!(inner[1].repetition(), Some(&RepetitionKind::ZeroOrMore));
-    }
-
-    #[test]
-    fn test_grouped_repetition_runtime_inline() {
-        use crate::logic::debug::DebugLevel;
-        use crate::{debug_info, set_debug_input, set_debug_level};
-        let spec = r#"
-        Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
-        Arg ::= Identifier
-        ArgList ::= (Arg (',' Arg)*)?
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        assert_eq!(g.start_nonterminal().cloned(), Some("ArgList".into()));
-        set_debug_level(DebugLevel::None);
-        let run = |gr: &Grammar, input: &str| {
-            set_debug_input(Some(input.into()));
-            let mut p = Parser::new(gr.clone());
-            match p.parse(input) {
-                Ok(ast) => {
-                    if let Some(nt) = ast.as_nonterminal() {
-                        debug_info!("test", "Parsed '{}': {}", input, nt.value)
-                    }
-                }
-                Err(e) => panic!("Failed to parse '{}': {}", input, e),
-            };
-        };
-        run(&g, "x");
-        run(&g, "x, y");
-        run(&g, "x, y, z");
-    }
 }

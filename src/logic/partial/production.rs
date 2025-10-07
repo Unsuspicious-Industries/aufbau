@@ -1,5 +1,6 @@
 use crate::logic::ast::SourceSpan;
-use crate::logic::grammar::{Production, RepetitionKind, Symbol};
+use crate::logic::grammar::Production;
+use crate::logic::grammar::Symbol;
 use regex::Regex;
 
 #[derive(Clone, Debug)]
@@ -22,14 +23,12 @@ pub enum PartialSymbol {
     },
     Single {
         symbol_index: usize,
-        repetition: Option<RepetitionKind>,
         binding: Option<String>,
     },
     Group {
         symbol_index: usize,
         /// If known, which inner symbol index within the group is targeted
         inner_index: Option<usize>,
-        repetition: Option<RepetitionKind>,
         binding: Option<String>,
     },
     Other {
@@ -97,18 +96,15 @@ impl PartialProduction {
                     nt: nt.clone(),
                 },
                 Symbol::Single {
-                    repetition,
                     binding,
                     ..
                 } => PartialSymbol::Single {
                     symbol_index: i,
-                    repetition: repetition.clone(),
                     binding: binding.clone(),
                 },
-                Symbol::Group { repetition, .. } => PartialSymbol::Group {
+                Symbol::Group { .. } => PartialSymbol::Group {
                     symbol_index: i,
                     inner_index: None,
-                    repetition: repetition.clone(),
                     binding: None,
                 },
             })

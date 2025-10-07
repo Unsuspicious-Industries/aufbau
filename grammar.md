@@ -37,11 +37,12 @@ NonTerminal(ruleName)? ::= RHS
 - `ruleName` must match a typing rule name declared in the spec.
 - RHS uses terminals, nonterminals, and optional semantic bindings `[binding]` (these become node.binding and drive the resolver).
 
-### Repetition Operators
-- `Symbol*` zero or more
-- `Symbol+` one or more
-- `Symbol?` zero or one
-Bindings attach before the operator: `Expr[e]*`.
+### Symbol Types
+- Literals: enclosed in single quotes `'keyword'`
+- Regex patterns: enclosed in slashes `/pattern/`
+- Nonterminals: bare identifiers
+- Groups: enclosed in parentheses `(...)`
+- Bindings: suffix notation `Symbol[binding]`
 
 The binder collects all sibling nodes sharing a binding symbol to expand premises.
 
