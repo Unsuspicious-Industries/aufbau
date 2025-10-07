@@ -11,8 +11,20 @@ pub mod completion;
 pub use completion::*;
 
 pub mod structure;
-pub use structure::*;
+// Export new types with different names to avoid conflicts
+pub use structure::{
+    PartialAST as NewPartialAST, 
+    ParsedNode as NewParsedNode, 
+    NonTerminal as NewNonTerminal, 
+    Alt as NewAlt, 
+    Slot as NewSlot
+};
 
+pub mod convert;
+pub use convert::*;
+
+pub mod parse2;
+pub use parse2::Parser as Parser2;
 
 
 mod tests {
