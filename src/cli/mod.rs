@@ -36,5 +36,3 @@ pub fn run() {
     let cli = Cli::parse();
     self::logic::dispatch(&cli);
 }
-
-

@@ -4,27 +4,23 @@ use super::*;
 fn test_debug_quoted_type_parsing() {
     // Debug the specific issue with quoted types
     use crate::logic::typing::syntax::TypeSyntaxConfig;
-    
-    let test_cases = vec![
-        "'int'",
-        "'void'", 
-        "'string'",
-    ];
-    
+
+    let test_cases = vec!["'int'", "'void'", "'string'"];
+
     let cfg = TypeSyntaxConfig::default();
     println!("Config union operators: {:?}", cfg.union);
     println!("Config intersection operators: {:?}", cfg.intersection);
     println!("Config negation operators: {:?}", cfg.negation);
     println!("Config pointer operators: {:?}", cfg.pointer);
     println!();
-    
+
     for case in test_cases {
         println!("Testing: '{}'", case);
         println!("  Length: {}", case.len());
         println!("  Starts with ': {}", case.starts_with('\''));
         println!("  Ends with ': {}", case.ends_with('\''));
         println!("  Length > 2: {}", case.len() > 2);
-        
+
         // Check if any config operators might interfere
         for op in &cfg.union {
             if case.contains(op) {
@@ -46,14 +42,20 @@ fn test_debug_quoted_type_parsing() {
                 println!("  ⚠️ Contains pointer operator: '{}'", op);
             }
         }
-        
+
         if case.starts_with('\'') && case.ends_with('\'') && case.len() > 2 {
-            let raw_type = &case[1..case.len()-1];
+            let raw_type = &case[1..case.len() - 1];
             println!("  Raw type after quote removal: '{}'", raw_type);
-            println!("  Raw type chars: {:?}", raw_type.chars().collect::<Vec<_>>());
-            println!("  All chars alphanumeric or underscore: {}", raw_type.chars().all(|c| c.is_alphanumeric() || c == '_'));
+            println!(
+                "  Raw type chars: {:?}",
+                raw_type.chars().collect::<Vec<_>>()
+            );
+            println!(
+                "  All chars alphanumeric or underscore: {}",
+                raw_type.chars().all(|c| c.is_alphanumeric() || c == '_')
+            );
         }
-        
+
         match Type::parse(case) {
             Ok(ty) => println!("  ✅ Parsed as: {:?}", ty),
             Err(e) => println!("  ❌ Failed: {}", e),
@@ -88,12 +90,16 @@ fn stlc_lambda_rule_parse_and_inspect() {
     // Γ[x:τ₁] ⊢ e : τ₂  ───(lambda)───  τ₁ → τ₂
     let premises = "Γ[x:τ₁] ⊢ e : τ₂".to_string();
     let conclusion = "τ₁ -> τ₂".to_string();
-    let rule = TypingRule::new(premises, conclusion, "lambda".to_string()).expect("parse lambda rule");
+    let rule =
+        TypingRule::new(premises, conclusion, "lambda".to_string()).expect("parse lambda rule");
 
     assert_eq!(rule.name, "lambda");
     assert_eq!(rule.premises.len(), 1);
     match &rule.premises[0] {
-        Premise { setting, judgment: Some(TypingJudgment::Ascription((term, ty))) } => {
+        Premise {
+            setting,
+            judgment: Some(TypingJudgment::Ascription((term, ty))),
+        } => {
             let setting = setting.as_ref().expect("has setting");
             assert_eq!(setting.name, "Γ");
             assert_eq!(setting.extensions.len(), 1);
@@ -120,9 +126,6 @@ fn stlc_lambda_rule_parse_and_inspect() {
     assert!(pretty.split('\n').count() >= 3);
 }
 
-
-
-
 #[test]
 fn stlc_app_rule_parse_and_inspect() {
     // Γ ⊢ f : τ₁ → τ₂, Γ ⊢ e : τ₁  ───(app)───  τ₂
@@ -134,7 +137,10 @@ fn stlc_app_rule_parse_and_inspect() {
     assert_eq!(rule.premises.len(), 2);
 
     match &rule.premises[0] {
-        Premise { setting, judgment: Some(TypingJudgment::Ascription((term, ty))) } => {
+        Premise {
+            setting,
+            judgment: Some(TypingJudgment::Ascription((term, ty))),
+        } => {
             // Setting name Γ with empty extensions is accepted
             assert!(setting.is_some());
             assert_eq!(setting.as_ref().unwrap().name, "Γ");
@@ -145,7 +151,10 @@ fn stlc_app_rule_parse_and_inspect() {
         _ => panic!("Expected ascription judgment for app rule premise 0"),
     }
     match &rule.premises[1] {
-        Premise { setting, judgment: Some(TypingJudgment::Ascription((term, ty))) } => {
+        Premise {
+            setting,
+            judgment: Some(TypingJudgment::Ascription((term, ty))),
+        } => {
             assert!(setting.is_some());
             assert_eq!(setting.as_ref().unwrap().name, "Γ");
             assert!(setting.as_ref().unwrap().extensions.is_empty());
@@ -186,7 +195,13 @@ fn test_tuple_meta_types() {
 
     // Test that regular parenthesized expressions work correctly
     let arrow_in_parens = Type::parse("(Int -> Bool)").expect("parse (Int -> Bool)");
-    assert_eq!(arrow_in_parens, Type::Arrow(Box::new(Type::Atom("Int".to_string())), Box::new(Type::Atom("Bool".to_string()))));
+    assert_eq!(
+        arrow_in_parens,
+        Type::Arrow(
+            Box::new(Type::Atom("Int".to_string())),
+            Box::new(Type::Atom("Bool".to_string()))
+        )
+    );
     assert_eq!(format!("{}", arrow_in_parens), "Int → Bool");
 
     // Test that simple atoms in parentheses are not confused with tuples

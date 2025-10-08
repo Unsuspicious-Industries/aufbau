@@ -2,9 +2,11 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use beam::logic::{check::TypeChecker, grammar::Grammar, parser::Parser};
-use beam::logic::debug::{DebugLevel, set_debug_level, add_module_filter, set_debug_input};
 use anstyle::{AnsiColor, Style};
+use beam::engine::Synthesizer;
+use beam::engine::rank::{DefaultRanker, LLMRanker, StlcRanker};
+use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use beam::logic::{ grammar::Grammar, Parser};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -14,23 +16,84 @@ pub struct LogicCmd {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum LogicSubcommand {
-    /// Typecheck a source file given a grammar spec
-    Check(CheckArgs),
+    /// Launch the visualization server
+    Viz(VizArgs),
+    /// Synthesize a well-typed program from a grammar
+    Synthesize(SynthArgs),
+    /// Get valid completions for partial input
+    Complete(CompleteArgs),
 }
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckArgs {
     /// Path to grammar specification file
-    #[arg(short = 's', long = "spec", value_name = "FILE")] 
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
     pub spec_path: PathBuf,
 
     /// Path to source code file to typecheck
-    #[arg(value_name = "CODE_FILE")] 
+    #[arg(value_name = "CODE_FILE")]
     pub code_path: PathBuf,
 
     /// Explicit start symbol override
-    #[arg(long = "start")] 
+    #[arg(long = "start")]
     pub start: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct VizArgs {
+    /// Optional port to bind the server
+    #[arg(short = 'p', long = "port", default_value_t = 5173)]
+    pub port: u16,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SynthArgs {
+    /// Path to grammar specification file
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec_path: PathBuf,
+
+    /// Beam width (number of candidates kept)
+    #[arg(short = 'k', long = "beam", default_value_t = 5)]
+    pub beam_width: i32,
+
+    /// Maximum expansion steps
+    #[arg(long = "steps", default_value_t = 128)]
+    pub steps: usize,
+
+    /// Ranker backend to use (random)
+    #[arg(long = "backend", default_value = "random")]
+    pub backend: String,
+
+    /// Optional initial prompt/seed code
+    #[arg(long = "seed", default_value = "")]
+    pub seed: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct CompleteArgs {
+    /// Path to grammar specification file
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec_path: PathBuf,
+
+    /// Partial input to complete (as string argument)
+    #[arg(short = 'i', long = "input", value_name = "TEXT")]
+    pub input: Option<String>,
+
+    /// Path to file containing partial input (alternative to --input)
+    #[arg(short = 'f', long = "file", value_name = "FILE")]
+    pub input_file: Option<PathBuf>,
+
+    /// Explicit start symbol override
+    #[arg(long = "start")]
+    pub start: Option<String>,
+
+    /// Maximum number of completions to show (default: unlimited)
+    #[arg(short = 'k', long = "max", value_name = "NUM")]
+    pub max_completions: Option<usize>,
+
+    /// Show detailed metadata for each completion
+    #[arg(long = "show-details")]
+    pub show_details: bool,
 }
 
 pub fn dispatch(cli: &crate::cli::Cli) {
@@ -56,17 +119,89 @@ pub fn dispatch(cli: &crate::cli::Cli) {
 
     match &cli.command {
         crate::cli::Commands::Logic(cmd) => match &cmd.command {
-            LogicSubcommand::Check(args) => run_check(args, cli.with_input, level),
+            LogicSubcommand::Viz(args) => run_viz(args, level),
+            LogicSubcommand::Synthesize(args) => run_synthesize(args),
+            LogicSubcommand::Complete(args) => run_complete(args, cli.with_input, level),
         },
     }
 }
 
-fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
+fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
+    let bind = format!("127.0.0.1:{}", args.port);
+    eprintln!("Starting viz server on http://{}", bind);
+    let _ = debug_level; // silence for now; wired globally above
+    beam::viz::serve(&bind);
+}
+
+fn run_synthesize(args: &SynthArgs) {
+    // Load grammar spec text
+    let spec = match fs::read_to_string(&args.spec_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "error: failed to read spec '{}': {}",
+                args.spec_path.display(),
+                e
+            );
+            std::process::exit(2);
+        }
+    };
+
+    // Select ranker backend
+    let ranker: Box<dyn beam::engine::rank::Ranker> = match args.backend.as_str() {
+        "random" => Box::new(DefaultRanker),
+        "stlc" => Box::new(StlcRanker),
+        "mixtral" => match LLMRanker::new("mixtral") {
+            Ok(r) => Box::new(r),
+            Err(e) => {
+                eprintln!("error: failed to initialize Mixtral backend: {}", e);
+                std::process::exit(2);
+            }
+        },
+        other => {
+            eprintln!(
+                "error: unknown backend '{}'. Available: random, stlc, mixtral",
+                other
+            );
+            std::process::exit(2);
+        }
+    };
+
+    let mut synth = match Synthesizer::new(&spec, ranker) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: failed to initialize synthesizer: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // Provide seed as debug input for better tracing context
+    set_debug_input(Some(args.seed.clone()));
+
+    match synth.run_with(&args.seed, args.beam_width, args.steps) {
+        Ok(program) => {
+            println!("{}", program);
+            std::process::exit(0);
+        }
+        Err(e) => {
+            eprintln!("synthesis failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
+    let _ = debug_level; // wired globally above
+
     // Load grammar spec
     let spec = match fs::read_to_string(&args.spec_path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: failed to read spec '{}': {}", args.spec_path.display(), e);
+            eprintln!(
+                "error: failed to read spec '{}': {}",
+                args.spec_path.display(),
+                e
+            );
             std::process::exit(2);
         }
     };
@@ -81,54 +216,71 @@ fn run_check(args: &CheckArgs, with_input: bool, debug_level: DebugLevel) {
         grammar.set_start(start.clone());
     }
 
-    // Load code
-    let code = match fs::read_to_string(&args.code_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: failed to read code '{}': {}", args.code_path.display(), e);
+    // Get input from either --input or --file
+    let input = match (&args.input, &args.input_file) {
+        (Some(text), None) => text.clone(),
+        (None, Some(path)) => match fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: failed to read input file '{}': {}", path.display(), e);
+                std::process::exit(2);
+            }
+        },
+        (Some(_), Some(_)) => {
+            eprintln!("error: cannot specify both --input and --file");
+            std::process::exit(2);
+        }
+        (None, None) => {
+            eprintln!("error: must specify either --input or --file");
             std::process::exit(2);
         }
     };
-    if with_input { set_debug_input(Some(code.clone())); }
 
-    // Parse
-    let mut parser = Parser::new(grammar);
-    let ast = match parser.parse(&code) {
-        Ok(ast) => ast,
+    if with_input {
+        set_debug_input(Some(input.clone()));
+    }
+
+    // Parse partial input
+    let mut parser = Parser::new(grammar.clone());
+    let past = match parser.partial(&input) {
+        Ok(p) => p,
         Err(e) => {
             eprintln!("parse error: {}", e);
             std::process::exit(1);
         }
     };
 
-    // if debug level is trace, print the AST
-    if matches!(debug_level, DebugLevel::Trace) {
-        println!("AST: {}", ast.show_simple());
+    // Get completions
+    let completions = past.completions(&grammar);
+    let mut candidates = completions.tokens.clone();
+
+    // Apply max limit if specified
+    if let Some(max) = args.max_completions {
+        candidates.truncate(max);
     }
+
+    // Display results
+    if candidates.is_empty() {
+        println!("No completions available");
+        std::process::exit(0);
+    }
+
+    let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
+    let _dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
     
+    println!("{ok}Found {} completion(s):{ok:#}", candidates.len());
+    println!();
 
-    // Typecheck
-    let mut checker = TypeChecker::new();
-
-    checker.debug_at_span(&ast, "typechecking...");
-
-    match checker.check(&ast) {
-        Ok(Some(ty)) => {
-            let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
-            println!("{ok}Type:{ok:#} {:?}", ty);
-            std::process::exit(0);
-        }
-        Ok(None) => {
-            let warn = Style::new().fg_color(Some(AnsiColor::Yellow.into()));
-            println!("{warn}No type inferred{warn:#} (terminal-only or missing typing rule)");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            let err = Style::new().fg_color(Some(AnsiColor::Red.into()));
-            eprintln!("{err}Type error:{err:#} {}", e);
-            std::process::exit(1);
+    for (idx, token) in candidates.iter().enumerate() {
+        match token {
+            beam::logic::partial::ValidToken::Literal(text) => {
+                println!("  {}. '{}'", idx + 1, text);
+            }
+            beam::logic::partial::ValidToken::Regex(pattern) => {
+                println!("  {}. /{}/", idx + 1, pattern);
+            }
         }
     }
+
+    std::process::exit(0);
 }
-
-
