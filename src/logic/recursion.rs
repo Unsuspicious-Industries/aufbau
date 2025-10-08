@@ -2,21 +2,21 @@ use crate::logic::grammar::Nonterminal;
 use std::collections::HashMap;
 
 /// A sophisticated recursion detection and prevention system for recursive descent parsing.
-/// 
+///
 /// This tracker monitors call stacks, detects left-recursion cycles, implements memoization
 /// to avoid redundant parsing attempts, and provides comprehensive debugging capabilities.
 pub struct RecursionTracker {
     /// Call stack tracking (nonterminal, position) pairs to detect cycles
     call_stack: Vec<(Nonterminal, usize)>,
-    
+
     /// Memoization table to cache parsing results and avoid redundant work
     /// Maps (nonterminal, position) -> Optional(result, new_position)
     memo_table: HashMap<(Nonterminal, usize), Option<(String, usize)>>,
-    
+
     /// Configuration limits
     max_recursion_depth: usize,
     max_backtrack_attempts: usize,
-    
+
     /// Runtime counters
     backtrack_attempts: usize,
 }
@@ -27,7 +27,7 @@ impl RecursionTracker {
         Self {
             call_stack: Vec::new(),
             memo_table: HashMap::new(),
-            max_recursion_depth: 100,  // More conservative default
+            max_recursion_depth: 100, // More conservative default
             max_backtrack_attempts: 1000,
             backtrack_attempts: 0,
         }
@@ -53,7 +53,9 @@ impl RecursionTracker {
 
     /// Check if entering this nonterminal at the current position would create a cycle
     pub fn would_create_cycle(&self, nt: &Nonterminal, pos: usize) -> bool {
-        self.call_stack.iter().any(|(seen_nt, seen_pos)| seen_nt == nt && *seen_pos == pos)
+        self.call_stack
+            .iter()
+            .any(|(seen_nt, seen_pos)| seen_nt == nt && *seen_pos == pos)
     }
 
     /// Check if recursion depth limit has been exceeded
@@ -67,31 +69,48 @@ impl RecursionTracker {
         // Check for depth limit
         if self.exceeds_depth_limit() {
             return Err(format!(
-                "Recursion depth limit ({}) exceeded while parsing '{}'", 
+                "Recursion depth limit ({}) exceeded while parsing '{}'",
                 self.max_recursion_depth, nt
             ));
         }
 
         // Check for left-recursion cycle
         if self.would_create_cycle(nt, pos) {
-            crate::debug_debug!("recursion_tracker", "CYCLE DETECTED: {} at pos {} already in call stack", nt, pos);
+            crate::debug_debug!(
+                "recursion_tracker",
+                "CYCLE DETECTED: {} at pos {} already in call stack",
+                nt,
+                pos
+            );
             return Err(format!(
-                "Left recursion detected: '{}' at position {} creates a cycle", 
+                "Left recursion detected: '{}' at position {} creates a cycle",
                 nt, pos
             ));
         }
 
         // Safe to enter
         self.call_stack.push((nt.clone(), pos));
-        crate::debug_trace!("recursion_tracker", "Entered: {} at pos {} (depth: {})", nt, pos, self.call_stack.len());
-        
+        crate::debug_trace!(
+            "recursion_tracker",
+            "Entered: {} at pos {} (depth: {})",
+            nt,
+            pos,
+            self.call_stack.len()
+        );
+
         Ok(())
     }
 
     /// Exit the current parsing context (pop from call stack)
     pub fn exit(&mut self) {
         if let Some((nt, pos)) = self.call_stack.pop() {
-            crate::debug_trace!("recursion_tracker", "Exited: {} at pos {} (depth: {})", nt, pos, self.call_stack.len());
+            crate::debug_trace!(
+                "recursion_tracker",
+                "Exited: {} at pos {} (depth: {})",
+                nt,
+                pos,
+                self.call_stack.len()
+            );
         }
     }
 
@@ -100,7 +119,7 @@ impl RecursionTracker {
         self.backtrack_attempts += 1;
         if self.backtrack_attempts >= self.max_backtrack_attempts {
             Err(format!(
-                "Backtracking limit ({}) exceeded - possible infinite exploration", 
+                "Backtracking limit ({}) exceeded - possible infinite exploration",
                 self.max_backtrack_attempts
             ))
         } else {
@@ -141,7 +160,9 @@ impl RecursionTracker {
     pub fn stats(&self) -> RecursionStats {
         RecursionStats {
             current_depth: self.call_stack.len(),
-            max_depth_reached: self.max_recursion_depth.saturating_sub(self.max_recursion_depth - self.call_stack.len()),
+            max_depth_reached: self
+                .max_recursion_depth
+                .saturating_sub(self.max_recursion_depth - self.call_stack.len()),
             backtrack_attempts: self.backtrack_attempts,
             memo_entries: self.memo_table.len(),
         }
@@ -170,7 +191,11 @@ pub struct ParseContext<'a> {
 
 impl<'a> ParseContext<'a> {
     /// Create a new parse context, automatically entering the tracker
-    pub fn new(tracker: &'a mut RecursionTracker, nt: &Nonterminal, pos: usize) -> Result<Self, String> {
+    pub fn new(
+        tracker: &'a mut RecursionTracker,
+        nt: &Nonterminal,
+        pos: usize,
+    ) -> Result<Self, String> {
         tracker.enter(nt, pos)?;
         Ok(Self { tracker })
     }
@@ -190,17 +215,17 @@ mod tests {
     fn test_cycle_detection() {
         let mut tracker = RecursionTracker::new();
         let nt = Nonterminal::from("Expr");
-        
+
         // First entry should succeed
         assert!(tracker.enter(&nt, 0).is_ok());
-        
+
         // Second entry at same position should detect cycle
         assert!(tracker.would_create_cycle(&nt, 0));
         assert!(tracker.enter(&nt, 0).is_err());
-        
+
         // Different position should be ok
         assert!(tracker.enter(&nt, 1).is_ok());
-        
+
         tracker.exit(); // pos 1
         tracker.exit(); // pos 0
     }
@@ -211,7 +236,7 @@ mod tests {
         let nt1 = Nonterminal::from("A");
         let nt2 = Nonterminal::from("B");
         let nt3 = Nonterminal::from("C");
-        
+
         assert!(tracker.enter(&nt1, 0).is_ok());
         assert!(tracker.enter(&nt2, 1).is_ok());
         assert!(tracker.enter(&nt3, 2).is_err()); // Should exceed limit
@@ -221,14 +246,14 @@ mod tests {
     fn test_raii_context() {
         let mut tracker = RecursionTracker::new();
         let nt = Nonterminal::from("Test");
-        
+
         assert_eq!(tracker.depth(), 0);
-        
+
         {
             let _ctx = ParseContext::new(&mut tracker, &nt, 0).unwrap();
             // Note: can't check depth here due to borrow checker
         } // Context drops here, should auto-exit
-        
+
         assert_eq!(tracker.depth(), 0);
     }
 }

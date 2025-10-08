@@ -1,21 +1,14 @@
-pub mod tokenizer;
 pub mod ast;
 pub mod grammar;
-pub mod parser;
 pub mod partial;
+pub mod tokenizer;
 
-pub mod check;
-pub mod typing;
-pub mod bind;
+
 pub mod debug;
 pub mod recursion;
+pub mod typing;
+pub mod bind;
+pub mod validation;
 
 pub mod tests;
-
-
-pub mod advanced_type_tests;
-pub mod type_edge_cases;
-pub mod focused_fail_tests;
-
-
-
+pub use partial::{PartialAST, Parser};

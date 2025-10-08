@@ -1,5 +1,5 @@
-use regex::Regex;
 use super::Type;
+use regex::Regex;
 use std::fmt; // added
 
 /// Term representation placeholder (extend later with structured terms)
@@ -10,7 +10,7 @@ pub type TypeAscription = (Term, Type);
 /// Typing context (setting) possibly extended with new bindings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeSetting {
-    pub name: String,                 // e.g. Γ
+    pub name: String,                    // e.g. Γ
     pub extensions: Vec<TypeAscription>, // e.g. [x:τ]
 }
 
@@ -31,12 +31,14 @@ pub struct Premise {
 /// Context specification for a conclusion (optional input/output context transforms)
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ConclusionContext {
-    pub input: String,                 // context variable name (previously Option<TypeSetting>)
-    pub output: Option<TypeSetting>,   // possibly enriched context after transformation
+    pub input: String, // context variable name (previously Option<TypeSetting>)
+    pub output: Option<TypeSetting>, // possibly enriched context after transformation
 }
 
 impl ConclusionContext {
-    pub fn is_empty(&self) -> bool { self.input.is_empty() && self.output.is_none() }
+    pub fn is_empty(&self) -> bool {
+        self.input.is_empty() && self.output.is_none()
+    }
 }
 
 /// The kind of conclusion: either a type or a context lookup Γ(x)
@@ -58,7 +60,7 @@ impl Conclusion {
     pub fn try_from_str(s: &str) -> Result<Self, String> {
         TypingRule::parse_conclusion(s)
     }
-    
+
     /// Try to convert a String to a Conclusion, returning an error if parsing fails
     pub fn try_from_string(s: String) -> Result<Self, String> {
         Self::try_from_str(&s)
@@ -80,10 +82,18 @@ impl TypingRule {
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .filter_map(|p| match Self::parse_premise(p) { Ok(Some(pr)) => Some(Ok(pr)), Ok(None) => None, Err(e) => Some(Err(e)) })
+            .filter_map(|p| match Self::parse_premise(p) {
+                Ok(Some(pr)) => Some(Ok(pr)),
+                Ok(None) => None,
+                Err(e) => Some(Err(e)),
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let conclusion = Self::parse_conclusion(&conclusion)?;
-        Ok(Self { name, premises, conclusion })
+        Ok(Self {
+            name,
+            premises,
+            conclusion,
+        })
     }
 
     /// Parse a conclusion string into a Conclusion struct
@@ -99,7 +109,9 @@ impl TypingRule {
             // Helper to parse an optional context setting (Γ or Γ[...])
             let parse_ctx = |part: &str| -> Result<Option<TypeSetting>, String> {
                 let t = part.trim();
-                if t.is_empty() { return Ok(None); }
+                if t.is_empty() {
+                    return Ok(None);
+                }
                 Self::parse_setting(t).map(Some)
             };
 
@@ -116,9 +128,12 @@ impl TypingRule {
                     ctx.input = parse_ctx(lhs)?.map(|ts| ts.name).unwrap_or_default();
                 }
             }
-            return Ok(Conclusion { context: ctx, kind: ConclusionKind::Type(ty) });
+            return Ok(Conclusion {
+                context: ctx,
+                kind: ConclusionKind::Type(ty),
+            });
         }
-        
+
         // 2) Check for context lookup pattern: Γ(x)
         if let Some(paren_start) = s.find('(') {
             if let Some(paren_end) = s.find(')') {
@@ -126,26 +141,35 @@ impl TypingRule {
                     let context = s[..paren_start].trim().to_string();
                     let var = s[paren_start + 1..paren_end].trim().to_string();
                     if !context.is_empty() && !var.is_empty() {
-                        return Ok(Conclusion { context: ConclusionContext::default(), kind: ConclusionKind::ContextLookup(context, var) });
+                        return Ok(Conclusion {
+                            context: ConclusionContext::default(),
+                            kind: ConclusionKind::ContextLookup(context, var),
+                        });
                     }
                 }
             }
         }
-        
+
         // 3) Otherwise, parse as a bare type (no context transform)
         let ty = Type::parse(s)?;
-        Ok(Conclusion { context: ConclusionContext::default(), kind: ConclusionKind::Type(ty) })
+        Ok(Conclusion {
+            context: ConclusionContext::default(),
+            kind: ConclusionKind::Type(ty),
+        })
     }
-
-
 
     fn parse_setting(setting_str: &str) -> Result<TypeSetting, String> {
         let setting_str = setting_str.trim();
         if !setting_str.contains('[') {
-            return Ok(TypeSetting { name: setting_str.to_string(), extensions: Vec::new() });
+            return Ok(TypeSetting {
+                name: setting_str.to_string(),
+                extensions: Vec::new(),
+            });
         }
         let name_re = Regex::new(r"^\s*([^\[\s]+)\s*\[").map_err(|e| e.to_string())?;
-        let name = if let Some(cap) = name_re.captures(setting_str) { cap.get(1).unwrap().as_str().to_string() } else {
+        let name = if let Some(cap) = name_re.captures(setting_str) {
+            cap.get(1).unwrap().as_str().to_string()
+        } else {
             return Err("Invalid setting: expected a name before '[' (e.g., Γ[...])".to_string());
         };
         let re = Regex::new(r"\[([^:\]]+):([^\]]+)\]").map_err(|e| e.to_string())?;
@@ -161,7 +185,12 @@ impl TypingRule {
 
     fn parse_ascription(ascr_str: &str) -> Result<TypeAscription, String> {
         let parts: Vec<&str> = ascr_str.split(':').map(str::trim).collect();
-        if parts.len() != 2 { return Err(format!("Invalid ascription, expected 'term : type', got '{}'", ascr_str)); }
+        if parts.len() != 2 {
+            return Err(format!(
+                "Invalid ascription, expected 'term : type', got '{}'",
+                ascr_str
+            ));
+        }
         let term = parts[0].to_string();
         let ty = Type::parse(parts[1])?;
         Ok((term, ty))
@@ -198,7 +227,10 @@ impl TypingRule {
 
         // Premise without explicit judgment – treat as setting
         let setting = Some(Self::parse_setting(s)?);
-        Ok(Some(Premise { setting, judgment: None }))
+        Ok(Some(Premise {
+            setting,
+            judgment: None,
+        }))
     }
 
     /// Pretty multiline formatting of the rule as an inference rule with indentation.
@@ -206,16 +238,28 @@ impl TypingRule {
         let indent_str = "  ".repeat(indent);
         let mut out = String::new();
         let conclusion_str = format!("{}", self.conclusion);
-        
+
         if self.premises.is_empty() {
-            out.push_str(&format!("{}{}  [{}]", indent_str, conclusion_str, self.name));
+            out.push_str(&format!(
+                "{}{}  [{}]",
+                indent_str, conclusion_str, self.name
+            ));
             return out;
         }
-        
-        let premise_lines: Vec<String> = self.premises.iter().map(|p| format!("{}{}", indent_str, p)).collect();
-        let max_width = premise_lines.iter().map(|l| l.trim_start().len()).chain([conclusion_str.len()]).max().unwrap_or(0);
+
+        let premise_lines: Vec<String> = self
+            .premises
+            .iter()
+            .map(|p| format!("{}{}", indent_str, p))
+            .collect();
+        let max_width = premise_lines
+            .iter()
+            .map(|l| l.trim_start().len())
+            .chain([conclusion_str.len()])
+            .max()
+            .unwrap_or(0);
         let bar = format!("{}{}", indent_str, "─".repeat(max_width.max(4)));
-        
+
         out.push_str(&premise_lines.join("\n"));
         out.push('\n');
         out.push_str(&format!("{} {}", bar, format!("[{}]", self.name)));
@@ -250,7 +294,9 @@ impl fmt::Display for Conclusion {
 
 impl fmt::Display for TypeSetting {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.extensions.is_empty() { write!(f, "{}", self.name) } else {
+        if self.extensions.is_empty() {
+            write!(f, "{}", self.name)
+        } else {
             let mut parts: Vec<String> = Vec::new();
             for (term, ty) in &self.extensions {
                 parts.push(format!("{}:{}", term, ty));
@@ -286,7 +332,13 @@ impl fmt::Display for TypingRule {
             write!(f, "[{}] {}", self.name, self.conclusion)
         } else {
             let premises: Vec<String> = self.premises.iter().map(|p| p.to_string()).collect();
-            write!(f, "[{}] {} ⇒ {}", self.name, premises.join(", "), self.conclusion)
+            write!(
+                f,
+                "[{}] {} ⇒ {}",
+                self.name,
+                premises.join(", "),
+                self.conclusion
+            )
         }
     }
 }

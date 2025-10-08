@@ -409,7 +409,7 @@
       "patterns": [
         {
           "name": "keyword.operator.union.p7-spec",
-          "match": "∨|v|\\|"
+          "match": "∨|\\|"
         }
       ]
     },

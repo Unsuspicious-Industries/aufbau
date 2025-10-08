@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PartialAST Radial Viz</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Parser Visualizer</div>
+      <div class="spacer"></div>
+      <a class="link" href="/synth">Synthesis Viz</a>
+    </header>
+    <main class="layout">
+      <section class="sidebar">
+        <div class="group">
+          <label class="label">Spec file</label>
+          <input id="specFile" type="file" accept=".spec,.txt" />
+        </div>
+        <div class="group">
+          <label class="label">Input</label>
+          <textarea id="input" class="code" placeholder="Type code to parse"></textarea>
+        </div>
+        <div class="row">
+          <button id="render" class="btn">Render</button>
+          <span id="status" class="status"></span>
+        </div>
+        <pre id="err" class="error"></pre>
+      </section>
+      <section class="stage">
+        <svg id="viz"></svg>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+  </html>
+
+

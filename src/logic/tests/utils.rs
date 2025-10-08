@@ -1,12 +1,11 @@
-use crate::logic::{grammar::Grammar, parser::Parser};
-use std::collections::{HashMap, hash_map::DefaultHasher};
-use std::sync::Mutex;
+use crate::logic::{grammar::Grammar, Parser};
 use once_cell::sync::Lazy;
+use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
-static TEST_DATA_CACHE: Lazy<Mutex<HashMap<u64, Grammar>>> = Lazy::new(|| {
-    Mutex::new(HashMap::new())
-});
+static TEST_DATA_CACHE: Lazy<Mutex<HashMap<u64, Grammar>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub fn _load_test_data(spec: &str) -> (Grammar, Parser) {
     // compute a hash key for the spec

@@ -1,5 +1,5 @@
+use super::{RepetitionKind, Symbol};
 use regex::Regex;
-use super::{Symbol, RepetitionKind};
 
 // collection of utils for working with grammar definitions
 pub fn is_regex(pattern: &str) -> bool {
@@ -23,7 +23,14 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
             if close_paren > open_paren {
                 let name = nt_str[..open_paren].trim().to_string();
                 let rule_name = nt_str[open_paren + 1..close_paren].trim().to_string();
-                return Ok((name, if rule_name.is_empty() { None } else { Some(rule_name) }));
+                return Ok((
+                    name,
+                    if rule_name.is_empty() {
+                        None
+                    } else {
+                        Some(rule_name)
+                    },
+                ));
             }
         }
     }
@@ -34,11 +41,20 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
 /// Parse repetition suffix from a token and return (base_token, repetition_kind)
 pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) {
     if token.ends_with('*') {
-        (token[..token.len()-1].to_string(), Some(RepetitionKind::ZeroOrMore))
+        (
+            token[..token.len() - 1].to_string(),
+            Some(RepetitionKind::ZeroOrMore),
+        )
     } else if token.ends_with('+') {
-        (token[..token.len()-1].to_string(), Some(RepetitionKind::OneOrMore))
+        (
+            token[..token.len() - 1].to_string(),
+            Some(RepetitionKind::OneOrMore),
+        )
     } else if token.ends_with('?') {
-        (token[..token.len()-1].to_string(), Some(RepetitionKind::ZeroOrOne))
+        (
+            token[..token.len() - 1].to_string(),
+            Some(RepetitionKind::ZeroOrOne),
+        )
     } else {
         (token.to_string(), None)
     }
@@ -53,25 +69,47 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
     let mut depth: i32 = 0; // parenthesis depth
     let mut chars = rhs.chars().peekable();
     while let Some(ch) = chars.next() {
-        if ch == '/' && !in_single_quotes && !in_double_quotes { // regex literal
+        if ch == '/' && !in_single_quotes && !in_double_quotes {
+            // regex literal
             current.push(ch);
             while let Some(regex_ch) = chars.next() {
                 current.push(regex_ch);
-                if regex_ch == '/' { break; }
+                if regex_ch == '/' {
+                    break;
+                }
             }
             continue;
         }
         match ch {
-            '\'' if !in_double_quotes => { in_single_quotes = !in_single_quotes; current.push(ch); }
-            '"' if !in_single_quotes => { in_double_quotes = !in_double_quotes; current.push(ch); }
-            '(' if !in_single_quotes && !in_double_quotes => { depth += 1; current.push(ch); }
-            ')' if !in_single_quotes && !in_double_quotes => { depth -= 1; current.push(ch); }
-            '|' if !in_single_quotes && !in_double_quotes && depth == 0 => { alternatives.push(current.trim().to_string()); current.clear(); }
+            '\'' if !in_double_quotes => {
+                in_single_quotes = !in_single_quotes;
+                current.push(ch);
+            }
+            '"' if !in_single_quotes => {
+                in_double_quotes = !in_double_quotes;
+                current.push(ch);
+            }
+            '(' if !in_single_quotes && !in_double_quotes => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' if !in_single_quotes && !in_double_quotes => {
+                depth -= 1;
+                current.push(ch);
+            }
+            '|' if !in_single_quotes && !in_double_quotes && depth == 0 => {
+                alternatives.push(current.trim().to_string());
+                current.clear();
+            }
             _ => current.push(ch),
         }
     }
-    if in_single_quotes || in_double_quotes { return Err(format!("Unclosed quotes in grammar rule: {}", rhs)); }
-    if !current.trim().is_empty() { alternatives.push(current.trim().to_string()); }
+    if in_single_quotes || in_double_quotes {
+        return Err(format!("Unclosed quotes in grammar rule: {}", rhs));
+    }
+    if !current.trim().is_empty() {
+        alternatives.push(current.trim().to_string());
+    }
     Ok(alternatives)
 }
 
@@ -79,24 +117,45 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
 pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     let mut alternatives = Vec::new();
     let alt_strings = split_alternatives(rhs)?;
-    for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
+    for alt in alt_strings
+        .iter()
+        .map(|s| s.trim())
+        .filter(|alt| !alt.is_empty())
+    {
         let mut symbols_in_alt = Vec::new();
         for token in alt.split_whitespace() {
             let (base_token, repetition) = parse_repetition_suffix(token);
             if is_regex(&base_token) {
-                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(base_token, rep)); } else { symbols_in_alt.push(Symbol::new(base_token)); }
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(base_token));
+                }
             } else if let Some(open_bracket) = base_token.find('[') {
-                if let Some(close_bracket) = base_token.rfind(']') { if close_bracket > open_bracket {
-                    let value = base_token[..open_bracket].to_string();
-                    let binding = base_token[open_bracket + 1..close_bracket].to_string();
-                    let clean_value = if (value.starts_with('\'') && value.ends_with('\'')) || (value.starts_with('"') && value.ends_with('"')) { value.trim_matches('\'').trim_matches('"').to_string() } else { value };
-                    if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_binding_and_repetition(clean_value, binding, rep)); } else { symbols_in_alt.push(Symbol::with_binding(clean_value, binding)); }
-                    continue; } }
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
-                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
+                if let Some(close_bracket) = base_token.rfind(']') {
+                    if close_bracket > open_bracket {
+                        let value = base_token[..open_bracket].to_string();
+                        let binding = base_token[open_bracket + 1..close_bracket].to_string();
+                        if let Some(rep) = repetition {
+                            symbols_in_alt
+                                .push(Symbol::with_binding_and_repetition(value, binding, rep));
+                        } else {
+                            symbols_in_alt.push(Symbol::with_binding(value, binding));
+                        }
+                        continue;
+                    }
+                }
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(base_token));
+                }
             } else {
-                let clean_token = if (base_token.starts_with('\'') && base_token.ends_with('\'')) || (base_token.starts_with('"') && base_token.ends_with('"')) { base_token.trim_matches('\'').trim_matches('"').to_string() } else { base_token };
-                if let Some(rep) = repetition { symbols_in_alt.push(Symbol::with_repetition(clean_token, rep)); } else { symbols_in_alt.push(Symbol::new(clean_token)); }
+                if let Some(rep) = repetition {
+                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
+                } else {
+                    symbols_in_alt.push(Symbol::new(base_token));
+                }
             }
         }
         alternatives.push(symbols_in_alt);
@@ -108,58 +167,138 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
 pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     let mut alternatives: Vec<Vec<Symbol>> = Vec::new();
     let alt_strings = split_alternatives(rhs)?;
-    for alt in alt_strings.iter().map(|s| s.trim()).filter(|alt| !alt.is_empty()) {
+    for alt in alt_strings
+        .iter()
+        .map(|s| s.trim())
+        .filter(|alt| !alt.is_empty())
+    {
         let mut symbols_in_alt: Vec<Symbol> = Vec::new();
         let mut chars = alt.chars().peekable();
         let mut in_single = false;
         let mut in_double = false;
         while let Some(ch) = chars.peek().cloned() {
-            if ch.is_whitespace() { chars.next(); continue; }
+            if ch.is_whitespace() {
+                chars.next();
+                continue;
+            }
             match ch {
-                '\'' => { in_single = !in_single; }
-                '"' => { in_double = !in_double; }
+                '\'' => {
+                    in_single = !in_single;
+                }
+                '"' => {
+                    in_double = !in_double;
+                }
                 _ => {}
             }
-            if ch == '(' && !in_single && !in_double { // real group
+            if ch == '(' && !in_single && !in_double {
+                // real group
                 chars.next(); // consume '('
                 let mut depth = 1usize;
                 let mut group_content = String::new();
                 while let Some(c2) = chars.next() {
-                    if c2 == '(' { depth += 1; }
-                    else if c2 == ')' { depth -= 1; if depth == 0 { break; } }
-                    if depth > 0 { group_content.push(c2); }
+                    if c2 == '(' {
+                        depth += 1;
+                    } else if c2 == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    if depth > 0 {
+                        group_content.push(c2);
+                    }
                 }
-                if depth != 0 { return Err(format!("Unclosed group in RHS: {}", alt)); }
+                if depth != 0 {
+                    return Err(format!("Unclosed group in RHS: {}", alt));
+                }
                 // Optional repetition suffix
                 let repetition = match chars.peek().cloned() {
-                    Some('*') => { chars.next(); Some(RepetitionKind::ZeroOrMore) },
-                    Some('+') => { chars.next(); Some(RepetitionKind::OneOrMore) },
-                    Some('?') => { chars.next(); Some(RepetitionKind::ZeroOrOne) },
+                    Some('*') => {
+                        chars.next();
+                        Some(RepetitionKind::ZeroOrMore)
+                    }
+                    Some('+') => {
+                        chars.next();
+                        Some(RepetitionKind::OneOrMore)
+                    }
+                    Some('?') => {
+                        chars.next();
+                        Some(RepetitionKind::ZeroOrOne)
+                    }
                     _ => None,
                 };
                 let inner = parse_rhs_with_groups(group_content.trim())?;
-                let inner_seq = if inner.is_empty() { Vec::new() } else { inner.into_iter().next().unwrap() };
+                let inner_seq = if inner.is_empty() {
+                    Vec::new()
+                } else {
+                    inner.into_iter().next().unwrap()
+                };
                 symbols_in_alt.push(Symbol::group(inner_seq, repetition));
                 continue;
             }
             // token path
             let mut token = String::new();
             while let Some(c2) = chars.peek().cloned() {
-                if c2.is_whitespace() || (!in_single && !in_double && (c2 == '(' || c2 == ')')) { break; }
-                token.push(c2); chars.next();
-                if token.starts_with('\'') { // single quoted literal
-                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '\'' { break; } }
-                } else if token.starts_with('"') { // double quoted literal
-                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '"' { break; } }
-                } else if token == "/" { // regex
-                    while let Some(c3) = chars.next() { token.push(c3); if c3 == '/' { break; } }
-                } else if !token.starts_with('\'') && !token.starts_with('"') && token.contains('[') && !token.contains(']') {
-                    while let Some(c3) = chars.next() { token.push(c3); if c3 == ']' { break; } }
+                if c2.is_whitespace() || (!in_single && !in_double && (c2 == '(' || c2 == ')')) {
+                    break;
                 }
-                if chars.peek().map(|c| c.is_whitespace() || *c == '(' || *c == ')').unwrap_or(true) { break; }
+                token.push(c2);
+                chars.next();
+                if token.starts_with('\'') {
+                    // single quoted literal
+                    while let Some(c3) = chars.next() {
+                        token.push(c3);
+                        if c3 == '\'' {
+                            break;
+                        }
+                    }
+                } else if token.starts_with('"') {
+                    // double quoted literal
+                    while let Some(c3) = chars.next() {
+                        token.push(c3);
+                        if c3 == '"' {
+                            break;
+                        }
+                    }
+                } else if token == "/" {
+                    // regex
+                    while let Some(c3) = chars.next() {
+                        token.push(c3);
+                        if c3 == '/' {
+                            break;
+                        }
+                    }
+                } else if !token.starts_with('\'')
+                    && !token.starts_with('"')
+                    && token.contains('[')
+                    && !token.contains(']')
+                {
+                    while let Some(c3) = chars.next() {
+                        token.push(c3);
+                        if c3 == ']' {
+                            break;
+                        }
+                    }
+                }
+                if chars
+                    .peek()
+                    .map(|c| c.is_whitespace() || *c == '(' || *c == ')')
+                    .unwrap_or(true)
+                {
+                    break;
+                }
             }
-            if token.is_empty() { chars.next(); continue; }
-            let parsed = parse_rhs(&token)?; if parsed.len() != 1 || parsed[0].len() != 1 { return Err(format!("Unexpected token decomposition for '{}': parsed={:?}", token, parsed)); }
+            if token.is_empty() {
+                chars.next();
+                continue;
+            }
+            let parsed = parse_rhs(&token)?;
+            if parsed.len() != 1 || parsed[0].len() != 1 {
+                return Err(format!(
+                    "Unexpected token decomposition for '{}': parsed={:?}",
+                    token, parsed
+                ));
+            }
             symbols_in_alt.push(parsed[0][0].clone());
         }
         alternatives.push(symbols_in_alt);
@@ -173,12 +312,18 @@ pub fn special_tokens(rhs: &str) -> Vec<String> {
     // Regex to capture quoted substrings irrespective of adjacency to parentheses
     let re = Regex::new(r#"'([^']*)'|"([^"]*)""#).unwrap();
     for cap in re.captures_iter(rhs) {
-        if let Some(m) = cap.get(1) { // single quoted
+        if let Some(m) = cap.get(1) {
+            // single quoted
             let v = m.as_str().to_string();
-            if !found.contains(&v) { found.push(v); }
-        } else if let Some(m) = cap.get(2) { // double quoted
+            if !found.contains(&v) {
+                found.push(v);
+            }
+        } else if let Some(m) = cap.get(2) {
+            // double quoted
             let v = m.as_str().to_string();
-            if !found.contains(&v) { found.push(v); }
+            if !found.contains(&v) {
+                found.push(v);
+            }
         }
     }
     found
@@ -187,14 +332,14 @@ pub fn special_tokens(rhs: &str) -> Vec<String> {
 /// =========
 /// Type Shit
 /// =========
-/// 
-/// 
+///
+///
 /// ------------
 /// Type Parsing
 /// ------------
 
 /// Parse a multi-line inference rule block
-pub fn parse_inference_rule(lines: &[&str]) -> Result<(String,String,String), String> {
+pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), String> {
     if lines.is_empty() {
         return Err("Empty rule block".into());
     }
@@ -237,11 +382,12 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String,String,String), St
     }
 
     Ok((premises, conclusion, name))
-}pub const RELATION_SYMBOLS: [&str; 8] = ["=", "<", "∈", "⊆", "⊂", "⊃", "⊇", ":"];
+}
+pub const RELATION_SYMBOLS: [&str; 8] = ["=", "<", "∈", "⊆", "⊂", "⊃", "⊇", ":"];
 
 pub fn parse_judgement(
     judgment_str: &str,
-) -> Result<(Option<Vec<(String,String)>>, String,String), String> {
+) -> Result<(Option<Vec<(String, String)>>, String, String), String> {
     let parts: Vec<&str> = judgment_str.split('⊢').map(str::trim).collect();
     if parts.len() != 2 {
         return Err(format!("Invalid typing judgment format: {}", judgment_str));
@@ -255,14 +401,27 @@ pub fn parse_judgement(
     if expr_parts.len() != 2 {
         return Err(format!("Invalid typing judgment format: {}", judgment_str));
     }
-    Ok((if extensions.is_empty() { None } else { Some(extensions) }, expr_parts[0].to_string(), expr_parts[1].to_string()))
+    Ok((
+        if extensions.is_empty() {
+            None
+        } else {
+            Some(extensions)
+        },
+        expr_parts[0].to_string(),
+        expr_parts[1].to_string(),
+    ))
 }
 
 /// Parses a context string like "Γ[x:τ₁][y:τ₂]" into (base_context, Vec<(variable, type)>)
-pub fn parse_context_extensions(context_str: &str) -> Result<(String, Vec<(String, String)>), String> {
+pub fn parse_context_extensions(
+    context_str: &str,
+) -> Result<(String, Vec<(String, String)>), String> {
     let context_str = context_str.trim();
     if !context_str.starts_with("Γ") {
-        return Err(format!("Context must start with 'Γ', got '{}'", context_str));
+        return Err(format!(
+            "Context must start with 'Γ', got '{}'",
+            context_str
+        ));
     }
     let base = "Γ".to_string();
     let mut extensions = Vec::new();
@@ -271,16 +430,17 @@ pub fn parse_context_extensions(context_str: &str) -> Result<(String, Vec<(Strin
         let var = cap.get(1).unwrap().as_str().trim().to_string();
         let ty = cap.get(2).unwrap().as_str().trim().to_string();
         if var.is_empty() || ty.is_empty() {
-            return Err(format!("Invalid context extension format, expected '[var:type]': [{:?}:{:?}]", var, ty));
+            return Err(format!(
+                "Invalid context extension format, expected '[var:type]': [{:?}:{:?}]",
+                var, ty
+            ));
         }
         extensions.push((var, ty));
     }
     Ok((base, extensions))
 }
 
-pub fn parse_membership(
-    membership_str: &str,
-) -> Result<(String, String), String> {
+pub fn parse_membership(membership_str: &str) -> Result<(String, String), String> {
     let parts: Vec<&str> = membership_str.split('∈').map(str::trim).collect();
     if parts.len() != 2 {
         return Err(format!("Invalid membership format: {}", membership_str));
@@ -288,9 +448,7 @@ pub fn parse_membership(
     Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
-pub fn parse_type_relation(
-    relation_str: &str,
-) -> Result<(String, String, String), String> {
+pub fn parse_type_relation(relation_str: &str) -> Result<(String, String, String), String> {
     // we should have three parts
     // left <arbitrary symbols> right
     let mut left = String::new();
@@ -315,4 +473,3 @@ pub fn parse_type_relation(
     }
     Ok((left.trim().to_string(), right.trim().to_string(), relation))
 }
-

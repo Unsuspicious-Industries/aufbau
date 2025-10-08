@@ -1,8 +1,10 @@
 use super::bind::BoundTypingRule;
 use crate::logic::grammar::Grammar;
-use std::{fs, io};
-use std::path::Path;
+use crate::logic::partial::ParsedNode;
+use crate::logic::{partial, PartialAST};
 use std::collections::HashSet;
+use std::path::Path;
+use std::{fs, io};
 
 pub mod serialize;
 use serialize::*;
@@ -12,10 +14,11 @@ pub mod utils;
 pub struct SourceSpan {
     pub start: usize,
     pub end: usize,
+    //pub full: bool,
 }
 
 /// Nonterminal-specific data from an ASTNode
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct NonTerminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -29,32 +32,38 @@ impl NonTerminal {
     pub fn rule_name(&self) -> Option<&str> {
         self.bound_typing_rule.as_ref().map(|r| r.name.as_str())
     }
-    
+
     /// Check if this nonterminal has a specific rule
     pub fn has_rule(&self, rule_name: &str) -> bool {
         self.rule_name() == Some(rule_name)
     }
-    
+
     /// Get terminal children of this nonterminal
     pub fn terminal_children(&self) -> Vec<Terminal> {
-        self.children.iter().filter_map(|c| {
-            if let ASTNode::Terminal(t) = c {
-                Some(t.clone())
-            } else {
-                None
-            }
-        }).collect()
+        self.children
+            .iter()
+            .filter_map(|c| {
+                if let ASTNode::Terminal(t) = c {
+                    Some(t.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
-    
+
     /// Get nonterminal children of this nonterminal  
     pub fn nonterminal_children(&self) -> Vec<NonTerminal> {
-        self.children.iter().filter_map(|c| {
-            if let ASTNode::Nonterminal(nt) = c {
-                Some(nt.clone())
-            } else {
-                None
-            }
-        }).collect()
+        self.children
+            .iter()
+            .filter_map(|c| {
+                if let ASTNode::Nonterminal(nt) = c {
+                    Some(nt.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Get the binding if present
@@ -68,7 +77,7 @@ impl NonTerminal {
 }
 
 /// Terminal-specific data from an ASTNode
-#[derive(Debug, Clone,PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Terminal {
     pub value: String,
     pub span: Option<SourceSpan>,
@@ -86,13 +95,16 @@ impl Terminal {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ASTNode {
     Terminal(Terminal),
-    Nonterminal(NonTerminal)
+    Nonterminal(NonTerminal),
 }
 
 impl ASTNode {
+
+    // TODO: remove legacy from_partial once new conversion lives on PartialAST
+
     pub fn span(&self) -> Option<&SourceSpan> {
         match self {
             ASTNode::Terminal(t) => t.span.as_ref(),
@@ -139,33 +151,38 @@ impl ASTNode {
 
     pub fn terminal_children(&self) -> Vec<Terminal> {
         match self {
-            ASTNode::Nonterminal(nt) => {
-                nt.children.iter().filter_map(|c| {
+            ASTNode::Nonterminal(nt) => nt
+                .children
+                .iter()
+                .filter_map(|c| {
                     if let ASTNode::Terminal(t) = c {
                         Some(t.clone())
                     } else {
                         None
                     }
-                }).collect()
-            }
+                })
+                .collect(),
             _ => vec![],
         }
     }
-    
+
     pub fn nonterminal_children(&self) -> Vec<NonTerminal> {
         match self {
-            ASTNode::Nonterminal(nt) => {
-                nt.children.iter().filter_map(|c| {
+            ASTNode::Nonterminal(nt) => nt
+                .children
+                .iter()
+                .filter_map(|c| {
                     if let ASTNode::Nonterminal(n) = c {
                         Some(n.clone())
                     } else {
                         None
                     }
-                }).collect()
-            }
+                })
+                .collect(),
             _ => vec![],
         }
-    }    /// Get a reference to this node as a Terminal if it is one
+    }
+    /// Get a reference to this node as a Terminal if it is one
     pub fn as_terminal(&self) -> Option<Terminal> {
         if let ASTNode::Terminal(t) = self {
             Some(t.clone())
@@ -206,7 +223,12 @@ impl ASTNode {
                 if nt.children.is_empty() {
                     1
                 } else {
-                    1 + nt.children.iter().map(|child| child.depth()).max().unwrap_or(0)
+                    1 + nt
+                        .children
+                        .iter()
+                        .map(|child| child.depth())
+                        .max()
+                        .unwrap_or(0)
                 }
             }
         }
@@ -217,11 +239,14 @@ impl ASTNode {
         match self {
             ASTNode::Terminal(_) => 1,
             ASTNode::Nonterminal(nt) => {
-                1 + nt.children.iter().map(|child| child.node_count()).sum::<usize>()
+                1 + nt
+                    .children
+                    .iter()
+                    .map(|child| child.node_count())
+                    .sum::<usize>()
             }
         }
     }
-
 
     // ---- Lisp-style serialization API as methods ----
     pub fn serialize(&self) -> String {
@@ -335,17 +360,23 @@ impl ASTNode {
                 t1.value == t2.value && t1.binding == t2.binding
             }
             (ASTNode::Nonterminal(nt1), ASTNode::Nonterminal(nt2)) => {
-                nt1.value == nt2.value &&
-                nt1.binding == nt2.binding &&
-                nt1.children.len() == nt2.children.len() &&
-                nt1.children.iter().zip(nt2.children.iter()).all(|(a, b)| a.syneq(b))
+                nt1.value == nt2.value
+                    && nt1.binding == nt2.binding
+                    && nt1.children.len() == nt2.children.len()
+                    && nt1
+                        .children
+                        .iter()
+                        .zip(nt2.children.iter())
+                        .all(|(a, b)| a.syneq(b))
             }
             _ => false,
         }
     }
     pub fn show_simple(&self) -> String {
         fn go(node: &ASTNode, indent: usize, out: &mut String) {
-            for _ in 0..indent { out.push_str("  "); }
+            for _ in 0..indent {
+                out.push_str("  ");
+            }
             match node {
                 ASTNode::Terminal(t) => out.push_str(&t.value),
                 ASTNode::Nonterminal(nt) => out.push_str(&nt.value),

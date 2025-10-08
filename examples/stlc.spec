@@ -1,52 +1,32 @@
-// Identifier (supports Unicode)
-Identifier ::= /[\p{L}][\p{L}\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*/
+//Simple Typed Lambda Calculus (STLC)
+//A minimal functional language with lambda abstractions, applications, and variables
 
-// Variables with var typing rule
-Variable(var) ::= Identifier[x]
-
-// Type names (supports Unicode type variables like τ₁, τ₂)
-TypeName ::= Identifier
-
-// Base types (parentheses are literals, hence quoted)
-BaseType ::= TypeName | '(' Type ')'
-
-// Function types (right-associative)
-Type ::= BaseType[τ₁] '->' Type[τ₂] | BaseType[τ]
-
-// Typed parameter
-TypedParam ::= Variable[x] ':' Type[τ]
-
-// Lambda abstraction (dot is a literal)
-Lambda(lambda) ::= 'λ' TypedParam '.' Term[e]
-
-// variable declaration
-Let(let) ::= '{' Identifier[x] ':' Type[τ] '}'
+# Grammar for expressions
+Identifier ::= /[a-z][a-zA-Z0-9]*/
+Variable(dec) ::= Identifier[x]
+Abstraction(abs) ::= 'λ' Identifier[x] ':' Type[τ] '.' Expression[e]
+Application(app) ::= Expression[e1] Expression[e2]
 
 
-// Base terms (cannot be applications; parentheses are literal tokens)
-BaseTerm ::= Variable | Lambda | '(' Term ')' 
+//Grammar for types
+BaseType ::= 'Int' | 'Bool'
+FunctionType ::= Type[τ1] '→' Type[τ2]
+Type ::= BaseType | FunctionType | '(' Type ')'
 
-// Applications (left-associative via iteration)
-Application(app) ::= BaseTerm[f] BaseTerm[e]
+Expression ::= Variable | Abstraction | Application | '(' Expression ')'
 
-
-// Terms
-Term ::= Let | Application[e] | BaseTerm[e] 
-
-Program ::= Term+
-
-// Typing Rules
+//Variable lookup rule
 x ∈ Γ
------------ (var)
+----------- (dec)
 Γ(x)
 
-Γ[x:τ₁] ⊢ e : τ₂
---------------------------- (lambda)
-τ₁ → τ₂
+//Lambda abstraction rule  
+Γ[x:τ1] ⊢ e : τ2
+----------------------- (abs)
+τ1 → τ2
 
-Γ ⊢ f : τ₁ → τ₂, Γ ⊢ e : τ₁
+//Function application rule
+Γ ⊢ e1 : τ1 → τ2,   Γ ⊢ e2 : τ1
 -------------------------------- (app)
-τ₂
+τ2
 
--------------------------------- (let)
-Γ -> Γ[x:τ] ⊢ τ
