@@ -5,8 +5,7 @@
 // - Synthesizer: step-by-step visualization of code synthesis with completions
 
 mod graph;
-mod parser_viz;
-mod synth_viz;
+mod viz;
 mod server;
 
 // Re-export the server function

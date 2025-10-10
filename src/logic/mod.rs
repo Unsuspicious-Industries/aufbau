@@ -8,7 +8,6 @@ pub mod debug;
 pub mod recursion;
 pub mod typing;
 pub mod bind;
-pub mod validation;
 
 pub mod tests;
 pub use partial::{PartialAST, Parser};
