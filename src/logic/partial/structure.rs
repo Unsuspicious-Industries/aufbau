@@ -299,7 +299,7 @@ impl Alt {
         })
     }
 
-    /// Get the "cursor" - the index of the first incomplete symbol
+    /// Get the "cursor" - the index of the partial symbol
     pub fn cursor(&self) -> usize {
         for idx in 0..self.production.rhs.len() {
             if !self.symbol_complete(idx) {

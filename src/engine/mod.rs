@@ -9,11 +9,4 @@
 // I thought i needed the click so i put the click
 // But i didnt realize what the impact would be
 
-pub mod rank;
-pub mod synthesizer; 
-pub use synthesizer::Synthesizer;
-pub mod regex;
-
-
-pub mod tests;
-
+pub mod constraint;

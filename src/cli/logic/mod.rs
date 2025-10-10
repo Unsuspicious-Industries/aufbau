@@ -3,8 +3,6 @@ use std::fs;
 use std::path::PathBuf;
 
 use anstyle::{AnsiColor, Style};
-use beam::engine::Synthesizer;
-use beam::engine::rank::{DefaultRanker, LLMRanker, StlcRanker};
 use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
 use beam::logic::{ grammar::Grammar, Parser};
 
@@ -18,8 +16,6 @@ pub struct LogicCmd {
 pub enum LogicSubcommand {
     /// Launch the visualization server
     Viz(VizArgs),
-    /// Synthesize a well-typed program from a grammar
-    Synthesize(SynthArgs),
     /// Get valid completions for partial input
     Complete(CompleteArgs),
 }
@@ -120,7 +116,6 @@ pub fn dispatch(cli: &crate::cli::Cli) {
     match &cli.command {
         crate::cli::Commands::Logic(cmd) => match &cmd.command {
             LogicSubcommand::Viz(args) => run_viz(args, level),
-            LogicSubcommand::Synthesize(args) => run_synthesize(args),
             LogicSubcommand::Complete(args) => run_complete(args, cli.with_input, level),
         },
     }
@@ -131,63 +126,6 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
     beam::viz::serve(&bind);
-}
-
-fn run_synthesize(args: &SynthArgs) {
-    // Load grammar spec text
-    let spec = match fs::read_to_string(&args.spec_path) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!(
-                "error: failed to read spec '{}': {}",
-                args.spec_path.display(),
-                e
-            );
-            std::process::exit(2);
-        }
-    };
-
-    // Select ranker backend
-    let ranker: Box<dyn beam::engine::rank::Ranker> = match args.backend.as_str() {
-        "random" => Box::new(DefaultRanker),
-        "stlc" => Box::new(StlcRanker),
-        "mixtral" => match LLMRanker::new("mixtral") {
-            Ok(r) => Box::new(r),
-            Err(e) => {
-                eprintln!("error: failed to initialize Mixtral backend: {}", e);
-                std::process::exit(2);
-            }
-        },
-        other => {
-            eprintln!(
-                "error: unknown backend '{}'. Available: random, stlc, mixtral",
-                other
-            );
-            std::process::exit(2);
-        }
-    };
-
-    let mut synth = match Synthesizer::new(&spec, ranker) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("error: failed to initialize synthesizer: {}", e);
-            std::process::exit(2);
-        }
-    };
-
-    // Provide seed as debug input for better tracing context
-    set_debug_input(Some(args.seed.clone()));
-
-    match synth.run_with(&args.seed, args.beam_width, args.steps) {
-        Ok(program) => {
-            println!("{}", program);
-            std::process::exit(0);
-        }
-        Err(e) => {
-            eprintln!("synthesis failed: {}", e);
-            std::process::exit(1);
-        }
-    }
 }
 
 fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {

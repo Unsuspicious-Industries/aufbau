@@ -14,3 +14,19 @@
 
 pub mod completability;
 // pub mod structural; // Temporarily disabled - needs update for new PartialAST structure
+
+
+// -----------------------------------------------------------------------------
+// Test-only helpers
+// -----------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use crate::logic::grammar::Grammar;
+    use crate::logic::partial::parse::Parser;
+    use crate::logic::partial::completion::CompletionSet;
+    use crate::logic::partial::ValidToken;
+    use super::completability::complete_ast;
+
+
+}
