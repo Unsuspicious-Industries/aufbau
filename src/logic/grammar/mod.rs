@@ -2,7 +2,7 @@ pub mod load;
 pub mod save;
 pub mod utils;
 
-use regex::Regex;
+use crate::regex::Regex as DerivativeRegex;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 pub enum Symbol {
     Litteral(String),
     Expression(String),
-    Regex(Regex),
+    Regex(DerivativeRegex),
     Single {
         value: Box<Symbol>,
         binding: Option<String>,
@@ -29,7 +29,7 @@ impl PartialEq for Symbol {
         match (self, other) {
             (Symbol::Litteral(a), Symbol::Litteral(b)) => a == b,
             (Symbol::Expression(a), Symbol::Expression(b)) => a == b,
-            (Symbol::Regex(a), Symbol::Regex(b)) => a.as_str() == b.as_str(),
+            (Symbol::Regex(a), Symbol::Regex(b)) => a.equiv(b),
             (
                 Symbol::Single {
                     value: va,
@@ -70,7 +70,7 @@ impl Hash for Symbol {
             }
             Symbol::Regex(r) => {
                 2u8.hash(state);
-                r.as_str().hash(state);
+                r.to_pattern().hash(state);
             }
             Symbol::Single {
                 value,
@@ -101,15 +101,41 @@ pub enum RepetitionKind {
     ZeroOrOne,  // ?
 }
 
+impl RepetitionKind {
+    pub fn str_suffix(&self) -> &'static str {
+        match self {
+            RepetitionKind::ZeroOrMore => "*",
+            RepetitionKind::OneOrMore => "+",
+            RepetitionKind::ZeroOrOne => "?",
+        }
+    }
+    pub fn as_range(&self) -> (usize, Option<usize>) {
+        match self {
+            RepetitionKind::ZeroOrMore => (0, None),
+            RepetitionKind::OneOrMore => (1, None),
+            RepetitionKind::ZeroOrOne => (0, Some(1)),
+        }
+    }
+    pub fn from_range(range: (usize, Option<usize>)) -> Self {
+        match range {
+            (0, None) => RepetitionKind::ZeroOrMore,
+            (1, None) => RepetitionKind::OneOrMore,
+            (0, Some(1)) => RepetitionKind::ZeroOrOne,
+            _ => panic!("Invalid range for RepetitionKind"),
+        }
+    }
+    pub fn nullable(&self) -> bool {
+        matches!(self, RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne)
+    }
+}
+
 impl Symbol {
     pub fn new(value: String) -> Self {
         debug_trace!("grammar", "Creating symbol from value: {}", value);
         if value.starts_with('\'') && value.ends_with('\'') {
             Self::Litteral(value[1..value.len() - 1].to_string())
         } else if value.starts_with('/') && value.ends_with('/') {
-            Self::Regex(
-                Regex::new(&value[1..value.len() - 1]).unwrap_or_else(|_| Regex::new("").unwrap()),
-            )
+            Self::Regex(DerivativeRegex::new(&value[1..value.len() - 1]).unwrap())
         } else {
             Self::Expression(value)
         }
@@ -150,7 +176,7 @@ impl Symbol {
         match self {
             Symbol::Litteral(value) => value.clone(),
             Symbol::Expression(value) => value.clone(),
-            Symbol::Regex(regex) => format!("/{}/", regex.as_str()),
+            Symbol::Regex(regex) => format!("/{}/", regex.to_pattern()),
             Symbol::Single { value, .. } => value.value(),
             Symbol::Group { symbols, .. } => {
                 let values: Vec<String> = symbols.iter().map(|s| s.value()).collect();
@@ -217,7 +243,7 @@ use crate::logic::typing::TypingRule;
 
 /// A complete grammar consisting of context-free productions and
 /// inference-style typing rules.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Grammar {
     pub productions: HashMap<Nonterminal, Vec<Production>>,
     pub typing_rules: HashMap<String, TypingRule>, // name -> rule
@@ -226,6 +252,32 @@ pub struct Grammar {
     pub start: Option<Nonterminal>,
     // Preserve declaration order of productions as they appear in the spec
     pub production_order: Vec<Nonterminal>,
+    // Regex representing the union of all accepted tokens (special tokens + regex patterns)
+    pub accepted_tokens_regex: Option<DerivativeRegex>,
+}
+
+impl PartialEq for Grammar {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare everything except accepted_tokens_regex
+        self.productions == other.productions
+            && self.typing_rules == other.typing_rules
+            && self.special_tokens == other.special_tokens
+            && self.start == other.start
+            && self.production_order == other.production_order
+    }
+}
+
+impl Default for Grammar {
+    fn default() -> Self {
+        Self {
+            productions: HashMap::default(),
+            typing_rules: HashMap::default(),
+            special_tokens: Vec::default(),
+            start: None,
+            production_order: Vec::default(),
+            accepted_tokens_regex: None,
+        }
+    }
 }
 
 impl Grammar {
@@ -255,6 +307,44 @@ impl Grammar {
     pub fn start_nonterminal(&self) -> Option<&Nonterminal> {
         self.start.as_ref()
     }
+
+    /// Check if a symbol is nullable (can match zero tokens).
+    pub fn symbol_nullable(&self, symbol: &Symbol) -> bool {
+        match symbol {
+            Symbol::Litteral(_) | Symbol::Regex(_) => false,
+
+            Symbol::Expression(nt) => {
+                let nt = self.productions.get(nt);
+                nt.map(|prod| {
+                    prod.iter()
+                        .all(|s| s.rhs.iter().all(|sym| self.symbol_nullable(sym)))
+                })
+                .unwrap_or(false)
+            }
+
+            Symbol::Single { repetition, .. } => {
+                matches!(
+                    repetition,
+                    Some(RepetitionKind::ZeroOrOne | RepetitionKind::ZeroOrMore)
+                )
+            }
+
+            Symbol::Group {
+                repetition,
+                symbols,
+                ..
+            } => {
+                // Group is nullable if it has ? or * repetition, or if all its symbols are nullable
+                if matches!(
+                    repetition,
+                    Some(RepetitionKind::ZeroOrOne | RepetitionKind::ZeroOrMore)
+                ) {
+                    return true;
+                }
+                symbols.iter().all(|s| self.symbol_nullable(s))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -267,7 +357,7 @@ pub(crate) mod tests {
     pub const STLC_SPEC: &str = r#"
 
     // Identifier (supports Unicode)
-    Identifier ::= /[\p{L}][\p{L}\p{N}_τ₁₂₃₄₅₆₇₈₉₀]*/
+    Identifier ::= /[a-z][a-zA-Z0-9]*/
 
     // Variables with var typing rule
     Variable(var) ::= Identifier[x]
@@ -510,7 +600,7 @@ pub(crate) mod tests {
         crate::logic::debug::set_debug_level(crate::logic::debug::DebugLevel::Trace);
         let g = Grammar::load(REPETITION_GRAMMAR).unwrap();
         let mut p = Parser::new(g);
-        let ast = p.parse("{ }").unwrap();
+        let ast = p.parse("{}").unwrap();
         if let crate::logic::ast::ASTNode::Nonterminal(nt) = ast.clone() {
             assert_eq!(nt.value, "Block");
             assert_eq!(nt.children.len(), 2);

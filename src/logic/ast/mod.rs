@@ -1,7 +1,8 @@
 use super::bind::BoundTypingRule;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::ParsedNode;
-use crate::logic::{partial, PartialAST};
+use crate::logic::tokenizer::Segment;
+use crate::logic::{PartialAST, partial};
 use std::collections::HashSet;
 use std::path::Path;
 use std::{fs, io};
@@ -10,18 +11,52 @@ pub mod serialize;
 use serialize::*;
 pub mod utils;
 
+// Here we have defined the compese asts
+// its a recursive structure representing the AST nodes
+// with terminals and nonterminals
+
+/// A span representing a range of segments (not bytes/chars)
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SourceSpan {
+pub struct SegmentRange {
+    /// Index of the first segment in the range
     pub start: usize,
+    /// Index of the last segment in the range (inclusive)
     pub end: usize,
-    //pub full: bool,
+}
+
+impl SegmentRange {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+
+    pub fn single(seg: usize) -> Self {
+        Self {
+            start: seg,
+            end: seg,
+        }
+    }
+
+    /// Convert segment range to byte range using the segment array
+    pub fn to_byte_range(&self, segments: &[Segment]) -> Option<(usize, usize)> {
+        let start = segments.get(self.start)?.start;
+        let end = segments.get(self.end)?.end;
+        Some((start, end))
+    }
+
+    /// Merge two segment ranges
+    pub fn merge(&self, other: &Self) -> Self {
+        Self {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+        }
+    }
 }
 
 /// Nonterminal-specific data from an ASTNode
 #[derive(Debug, Clone)]
 pub struct NonTerminal {
     pub value: String,
-    pub span: Option<SourceSpan>,
+    pub span: Option<SegmentRange>,
     pub children: Vec<ASTNode>,
     pub binding: Option<String>,
     pub bound_typing_rule: Option<Box<BoundTypingRule>>,
@@ -80,7 +115,7 @@ impl NonTerminal {
 #[derive(Debug, Clone)]
 pub struct Terminal {
     pub value: String,
-    pub span: Option<SourceSpan>,
+    pub span: Option<SegmentRange>,
     pub binding: Option<String>,
 }
 
@@ -102,17 +137,16 @@ pub enum ASTNode {
 }
 
 impl ASTNode {
-
     // TODO: remove legacy from_partial once new conversion lives on PartialAST
 
-    pub fn span(&self) -> Option<&SourceSpan> {
+    pub fn span(&self) -> Option<&SegmentRange> {
         match self {
             ASTNode::Terminal(t) => t.span.as_ref(),
             ASTNode::Nonterminal(nt) => nt.span.as_ref(),
         }
     }
 
-    pub fn set_span(&mut self, new_span: SourceSpan) {
+    pub fn set_span(&mut self, new_span: SegmentRange) {
         match self {
             ASTNode::Terminal(t) => t.span = Some(new_span),
             ASTNode::Nonterminal(nt) => nt.span = Some(new_span),

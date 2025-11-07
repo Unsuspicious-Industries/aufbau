@@ -1,65 +1,48 @@
-use crate::logic::ast::SourceSpan;
+use crate::logic::ast::SegmentRange;
 use crate::logic::grammar::{Production, RepetitionKind, Symbol};
-use regex::Regex;
+use crate::logic::tokenizer::Segment;
+use crate::regex::Regex as DerivativeRegex;
+use regex::Regex as ExternalRegex;
 
 #[derive(Clone, Debug)]
 pub enum PartialSymbol {
-    Litteral {
+    Terminal {
         symbol_index: usize,
-        byte_cursor: usize,
-        span: SourceSpan,
-        expected: String,
+        span: SegmentRange,
+        re: DerivativeRegex,
+        derivative: DerivativeRegex,
     },
-    Regex {
-        symbol_index: usize,
-        byte_cursor: usize,
-        span: SourceSpan,
-        re: Regex,
-    },
-    Expression {
+    NonTerminal {
         symbol_index: usize,
         nt: String,
-    },
-    Single {
-        symbol_index: usize,
-        repetition: Option<RepetitionKind>,
-        binding: Option<String>,
-    },
-    Group {
-        symbol_index: usize,
-        /// If known, which inner symbol index within the group is targeted
-        inner_index: Option<usize>,
-        repetition: Option<RepetitionKind>,
-        binding: Option<String>,
-    },
-    Other {
-        symbol_index: usize,
     },
 }
 
 impl PartialSymbol {
-    pub fn current_text<'a>(&self, input: &'a str) -> &'a str {
+    /// Get the text for this partial symbol from the segments
+    pub fn current_text_from_segments(&self, segments: &[Segment]) -> String {
         match self {
-            PartialSymbol::Litteral { span, .. } | PartialSymbol::Regex { span, .. } => {
-                &input[span.start..span.end.min(input.len())]
+            PartialSymbol::Terminal { span, .. } => {
+                let mut result = String::new();
+                for idx in span.start..=span.end {
+                    if let Some(seg) = segments.get(idx) {
+                        result.push_str(&seg.text());
+                    }
+                }
+                result
             }
-            _ => "",
+            _ => String::new(),
         }
     }
-    pub fn is_regex(&self) -> bool {
-        matches!(self, PartialSymbol::Regex { .. })
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, PartialSymbol::Terminal { .. })
     }
-    pub fn is_litteral(&self) -> bool {
-        matches!(self, PartialSymbol::Litteral { .. })
-    }
+
     pub fn symbol_index(&self) -> usize {
         match self {
-            PartialSymbol::Litteral { symbol_index, .. }
-            | PartialSymbol::Regex { symbol_index, .. }
-            | PartialSymbol::Expression { symbol_index, .. }
-            | PartialSymbol::Single { symbol_index, .. }
-            | PartialSymbol::Group { symbol_index, .. }
-            | PartialSymbol::Other { symbol_index, .. } => *symbol_index,
+            PartialSymbol::Terminal { symbol_index, .. } => *symbol_index,
+            PartialSymbol::NonTerminal { symbol_index, .. } => *symbol_index,
         }
     }
 }
@@ -70,83 +53,21 @@ pub struct PartialProduction {
     pub(crate) fully_parsed_symbols: usize,
     pub(crate) partially_parsed_symbols: usize,
     pub(crate) partial_symbol: Option<PartialSymbol>,
-    pub(crate) rhs: Vec<PartialSymbol>,
 }
 
 impl PartialProduction {
-    pub fn new(production: Production) -> Self {
-        let rhs = production
-            .rhs
-            .iter()
-            .enumerate()
-            .map(|(i, s)| match s {
-                Symbol::Litteral(text) => PartialSymbol::Litteral {
-                    symbol_index: i,
-                    byte_cursor: 0,
-                    span: SourceSpan { start: 0, end: 0 },
-                    expected: text.clone(),
-                },
-                Symbol::Regex(re) => PartialSymbol::Regex {
-                    symbol_index: i,
-                    byte_cursor: 0,
-                    span: SourceSpan { start: 0, end: 0 },
-                    re: re.clone(),
-                },
-                Symbol::Expression(nt) => PartialSymbol::Expression {
-                    symbol_index: i,
-                    nt: nt.clone(),
-                },
-                Symbol::Single {
-                    repetition,
-                    binding,
-                    ..
-                } => PartialSymbol::Single {
-                    symbol_index: i,
-                    repetition: repetition.clone(),
-                    binding: binding.clone(),
-                },
-                Symbol::Group { repetition, .. } => PartialSymbol::Group {
-                    symbol_index: i,
-                    inner_index: None,
-                    repetition: repetition.clone(),
-                    binding: None,
-                },
-            })
-            .collect();
-        Self {
-            production,
-            fully_parsed_symbols: 0,
-            partially_parsed_symbols: 0,
-            partial_symbol: None,
-            rhs,
-        }
-    }
-
     pub fn from_progress(
-        production: Production,
-        fully_parsed: usize,
-        partially_parsed: usize,
-    ) -> Self {
-        let mut pp = Self::new(production);
-        pp.set_progress(fully_parsed, partially_parsed);
-        pp
-    }
-
-    pub fn from_progress_with_partial_symbol(
         production: Production,
         fully_parsed: usize,
         partially_parsed: usize,
         partial_symbol: Option<PartialSymbol>,
     ) -> Self {
-        let mut pp = Self::from_progress(production, fully_parsed, partially_parsed);
-        if let Some(ps) = partial_symbol {
-            let idx = ps.symbol_index();
-            if idx < pp.rhs.len() {
-                pp.rhs[idx] = ps.clone();
-            }
-            pp.partial_symbol = Some(ps);
+        Self {
+            production,
+            fully_parsed_symbols: fully_parsed,
+            partially_parsed_symbols: partially_parsed,
+            partial_symbol,
         }
-        pp
     }
 
     fn is_finished(&self) -> bool {
@@ -191,9 +112,6 @@ impl PartialProduction {
     }
     pub fn rhs_symbols(&self) -> &Vec<Symbol> {
         &self.production.rhs
-    }
-    pub fn rhs(&self) -> &Vec<PartialSymbol> {
-        &self.rhs
     }
     pub fn rule_name(&self) -> Option<&String> {
         self.production.rule.as_ref()

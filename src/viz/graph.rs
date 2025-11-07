@@ -1,5 +1,6 @@
 use crate::logic::partial::PartialAST;
-use crate::logic::partial::{Alt, ParsedNode, NonTerminal, Slot};
+use crate::logic::partial::structure::Rule;
+use crate::logic::partial::{Alt, NonTerminal, ParsedNode, Slot};
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Clone)]
@@ -57,7 +58,7 @@ fn collect_graph_from_alt(root_id: &str, alt: &PartialAST) -> GraphData {
     let mut edges: Vec<GraphEdge> = Vec::new();
 
     walk_nt(root_id, alt.root(), &mut nodes, &mut edges);
-    
+
     GraphData { nodes, edges }
 }
 
@@ -69,8 +70,11 @@ fn walk_nt(
 ) {
     // NonTerminal container node
     let is_complete = nt.is_complete();
-    let has_partial = nt.alts.iter().any(|alt| !alt.is_complete() && alt.is_progressing());
-    
+    let has_partial = nt
+        .alts
+        .iter()
+        .any(|alt| !alt.is_complete() && alt.is_progressing());
+
     nodes.push(GraphNode {
         id: node_id.to_string(),
         label: nt.name.clone(),
@@ -107,15 +111,10 @@ fn walk_nt(
     }
 }
 
-fn walk_alt(
-    alt_id: &str,
-    alt: &Alt,
-    nodes: &mut Vec<GraphNode>,
-    edges: &mut Vec<GraphEdge>,
-) {
+fn walk_alt(alt_id: &str, alt: &Alt, nodes: &mut Vec<GraphNode>, edges: &mut Vec<GraphEdge>) {
     let is_complete = alt.is_complete();
     let has_partial_desc = false; // TODO: implement proper descendant check
-    
+
     let status = if is_complete && !has_partial_desc {
         "complete"
     } else if alt.is_progressing() {
@@ -123,15 +122,20 @@ fn walk_alt(
     } else {
         "error"
     };
-    
+
     let prod_info = ProductionInfo {
-        rhs: alt.production.rhs.iter().map(|s| format!("{:?}", s)).collect(),
+        rhs: alt
+            .production
+            .rhs
+            .iter()
+            .map(|s| format!("{:?}", s))
+            .collect(),
         cursor: alt.cursor(),
         rhs_len: alt.production.rhs.len(),
         complete: is_complete,
-        has_partial: alt.slots.values().any(|slots| slots.iter().any(|s| s.is_partial())),
+        has_partial: alt.slots.values().any(|s| s.is_partial()),
     };
-    
+
     nodes.push(GraphNode {
         id: alt_id.to_string(),
         label: format!("alt"),
@@ -145,67 +149,165 @@ fn walk_alt(
                 end: s.end,
             }),
             production: Some(prod_info),
-            typing_rule: alt.typing_rule.clone(),
+            typing_rule: alt.typing_rule.as_ref().map(|r| r.name.clone()),
         },
     });
-    
+
     // Walk slot contents
-    for (sym_idx, slots) in &alt.slots {
-        for (slot_idx, slot) in slots.iter().enumerate() {
-            match slot {
-                Slot::Filled(parsed_nodes) => {
-                    for (node_idx, pnode) in parsed_nodes.iter().enumerate() {
-                        let child_id = format!("{alt_id}.s{sym_idx}_{slot_idx}_{node_idx}");
-                        edges.push(GraphEdge {
-                            from: alt_id.to_string(),
-                            to: child_id.clone(),
-                            style: "solid".to_string(),
-                        });
-                        walk_parsed_node(&child_id, pnode, nodes, edges);
-                    }
+    for (sym_idx, slot) in &alt.slots {
+        match slot {
+            Slot::Filled {
+                nodes: parsed_nodes,
+                ..
+            } => {
+                for (node_idx, pnode) in parsed_nodes.iter().enumerate() {
+                    let child_id = format!("{alt_id}.s{sym_idx}_{node_idx}");
+                    edges.push(GraphEdge {
+                        from: alt_id.to_string(),
+                        to: child_id.clone(),
+                        style: "solid".to_string(),
+                    });
+                    walk_parsed_node(&child_id, pnode, nodes, edges);
                 }
-                Slot::Partial { node, partial_symbol } => {
-                    // If there's a partial node, walk it
-                    if let Some(pnode) = node {
-                        let child_id = format!("{alt_id}.s{sym_idx}_{slot_idx}_partial");
+            }
+            Slot::Partial {
+                node,
+                partial_symbol,
+                type_constraint,
+            } => {
+                // If there's a partial node, walk it
+                if let Some(pnode) = node {
+                    let child_id = format!("{alt_id}.s{sym_idx}_partial");
+                    edges.push(GraphEdge {
+                        from: alt_id.to_string(),
+                        to: child_id.clone(),
+                        style: "dashed".to_string(),
+                    });
+                    walk_parsed_node(&child_id, pnode, nodes, edges);
+                } else {
+                    // Only show placeholder for terminal partial symbols
+                    let should_show = matches!(
+                        partial_symbol,
+                        crate::logic::partial::PartialSymbol::Terminal { .. }
+                    );
+
+                    if should_show {
+                        // Mark partial slot visually without node
+                        let child_id = format!("{alt_id}.s{sym_idx}_partial");
                         edges.push(GraphEdge {
                             from: alt_id.to_string(),
                             to: child_id.clone(),
                             style: "dashed".to_string(),
                         });
-                        walk_parsed_node(&child_id, pnode, nodes, edges);
-                    } else {
-                        // Only show placeholder for terminal partial symbols (Litteral/Regex)
-                        // For Expression partials without nodes, don't show anything
-                        let should_show = matches!(
-                            partial_symbol,
-                            crate::logic::partial::PartialSymbol::Litteral { .. } |
-                            crate::logic::partial::PartialSymbol::Regex { .. }
-                        );
-                        
-                        if should_show {
-                            // Mark partial slot visually without node
-                            let child_id = format!("{alt_id}.s{sym_idx}_{slot_idx}_partial");
-                            edges.push(GraphEdge {
-                                from: alt_id.to_string(),
-                                to: child_id.clone(),
-                                style: "dashed".to_string(),
-                            });
-                            nodes.push(GraphNode {
-                                id: child_id,
-                                label: "...".to_string(),
-                                status: "partial".to_string(),
-                                meta: NodeMeta {
-                                    kind: "partial-symbol".to_string(),
-                                    value: None,
-                                    binding: None,
-                                    span: None,
-                                    production: None,
-                                    typing_rule: None,
-                                },
-                            });
-                        }
+                        nodes.push(GraphNode {
+                            id: child_id,
+                            label: "...".to_string(),
+                            status: "partial".to_string(),
+                            meta: NodeMeta {
+                                kind: "partial-symbol".to_string(),
+                                value: None,
+                                binding: None,
+                                span: None,
+                                production: None,
+                                typing_rule: None,
+                            },
+                        });
                     }
+                }
+            }
+            Slot::Group {
+                iterations,
+                partial_iteration,
+                ..
+            } => {
+                // Walk complete iterations
+                for (iter_idx, iteration) in iterations.iter().enumerate() {
+                    for (slot_idx, inner_slot) in iteration.iter().enumerate() {
+                        walk_slot_in_graph(
+                            &format!("{alt_id}.g{sym_idx}_i{iter_idx}_s{slot_idx}"),
+                            inner_slot,
+                            nodes,
+                            edges,
+                            &alt_id,
+                        );
+                    }
+                }
+                // Walk partial iteration if any
+                if let Some(partial) = partial_iteration {
+                    for (slot_idx, inner_slot) in partial.iter().enumerate() {
+                        walk_slot_in_graph(
+                            &format!("{alt_id}.g{sym_idx}_partial_s{slot_idx}"),
+                            inner_slot,
+                            nodes,
+                            edges,
+                            &alt_id,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Helper to recursively walk a slot in the graph
+fn walk_slot_in_graph(
+    slot_id: &str,
+    slot: &Box<Slot>,
+    nodes: &mut Vec<GraphNode>,
+    edges: &mut Vec<GraphEdge>,
+    parent_id: &str,
+) {
+    match slot.as_ref() {
+        Slot::Filled {
+            nodes: parsed_nodes,
+            ..
+        } => {
+            for (node_idx, pnode) in parsed_nodes.iter().enumerate() {
+                let child_id = format!("{slot_id}_n{node_idx}");
+                edges.push(GraphEdge {
+                    from: parent_id.to_string(),
+                    to: child_id.clone(),
+                    style: "solid".to_string(),
+                });
+                walk_parsed_node(&child_id, pnode, nodes, edges);
+            }
+        }
+        Slot::Partial { node, .. } => {
+            if let Some(pnode) = node {
+                let child_id = format!("{slot_id}_partial");
+                edges.push(GraphEdge {
+                    from: parent_id.to_string(),
+                    to: child_id.clone(),
+                    style: "dashed".to_string(),
+                });
+                walk_parsed_node(&child_id, pnode, nodes, edges);
+            }
+        }
+        Slot::Group {
+            iterations,
+            partial_iteration,
+            ..
+        } => {
+            for (iter_idx, iteration) in iterations.iter().enumerate() {
+                for (inner_idx, inner_slot) in iteration.iter().enumerate() {
+                    walk_slot_in_graph(
+                        &format!("{slot_id}_i{iter_idx}_s{inner_idx}"),
+                        inner_slot,
+                        nodes,
+                        edges,
+                        parent_id,
+                    );
+                }
+            }
+            if let Some(partial) = partial_iteration {
+                for (inner_idx, inner_slot) in partial.iter().enumerate() {
+                    walk_slot_in_graph(
+                        &format!("{slot_id}_partial_s{inner_idx}"),
+                        inner_slot,
+                        nodes,
+                        edges,
+                        parent_id,
+                    );
                 }
             }
         }

@@ -1,6 +1,6 @@
 use super::utils::{
-    parse_inference_rule, parse_nonterminal, parse_production, parse_rhs_with_groups,
-    special_tokens,
+    build_accepted_tokens_regex, extract_special_tokens_from_symbol, parse_inference_rule,
+    parse_nonterminal, parse_production, parse_rhs_with_groups,
 };
 use crate::logic::grammar::{Grammar, Production, TypingRule};
 
@@ -58,14 +58,16 @@ impl Grammar {
                             grammar.production_order.push(name.clone());
                         }
 
-                        // Extract special tokens (groups may introduce quoted tokens inside, still covered by rhs_str scan)
-                        let new_specials = special_tokens(&rhs_str);
-                        for sym in new_specials {
-                            grammar.add_special_token(sym);
-                        }
-
-                        // Create productions
+                        // Create productions and extract special tokens from parsed symbols
                         for alt_symbols in rhs_alternatives {
+                            // Extract special tokens from this alternative
+                            for symbol in &alt_symbols {
+                                extract_special_tokens_from_symbol(
+                                    symbol,
+                                    &mut grammar.special_tokens,
+                                );
+                            }
+
                             let production = Production {
                                 rule: rule_name.clone(),
                                 rhs: alt_symbols,
@@ -92,6 +94,9 @@ impl Grammar {
                 grammar.set_start(last.clone());
             }
         }
+
+        // Build the unified accepted tokens regex
+        grammar.accepted_tokens_regex = build_accepted_tokens_regex(&grammar);
 
         Ok(grammar)
     }
