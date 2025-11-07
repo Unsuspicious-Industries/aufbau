@@ -10,8 +10,8 @@ pub type TypeAscription = (Term, Type);
 /// Typing context (setting) possibly extended with new bindings.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeSetting {
-    pub name: String,                    // e.g. Γ
-    pub extensions: Vec<TypeAscription>, // e.g. [x:τ]
+    pub name: String, // Γ usually, not supported for other things iirc
+    pub extensions: Vec<TypeAscription>, //  [x:τ] extends context but locally
 }
 
 /// A typing judgment Γ ⊢ e : τ or membership x ∈ Γ

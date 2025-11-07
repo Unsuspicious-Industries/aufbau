@@ -1,6 +1,6 @@
 # AST Serialization Format
 
-This document describes the Lisp-style S-expression format used to serialize and deserialize the abstract syntax tree (AST) in the Beam parser/typing system.
+Useless but funy and easy for some tests. Not really used anymore complete ASTs are weird. 
 
 ## File Structure
 
@@ -76,13 +76,4 @@ If there are no children, the nonterminal closes immediately:
 (N Empty)
 ```
 
-## Parsing and Serialization
-
-- To **serialize** an in-memory AST, use `ASTNode::serialize()` followed by `ASTNode::save(path)`.
-- To **parse** a file, use `ASTNode::load(path, &grammar)` or `ASTNode::parse(&content, &grammar)`.
-
-The parser will:
-
-1. Strip off any leading comment lines (`;...`) until the first non-comment.
-2. Tokenize the remaining text into parentheses, atoms, and string literals.
-3. Reconstruct the AST, resolving rule names against the provided `Grammar`.
+This is useful for tests and verifying ASTs. Only used for **complete ASTs**.

@@ -1,11 +1,11 @@
-use rouille::{router, Request, Response};
+use rouille::{Request, Response, router};
 
 use super::viz;
 
 pub fn serve(bind_addr: &str) {
     println!("Starting visualization server on http://{}", bind_addr);
     println!(" - Parser visualizer: http://{}/", bind_addr);
-    
+
     rouille::start_server(bind_addr, move |request: &Request| {
         router!(request,
             (GET) (/) => {

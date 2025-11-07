@@ -17,10 +17,6 @@ pub enum Type {
     Arrow(Box<Type>, Box<Type>),
     // Tuple
     Tuple(String),
-    // Pointer types (*τ) - for C-like languages
-    Pointer(Box<Type>),
-    // Array types (τ[n], τ[], or τ[N]) - for C-like languages
-    Array(Box<Type>, String),
     // Negation type (¬τ) - "anything that is not τ"
     Not(Box<Type>),
     // Intersection (τ₁ ∧ τ₂) - "both τ₁ and τ₂"

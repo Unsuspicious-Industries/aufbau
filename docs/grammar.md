@@ -47,7 +47,7 @@ The binder collects all sibling nodes sharing a binding symbol to expand premise
 
 ## Type System
 
-The grammar system supports a rich type language with various type expressions and constructs. This section details all supported type expressions and their syntax.
+The grammar system supports an extensible type language with various type expressions and constructs. This section details all supported type expressions and their syntax.
 
 ### Type Expression Categories
 
@@ -102,25 +102,6 @@ int → string
 - Used for representing tuple/product types at the meta level
 - Syntax: `(<identifier>...)` where identifier is the tuple element type
 
-**Pointer Types**: For C-like pointer types
-```
-*τ
-*int
-**char
-```
-- Prefix syntax with `*`
-- Can be nested: `**int` (pointer to pointer to int)
-
-**Array Types**: For array/list types
-```
-τ[N]
-int[10]
-string[]
-MyType[size]
-```
-- Syntax: `base_type[size_expression]`
-- Empty brackets `[]` for dynamic arrays
-- Size can be any string expression
 
 #### 3. Logical Types
 
@@ -244,12 +225,23 @@ Premises comma-separated. Empty premise list = axiom form.
    - Look up the type of variable `x` in context `Γ`
    - Returns the type that `x` was bound to
 
-3. **Context-Transforming Type**: `[Γ_in][→ Γ_out] ⊢ τ`
-   - Explicit context transformation with type result
+3. **Context-Transformation**: `[Γ_in][→ Γ_out] ⊢ τ`
+   - We can modify the *output* context, based on declarations.
+   - Right now the name of the output context doesnt chnage anything, its for looks, 
+     what matters is the extensions applies to it. 
+   - Input context can also be extended:
+       - `Γ_in → Γ_out[y:σ] ⊢ τ'`
    - Arrow sugar variants:
      - `Γ_in ⊢ τ` ≡ `Γ_in → Γ_in ⊢ τ` (no context change)
      - `→ Γ_out ⊢ τ` ≡ `Γ → Γ_out ⊢ τ` (inherit input context)
      - `τ` ≡ `Γ → Γ ⊢ τ` (identity transform)
+
+#### Some examples
+This let rule modify the context to add the variable *binded* to `x`, with the type of the thing being binded to `τ`.
+```
+-------------------------------- (let)
+Γ -> Γ[x:τ] ⊢ τ
+```
 
 Implementation stores these as structured `Conclusion { context: {input, output}, kind }`.
 
@@ -320,40 +312,6 @@ x ∈ Γ
 τ₂
 ```
 
-### Example 2: C-like Language with Pointers and Arrays
-
-Grammar demonstrating pointer and array types:
-```text
-// Types with pointers and arrays
-PrimitiveType ::= 'int' | 'char' | 'float'
-PointerType ::= '*' Type[base]
-ArrayType ::= Type[base] '[' Number? ']'
-Type ::= PrimitiveType | PointerType | ArrayType
-
-// Expressions
-Variable(var) ::= Identifier[x]
-Dereference(deref) ::= '*' Expr[e]
-AddressOf(addr) ::= '&' Expr[e]
-ArrayAccess(access) ::= Expr[arr] '[' Expr[idx] ']'
-
-// Typing rules with pointer/array types
-x ∈ Γ
--------- (var)
-Γ(x)
-
-Γ ⊢ e : *τ
----------- (deref)
-τ
-
-Γ ⊢ e : τ
----------- (addr)
-*τ
-
-Γ ⊢ arr : τ[], Γ ⊢ idx : 'int'
-------------------------------- (access)
-τ
-```
-
 ### Example 3: Functional Language with Union Types
 
 Grammar using union and intersection types:
@@ -387,61 +345,7 @@ Case ::= Pattern '->' Expr
 ∅
 ```
 
-### Example 4: Context-Aware Type System
 
-Grammar showing context manipulation:
-```text
-// Variable declarations and scoping
-VarDecl(decl) ::= 'let' Variable[x] ':' Type[τ] '=' Expr[e]
-Block(block) ::= '{' Stmt* Expr[result] '}'
-LetIn(letin) ::= 'let' Variable[x] '=' Expr[value] 'in' Expr[body]
-
-// Context-transforming rules
-Γ ⊢ e : τ
--------------- (decl)
-Γ → Γ[x:τ] ⊢ τ
-
-Γ ⊢ value : τ, Γ[x:τ] ⊢ body : σ
----------------------------------- (letin)
-σ
-
-Γ₁ ⊢ s₁ : τ₁, Γ₁[x₁:τ₁] ⊢ s₂ : τ₂, ..., Γₙ ⊢ result : σ
---------------------------------------------------------- (block)
-Γ → Γₙ ⊢ σ
-```
-
-### Example 5: Generic Types and Type Variables
-
-Grammar with parameterized types:
-```text
-// Type variables and generic types
-TypeVar ::= /[a-z][a-zA-Z0-9']*/
-TypeConstructor ::= /[A-Z][a-zA-Z0-9]*/
-GenericType ::= TypeConstructor '<' TypeList '>'
-TypeList ::= Type | TypeList ',' Type
-
-// List and option types
-ListType ::= Type 'list'
-OptionType ::= Type 'option'
-Type ::= TypeVar | TypeConstructor | GenericType | ListType | OptionType
-
-// Polymorphic function types
-ForallType ::= '∀' TypeVar '.' Type
-Type ::= ... | ForallType
-
-// Generic typing rules
-Γ ⊢ e : List<τ>, Γ ⊢ f : τ → σ
-------------------------------- (map)
-List<σ>
-
-Γ ⊢ e : Option<τ>
------------------ (some_elim)
-τ ∨ ∅
-
-∀α. Γ ⊢ e : τ[α]
------------------ (forall_intro)
-∀α. τ
-```
 
 ### Type Expression Usage Patterns
 
@@ -453,17 +357,6 @@ TypedParam ::= Type[τ] Identifier[x]
 Cast(cast) ::= '(' Type[target] ')' Expr[e]
 ```
 
-#### In Typing Rule Premises
-```text
-// Complex premise patterns
-Γ ⊢ obj : Record<{field: τ}>, Γ ⊢ field : 'string'
--------------------------------------------------- (field_access)
-τ
-
-Γ ⊢ f : ∀α. α → α, Γ ⊢ e : τ
------------------------------ (polymorphic_app)
-τ
-```
 
 #### In Typing Rule Conclusions
 ```text
@@ -481,118 +374,8 @@ x ∈ Γ
 Γ → Γ[x:τ] ⊢ τ
 ```
 
-## Type Expression Validation and Best Practices
-
-### Character Set and Validation
-
-The type system validates expressions using the following character set:
-```
-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀ ∧∨()!¬*[] where,.;''
-```
 
 Additional characters are dynamically added based on configured operators.
-
-### Common Mistakes and Solutions
-
-#### 1. Incorrect Operator Precedence
-```text
-// WRONG: Ambiguous without parentheses
-A | B & C -> D
-
-// CORRECT: Use parentheses to clarify intent
-(A | B) & (C -> D)   // Intersection of union and function type
-A | (B & C) -> D     // Union with function from intersection
-```
-
-#### 2. Invalid Context Names
-```text
-// WRONG: Invalid characters in context name
-My_Context(x)
-
-// CORRECT: Use Greek letters or simple identifiers
-Γ(x)
-Context(x)
-```
-
-#### 3. Malformed Array Types
-```text
-// WRONG: Missing brackets or invalid size
-int[
-*int[10
-
-// CORRECT: Proper bracket matching
-int[]
-int[10]
-*int[10]
-```
-
-#### 4. Incorrect Arrow Association
-```text
-// WRONG: Misunderstanding right-associativity
-(A -> B) -> C   // This is A -> (B -> C), not (A -> B) -> C
-
-// CORRECT: Explicit parentheses when needed
-(A -> B) -> C   // Function from (A->B) to C
-A -> B -> C     // Function from A to (B->C)
-```
-
-### Type Expression Design Guidelines
-
-#### 1. Use Meaningful Type Names
-```text
-// GOOD: Descriptive type names
-UserRecord, HttpResponse, DatabaseConnection
-
-// AVOID: Generic or unclear names
-T, X, Thing
-```
-
-#### 2. Consistent Naming Conventions
-```text
-// GOOD: Consistent Greek letters for type variables
-τ, σ, ρ for types
-Γ, Δ, Θ for contexts
-
-// GOOD: Consistent subscripts
-τ₁, τ₂, τ₃ for related types
-```
-
-#### 3. Logical Type Composition
-```text
-// GOOD: Meaningful logical combinations
-Readable ∧ Writable     // Something that can be both read and written
-Number ∨ String         // Either a number or string
-¬Null                   // Anything that is not null
-
-// AVOID: Nonsensical combinations
-int ∧ string            // Nothing can be both int and string
-¬⊤                      // Negation of universe is empty
-```
-
-#### 4. Context Management
-```text
-// GOOD: Clear context transformations
-Γ[x:τ] ⊢ body : σ       // Add binding to context
-Γ → Γ[x:τ] ⊢ τ          // Explicit context extension
-
-// GOOD: Meaningful context names
-LocalScope, GlobalEnv, TypeEnv
-```
-
-### Error Messages and Debugging
-
-Common type expression parsing errors:
-
-1. **"Invalid type expression"**: Usually indicates invalid characters or malformed syntax
-2. **"Type expression cannot be empty"**: Empty string passed to type parser
-3. **"Invalid ascription"**: Missing colon in `term : type` format
-4. **"Invalid setting"**: Malformed context extension like `Γ[x:τ]`
-
-### Performance Considerations
-
-- **Complex nested types**: Deep nesting can impact parsing performance
-- **Long union/intersection chains**: Consider factoring into separate type definitions
-- **Unicode characters**: Fully supported but may have slight parsing overhead
 
 ### Integration with Grammar Productions
 
@@ -613,7 +396,8 @@ paramTypes → returnType
 ------------------ (var)
 Γ → Γ[name:varType] ⊢ varType
 
-Γ ⊢ expr : sourceType, sourceType <: targetType
+// Type compatibility handles subtyping with ':'
+Γ ⊢ expr : sourceType, sourceType : targetType
 ----------------------------------------------- (cast)
 targetType
 ```
@@ -623,6 +407,7 @@ targetType
 - No polymorphism / quantifiers
 - No context joins/branching (if/else) or deletions
 - Re-binding after deserialize not automated
+- No pointer/reference/array type checking logic yet
 - Type compatibility currently simple (structural compatibility + equality); no subtyping lattice
 
 Planned enhancements: multi-context support, polymorphic/generalized types, context merging, richer repetition semantics, caching bound rule templates.

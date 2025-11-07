@@ -5,8 +5,8 @@
 // - Synthesizer: step-by-step visualization of code synthesis with completions
 
 mod graph;
-mod viz;
 mod server;
+mod viz;
 
 // Re-export the server function
 pub use server::serve;

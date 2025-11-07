@@ -1,27 +1,48 @@
-use std::collections::btree_map::Range;
+use regex::Regex as ExternalRegex;
+use std::collections::{HashSet, VecDeque};
 
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Regex {
-    Empty,              // ∅ - matches nothing
-    Epsilon,            // ε - matches empty string
-    Char(char),         // single character
-    Range(char, char),  // character range inclusive
-    Concat(Box<Regex>, Box<Regex>),  // r1·r2
-    Union(Box<Regex>, Box<Regex>),   // r1|r2
-    Star(Box<Regex>),   // r*
+    Empty,                          // ∅ - matches nothing
+    Epsilon,                        // ε - matches empty string
+    Char(char),                     // single character
+    Range(char, char),              // character range inclusive
+    Concat(Box<Regex>, Box<Regex>), // r1·r2
+    Union(Box<Regex>, Box<Regex>),  // r1|r2
+    Star(Box<Regex>),               // r*
 }
 
-enum MatchStatus {
-    Extensible(Regex), // w matches completely with possible extension
-    Complete, // matches completely and cannot be extended
-    Prefix(Regex), // w is a prefix, here's the derivative
-    NoMatch, // w leads nowhere
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PrefixStatus {
+    Extensible(Regex), // prefix forms a complete match and can extend
+    Complete,          // prefix is a complete match and cannot extend further
+    Prefix(Regex),     // prefix is valid but not yet complete; derivative provided
+    NoMatch,           // prefix invalid
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CharInterval {
+    start: u32,
+    end: u32,
+}
+
+impl CharInterval {
+    fn singleton(c: char) -> Self {
+        Self {
+            start: c as u32,
+            end: c as u32,
+        }
+    }
+
+    fn new(start: char, end: char) -> Self {
+        Self {
+            start: start as u32,
+            end: end as u32,
+        }
+    }
+}
 
 impl Regex {
-
     // ==================== Construction from Patterns ====================
 
     /// Parse a regex pattern string into our internal Regex representation.
@@ -33,23 +54,25 @@ impl Regex {
     /// # Examples
     /// ```
     /// use beam::regex::Regex;
-    /// 
+    ///
     /// let r = Regex::from_str("a+").unwrap();
     /// let r = Regex::from_str("[a-z]{2,5}").unwrap();
     /// ```
     pub fn from_str(pattern: &str) -> Result<Regex, String> {
         use regex_syntax::Parser;
-        let hir = Parser::new()
-            .parse(pattern)
-            .map_err(|e| e.to_string())?;
+        let hir = Parser::new().parse(pattern).map_err(|e| e.to_string())?;
         Ok(Regex::from_hir(&hir))
+    }
+
+    pub fn from_external_regex(re: &ExternalRegex) -> Result<Regex, String> {
+        Self::from_str(re.as_str())
     }
 
     /// Alias for `from_str`.
     pub fn new(pattern: &str) -> Result<Regex, String> {
         Self::from_str(pattern)
     }
-    
+
     /// Convert a regex_syntax HIR into our internal Regex representation.
     ///
     /// This is the core conversion function that maps from regex_syntax's
@@ -67,7 +90,7 @@ impl Regex {
     ///
     /// Unsupported constructs map to `Empty` (matches nothing).
     pub fn from_hir(hir: &regex_syntax::hir::Hir) -> Regex {
-        use regex_syntax::hir::{HirKind, Class};
+        use regex_syntax::hir::{Class, HirKind};
 
         fn range_to_regex(r: &regex_syntax::hir::ClassUnicodeRange) -> Regex {
             if r.start() == r.end() {
@@ -76,14 +99,13 @@ impl Regex {
                 Regex::Range(r.start(), r.end())
             }
         }
-        
+
         match hir.kind() {
             HirKind::Empty => Regex::Epsilon,
             HirKind::Literal(l) => {
                 // Literal is Box<[u8]> - convert UTF-8 bytes to string
                 let bytes = l.0.as_ref();
-                let value = std::str::from_utf8(bytes)
-                    .expect("Invalid UTF-8 in regex literal");
+                let value = std::str::from_utf8(bytes).expect("Invalid UTF-8 in regex literal");
                 Regex::literal(value)
             }
             HirKind::Class(cls) => {
@@ -170,7 +192,10 @@ impl Regex {
                             for _ in min..max {
                                 res = Regex::Concat(
                                     Box::new(res),
-                                    Box::new(Regex::Union(Box::new(Regex::Epsilon), Box::new((*inner).clone())))
+                                    Box::new(Regex::Union(
+                                        Box::new(Regex::Epsilon),
+                                        Box::new((*inner).clone()),
+                                    )),
                                 );
                             }
                         }
@@ -178,25 +203,22 @@ impl Regex {
                     }
                 }
             }
-            HirKind::Concat(xs) => {
-                xs.iter()
-                    .map(Regex::from_hir)
-                    .reduce(|a, b| Regex::Concat(Box::new(a), Box::new(b)))
-                    .unwrap_or(Regex::Epsilon)
-            }
-            HirKind::Alternation(xs) => {
-                xs.iter()
-                    .map(Regex::from_hir)
-                    .reduce(|a, b| Regex::Union(Box::new(a), Box::new(b)))
-                    .unwrap_or(Regex::Empty)
-            }
+            HirKind::Concat(xs) => xs
+                .iter()
+                .map(Regex::from_hir)
+                .reduce(|a, b| Regex::Concat(Box::new(a), Box::new(b)))
+                .unwrap_or(Regex::Epsilon),
+            HirKind::Alternation(xs) => xs
+                .iter()
+                .map(Regex::from_hir)
+                .reduce(|a, b| Regex::Union(Box::new(a), Box::new(b)))
+                .unwrap_or(Regex::Empty),
             HirKind::Capture(cap) => {
                 // Just use the inner expression, ignoring capture group
                 Regex::from_hir(&cap.sub)
             }
         }
     }
-
 
     /// Convert the regex to a pattern string.
     ///
@@ -208,15 +230,28 @@ impl Regex {
             Regex::Epsilon => String::new(),
             Regex::Char(c) => {
                 // Escape special regex characters
-                if matches!(c, '.' | '*' | '+' | '?' | '|' | '(' | ')' | '[' | ']' | '{' | '}' | '\\' | '^' | '$') {
+                if matches!(
+                    c,
+                    '.' | '*'
+                        | '+'
+                        | '?'
+                        | '|'
+                        | '('
+                        | ')'
+                        | '['
+                        | ']'
+                        | '{'
+                        | '}'
+                        | '\\'
+                        | '^'
+                        | '$'
+                ) {
                     format!("\\{}", c)
                 } else {
                     c.to_string()
                 }
             }
-            Regex::Range(start, end) if start == end => {
-                Regex::Char(*start).to_pattern()
-            }
+            Regex::Range(start, end) if start == end => Regex::Char(*start).to_pattern(),
             Regex::Range(start, end) => {
                 format!("[{}-{}]", start, end)
             }
@@ -226,12 +261,10 @@ impl Regex {
             Regex::Union(r1, r2) => {
                 format!("({}|{})", r1.to_pattern(), r2.to_pattern())
             }
-            Regex::Star(r) => {
-                match **r {
-                    Regex::Char(_) | Regex::Range(_, _) => format!("{}*", r.to_pattern()),
-                    _ => format!("({})*", r.to_pattern()),
-                }
-            }
+            Regex::Star(r) => match **r {
+                Regex::Char(_) | Regex::Range(_, _) => format!("{}*", r.to_pattern()),
+                _ => format!("({})*", r.to_pattern()),
+            },
         }
     }
 
@@ -278,10 +311,7 @@ impl Regex {
     /// // Equivalent to "a+"
     /// ```
     pub fn one_or_more(r: Regex) -> Regex {
-        Regex::Concat(
-            Box::new(r.clone()),
-            Box::new(Regex::Star(Box::new(r)))
-        )
+        Regex::Concat(Box::new(r.clone()), Box::new(Regex::Star(Box::new(r))))
     }
 
     /// Create a regex matching zero or one occurrence of the given regex (optional).
@@ -327,10 +357,7 @@ impl Regex {
     /// ```
     pub fn at_least(r: Regex, min: usize) -> Regex {
         let min_part = Self::exactly(r.clone(), min);
-        Regex::Concat(
-            Box::new(min_part),
-            Box::new(Regex::Star(Box::new(r)))
-        )
+        Regex::Concat(Box::new(min_part), Box::new(Regex::Star(Box::new(r))))
     }
 
     /// Create a regex matching between `min` and `max` repetitions (inclusive).
@@ -347,17 +374,17 @@ impl Regex {
         if min == max {
             return Self::exactly(r, min);
         }
-        
+
         // Build: r{min} followed by 0 to (max-min) optional r's
         let required = Self::exactly(r.clone(), min);
         let optional_count = max - min;
-        
+
         // Build (r|ε) repeated (max-min) times
         let optional_part = (0..optional_count)
             .map(|_| Self::optional(r.clone()))
             .reduce(|a, b| Regex::Concat(Box::new(a), Box::new(b)))
             .unwrap_or(Regex::Epsilon);
-        
+
         Regex::Concat(Box::new(required), Box::new(optional_part))
     }
 
@@ -371,7 +398,8 @@ impl Regex {
     /// // Equivalent to "[abc]" or "a|b|c"
     /// ```
     pub fn any_of(chars: &str) -> Regex {
-        chars.chars()
+        chars
+            .chars()
             .map(Regex::Char)
             .reduce(|a, b| Regex::Union(Box::new(a), Box::new(b)))
             .unwrap_or(Regex::Empty)
@@ -417,11 +445,12 @@ impl Regex {
     /// ]);
     /// // Equivalent to "abc"
     /// ```
-    pub fn concat_many<I>(regexes: I) -> Regex 
+    pub fn concat_many<I>(regexes: I) -> Regex
     where
-        I: IntoIterator<Item = Regex>
+        I: IntoIterator<Item = Regex>,
     {
-        regexes.into_iter()
+        regexes
+            .into_iter()
             .reduce(|a, b| Regex::Concat(Box::new(a), Box::new(b)))
             .unwrap_or(Regex::Epsilon)
     }
@@ -437,11 +466,12 @@ impl Regex {
     /// ]);
     /// // Equivalent to "a|b|c"
     /// ```
-    pub fn union_many<I>(regexes: I) -> Regex 
+    pub fn union_many<I>(regexes: I) -> Regex
     where
-        I: IntoIterator<Item = Regex>
+        I: IntoIterator<Item = Regex>,
     {
-        regexes.into_iter()
+        regexes
+            .into_iter()
             .reduce(|a, b| Regex::Union(Box::new(a), Box::new(b)))
             .unwrap_or(Regex::Empty)
     }
@@ -465,18 +495,12 @@ impl Regex {
 
     /// Create a regex matching any letter (a-z or A-Z).
     pub fn alpha() -> Regex {
-        Regex::Union(
-            Box::new(Regex::lowercase()),
-            Box::new(Regex::uppercase())
-        )
+        Regex::Union(Box::new(Regex::lowercase()), Box::new(Regex::uppercase()))
     }
 
     /// Create a regex matching any alphanumeric character (a-z, A-Z, or 0-9).
     pub fn alphanumeric() -> Regex {
-        Regex::Union(
-            Box::new(Regex::alpha()),
-            Box::new(Regex::digit())
-        )
+        Regex::Union(Box::new(Regex::alpha()), Box::new(Regex::digit()))
     }
 
     /// Create a regex matching whitespace characters (space, tab, newline, etc.).
@@ -486,10 +510,7 @@ impl Regex {
 
     /// Create a regex matching word characters (letters, digits, and underscore).
     pub fn word() -> Regex {
-        Regex::Union(
-            Box::new(Regex::alphanumeric()),
-            Box::new(Regex::Char('_'))
-        )
+        Regex::Union(Box::new(Regex::alphanumeric()), Box::new(Regex::Char('_')))
     }
 
     // ==================== Analysis & Operations ====================
@@ -497,7 +518,7 @@ impl Regex {
     pub fn simplify(&self) -> Regex {
         self._simplify()
     }
-    
+
     fn _simplify(&self) -> Regex {
         match self {
             Regex::Concat(r1, r2) => {
@@ -507,7 +528,7 @@ impl Regex {
                     (Regex::Empty, _) | (_, Regex::Empty) => Regex::Empty,
                     (Regex::Epsilon, _) => s2,
                     (_, Regex::Epsilon) => s1,
-                    _ => Regex::Concat(Box::new(s1), Box::new(s2))
+                    _ => Regex::Concat(Box::new(s1), Box::new(s2)),
                 }
             }
             Regex::Union(r1, r2) => {
@@ -517,10 +538,10 @@ impl Regex {
                     (Regex::Empty, _) => s2,
                     (_, Regex::Empty) => s1,
                     _ if s1 == s2 => s1,
-                    _ => Regex::Union(Box::new(s1), Box::new(s2))
+                    _ => Regex::Union(Box::new(s1), Box::new(s2)),
                 }
             }
-            _ => self.clone()
+            _ => self.clone(),
         }
     }
 
@@ -535,7 +556,13 @@ impl Regex {
         match self {
             Empty => Empty,
             Epsilon => Empty,
-            Char(ch) => if *ch==c { Epsilon } else { Empty },
+            Char(ch) => {
+                if *ch == c {
+                    Epsilon
+                } else {
+                    Empty
+                }
+            }
             Range(start, end) => {
                 if c >= *start && c <= *end {
                     Epsilon
@@ -543,37 +570,44 @@ impl Regex {
                     Empty
                 }
             }
-            Union(a,b) => Regex::Union(Box::new((**a).char_derivative(c)), Box::new((**b).char_derivative(c))),
-            Concat(a,b) => {
+            Union(a, b) => Regex::Union(
+                Box::new((**a).char_derivative(c)),
+                Box::new((**b).char_derivative(c)),
+            ),
+            Concat(a, b) => {
                 let da = a.char_derivative(c);
                 if a.nullable() {
                     Regex::Union(
                         Box::new(Regex::Concat(Box::new(da), Box::new((**b).clone()))),
-                        Box::new(b.char_derivative(c))
+                        Box::new(b.char_derivative(c)),
                     )
                 } else {
                     Regex::Concat(Box::new(da), Box::new((**b).clone()))
                 }
             }
-            Star(r) => Regex::Concat(Box::new((**r).char_derivative(c)), Box::new(Star(r.clone()))),
+            Star(r) => Regex::Concat(
+                Box::new((**r).char_derivative(c)),
+                Box::new(Star(r.clone())),
+            ),
         }
     }
 
     pub fn derivative(&self, s: &str) -> Regex {
-        s.chars().fold(self.clone(), |acc, c| acc.char_derivative(c))
+        s.chars()
+            .fold(self.clone(), |acc, c| acc.char_derivative(c))
     }
 
-    fn prefix_match(r: &Regex, word: &str) -> MatchStatus {
-        let deriv = r.derivative(word).simplify();
+    pub fn prefix_match(&self, word: &str) -> PrefixStatus {
+        let deriv = self.derivative(word).simplify();
 
         if deriv.empty() {
-            MatchStatus::NoMatch
+            PrefixStatus::NoMatch
         } else if deriv.null() {
-            MatchStatus::Complete
+            PrefixStatus::Complete
         } else if deriv.nullable() {
-            MatchStatus::Extensible(deriv)
+            PrefixStatus::Extensible(deriv)
         } else {
-            MatchStatus::Prefix(deriv)
+            PrefixStatus::Prefix(deriv)
         }
     }
 
@@ -584,14 +618,10 @@ impl Regex {
             Empty => None,
             Epsilon => Some(String::new()),
             Char(c) => Some(c.to_string()),
-            Concat(a,b) => {
-                Some(format!("{}{}", a.example()?, b.example()?))
-            }
-            Union(a,b) => a.example().or_else(|| b.example()),
+            Concat(a, b) => Some(format!("{}{}", a.example()?, b.example()?)),
+            Union(a, b) => a.example().or_else(|| b.example()),
             Star(_) => Some(String::new()),
-            Range(start, end) => {
-                Some(start.to_string())
-            }
+            Range(start, end) => Some(start.to_string()),
         }
     }
 
@@ -601,10 +631,10 @@ impl Regex {
             Empty => false,
             Epsilon => true,
             Char(_) => false,
-            Concat(a,b) => a.nullable() && b.nullable(),
-            Union(a,b) => a.nullable() || b.nullable(),
+            Concat(a, b) => a.nullable() && b.nullable(),
+            Union(a, b) => a.nullable() || b.nullable(),
             Star(_) => true,
-            Range(..) => false
+            Range(..) => false,
         }
     }
 
@@ -624,7 +654,7 @@ impl Regex {
             Regex::Union(r1, r2) => r1.empty() && r2.empty(),
             Regex::Concat(r1, r2) => r1.empty() || r2.empty(),
             Regex::Star(_) => false,
-            Regex::Range(..) => false
+            Regex::Range(..) => false,
         }
     }
 
@@ -633,25 +663,153 @@ impl Regex {
         self.derivative(input).nullable()
     }
 
+    pub fn contains_regex(&self, other: &Regex) -> bool {
+        // r1 contains r2 if for every string matched by r2, r1 also matches it.
+        // Equivalently, r1 contains r2 if the intersection of r2 and the complement of r1 is empty.
+        let mut queue: VecDeque<(Regex, Regex)> = VecDeque::new();
+        let mut visited: HashSet<(Regex, Regex)> = HashSet::new();
+
+        queue.push_back((self.simplify(), other.simplify()));
+
+        while let Some((super_r, sub_r)) = queue.pop_front() {
+            if !visited.insert((super_r.clone(), sub_r.clone())) {
+                continue;
+            }
+
+            if sub_r.nullable() && !super_r.nullable() {
+                return false;
+            }
+
+            if sub_r.empty() {
+                continue;
+            }
+
+            let intervals = sub_r.leading_char_intervals();
+            if intervals.is_empty() {
+                continue;
+            }
+
+            for interval in intervals {
+                if let Some(c) = char::from_u32(interval.start) {
+                    let next_super = super_r.char_derivative(c).simplify();
+                    let next_sub = sub_r.char_derivative(c).simplify();
+
+                    if next_sub.empty() {
+                        continue;
+                    }
+
+                    queue.push_back((next_super, next_sub));
+                }
+            }
+        }
+
+        true
+    }
+
+    // very inefficient substring search using regex matching
+    // we'll do proper automata-based search later
+    pub fn find(&self, input: &str) -> Option<(usize, usize)> {
+        // Find the longest match starting at position 0
+        // This is important for correct tokenization - we want to match the full identifier "main",
+        // not just the first character "m"
+        // We need to use character indices, not byte indices, to handle Unicode correctly
+        let char_indices: Vec<usize> = input
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain(std::iter::once(input.len()))
+            .collect();
+
+        for i in (1..char_indices.len()).rev() {
+            let end_byte = char_indices[i];
+            let substr = &input[0..end_byte];
+            if self.match_full(substr) {
+                return Some((0, end_byte));
+            }
+        }
+        None
+    }
+
+    fn leading_char_intervals(&self) -> Vec<CharInterval> {
+        let mut intervals = Vec::new();
+        self.collect_leading_char_intervals(&mut intervals);
+        merge_char_intervals(intervals)
+    }
+
+    fn collect_leading_char_intervals(&self, acc: &mut Vec<CharInterval>) {
+        use Regex::*;
+        match self {
+            Empty | Epsilon => {}
+            Char(c) => acc.push(CharInterval::singleton(*c)),
+            Range(start, end) => acc.push(CharInterval::new(*start, *end)),
+            Union(left, right) => {
+                left.collect_leading_char_intervals(acc);
+                right.collect_leading_char_intervals(acc);
+            }
+            Concat(first, second) => {
+                if first.empty() {
+                    return;
+                }
+
+                first.collect_leading_char_intervals(acc);
+                if first.nullable() {
+                    second.collect_leading_char_intervals(acc);
+                }
+            }
+            Star(inner) => inner.collect_leading_char_intervals(acc),
+        }
+    }
+}
+
+fn merge_char_intervals(mut intervals: Vec<CharInterval>) -> Vec<CharInterval> {
+    if intervals.is_empty() {
+        return intervals;
+    }
+
+    intervals.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| a.end.cmp(&b.end)));
+
+    let mut merged: Vec<CharInterval> = Vec::with_capacity(intervals.len());
+    for interval in intervals {
+        if let Some(last) = merged.last_mut() {
+            if interval.start <= last.end {
+                if interval.end > last.end {
+                    last.end = interval.end;
+                }
+            } else {
+                merged.push(interval);
+            }
+        } else {
+            merged.push(interval);
+        }
+    }
+
+    merged
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Regex, MatchStatus};
+    use super::{PrefixStatus, Regex};
 
     #[test]
     fn test_nullable_and_empty() {
         let cases = vec![
-            ("", true, false),       // ε
-            ("a", false, false),     // single char
+            ("", true, false),   // ε
+            ("a", false, false), // single char
             ("a*", true, false),
             ("a|b", false, false),
             ("(ab)*", true, false),
         ];
         for (pattern, expected_nullable, expected_empty) in cases {
             let r = Regex::new(pattern).expect("valid regex pattern");
-            assert_eq!(r.nullable(), expected_nullable, "nullable failed for pattern '{pattern}'");
-            assert_eq!(r.empty(), expected_empty, "empty failed for pattern '{pattern}'");
+            assert_eq!(
+                r.nullable(),
+                expected_nullable,
+                "nullable failed for pattern '{pattern}'"
+            );
+            assert_eq!(
+                r.empty(),
+                expected_empty,
+                "empty failed for pattern '{pattern}'"
+            );
         }
     }
 
@@ -671,28 +829,56 @@ mod tests {
         ];
         for (pattern, input, expected) in cases {
             let r = Regex::new(pattern).expect("valid regex pattern");
-            assert_eq!(r.match_full(input), expected, "match_full failed for pattern '{pattern}' with input '{input}'");
+            assert_eq!(
+                r.match_full(input),
+                expected,
+                "match_full failed for pattern '{pattern}' with input '{input}'"
+            );
         }
     }
 
     #[test]
     fn test_example_matches() {
         let patterns = vec![
-            "", "a", "a*", "a|b", "ab", "(ab)*","(hello|world)*!","[0-9]+","[a-z]{2,5}","(cat|dog|bird)s?","a{2,4}b" 
+            "",
+            "a",
+            "a*",
+            "a|b",
+            "ab",
+            "(ab)*",
+            "(hello|world)*!",
+            "[0-9]+",
+            "[a-z]{2,5}",
+            "(cat|dog|bird)s?",
+            "a{2,4}b",
         ];
         for pattern in patterns {
             let r = Regex::new(pattern).expect("valid regex pattern");
             if let Some(example) = r.example() {
-                assert!(r.match_full(&example), "example '{}' does not match pattern '{}'", example, pattern);
+                assert!(
+                    r.match_full(&example),
+                    "example '{}' does not match pattern '{}'",
+                    example,
+                    pattern
+                );
             } else {
                 // Only Empty should return None
-                assert!(r.empty(), "pattern '{}' returned no example but is not empty", pattern);
+                assert!(
+                    r.empty(),
+                    "pattern '{}' returned no example but is not empty",
+                    pattern
+                );
             }
         }
     }
 
     #[derive(Debug)]
-    enum Expected { Full, No, Prefix(&'static str), Ext(&'static str) }
+    enum Expected {
+        Full,
+        No,
+        Prefix(&'static str),
+        Ext(&'static str),
+    }
 
     #[test]
     fn test_prefix_match_complex() {
@@ -707,7 +893,6 @@ mod tests {
             ("a*b", "aab", Full),
             ("a*b", "ac", No),
             ("a*b", "b", Full),
-            
             // Plus (one or more) patterns
             ("a+b", "", Prefix("a+b")),
             ("a+b", "a", Prefix("a*b")),
@@ -715,7 +900,6 @@ mod tests {
             ("a+b", "ab", Full),
             ("a+b", "aab", Full),
             ("a+b", "b", No),
-            
             // Optional patterns
             ("a?b", "", Prefix("a?b")),
             ("a?b", "a", Prefix("b")),
@@ -723,7 +907,6 @@ mod tests {
             ("a?b", "b", Full),
             ("a?b", "aa", No),
             ("a?b", "c", No),
-            
             // Alternation patterns
             ("(ab|cd)*ef", "", Prefix("(ab|cd)*ef")),
             ("(ab|cd)*ef", "ab", Prefix("(ab|cd)*ef")),
@@ -736,7 +919,6 @@ mod tests {
             ("(ab|cd)*ef", "abcdef", Full),
             ("(ab|cd)*ef", "gh", No),
             ("(ab|cd)*ef", "ae", No),
-            
             // Simple concatenation
             ("abc", "", Prefix("abc")),
             ("abc", "a", Prefix("bc")),
@@ -744,14 +926,12 @@ mod tests {
             ("abc", "abc", Full),
             ("abc", "abcd", No),
             ("abc", "abd", No),
-            
             // Simple alternation
             ("a|b", "", Prefix("a|b")),
             ("a|b", "a", Full),
             ("a|b", "b", Full),
             ("a|b", "c", No),
             ("a|b", "ab", No),
-            
             // Character class patterns
             ("[0-9]+", "", Prefix("[0-9]+")),
             ("[0-9]+", "1", Ext("[0-9]*")),
@@ -760,7 +940,6 @@ mod tests {
             ("[0-9]+", "1234", Ext("[0-9]*")),
             ("[0-9]+", "12345", Ext("[0-9]*")),
             ("[0-9]+", "a", No),
-            
             // Mixed patterns
             ("(hello|world)*!", "", Prefix("(hello|world)*!")),
             ("(hello|world)*!", "hello", Prefix("(hello|world)*!")),
@@ -770,7 +949,6 @@ mod tests {
             ("(hello|world)*!", "hello!", Full),
             ("(hello|world)*!", "helloworld!", Full),
             ("(hello|world)*!", "hi", No),
-            
             // Nested star patterns
             ("(a*b)*c", "", Prefix("(a*b)*c")),
             ("(a*b)*c", "b", Prefix("(a*b)*c")),
@@ -779,7 +957,6 @@ mod tests {
             ("(a*b)*c", "bc", Full),
             ("(a*b)*c", "abc", Full),
             ("(a*b)*c", "d", No),
-            
             // Quantifier patterns
             ("a{2,4}b", "", Prefix("a{2,4}b")),
             ("a{2,4}b", "a", Prefix("a{1,3}b")),
@@ -788,31 +965,27 @@ mod tests {
             ("a{2,4}b", "aaab", Full),
             ("a{2,4}b", "aaaab", Full),
             ("a{2,4}b", "aaaaab", No),
-            
             // Multiple alternatives with concat
             ("(cat|dog|bird)s?", "", Prefix("(cat|dog|bird)s?")),
-            ("(cat|dog|bird)s?", "cat", Ext("s?")),  // derivative is s?
+            ("(cat|dog|bird)s?", "cat", Ext("s?")), // derivative is s?
             ("(cat|dog|bird)s?", "cats", Full),
-            ("(cat|dog|bird)s?", "dog", Ext("s?")),  // derivative is s?
+            ("(cat|dog|bird)s?", "dog", Ext("s?")), // derivative is s?
             ("(cat|dog|bird)s?", "dogs", Full),
-            ("(cat|dog|bird)s?", "bird", Ext("s?")),  // derivative is s?
+            ("(cat|dog|bird)s?", "bird", Ext("s?")), // derivative is s?
             ("(cat|dog|bird)s?", "birds", Full),
             ("(cat|dog|bird)s?", "fish", No),
-            
             // Complex real-world-like patterns
             ("[a-z]+@[a-z]+", "", Prefix("[a-z]+@[a-z]+")),
-            ("[a-z]+@[a-z]+", "user", Prefix("[a-z]*@[a-z]+")),  // derivative is [a-z]*@[a-z]+
+            ("[a-z]+@[a-z]+", "user", Prefix("[a-z]*@[a-z]+")), // derivative is [a-z]*@[a-z]+
             ("[a-z]+@[a-z]+", "user@", Prefix("[a-z]+")),
-            ("[a-z]+@[a-z]+", "user@domain", Ext(("[a-z]*"))),  // derivative is [a-z]*
+            ("[a-z]+@[a-z]+", "user@domain", Ext(("[a-z]*"))), // derivative is [a-z]*
             ("[a-z]+@[a-z]+", "userdomain.com", No),
-            
             // Edge cases with empty matches
             ("a*", "", Ext("a*")),
             ("a*", "a", Ext("a*")),
             ("a*", "aa", Ext("a*")),
             ("a*", "aaa", Ext("a*")),
             ("a*", "b", No),
-            
             ("(a|b)*", "", Ext("(a|b)*")),
             ("(a|b)*", "a", Ext("(a|b)*")),
             ("(a|b)*", "b", Ext("(a|b)*")),
@@ -821,27 +994,37 @@ mod tests {
             ("(a|b)*", "abab", Ext("(a|b)*")),
             ("(a|b)*", "c", No),
         ];
-        
+
         for (pattern, input, expected) in cases {
             let r = Regex::new(pattern).expect("valid regex pattern");
-            let status = Regex::prefix_match(&r, input);
+            let status = r.prefix_match(input);
             match (status, expected) {
-                (MatchStatus::Complete, Full) => {},
-                (MatchStatus::NoMatch, No) => {},
-                (MatchStatus::Prefix(deriv), Prefix(exp_deriv)) => {
+                (PrefixStatus::Complete, Full) => {}
+                (PrefixStatus::NoMatch, No) => {}
+                (PrefixStatus::Prefix(deriv), Prefix(exp_deriv)) => {
                     let exp_r = Regex::new(exp_deriv).expect("expected derivative parse");
-                    assert!(deriv.equiv(&exp_r), "Derivative mismatch for pattern '{pattern}' and input '{input}'.\nGot: {}\nExpected: {}", deriv.to_pattern(), exp_deriv);
+                    assert!(
+                        deriv.equiv(&exp_r),
+                        "Derivative mismatch for pattern '{pattern}' and input '{input}'.\nGot: {}\nExpected: {}",
+                        deriv.to_pattern(),
+                        exp_deriv
+                    );
                 }
-                (MatchStatus::Extensible(deriv), Ext(exp_deriv)) => {
+                (PrefixStatus::Extensible(deriv), Ext(exp_deriv)) => {
                     let exp_r = Regex::new(exp_deriv).expect("expected derivative parse");
-                    assert!(deriv.equiv(&exp_r), "Derivative mismatch for pattern '{pattern}' and input '{input}'.\nGot: {}\nExpected: {}", deriv.to_pattern(), exp_deriv);
+                    assert!(
+                        deriv.equiv(&exp_r),
+                        "Derivative mismatch for pattern '{pattern}' and input '{input}'.\nGot: {}\nExpected: {}",
+                        deriv.to_pattern(),
+                        exp_deriv
+                    );
                 }
                 (s, e) => {
                     let status_name = match s {
-                        MatchStatus::Complete => "FullMatch",
-                        MatchStatus::NoMatch => "NoMatch",
-                        MatchStatus::Prefix(_) => "Prefix",
-                        MatchStatus::Extensible(_) => "Extensible",
+                        PrefixStatus::Complete => "FullMatch",
+                        PrefixStatus::NoMatch => "NoMatch",
+                        PrefixStatus::Prefix(_) => "Prefix",
+                        PrefixStatus::Extensible(_) => "Extensible",
                     };
                     let expected_name = match e {
                         Full => "FullMatch",
@@ -849,7 +1032,9 @@ mod tests {
                         Prefix(_) => "Prefix",
                         Ext(_) => "Extensible",
                     };
-                    panic!("Unexpected match status {status_name} for pattern '{pattern}' with input '{input}' (expected {expected_name})");
+                    panic!(
+                        "Unexpected match status {status_name} for pattern '{pattern}' with input '{input}' (expected {expected_name})"
+                    );
                 }
             }
         }
@@ -899,19 +1084,11 @@ mod tests {
         assert!(!vowels.match_full("b"));
 
         // Test concat_many
-        let abc = Regex::concat_many(vec![
-            Regex::Char('a'),
-            Regex::Char('b'),
-            Regex::Char('c')
-        ]);
+        let abc = Regex::concat_many(vec![Regex::Char('a'), Regex::Char('b'), Regex::Char('c')]);
         assert!(abc.match_full("abc"));
 
         // Test union_many
-        let choices = Regex::union_many(vec![
-            Regex::Char('x'),
-            Regex::Char('y'),
-            Regex::Char('z')
-        ]);
+        let choices = Regex::union_many(vec![Regex::Char('x'), Regex::Char('y'), Regex::Char('z')]);
         assert!(choices.match_full("x"));
         assert!(choices.match_full("y"));
         assert!(!choices.match_full("a"));
@@ -922,7 +1099,11 @@ mod tests {
         // Test digit range
         let digits = Regex::from_str("[0-9]").unwrap();
         for c in '0'..='9' {
-            assert!(digits.match_full(&c.to_string()), "digit '{}' should match [0-9]", c);
+            assert!(
+                digits.match_full(&c.to_string()),
+                "digit '{}' should match [0-9]",
+                c
+            );
         }
         assert!(!digits.match_full("a"));
 
@@ -1216,44 +1397,46 @@ mod tests {
             // Basic
             ("a", vec!["a"], vec!["b", ""]),
             ("abc", vec!["abc"], vec!["ab", "abcd"]),
-            
             // Alternation
             ("a|b|c", vec!["a", "b", "c"], vec!["d", "ab"]),
-            
             // Quantifiers
             ("a*", vec!["", "a", "aaa"], vec!["b"]),
             ("a+", vec!["a", "aaa"], vec!["", "b"]),
             ("a?", vec!["", "a"], vec!["aa"]),
             ("a{3}", vec!["aaa"], vec!["aa", "aaaa"]),
             ("a{2,4}", vec!["aa", "aaa", "aaaa"], vec!["a", "aaaaa"]),
-            
             // Character classes
             ("[abc]", vec!["a", "b", "c"], vec!["d", "ab"]),
             ("[0-9]", vec!["0", "5", "9"], vec!["a", "10"]),
             ("[a-z]", vec!["a", "m", "z"], vec!["A", "0"]),
-            
             // Combinations
             ("(a|b)+", vec!["a", "b", "ab", "ba", "aabb"], vec!["", "c"]),
             ("[0-9]{2,3}", vec!["12", "123"], vec!["1", "1234"]),
-            ("(hello|world)*", vec!["", "hello", "world", "helloworld"], vec!["hi"]),
+            (
+                "(hello|world)*",
+                vec!["", "hello", "world", "helloworld"],
+                vec!["hi"],
+            ),
         ];
 
         for (pattern, should_match, should_not_match) in test_cases {
             let regex = Regex::from_str(pattern).unwrap();
-            
+
             for input in should_match {
                 assert!(
                     regex.match_full(input),
                     "Pattern '{}' should match '{}' but didn't",
-                    pattern, input
+                    pattern,
+                    input
                 );
             }
-            
+
             for input in should_not_match {
                 assert!(
                     !regex.match_full(input),
                     "Pattern '{}' should not match '{}' but did",
-                    pattern, input
+                    pattern,
+                    input
                 );
             }
         }

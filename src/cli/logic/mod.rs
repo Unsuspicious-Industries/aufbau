@@ -3,8 +3,9 @@ use std::fs;
 use std::path::PathBuf;
 
 use anstyle::{AnsiColor, Style};
-use beam::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
-use beam::logic::{ grammar::Grammar, Parser};
+use p7::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use p7::logic::{Parser, grammar::Grammar};
+use p7::regex::Regex as DerivativeRegex;
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -125,7 +126,7 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     let bind = format!("127.0.0.1:{}", args.port);
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
-    beam::viz::serve(&bind);
+    p7::viz::serve(&bind);
 }
 
 fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
@@ -160,7 +161,11 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
         (None, Some(path)) => match fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("error: failed to read input file '{}': {}", path.display(), e);
+                eprintln!(
+                    "error: failed to read input file '{}': {}",
+                    path.display(),
+                    e
+                );
                 std::process::exit(2);
             }
         },
@@ -205,19 +210,12 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
 
     let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
     let _dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
-    
+
     println!("{ok}Found {} completion(s):{ok:#}", candidates.len());
     println!();
 
     for (idx, token) in candidates.iter().enumerate() {
-        match token {
-            beam::logic::partial::ValidToken::Literal(text) => {
-                println!("  {}. '{}'", idx + 1, text);
-            }
-            beam::logic::partial::ValidToken::Regex(pattern) => {
-                println!("  {}. /{}/", idx + 1, pattern);
-            }
-        }
+        println!("  {}. '{}'", idx + 1, token.to_pattern());
     }
 
     std::process::exit(0);
