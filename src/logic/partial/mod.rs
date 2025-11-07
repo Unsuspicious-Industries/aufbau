@@ -1,4 +1,3 @@
-
 pub mod parse;
 pub use parse::*;
 
@@ -7,20 +6,11 @@ pub use production::{PartialProduction, PartialSymbol};
 
 pub mod structure;
 // Export new types with different names to avoid conflicts
-pub use structure::{
-    PartialAST,
-    ParsedNode,
-    NonTerminal,
-    Terminal,
-    Alt,
-    Slot,
-};
+pub use structure::{Alt, NonTerminal, ParsedNode, PartialAST, Slot, Terminal};
 
 pub mod completion;
 pub use completion::*;
 
-pub mod typecheck;
-pub use typecheck::*;
 
 mod tests {
     #[test]

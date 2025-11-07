@@ -1,5 +1,5 @@
 #[cfg(test)]
-use crate::logic::{ grammar::Grammar, Parser};
+use crate::logic::{Parser, grammar::Grammar};
 use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
 
 pub fn c_like_spec() -> String {
@@ -12,7 +12,6 @@ pub fn c_like_spec() -> String {
 
 #[test]
 fn test_pass_clike() {
-    // Enable debug output for this test
     set_debug_level(DebugLevel::Trace);
 
     let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
@@ -23,15 +22,6 @@ fn test_pass_clike() {
     );
     let mut parser = Parser::new(grammar.clone());
     debug_info!("test", "Initialized parser");
-    // Debug: Print all loaded psroductions
-    println!("=== LOADED PRODUCTIONS ===");
-    for (nt, prods) in &grammar.productions {
-        println!("Nonterminal: {}", nt);
-        for (i, prod) in prods.iter().enumerate() {
-            println!("  Production {}: {:?}", i, prod);
-        }
-    }
-    println!("=== END PRODUCTIONS ===");
 
     let exprs = [
         "int main() {return 10;}",
@@ -42,17 +32,12 @@ fn test_pass_clike() {
         "int main() {int x = 0; while (x < 10) {x = x + 1;} return x;}",
         "int main() {for (int i = 0; i < 10; i = i + 1) {} return 0;}",
         "int add(int a, int b) {return a + b;} int main() {return add(3, 4);}",
-        // Test variable declarations
         "int x = 5;",
         "float y;",
         "int main() {int a; int b = 10; return b+a;}",
-        // Test nested blocks and scopes
         "int main() {int x = 1; {int x = 2; x = x + 1;} return x;}",
-        // Test function with no parameters
         "int get_five() {return 5;} int main() {return get_five();}",
-        // Test function with multiple parameters
         "int add(int a, int b) {return a + b;} int main() {return add(3, 4);}",
-        // test complex while if else for nested
         r#"int main() {
             int x = 0;
             for (int i = 0; i < 10; i = i + 1) {
@@ -77,7 +62,6 @@ fn test_pass_clike() {
         let past = parser.partial(expr).unwrap();
         println!("Partial AST: {:#?}", past.root);
 
-
         let ast = past.into_complete().unwrap();
         println!("AST: {}", ast.pretty());
     }
@@ -85,7 +69,6 @@ fn test_pass_clike() {
 
 #[test]
 fn test_fail_clike() {
-    // Enable debug output for this test
     set_debug_level(DebugLevel::Debug);
 
     let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");

@@ -1,6 +1,6 @@
-pub mod engine;
 pub mod logic;
-pub mod ml;
+pub mod regex;
+pub mod validation;
 pub mod viz;
 
 // Re-export debug macros at crate level

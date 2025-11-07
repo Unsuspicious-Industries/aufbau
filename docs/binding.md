@@ -1,4 +1,4 @@
-# Beam Binding System Implementation
+# p7 Binding System Implementation
 
 ## Summary
 
@@ -21,7 +21,8 @@ Binding resolution produces `BoundTypingRule` instances at parse time. The parse
    - Creates the `NonTerminal`
    - Invokes `DefaultBindingResolver::resolve_rule`
    - Attaches the resulting `BoundTypingRule` to `nonterminal.bound_typing_rule` (if well‑formed).
-3. Type checking:
+3. Flatenning : Partial ASTs have a lot of possible parralel productons, needed for syntehsis and stuff. IN theory, with complex programs this number doesnt grow that fast. We can flatten the forest into different trees, with a single "choice" per production. Each tree will have his ouwn rules.
+4. Type checking:
    - `TypeChecker::check_nt` finds `bound_typing_rule` and calls `apply_bound_rule`.
    - Premises evaluated in temporary child contexts; no global side effects until conclusion.
    - Conclusion optionally threads context (Γ_in → Γ_out) and yields a `BoundType`.
@@ -44,29 +45,8 @@ Binding resolution produces `BoundTypingRule` instances at parse time. The parse
 - Better errors: premises and conclusion point to concrete AST nodes (spans available).
 - Extensible: new premise forms or conclusion kinds can be added in the bound model without changing the checker’s core loop.
 
-## Implementation Status
 
-✅ Done:
-- Parser integration (rules bound on-the-fly)
-- Bound rule data structures & display
-- Premise expansion for repeated bindings
-- Type checker support (`apply_bound_rule` implemented)
-- Context transform threading in conclusions
-- Serialization updated (rule names only, no bound internals)
-- Tests exercising bound rule evaluation (incrementally expanding)
-
-🛠 In Progress / Next:
-- Systematic re-binding helper for deserialized ASTs
-- Additional diagnostics for ill-formed rules (stronger `is_well_formed`)
-- Performance profiling on large grammars / deeply nested repetitions
-- Broader test coverage for edge cases (empty repetitions, nested transforms)
-
-🚧 Future:
-- Multiple named contexts (Γ, Δ, …)
-- Polymorphism / type schemes
-- Context joins (e.g. branching constructs)
-
-## Minimal Example
+## Quick Example
 
 Given rule (lambda):
 ```
@@ -85,4 +65,5 @@ Parsing `(λ x : τ₁ . body)` with binding annotations resolves `x`, `body`, `
 A single schematic premise over a variable appearing in a repeated RHS position expands into multiple concrete premises (one per occurrence). If zero occurrences, the premise silently vanishes (matching the optional nature of Kleene-star sections).
 
 ---
-Concise: Binding turns schematic inference rules into ground rules at parse time; the checker only executes ground logic.
+
+TLDR: Binding turns schematic inference rules into ground rules at parse time; the checker only executes ground logic.

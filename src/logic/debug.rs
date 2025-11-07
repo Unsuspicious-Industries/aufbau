@@ -1,4 +1,5 @@
-use crate::logic::ast::{ASTNode, SourceSpan};
+use crate::logic::ast::{ASTNode, SegmentRange};
+use crate::logic::tokenizer::Segment;
 
 use std::fmt::{self, Display};
 
@@ -149,80 +150,65 @@ macro_rules! debug_trace {
 pub struct DebugUtils;
 
 impl DebugUtils {
-    /// Format a span location for debugging
-    pub fn format_span(span: Option<&SourceSpan>) -> String {
-        DEBUG_CONFIG.with(|config| {
-            let config = config.borrow();
-            match (span, &config.input) {
-                (Some(span), Some(input)) => {
-                    // Calculate line and column numbers properly
-                    let chars_before_start: Vec<char> = input.chars().take(span.start).collect();
-                    let start_line = chars_before_start.iter().filter(|&&c| c == '\n').count() + 1;
-                    let start_col = chars_before_start
-                        .iter()
-                        .rev()
-                        .take_while(|&&c| c != '\n')
-                        .count()
-                        + 1;
+    /// Format a segment range location for debugging
+    pub fn format_span(span: Option<&SegmentRange>, segments: &[Segment]) -> String {
+        match span {
+            Some(range) => {
+                let start_seg = segments.get(range.start);
+                let end_seg = segments.get(range.end);
 
-                    let chars_before_end: Vec<char> = input.chars().take(span.end).collect();
-                    let end_line = chars_before_end.iter().filter(|&&c| c == '\n').count() + 1;
-                    let end_col = chars_before_end
-                        .iter()
-                        .rev()
-                        .take_while(|&&c| c != '\n')
-                        .count()
-                        + 1;
-
-                    let snippet = Self::extract_span_text(span, input);
-
-                    format!(
-                        "line {}:{}-{}:{} '{}'",
-                        start_line, start_col, end_line, end_col, snippet
-                    )
-                }
-                (Some(span), None) => {
-                    format!("span {}..{}", span.start, span.end)
-                }
-                (None, _) => "no span".to_string(),
-            }
-        })
-    }
-
-    /// Extract text from a span, handling UTF-8 character boundaries properly
-    fn extract_span_text(span: &SourceSpan, input: &str) -> String {
-        if span.start <= input.len() && span.end <= input.len() && span.start <= span.end {
-            match input.get(span.start..span.end) {
-                Some(text) => text.replace('\n', "\\n").replace('\t', "\\t"),
-                None => {
-                    format!("<invalid UTF-8 span: {}..{}>", span.start, span.end)
+                match (start_seg, end_seg) {
+                    (Some(start), Some(end)) => {
+                        let start_byte = start.start;
+                        let end_byte = end.end;
+                        format!(
+                            "segs[{}..{}] bytes[{}..{}]",
+                            range.start, range.end, start_byte, end_byte
+                        )
+                    }
+                    _ => format!(
+                        "invalid segment range: segs[{}..{}]",
+                        range.start, range.end
+                    ),
                 }
             }
-        } else {
-            format!("<invalid span: {}..{}>", span.start, span.end)
+            None => "no span".to_string(),
         }
     }
 
-    /// Format an error with span information
-    pub fn format_error(node: &ASTNode, message: &str) -> String {
-        let span_info = Self::format_span(node.span());
+    /// Extract text from a segment range
+    pub fn extract_span_text(span: &SegmentRange, segments: &[Segment]) -> String {
+        let mut result = String::new();
+        for idx in span.start..=span.end {
+            if let Some(seg) = segments.get(idx) {
+                result.push_str(&seg.text());
+                if idx < span.end {
+                    result.push(' '); // Add space between segments
+                }
+            }
+        }
+        result
+    }
+
+    /// Format an error with span information (segments required)
+    pub fn format_error_with_segments(
+        node: &ASTNode,
+        message: &str,
+        segments: &[Segment],
+    ) -> String {
+        let span_info = node
+            .span()
+            .map(|s| Self::format_span(Some(s), segments))
+            .unwrap_or_else(|| "no span".to_string());
         format!("{} at {}", message, span_info)
     }
 
-    /// Extract the actual text content from a node using its span
-    pub fn extract_text(node: &ASTNode) -> String {
-        DEBUG_CONFIG.with(|config| {
-            let config = config.borrow();
-            match (node.span(), &config.input) {
-                (Some(span), Some(input)) => Self::extract_span_text(span, input),
-                (Some(span), None) => {
-                    format!("<span {}..{}, no input>", span.start, span.end)
-                }
-                (None, _) => {
-                    format!("<{}>", node.value()) // fallback to node type name
-                }
-            }
-        })
+    /// Extract the actual text content from a node using its span and segments
+    pub fn extract_text(node: &ASTNode, segments: &[Segment]) -> String {
+        match node.span() {
+            Some(span) => Self::extract_span_text(span, segments),
+            None => format!("<{}>", node.value()),
+        }
     }
 
     /// Get a compact representation of a node for debugging
