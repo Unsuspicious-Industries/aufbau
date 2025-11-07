@@ -1,19 +1,28 @@
 //Simple Typed Lambda Calculus (STLC)
 //A minimal functional language with lambda abstractions, applications, and variables
 
-# Grammar for expressions
+// Grammar for expressions
 Identifier ::= /[a-z][a-zA-Z0-9]*/
 Variable(dec) ::= Identifier[x]
 Abstraction(abs) ::= 'λ' Identifier[x] ':' Type[τ] '.' Expression[e]
-Application(app) ::= Expression[e1] Expression[e2]
 
+// Atomic expressions (no left recursion)
+AtomicExpression ::= Variable | '(' Expression ')'
 
-//Grammar for types
+// Application uses right-associativity to avoid left recursion
+Application(app) ::= AtomicExpression[e1] AtomicExpression[e2]+
+
+//Grammar for types  
 BaseType ::= 'Int' | 'Bool'
-FunctionType ::= Type[τ1] '→' Type[τ2]
-Type ::= BaseType | FunctionType | '(' Type ')'
+AtomicType ::= BaseType | '(' Type ')'
 
-Expression ::= Variable | Abstraction | Application | '(' Expression ')'
+// Function types are right-associative to avoid left recursion
+FunctionType ::= AtomicType[τ1] '→' Type[τ2]
+
+Type ::= AtomicType | FunctionType
+
+// Move Expression to be last so it becomes the start symbol
+Expression ::= AtomicExpression | Abstraction | Application
 
 //Variable lookup rule
 x ∈ Γ

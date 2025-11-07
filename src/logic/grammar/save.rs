@@ -107,7 +107,7 @@ impl Grammar {
                 }
             }
             Symbol::Litteral(value) => format!("'{}'", value),
-            Symbol::Regex(value) => format!("/{}/", value),
+            Symbol::Regex(value) => format!("/{}/", value.to_pattern()),
             Symbol::Expression(value) => self.base_symbol_str(value),
         }
     }

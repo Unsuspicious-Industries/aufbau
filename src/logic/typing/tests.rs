@@ -24,22 +24,22 @@ fn test_debug_quoted_type_parsing() {
         // Check if any config operators might interfere
         for op in &cfg.union {
             if case.contains(op) {
-                println!("  ⚠️ Contains union operator: '{}'", op);
+                println!("union operator: '{}'", op);
             }
         }
         for op in &cfg.intersection {
             if case.contains(op) {
-                println!("  ⚠️ Contains intersection operator: '{}'", op);
+                println!("intersection operator: '{}'", op);
             }
         }
         for op in &cfg.negation {
             if case.contains(op) {
-                println!("  ⚠️ Contains negation operator: '{}'", op);
+                println!("negation operator: '{}'", op);
             }
         }
         for op in &cfg.pointer {
             if case.contains(op) {
-                println!("  ⚠️ Contains pointer operator: '{}'", op);
+                println!("pointer operator: '{}'", op);
             }
         }
 
@@ -57,8 +57,8 @@ fn test_debug_quoted_type_parsing() {
         }
 
         match Type::parse(case) {
-            Ok(ty) => println!("  ✅ Parsed as: {:?}", ty),
-            Err(e) => println!("  ❌ Failed: {}", e),
+            Ok(ty) => println!("Parsed as: {:?}", ty),
+            Err(e) => println!("Failed: {}", e),
         }
         println!();
     }

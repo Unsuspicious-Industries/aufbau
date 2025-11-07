@@ -15,6 +15,8 @@ pub struct TypeSyntaxConfig {
     pub array_close: &'static str,
 }
 
+// variable syntax
+// I like types
 impl Default for TypeSyntaxConfig {
     fn default() -> Self {
         Self {
@@ -39,8 +41,6 @@ impl fmt::Display for Type {
             Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
             Type::Tuple(t) => write!(f, "({}...)", t),
-            Type::Pointer(t) => write!(f, "*{}", t),
-            Type::Array(t, size) => write!(f, "{}[{}]", t, size),
             Type::Not(t) => write!(f, "¬{}", t),
             Type::Intersection(l, r) => write!(f, "{} ∧ {}", l, r),
             Type::Union(l, r) => write!(f, "{} ∨ {}", l, r),
@@ -106,13 +106,12 @@ impl Type {
             return Ok(Type::Empty);
         }
 
-        // Parse quoted raw/concrete types (e.g., 'int', 'string') - MOVED UP to avoid conflicts with operators
         if s.starts_with('\'') && s.ends_with('\'') && s.len() > 2 {
             let raw_type = &s[1..s.len() - 1]; // Remove quotes
             return Ok(Type::Raw(raw_type.to_string()));
         }
 
-        // Parse tuple types as meta types: (<id>...)
+        // Parse tuple types (meta types, cool)
         if s.starts_with('(') && s.ends_with("...)") && s.len() > 5 {
             let inner = s[1..s.len() - 4].trim();
             // Check if it's a simple identifier (meta type / tuple)
@@ -130,30 +129,11 @@ impl Type {
             return Self::parse_with_config(&s[1..s.len() - 1], cfg);
         }
 
-        // Parse array types (e.g., "int[10]", "int[]", or "int[N]")
-        if let Some(open_bracket) = s.rfind(cfg.array_open) {
-            if s.ends_with(cfg.array_close) {
-                let base_type = s[..open_bracket].trim();
-                let size_str = s[open_bracket + 1..s.len() - 1].trim();
-                let base = Self::parse_with_config(base_type, cfg)?;
-                let size = size_str.to_string();
-                return Ok(Type::Array(Box::new(base), size));
-            }
-        }
-
         if let Some((pos, tok_len)) = find_last_outside_parens(s, &cfg.arrow) {
             return Ok(Type::Arrow(
                 Box::new(Self::parse_with_config(&s[..pos], cfg)?),
                 Box::new(Self::parse_with_config(&s[pos + tok_len..], cfg)?),
             ));
-        }
-
-        // Parse pointer types (e.g., "*int", "*char")
-        if let Some(tok) = cfg.pointer.iter().find(|t| s.starts_with(**t)) {
-            return Ok(Type::Pointer(Box::new(Self::parse_with_config(
-                &s[tok.len()..],
-                cfg,
-            )?)));
         }
 
         if let Some(tok) = cfg.negation.iter().find(|t| s.starts_with(**t)) {
@@ -175,7 +155,7 @@ impl Type {
             ));
         }
 
-        // Parse context calls (e.g., "Γ(x)", "Delta(y)")
+        // Parse context calls "Γ(x)", "Delta(y)"
         if let Some(paren_start) = s.find('(') {
             if let Some(paren_end) = s.find(')') {
                 if paren_end > paren_start && paren_end == s.len() - 1 {

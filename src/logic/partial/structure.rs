@@ -1,7 +1,12 @@
-use std::collections::HashMap;
-use crate::logic::ast::SourceSpan;
+use serde::Serialize;
+
+use crate::logic::ast::SegmentRange;
+use crate::logic::bind::BoundTypingRule;
 use crate::logic::grammar::{Production, RepetitionKind};
 use crate::logic::partial::production::PartialSymbol;
+use crate::logic::typing::Type;
+use crate::regex::Regex as DerivativeRegex;
+use std::collections::HashMap;
 
 /// Top-level partial AST result
 #[derive(Clone, Debug)]
@@ -11,41 +16,63 @@ pub struct PartialAST {
 }
 
 impl PartialAST {
-    pub fn new(root: NonTerminal, input: String) -> Self { 
-        Self { root, input } 
+    pub fn new(root: NonTerminal, input: String) -> Self {
+        Self { root, input }
     }
-    
-    pub fn root(&self) -> &NonTerminal { 
-        &self.root 
+
+    pub fn root(&self) -> &NonTerminal {
+        &self.root
     }
-    
-    pub fn input(&self) -> &str { 
-        &self.input 
+
+    pub fn input(&self) -> &str {
+        &self.input
     }
-    
-    /// Get type checking errors for this AST
-    pub fn type_errors(&self, grammar: &crate::logic::grammar::Grammar) -> Vec<crate::logic::partial::typecheck::TypeCheckError> {
-        // Clone the AST and filter to collect errors
-        let mut ast_clone = self.clone();
-        crate::logic::partial::typecheck::filter_typeable_ast(&mut ast_clone, grammar)
-    }
-    
-    /// Check if this AST has any type errors
-    pub fn has_type_errors(&self, grammar: &crate::logic::grammar::Grammar) -> bool {
-        !self.type_errors(grammar).is_empty()
-    }
-    
+
+
+
     /// Check if the AST is complete (has at least one complete alternative)
     pub fn complete(&self) -> bool {
         self.root.is_complete()
     }
-    
+
     /// Convert to a completed AST by selecting a fully matched alternative path
     pub fn into_complete(self) -> Result<crate::logic::ast::ASTNode, String> {
         use crate::logic::ast::{ASTNode, NonTerminal as FullNT};
 
         fn pick_complete_alt<'a>(alts: &'a [Alt]) -> Option<&'a Alt> {
             alts.iter().find(|alt| alt.is_complete())
+        }
+
+        fn convert_slot_nodes(slot: &Slot, children: &mut Vec<ASTNode>) -> Result<(), String> {
+            match slot {
+                Slot::Filled { nodes, .. } => {
+                    for node in nodes {
+                        match node {
+                            ParsedNode::Terminal(t) => {
+                                children.push(ASTNode::Terminal(crate::logic::ast::Terminal {
+                                    value: t.value.clone(),
+                                    span: t.span.clone(),
+                                    binding: t.binding.clone(),
+                                }));
+                            }
+                            ParsedNode::NonTerminal(child_nt) => {
+                                children.push(ASTNode::Nonterminal(convert_nonterminal(child_nt)?));
+                            }
+                        }
+                    }
+                }
+                Slot::Partial { .. } => {
+                    return Err("Incomplete symbol in complete alternative".to_string());
+                }
+                Slot::Group { iterations, .. } => {
+                    for iteration in iterations {
+                        for inner_slot in iteration {
+                            convert_slot_nodes(inner_slot, children)?;
+                        }
+                    }
+                }
+            }
+            Ok(())
         }
 
         fn convert_nonterminal(nt: &NonTerminal) -> Result<crate::logic::ast::NonTerminal, String> {
@@ -56,30 +83,41 @@ impl PartialAST {
             let mut indices: Vec<usize> = alt.slots.keys().cloned().collect();
             indices.sort_unstable();
             for idx in indices {
-                if let Some(slots) = alt.slots.get(&idx) {
-                    for slot in slots {
-                        match slot {
-                            Slot::Filled(nodes) => {
-                                for node in nodes {
-                                    match node {
-                                        ParsedNode::Terminal(t) => {
-                                            children.push(ASTNode::Terminal(crate::logic::ast::Terminal {
+                if let Some(slot) = alt.slots.get(&idx) {
+                    match slot {
+                        Slot::Filled { nodes, .. } => {
+                            for node in nodes {
+                                match node {
+                                    ParsedNode::Terminal(t) => {
+                                        children.push(ASTNode::Terminal(
+                                            crate::logic::ast::Terminal {
                                                 value: t.value.clone(),
                                                 span: t.span.clone(),
                                                 binding: t.binding.clone(),
-                                            }));
-                                        }
-                                        ParsedNode::NonTerminal(child_nt) => {
-                                            children.push(ASTNode::Nonterminal(convert_nonterminal(child_nt)?));
-                                        }
+                                            },
+                                        ));
+                                    }
+                                    ParsedNode::NonTerminal(child_nt) => {
+                                        children.push(ASTNode::Nonterminal(convert_nonterminal(
+                                            child_nt,
+                                        )?));
                                     }
                                 }
                             }
-                            Slot::Partial { .. } => {
-                                return Err(format!(
-                                    "Incomplete symbol remained in complete alternative '{}' at slot {}",
-                                    nt.name, idx
-                                ));
+                        }
+                        Slot::Partial { .. } => {
+                            return Err(format!(
+                                "Incomplete symbol remained in complete alternative '{}' at slot {}",
+                                nt.name, idx
+                            ));
+                        }
+                        Slot::Group { iterations, .. } => {
+                            // Flatten all complete iterations
+                            for iteration in iterations {
+                                for inner_slot in iteration {
+                                    // Recursively extract and convert nodes from each slot
+                                    convert_slot_nodes(inner_slot, &mut children)?;
+                                }
                             }
                         }
                     }
@@ -112,37 +150,37 @@ pub struct NonTerminal {
     /// Optional binding from grammar
     pub binding: Option<String>,
     /// Span covering the parsed input
-    pub span: Option<SourceSpan>,
+    pub span: Option<SegmentRange>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Terminal {
     pub value: String,
-    pub span: Option<SourceSpan>,
+    pub span: Option<SegmentRange>,
     pub binding: Option<String>,
+    pub extension: Option<DerivativeRegex>,
 }
-
 
 impl NonTerminal {
     pub fn new(name: String, alts: Vec<Alt>, binding: Option<String>) -> Self {
-        Self { 
-            name, 
-            alts, 
+        Self {
+            name,
+            alts,
             binding,
             span: None,
         }
     }
-    
-    pub fn with_span(mut self, span: Option<SourceSpan>) -> Self {
+
+    pub fn with_span(mut self, span: Option<SegmentRange>) -> Self {
         self.span = span;
         self
     }
-    
+
     /// Check if any alternative is complete
     pub fn is_complete(&self) -> bool {
         self.alts.iter().any(|alt| alt.is_complete())
     }
-    
+
     /// Check if any alternative has progressed
     pub fn is_progressing(&self) -> bool {
         self.alts.iter().any(|alt| alt.is_progressing())
@@ -156,31 +194,77 @@ pub enum ParsedNode {
     NonTerminal(NonTerminal),
 }
 
-
 /// A slot represents the state of one RHS symbol of a production.
 #[derive(Clone, Debug)]
 pub enum Slot {
-    /// Filled – the symbol is satisfied. For plain symbols this means a single
+    /// Filled - the symbol is satisfied. For plain symbols this means a single
     /// `ParsedNode`; for `*` or `+` repetitions it can hold many.
-    Filled(Vec<ParsedNode>),
-    /// Partial – we have consumed some input inside this symbol but it is not yet
+    /// `extensible` is true if the symbol has a repetition and can accept more matches.
+    Filled {
+        nodes: Vec<ParsedNode>,
+        extensible: bool,
+        // type
+        type_constraint: Option<Type>,
+    },
+    /// Partial - we have consumed some input inside this symbol but it is not yet
     /// finished (prefix / in-flight). Contains the partially parsed node (if any)
     /// and metadata about what's incomplete.
+    /// Partial slots are never extensible - they must be completed before extension.
     Partial {
         /// The partially parsed node (e.g., a NonTerminal with some children)
         node: Option<ParsedNode>,
         /// Metadata about what symbol is incomplete
         partial_symbol: PartialSymbol,
+        // type constraint
+        type_constraint: Option<Type>,
+    },
+    /// Group - a grouped sequence of symbols with optional repetition.
+    /// This preserves the structure: repetitions are in the outer Vec,
+    /// and group member boundaries are preserved in the inner Vec<Box<Slot>>.
+    /// `extensible` is true if the group has a repetition and can accept more iterations.
+    ///
+    /// `(A B C)+` parsing "A B C A B ":
+    /// - iterations[0] = [Slot::Filled(A), Slot::Filled(B), Slot::Filled(C)]
+    /// - partial_iteration = Some([Slot::Filled(A), Slot::Filled(B), Slot::Partial(C)])
+    ///
+    Group {
+        /// Complete iterations of the group (all symbols satisfied)
+        iterations: Vec<Vec<Box<Slot>>>,
+        /// Current partial iteration being parsed
+        /// Contains filled slots up to current position + optional partial slot
+        partial_iteration: Option<Vec<Box<Slot>>>,
+        /// Number of symbols in each group (for validation)
+        group_size: usize,
+        /// True if the group has a repetition and can accept more iterations
+        extensible: bool,
     },
 }
 
 impl Slot {
     pub fn is_filled(&self) -> bool {
-        matches!(self, Slot::Filled(_))
+        matches!(self, Slot::Filled { .. })
     }
     pub fn is_partial(&self) -> bool {
         matches!(self, Slot::Partial { .. })
     }
+    pub fn is_extensible(&self) -> bool {
+        match self {
+            Slot::Filled { extensible, .. } | Slot::Group { extensible, .. } => *extensible,
+            Slot::Partial { .. } => false,
+        }
+    }
+    pub fn is_group(&self) -> bool {
+        matches!(self, Slot::Group { .. })
+    }
+}
+
+/// A typing rule reference with optional bound instance
+#[derive(Clone, Debug)]
+pub struct Rule {
+    /// Name of the typing rule from grammar
+    pub name: String,
+    /// Bound instance (set during binding phase)
+    pub bound: Option<BoundTypingRule>,
 }
 
 /// One concrete alternative of a non-terminal.
@@ -189,17 +273,20 @@ pub struct Alt {
     /// Grammar production this alternative implements.
     pub production: Production,
     /// Tape of slots; HashMap allows sparse representation (missing = zero matches for optional symbols)
-    pub slots: HashMap<usize, Vec<Slot>>,
-    /// Span covering consumed bytes from first Filled/Partial to last.
-    pub span: Option<SourceSpan>,
-    /// Typing rule name (copied from production, not bound yet)
-    pub typing_rule: Option<String>,
+    pub slots: HashMap<usize, Slot>,
+    /// Span covering consumed segments from first Filled/Partial to last.
+    pub span: Option<SegmentRange>,
+    /// Typing rule reference (copied from production, bound during binding phase)
+    pub typing_rule: Option<Rule>,
 }
 
 impl Alt {
     pub fn new(production: Production) -> Self {
         Self {
-            typing_rule: production.rule.clone(),
+            typing_rule: production.rule.as_ref().map(|name| Rule {
+                name: name.clone(),
+                bound: None,
+            }),
             production,
             slots: HashMap::new(),
             span: None,
@@ -207,42 +294,53 @@ impl Alt {
     }
 
     // ------------------------
-    // Slot access functions 
+    // Slot access functions
     // ------------------------
-    
-    /// Get slots for a given symbol index (None if no entry = zero matches)
-    pub fn get_slots(&self, idx: usize) -> Option<&Vec<Slot>> {
+
+    /// Get slot for a given symbol index (None if no entry = zero matches)
+    pub fn get_slot(&self, idx: usize) -> Option<&Slot> {
         self.slots.get(&idx)
     }
-    
-    /// Get mutable slots for a given symbol index
-    pub fn get_slots_mut(&mut self, idx: usize) -> &mut Vec<Slot> {
-        self.slots.entry(idx).or_insert_with(Vec::new)
+
+    /// Get mutable slot for a given symbol index
+    pub fn get_slot_mut(&mut self, idx: usize) -> &mut Slot {
+        self.slots.entry(idx).or_insert_with(|| Slot::Filled {
+            nodes: Vec::new(),
+            extensible: false,
+            type_constraint: None,
+        })
     }
-    
-    /// Check if symbol at index has no slots (or all empty Filled slots)
+
+    /// Check if symbol at index has no slot (or empty Filled slot)
     pub fn symbol_empty(&self, idx: usize) -> bool {
-        self.slots.get(&idx).map(|slots| {
-            slots.is_empty() || slots.iter().all(|slot| match slot {
-                Slot::Filled(nodes) => nodes.is_empty(),
+        self.slots
+            .get(&idx)
+            .map(|slot| match slot {
+                Slot::Filled { nodes, .. } => nodes.is_empty(),
                 Slot::Partial { .. } => false,
+                Slot::Group {
+                    iterations,
+                    partial_iteration,
+                    ..
+                } => iterations.is_empty() && partial_iteration.is_none(),
             })
-        }).unwrap_or(true)
+            .unwrap_or(true)
     }
-    
+
     /// Check if symbol at index has a Partial slot (in-flight)
     pub fn symbol_partial(&self, idx: usize) -> bool {
-        self.slots.get(&idx).map(|slots| {
-            slots.iter().any(|slot| slot.is_partial())
-        }).unwrap_or(false)
+        self.slots
+            .get(&idx)
+            .map(|slot| slot.is_partial())
+            .unwrap_or(false)
     }
-    
+
     /// Check if symbol at index is complete (satisfied based on repetition kind)
     pub fn symbol_complete(&self, idx: usize) -> bool {
         let Some(sym) = self.production.rhs.get(idx) else {
             return false;
         };
-        
+
         let rep = sym.repetition();
         match rep {
             Some(RepetitionKind::ZeroOrMore | RepetitionKind::ZeroOrOne) => {
@@ -259,47 +357,73 @@ impl Alt {
             }
         }
     }
-    
+
     /// Add a filled node to symbol at index
     pub fn add_filled(&mut self, idx: usize, node: ParsedNode) {
-        let slots = self.get_slots_mut(idx);
-        // Find or create the Filled slot for this symbol
-        if let Some(Slot::Filled(nodes)) = slots.last_mut() {
-            nodes.push(node);
-        } else {
-            slots.push(Slot::Filled(vec![node]));
+        let slot = self.slots.entry(idx).or_insert_with(|| Slot::Filled {
+            nodes: Vec::new(),
+            extensible: false,
+            type_constraint: None,
+        });
+        match slot {
+            Slot::Filled { nodes, .. } => {
+                nodes.push(node);
+            }
+            _ => {
+                // Replace with a Filled slot containing the node
+                *slot = Slot::Filled {
+                    nodes: vec![node],
+                    extensible: false,
+                    type_constraint: None,
+                };
+            }
         }
     }
-    
+
     /// Set a partial symbol at index (in-flight) with optional partial node
-    pub fn set_partial(&mut self, idx: usize, node: Option<ParsedNode>, partial_symbol: PartialSymbol) {
-        let slots = self.get_slots_mut(idx);
-        slots.push(Slot::Partial { node, partial_symbol });
+    pub fn set_partial(
+        &mut self,
+        idx: usize,
+        node: Option<ParsedNode>,
+        partial_symbol: PartialSymbol,
+    ) {
+        self.slots.insert(
+            idx,
+            Slot::Partial {
+                node,
+                partial_symbol,
+                type_constraint: None,
+            },
+        );
     }
 
     // ------------------------
     // Alt state queries
     // ------------------------
-    
+
     /// Check if this alternative is complete (all symbols satisfied)
     pub fn is_complete(&self) -> bool {
-        self.production.rhs
+        self.production
+            .rhs
             .iter()
             .enumerate()
             .all(|(idx, _)| self.symbol_complete(idx))
     }
-    
+
     /// Check if this alternative has progressed (consumed some input)
     pub fn is_progressing(&self) -> bool {
-        self.slots.values().any(|slots| {
-            !slots.is_empty() && slots.iter().any(|s| match s {
-                Slot::Filled(nodes) => !nodes.is_empty(),
-                Slot::Partial { .. } => true,
-            })
+        self.slots.values().any(|slot| match slot {
+            Slot::Filled { nodes, .. } => !nodes.is_empty(),
+            Slot::Partial { .. } => true,
+            Slot::Group {
+                iterations,
+                partial_iteration,
+                ..
+            } => !iterations.is_empty() || partial_iteration.is_some(),
         })
     }
 
-    /// Get the "cursor" - the index of the first incomplete symbol
+    /// Get the "cursor" - the index of the partial symbol
     pub fn cursor(&self) -> usize {
         for idx in 0..self.production.rhs.len() {
             if !self.symbol_complete(idx) {
@@ -308,22 +432,40 @@ impl Alt {
         }
         self.production.rhs.len()
     }
-    
+
     /// Get all parsed nodes in order (flattening slots)
     pub fn get_all_nodes(&self) -> Vec<&ParsedNode> {
         let mut nodes = Vec::new();
         for idx in 0..self.production.rhs.len() {
-            if let Some(slots) = self.slots.get(&idx) {
-                for slot in slots {
-                    match slot {
-                        Slot::Filled(slot_nodes) => {
-                            nodes.extend(slot_nodes.iter());
-                        }
-                        Slot::Partial { node: Some(n), .. } => {
+            if let Some(slot) = self.slots.get(&idx) {
+                match slot {
+                    Slot::Filled {
+                        nodes: slot_nodes, ..
+                    } => {
+                        nodes.extend(slot_nodes.iter());
+                    }
+                    Slot::Partial { node: n, .. } => {
+                        if let Some(n) = n {
                             nodes.push(n);
                         }
-                        Slot::Partial { node: None, .. } => {
-                            // No node for this partial
+                    }
+                    Slot::Group {
+                        iterations,
+                        partial_iteration,
+                        ..
+                    } => {
+                        // Flatten all complete iterations
+                        for iteration in iterations {
+                            for inner_slot in iteration {
+                                // Recursively extract nodes from each slot
+                                extract_nodes_from_slot(inner_slot, &mut nodes);
+                            }
+                        }
+                        // Also include nodes from partial iteration if any
+                        if let Some(partial) = partial_iteration {
+                            for inner_slot in partial {
+                                extract_nodes_from_slot(inner_slot, &mut nodes);
+                            }
                         }
                     }
                 }
@@ -333,6 +475,37 @@ impl Alt {
     }
 }
 
+/// Helper function to recursively extract nodes from a slot
+fn extract_nodes_from_slot<'a>(slot: &'a Slot, nodes: &mut Vec<&'a ParsedNode>) {
+    match slot {
+        Slot::Filled {
+            nodes: slot_nodes, ..
+        } => {
+            nodes.extend(slot_nodes.iter());
+        }
+        Slot::Partial { node: n, .. } => {
+            if let Some(n) = n {
+                nodes.push(n);
+            }
+        }
+        Slot::Group {
+            iterations,
+            partial_iteration,
+            ..
+        } => {
+            for iteration in iterations {
+                for inner_slot in iteration {
+                    extract_nodes_from_slot(inner_slot, nodes);
+                }
+            }
+            if let Some(partial) = partial_iteration {
+                for inner_slot in partial {
+                    extract_nodes_from_slot(inner_slot, nodes);
+                }
+            }
+        }
+    }
+}
 
 // ------------------------
 // Test helpers
@@ -345,9 +518,9 @@ impl Alt {
 /// Each inner vector enumerates the slots for that symbol in the order they
 /// would appear on the parsing tape.
 ///
-/// * `false` – insert a [`Slot::Filled`] slot containing a single dummy
+/// * `false` - insert a [`Slot::Filled`] slot containing a single dummy
 ///   terminal node.
-/// * `true`  – insert a [`Slot::Partial`] slot representing a symbol that is
+/// * `true`  - insert a [`Slot::Partial`] slot representing a symbol that is
 ///   currently in flight.
 ///
 /// This is intended purely for white-box tests and therefore keeps the
@@ -370,26 +543,33 @@ pub fn dummy_alt(layout: Vec<Vec<bool>>) -> Alt {
     let production = Production { rule: None, rhs };
 
     // Build the slots map according to the requested layout.
-    let mut slots: HashMap<usize, Vec<Slot>> = HashMap::new();
+    let mut slots: HashMap<usize, Slot> = HashMap::new();
     for (idx, kinds) in layout.into_iter().enumerate() {
-        let mut vec = Vec::new();
-        for is_partial in kinds {
-            if is_partial {
-                vec.push(Slot::Partial {
+        // For single slot design, we only use the first element
+        if let Some(&is_partial) = kinds.first() {
+            let slot = if is_partial {
+                Slot::Partial {
                     node: None,
-                    partial_symbol: PartialSymbol::Other {
+                    partial_symbol: PartialSymbol::NonTerminal {
                         symbol_index: idx,
+                        nt: format!("S{}", idx),
                     },
-                });
+                    type_constraint: None,
+                }
             } else {
-                vec.push(Slot::Filled(vec![ParsedNode::Terminal(Terminal {
-                    value: format!("t{}", idx),
-                    span: None,
-                    binding: None,
-                })]));
-            }
+                Slot::Filled {
+                    nodes: vec![ParsedNode::Terminal(Terminal {
+                        value: format!("t{}", idx),
+                        span: None,
+                        binding: None,
+                        extension: None,
+                    })],
+                    extensible: false,
+                    type_constraint: None,
+                }
+            };
+            slots.insert(idx, slot);
         }
-        slots.insert(idx, vec);
     }
 
     Alt {
@@ -399,7 +579,6 @@ pub fn dummy_alt(layout: Vec<Vec<bool>>) -> Alt {
         typing_rule: None,
     }
 }
-
 
 mod tests {
     #[test]
@@ -412,14 +591,14 @@ mod tests {
         assert_eq!(alt.cursor(), 1);
 
         // One symbol, partial
-    let alt = super::dummy_alt(vec![vec![true]]);
+        let alt = super::dummy_alt(vec![vec![true]]);
         assert!(!alt.symbol_empty(0));
         assert!(alt.symbol_partial(0));
         assert!(!alt.symbol_complete(0));
         assert_eq!(alt.cursor(), 0);
 
         // One symbol, empty (no slots)
-    let alt = super::dummy_alt(vec![vec![]]);
+        let alt = super::dummy_alt(vec![vec![]]);
         assert!(alt.symbol_empty(0));
         assert!(!alt.symbol_partial(0));
         assert!(!alt.symbol_complete(0));
@@ -429,16 +608,16 @@ mod tests {
     #[test]
     fn cursor_advances_across_symbols() {
         // Two symbols, first complete, second partial
-    let alt = super::dummy_alt(vec![vec![false], vec![true]]);
+        let alt = super::dummy_alt(vec![vec![false], vec![true]]);
         assert_eq!(alt.cursor(), 1);
         println!("Alt: {:#?}", alt);
 
         // Two symbols, first empty, second filled
-    let alt = super::dummy_alt(vec![vec![], vec![false]]);
+        let alt = super::dummy_alt(vec![vec![], vec![false]]);
         assert_eq!(alt.cursor(), 0);
 
         // Two symbols, both complete
-    let alt = super::dummy_alt(vec![vec![false], vec![false]]);
+        let alt = super::dummy_alt(vec![vec![false], vec![false]]);
         assert_eq!(alt.cursor(), 2);
     }
 }

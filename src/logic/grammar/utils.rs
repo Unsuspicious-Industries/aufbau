@@ -1,5 +1,6 @@
-use super::{RepetitionKind, Symbol};
-use regex::Regex;
+use super::{Grammar, RepetitionKind, Symbol};
+use crate::regex::Regex as DerivativeRegex;
+use regex::Regex as ExternalRegex;
 
 // collection of utils for working with grammar definitions
 pub fn is_regex(pattern: &str) -> bool {
@@ -228,6 +229,14 @@ pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
                     _ => None,
                 };
                 let inner = parse_rhs_with_groups(group_content.trim())?;
+
+                if inner.len() > 1 {
+                    return Err(format!(
+                        "Nested alternatives inside group are not supported: {}",
+                        group_content
+                    ));
+                }
+
                 let inner_seq = if inner.is_empty() {
                     Vec::new()
                 } else {
@@ -306,27 +315,26 @@ pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
     Ok(alternatives)
 }
 
-/// Find special tokens in a right-hand side string.
-pub fn special_tokens(rhs: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    // Regex to capture quoted substrings irrespective of adjacency to parentheses
-    let re = Regex::new(r#"'([^']*)'|"([^"]*)""#).unwrap();
-    for cap in re.captures_iter(rhs) {
-        if let Some(m) = cap.get(1) {
-            // single quoted
-            let v = m.as_str().to_string();
-            if !found.contains(&v) {
-                found.push(v);
-            }
-        } else if let Some(m) = cap.get(2) {
-            // double quoted
-            let v = m.as_str().to_string();
-            if !found.contains(&v) {
-                found.push(v);
+/// Extract special tokens from a symbol (more efficient than parsing RHS string again)
+pub fn extract_special_tokens_from_symbol(symbol: &Symbol, tokens: &mut Vec<String>) {
+    match symbol {
+        Symbol::Litteral(lit) => {
+            if !lit.is_empty() && !tokens.contains(lit) {
+                tokens.push(lit.clone());
             }
         }
+        Symbol::Single { value, .. } => {
+            extract_special_tokens_from_symbol(value, tokens);
+        }
+        Symbol::Group { symbols, .. } => {
+            for sym in symbols {
+                extract_special_tokens_from_symbol(sym, tokens);
+            }
+        }
+        Symbol::Regex(_) | Symbol::Expression(_) => {
+            // Not special tokens
+        }
     }
-    found
 }
 
 /// =========
@@ -350,7 +358,7 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), 
     let mut in_conclusion = false;
 
     // Regex that captures `(name)` only when the parentheses occur at end of string (optional trailing whitespace)
-    let name_at_end = Regex::new(r"\(([^)]+)\)\s*$").unwrap();
+    let name_at_end = ExternalRegex::new(r"\(([^)]+)\)\s*$").unwrap();
 
     for line in lines {
         let trimmed = line.trim();
@@ -383,93 +391,59 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), 
 
     Ok((premises, conclusion, name))
 }
-pub const RELATION_SYMBOLS: [&str; 8] = ["=", "<", "∈", "⊆", "⊂", "⊃", "⊇", ":"];
 
-pub fn parse_judgement(
-    judgment_str: &str,
-) -> Result<(Option<Vec<(String, String)>>, String, String), String> {
-    let parts: Vec<&str> = judgment_str.split('⊢').map(str::trim).collect();
-    if parts.len() != 2 {
-        return Err(format!("Invalid typing judgment format: {}", judgment_str));
-    }
-    let (base, extensions) = parse_context_extensions(parts[0])?;
-    if base != "Γ" {
-        return Err(format!("Context must start with 'Γ', got '{}'", base));
-    }
-    // split the second part into expression and type
-    let expr_parts: Vec<&str> = parts[1].split(':').map(str::trim).collect();
-    if expr_parts.len() != 2 {
-        return Err(format!("Invalid typing judgment format: {}", judgment_str));
-    }
-    Ok((
-        if extensions.is_empty() {
-            None
-        } else {
-            Some(extensions)
-        },
-        expr_parts[0].to_string(),
-        expr_parts[1].to_string(),
-    ))
-}
+// build a big regex to validate tokenizer input
+pub fn build_accepted_tokens_regex(grammar: &Grammar) -> Option<DerivativeRegex> {
+    let mut regexes = Vec::new();
 
-/// Parses a context string like "Γ[x:τ₁][y:τ₂]" into (base_context, Vec<(variable, type)>)
-pub fn parse_context_extensions(
-    context_str: &str,
-) -> Result<(String, Vec<(String, String)>), String> {
-    let context_str = context_str.trim();
-    if !context_str.starts_with("Γ") {
-        return Err(format!(
-            "Context must start with 'Γ', got '{}'",
-            context_str
-        ));
-    }
-    let base = "Γ".to_string();
-    let mut extensions = Vec::new();
-    let re = Regex::new(r"\[([^:\]]+):([^\]]+)\]").unwrap();
-    for cap in re.captures_iter(context_str) {
-        let var = cap.get(1).unwrap().as_str().trim().to_string();
-        let ty = cap.get(2).unwrap().as_str().trim().to_string();
-        if var.is_empty() || ty.is_empty() {
-            return Err(format!(
-                "Invalid context extension format, expected '[var:type]': [{:?}:{:?}]",
-                var, ty
-            ));
-        }
-        extensions.push((var, ty));
-    }
-    Ok((base, extensions))
-}
-
-pub fn parse_membership(membership_str: &str) -> Result<(String, String), String> {
-    let parts: Vec<&str> = membership_str.split('∈').map(str::trim).collect();
-    if parts.len() != 2 {
-        return Err(format!("Invalid membership format: {}", membership_str));
-    }
-    Ok((parts[0].to_string(), parts[1].to_string()))
-}
-
-pub fn parse_type_relation(relation_str: &str) -> Result<(String, String, String), String> {
-    // we should have three parts
-    // left <arbitrary symbols> right
-    let mut left = String::new();
-    let mut right = String::new();
-    let mut relation = String::new();
-    for c in relation_str.chars() {
-        if RELATION_SYMBOLS.contains(&c.to_string().as_str()) {
-            relation.push(c);
-        } else {
-            if relation.is_empty() {
-                left.push(c);
-            } else {
-                right.push(c);
+    // Extract both literal tokens and regex patterns from all productions in a single pass
+    for productions in grammar.productions.values() {
+        for production in productions {
+            for symbol in &production.rhs {
+                collect_token_regexes(symbol, &mut regexes);
             }
         }
     }
-    if relation.is_empty() {
-        return Err(format!("No relation symbol found in: {}", relation_str));
+
+    // If we have no patterns, return None
+    if regexes.is_empty() {
+        return None;
     }
-    if left.is_empty() || right.is_empty() {
-        return Err(format!("Invalid type relation format: {}", relation_str));
+
+    // Build union regex using our custom regex type
+    // Sort and deduplicate for consistency
+    regexes.sort_by(|a, b| a.to_pattern().cmp(&b.to_pattern()));
+    regexes.dedup_by(|a, b| a.equiv(b));
+
+    // The union of the regexes would be the alphabet of accepted tokens
+    // We want the Kleene star of that to accept sequences of tokens
+    let union = DerivativeRegex::union_many(regexes);
+    Some(DerivativeRegex::zero_or_more(union))
+}
+
+/// Recursively collect regex patterns from a symbol
+fn collect_token_regexes(symbol: &Symbol, regexes: &mut Vec<DerivativeRegex>) {
+    match symbol {
+        Symbol::Litteral(lit) => {
+            // Convert literal tokens to regex
+            if !lit.is_empty() {
+                regexes.push(DerivativeRegex::literal(lit));
+            }
+        }
+        Symbol::Regex(derivative_regex) => {
+            // Use the derivative regex directly
+            regexes.push(derivative_regex.clone());
+        }
+        Symbol::Single { value, .. } => {
+            collect_token_regexes(value, regexes);
+        }
+        Symbol::Group { symbols, .. } => {
+            for sym in symbols {
+                collect_token_regexes(sym, regexes);
+            }
+        }
+        Symbol::Expression(_) => {
+            // Expressions are non-terminals, not tokens
+        }
     }
-    Ok((left.trim().to_string(), right.trim().to_string(), relation))
 }
