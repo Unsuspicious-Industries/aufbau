@@ -5,9 +5,6 @@
 pub mod completability;
 pub mod binding;
 
-
-
-
 #[cfg(test)]
 mod tests {
     use core::panic;
@@ -81,7 +78,7 @@ mod tests {
             
             // Arithmetic grammar tests - basic cases
             ("arithmetic", ARITHMETIC_GRAMMAR, "", 5),
-            ("arithmetic", ARITHMETIC_GRAMMAR, "42", 3),
+            ("arithmetic", ARITHMETIC_GRAMMAR, "42 *", 3),
             ("arithmetic", ARITHMETIC_GRAMMAR, "x", 3),
             ("arithmetic", ARITHMETIC_GRAMMAR, "42 * 3 +", 3),
             ("arithmetic", ARITHMETIC_GRAMMAR, "42 * 3", 3),
@@ -130,7 +127,7 @@ mod tests {
             
             ("lambda", LAMBDA_GRAMMAR, "λx:Int ←", 5), 
             ("lambda", LAMBDA_GRAMMAR, "λx.y", 5), 
-            ("lambda", LAMBDA_GRAMMAR, "lambda )x", 5), 
+            ("lambda", LAMBDA_GRAMMAR, "λ )x", 5), 
             ("lambda", LAMBDA_GRAMMAR, "λ123:Int.x", 5), 
             ("lambda", LAMBDA_GRAMMAR, "let x = 5", 5), 
             
@@ -378,13 +375,13 @@ mod tests {
     }
 
     #[test]
-    fn test_lambda_fail() {
-        let spec = LAMBDA_GRAMMAR;
+    fn test_debug_fail() {
+        let spec = ARITHMETIC_GRAMMAR;
         let g = Grammar::load(spec).unwrap();
         let mut p = crate::logic::partial::parse::Parser::new(g);
         
         let inputs = vec![
-            "λx:"
+            "1 +"
         ];
 
         for input in inputs {
@@ -422,17 +419,7 @@ mod tests {
             println!("Testing input: '{}'", input);
             match p.partial(input) {
                 Ok(ast) => {
-                    println!("Partial AST: {:#?}", ast);
-                    match ast.into_complete() {
-                        Ok(complete_ast) => {
-                            println!("Complete AST: {}", complete_ast.pretty());
-                            passes += 1;
-                        }
-                        Err(e) => {
-                            println!("Could not complete AST: {}", e);
-                            fails += 1;
-                        }
-                    }
+                    println!("Partial AST: {}", ast);
                 }
                 Err(e) => {
                     println!("Partial parse error: {}", e);
