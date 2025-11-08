@@ -11,6 +11,8 @@ pub use structure::{Alt, NonTerminal, ParsedNode, PartialAST, Slot, Terminal};
 pub mod completion;
 pub use completion::*;
 
+pub mod display;
+
 
 mod tests {
     #[test]
@@ -25,11 +27,11 @@ mod tests {
         "#;
 
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
-        println!("{:#?}", g);
+        println!("Grammar: {:#?}", g);
         let mut p = crate::logic::partial::Parser::new(g);
         let input = "barcbarc";
         let ast = p.partial(input).unwrap();
-        println!("Partial AST: {:#?}", ast);
+        println!("Partial AST: {}", ast);
         let complete = ast.into_complete().unwrap();
         println!("Complete AST: {}", complete.pretty());
     }
