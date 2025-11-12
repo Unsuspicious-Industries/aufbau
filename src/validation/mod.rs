@@ -98,6 +98,7 @@ mod tests {
             ("lambda", LAMBDA_GRAMMAR, "f x", 5),
             ("lambda", LAMBDA_GRAMMAR, "(x", 6),
             ("lambda", LAMBDA_GRAMMAR, "λx:String.", 5), 
+            ("lambda", LAMBDA_GRAMMAR, "λx:(A->", 5), 
             
             // Pathological grammar tests (limited depth to avoid infinite loops)
             ("pathological", PATHOLOGICAL_GRAMMAR, "", 5),
@@ -130,6 +131,7 @@ mod tests {
             ("lambda", LAMBDA_GRAMMAR, "λ )x", 5), 
             ("lambda", LAMBDA_GRAMMAR, "λ123:Int.x", 5), 
             ("lambda", LAMBDA_GRAMMAR, "let x = 5", 5), 
+            ("lambda", LAMBDA_GRAMMAR, "λx:(A->.", 5), 
             
             // Pathological grammar - invalid starting tokens
             ("pathological", PATHOLOGICAL_GRAMMAR, "c", 5),
@@ -376,12 +378,12 @@ mod tests {
 
     #[test]
     fn test_debug_fail() {
-        let spec = ARITHMETIC_GRAMMAR;
+        let spec = LAMBDA_GRAMMAR;
         let g = Grammar::load(spec).unwrap();
         let mut p = crate::logic::partial::parse::Parser::new(g);
         
         let inputs = vec![
-            "1 +"
+            "λx:(A->"
         ];
 
         for input in inputs {

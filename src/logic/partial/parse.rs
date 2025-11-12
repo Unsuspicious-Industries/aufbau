@@ -441,7 +441,7 @@ impl Parser {
                 // Find the furthest position reached
                 let max_seg = nt_result.alts.iter()
                     .filter_map(|alt| alt.span.as_ref().map(|s| s.end))
-                    .max()
+                     .max()
                     .unwrap_or(segments.len().saturating_sub(1));
                 
                 let next_pos = max_seg + 1;
