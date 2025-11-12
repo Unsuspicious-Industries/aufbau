@@ -1,4 +1,4 @@
-use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
+use crate::{debug_trace, regex::{PrefixStatus, Regex as DerivativeRegex}};
 
 /// A tokenized segment of input with text and position information
 /// Uses byte-based positions and storage to avoid Unicode issues
@@ -74,16 +74,49 @@ impl std::fmt::Display for Segment {
 }
 
 pub struct Tokenizer {
-    special_tokens: Vec<String>,
-    delimiters: Vec<char>,
+    special_tokens: Vec<Vec<u8>>,
+    delimiters: Vec<u8>,
     /// Optional regex to validate that tokens are accepted by the grammar
     validation_regex: Option<DerivativeRegex>,
 }
 
 impl Tokenizer {
+    /// Create a tokenizer from string-based tokens and char delimiters
+    /// Converts strings and chars to their byte representations
     pub fn new(
         special_tokens: Vec<String>,
         delimiters: Vec<char>,
+        validation_regex: Option<DerivativeRegex>,
+    ) -> Self {
+        let special_tokens_bytes = special_tokens
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .collect();
+        
+        // Convert chars to their UTF-8 byte representation
+        // For ASCII chars (0-127), this will be a single byte
+        let mut delimiter_bytes = Vec::new();
+        for ch in delimiters {
+            let mut buf = [0u8; 4];
+            let bytes = ch.encode_utf8(&mut buf).as_bytes();
+            // Only support single-byte delimiters for simplicity
+            if bytes.len() == 1 {
+                delimiter_bytes.push(bytes[0]);
+            }
+            debug_trace!("tokenizer","Delimiter '{}' encoded to bytes: {:?}", ch, bytes);
+        }
+        
+        Self {
+            special_tokens: special_tokens_bytes,
+            delimiters: delimiter_bytes,
+            validation_regex,
+        }
+    }
+
+    /// Create a tokenizer directly from byte-based tokens and delimiters
+    pub fn from_bytes(
+        special_tokens: Vec<Vec<u8>>,
+        delimiters: Vec<u8>,
         validation_regex: Option<DerivativeRegex>,
     ) -> Self {
         Self {
@@ -101,20 +134,20 @@ impl Tokenizer {
 
         while byte_pos < bytes.len() {
             // Try to match a special token at the current position
-            let mut matched: Option<(&str, usize)> = None; // (token_text, byte_len)
+            let mut matched: Option<(&[u8], usize)> = None; // (token_bytes, byte_len)
             for special in &self.special_tokens {
-                let special_bytes = special.as_bytes();
+                let special_bytes = special.as_slice();
                 if byte_pos + special_bytes.len() <= bytes.len()
                     && &bytes[byte_pos..byte_pos + special_bytes.len()] == special_bytes
                 {
-                    matched = Some((special.as_str(), special_bytes.len()));
+                    matched = Some((special_bytes, special_bytes.len()));
                     break;
                 }
             }
-            if let Some((tok, byte_len)) = matched {
+            if let Some((tok_bytes, byte_len)) = matched {
                 let index = segments.len();
                 segments.push(Segment::with_index(
-                    tok.as_bytes().to_vec(),
+                    tok_bytes.to_vec(),
                     byte_pos,
                     byte_pos + byte_len,
                     index,
@@ -123,16 +156,10 @@ impl Tokenizer {
                 continue;
             }
 
-            // Check if current byte starts a delimiter character
-            // We need to decode the UTF-8 character at this position
-            if let Some(ch) = std::str::from_utf8(&bytes[byte_pos..])
-                .ok()
-                .and_then(|s| s.chars().next())
-            {
-                if self.delimiters.contains(&ch) {
-                    byte_pos += ch.len_utf8();
-                    continue;
-                }
+            // Check if current byte is a delimiter (pure byte comparison)
+            if self.delimiters.contains(&bytes[byte_pos]) {
+                byte_pos += 1;
+                continue;
             }
 
             // Otherwise, accumulate a normal token
@@ -140,35 +167,24 @@ impl Tokenizer {
             let mut token_bytes = Vec::new();
 
             while byte_pos < bytes.len() {
-                // Try to decode the next character
-                if let Some(ch) = std::str::from_utf8(&bytes[byte_pos..])
-                    .ok()
-                    .and_then(|s| s.chars().next())
-                {
-                    // Check if it's a delimiter
-                    if self.delimiters.contains(&ch) {
-                        break;
-                    }
-
-                    // Check if a special token starts here
-                    let special_starts_here = self.special_tokens.iter().any(|s| {
-                        let special_bytes = s.as_bytes();
-                        byte_pos + special_bytes.len() <= bytes.len()
-                            && &bytes[byte_pos..byte_pos + special_bytes.len()] == special_bytes
-                    });
-                    if special_starts_here {
-                        break;
-                    }
-
-                    // Add this character to the current token
-                    let char_len = ch.len_utf8();
-                    token_bytes.extend_from_slice(&bytes[byte_pos..byte_pos + char_len]);
-                    byte_pos += char_len;
-                } else {
-                    // Invalid UTF-8, skip this byte
-                    byte_pos += 1;
+                // Check if current byte is a delimiter
+                if self.delimiters.contains(&bytes[byte_pos]) {
                     break;
                 }
+
+                // Check if a special token starts here
+                let special_starts_here = self.special_tokens.iter().any(|s| {
+                    let special_bytes = s.as_slice();
+                    byte_pos + special_bytes.len() <= bytes.len()
+                        && &bytes[byte_pos..byte_pos + special_bytes.len()] == special_bytes
+                });
+                if special_starts_here {
+                    break;
+                }
+
+                // Add this byte to the current token
+                token_bytes.push(bytes[byte_pos]);
+                byte_pos += 1;
             }
 
             if !token_bytes.is_empty() {
@@ -178,6 +194,7 @@ impl Tokenizer {
                 // Validate token if validation regex is provided
                 if let Some(ref validation_regex) = self.validation_regex {
                     let token_text = segment.text();
+                    debug_trace!("tokenizer","Validating token: '{}' against regex: {:?}", token_text, validation_regex.to_pattern());
                     if matches!(
                         validation_regex.prefix_match(&token_text),
                         PrefixStatus::NoMatch
@@ -234,5 +251,38 @@ pub(crate) mod tests {
         assert_eq!(segments[0].end, 3); // "int" ends at 3
         assert_eq!(segments[1].start, 4); // "x" starts at 4
         assert_eq!(segments[1].end, 5); // "x" ends at 5
+    }
+
+    #[test]
+    fn test_byte_based_tokenization() {
+        // Test with multi-byte special tokens and single-byte delimiters
+        let input = "foo->bar+baz";
+        let special_tokens = vec!["->".to_string(), "+".to_string()];
+        let delimiters = vec![' '];
+        let tokenizer = Tokenizer::new(special_tokens, delimiters, None);
+        
+        let segments = tokenizer.tokenize(input).unwrap();
+        let tokens: Vec<_> = segments.iter().map(|s| s.text()).collect();
+        
+        assert_eq!(tokens, vec!["foo", "->", "bar", "+", "baz"]);
+        
+        // Verify all segments use byte-based storage
+        for seg in &segments {
+            assert_eq!(seg.bytes().len(), seg.end - seg.start);
+        }
+    }
+
+    #[test]
+    fn test_direct_byte_api() {
+        // Test the from_bytes API directly
+        let input = "a::b";
+        let special_tokens = vec![b"::".to_vec()];
+        let delimiters = vec![b' '];
+        let tokenizer = Tokenizer::from_bytes(special_tokens, delimiters, None);
+        
+        let segments = tokenizer.tokenize(input).unwrap();
+        let tokens: Vec<_> = segments.iter().map(|s| s.text()).collect();
+        
+        assert_eq!(tokens, vec!["a", "::", "b"]);
     }
 }

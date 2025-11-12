@@ -67,26 +67,10 @@ impl NonTerminal {
             self.alts.len(),
             self.is_complete()
         );
-
-        // If we have at least one complete alternative, only collect from complete ones
-        // (which will return empty unless they have tail repetitions)
-        if self.is_complete() {
-            debug_trace!(
-                "partial.completion",
-                "  Has complete alternative - only collecting from complete alts"
-            );
-            self.alts
-                .iter()
-                .filter(|alt| alt.is_complete())
-                .flat_map(|alt| alt.collect_valid_tokens(grammar))
-                .collect()
-        } else {
-            // No complete alternatives - collect from all
-            self.alts
-                .iter()
-                .flat_map(|alt| alt.collect_valid_tokens(grammar))
-                .collect()
-        }
+        self.alts
+            .iter()
+            .flat_map(|alt| alt.collect_valid_tokens(grammar))
+            .collect()
     }
 }
 
@@ -217,9 +201,15 @@ fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
             // Group's FIRST set is the FIRST of its first symbol
             // (with nullable handling for subsequent symbols if needed)
             let mut tokens = Vec::new();
-            for sym in symbols {
-                tokens.extend(first_set(sym, grammar));
-                if grammar.symbol_nullable(sym) {
+            if symbols.is_empty() {
+                return tokens;
+            }
+            tokens.extend(first_set(&symbols[0], grammar));
+            for i in 1..symbols.len() {
+                // if previous symbol is nullable, include FIRST of this symbol
+                if grammar.symbol_nullable(&symbols[i - 1]) {
+                    tokens.extend(first_set(&symbols[i], grammar));
+                } else {
                     break;
                 }
             }
@@ -277,7 +267,6 @@ mod tests {
     fn test_completions() {
         let spec = r#"
         U ::= 'b' 'a' 'r' 'c' 'b' 'a' 'r' 'c' 'u'
-        O ::= 'o'
         A ::= 'a'
         B ::= 'b' A 'r'
         start ::= U | (B 'c')* | 't'
@@ -290,39 +279,7 @@ mod tests {
         
         println!("Partial AST root: {}", past.root().name);
         println!("Number of alternatives: {}", past.root().alts.len());
-        for (i, alt) in past.root().alts.iter().enumerate() {
-            println!("  Alt {}: complete={}, cursor={}, rhs_len={}, is_progressing={}", 
-                i, alt.is_complete(), alt.cursor(), alt.production.rhs.len(), alt.is_progressing());
-            if let Some(first_sym) = alt.production.rhs.first() {
-                println!("    First symbol: {:?}", first_sym);
-            }
-            println!("    Slots: {:?}", alt.slots.keys().collect::<Vec<_>>());
-            // Check what's in slot 0
-            if let Some(slot) = alt.slots.get(&0) {
-                match slot {
-                    Slot::Filled{nodes,..} => println!("      Slot[0]: Filled with {} nodes", nodes.len()),
-                    Slot::Partial { node, partial_symbol,.. } => {
-                        println!("      Slot[0]: Partial, partial_symbol={:?}", partial_symbol.symbol_index());
-                        if let Some(pnode) = node {
-                            match pnode {
-                                ParsedNode::Terminal(t) => println!("        Partial node: Terminal({})", t.value),
-                                ParsedNode::NonTerminal(nt) => println!("        Partial node: NonTerminal({}, {} alts)", nt.name, nt.alts.len()),
-                            }
-                        } else {
-                            println!("        Partial node: None");
-                        }
-                    }
-                    Slot::Group { iterations, partial_iteration, group_size,.. } => {
-                        println!("      Slot[0]: Group with {} iterations, partial_iteration={:?}, group_size={}",
-                         iterations.len(), 
-                         partial_iteration.as_ref().map(|s| s.iter().count()), 
-                         group_size
-                        );
-                    }
-
-                }
-            }
-        }
+        println!("Alternatives: {}", past.root());
         
         let completions = past.completions(&g);
         println!("Completions: {:?}", completions);
