@@ -2,7 +2,7 @@ use crate::{logic::Parser, logic::grammar::Grammar, set_debug_level};
 use rouille::{Request, Response};
 use serde::Deserialize;
 
-use super::graph::{GraphData, build_graph};
+use super::graph::build_graph;
 
 #[derive(Debug, Deserialize)]
 pub struct GraphRequest {

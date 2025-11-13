@@ -1,8 +1,10 @@
 use super::utils::{
     build_accepted_tokens_regex, extract_special_tokens_from_symbol, parse_inference_rule,
-    parse_nonterminal, parse_production, parse_rhs_with_groups,
+    parse_nonterminal, parse_production,
 };
+use super::desugar::desugarify_rhs;
 use crate::logic::grammar::{Grammar, Production, TypingRule};
+ 
 
 impl Grammar {
     /// Parse the textual specification into a `Grammar`.
@@ -49,8 +51,8 @@ impl Grammar {
                         let (lhs_str, rhs_str) =
                             parse_production(&production_str.replace('\n', " "))?;
                         let (name, rule_name) = parse_nonterminal(&lhs_str)?;
-                        // Use inline group aware parser
-                        let rhs_alternatives = parse_rhs_with_groups(&rhs_str)?;
+                        // Desugar groups and expand OneOrMore before constructing grammar
+                        let desugared = desugarify_rhs(&name, &rhs_str)?;
 
                         // Record first time we see this nonterminal (declaration order)
                         if !nt_order.contains(&name) {
@@ -59,7 +61,7 @@ impl Grammar {
                         }
 
                         // Create productions and extract special tokens from parsed symbols
-                        for alt_symbols in rhs_alternatives {
+                        for alt_symbols in desugared.alternatives {
                             // Extract special tokens from this alternative
                             for symbol in &alt_symbols {
                                 extract_special_tokens_from_symbol(
@@ -77,6 +79,27 @@ impl Grammar {
                                 .entry(name.clone())
                                 .or_default()
                                 .push(production);
+                        }
+
+                        // Add synthetic productions introduced by desugaring
+                        // Note: Don't add synthetic nonterminals to production_order
+                        // because they shouldn't become the start symbol
+                        for (synth_name, rhs) in desugared.synthetic {
+                            if !nt_order.contains(&synth_name) {
+                                nt_order.push(synth_name.clone());
+                                // DO NOT add to grammar.production_order - synthetics are internal
+                            }
+                            for symbol in &rhs {
+                                extract_special_tokens_from_symbol(
+                                    symbol,
+                                    &mut grammar.special_tokens,
+                                );
+                            }
+                            grammar
+                                .productions
+                                .entry(synth_name.clone())
+                                .or_default()
+                                .push(Production { rule: None, rhs });
                         }
                     } else {
                         i += 1;

@@ -1,4 +1,4 @@
-use super::{Grammar, RepetitionKind, Symbol};
+use super::{Grammar, Symbol};
 use crate::logic::typing::Conclusion;
 use std::path::Path;
 
@@ -71,33 +71,14 @@ impl Grammar {
 
     fn format_symbol(&self, symbol: &Symbol) -> String {
         match symbol {
-            Symbol::Group {
-                symbols,
-                repetition,
-            } => {
-                let inner = symbols
-                    .iter()
-                    .map(|s| self.format_symbol(s))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                let rep = match repetition {
-                    Some(RepetitionKind::ZeroOrMore) => "*",
-                    Some(RepetitionKind::OneOrMore) => "+",
-                    Some(RepetitionKind::ZeroOrOne) => "?",
-                    None => "",
-                };
-                format!("({}){}", inner, rep)
-            }
-            Symbol::Single {
-                value,
-                binding,
-                repetition,
-            } => {
+            Symbol::Single { value, binding, repetition } => {
                 let base = self.format_symbol(value);
                 let rep = match repetition {
-                    Some(RepetitionKind::ZeroOrMore) => "*",
-                    Some(RepetitionKind::OneOrMore) => "+",
-                    Some(RepetitionKind::ZeroOrOne) => "?",
+                    Some((0, None)) => "*",
+                    Some((0, Some(1))) => "?",
+                    // We currently only serialize common forms (* and ?).
+                    // Other forms should not appear post-desugaring.
+                    Some(_) => "",
                     None => "",
                 };
                 if let Some(b) = binding {

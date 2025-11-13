@@ -1,17 +1,17 @@
 pub mod parse;
 pub use parse::*;
 
-pub mod production;
-pub use production::{PartialProduction, PartialSymbol};
 
 pub mod structure;
 // Export new types with different names to avoid conflicts
-pub use structure::{Alt, NonTerminal, ParsedNode, PartialAST, Slot, Terminal};
+pub use structure::{Alt, NonTerminal, Node, PartialAST, Slot, Terminal};
 
 pub mod completion;
 pub use completion::*;
 
 pub mod display;
+
+
 
 
 mod tests {

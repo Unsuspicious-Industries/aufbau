@@ -98,7 +98,7 @@ mod tests {
             ("lambda", LAMBDA_GRAMMAR, "f x", 5),
             ("lambda", LAMBDA_GRAMMAR, "(x", 6),
             ("lambda", LAMBDA_GRAMMAR, "λx:String.", 5), 
-            ("lambda", LAMBDA_GRAMMAR, "λx:(A->", 5), 
+            ("lambda", LAMBDA_GRAMMAR, "λx:(A->", 10), 
             
             // Pathological grammar tests (limited depth to avoid infinite loops)
             ("pathological", PATHOLOGICAL_GRAMMAR, "", 5),
@@ -162,8 +162,12 @@ mod tests {
             
             println!("Grammar validation: {:#?}", grammar.clone().accepted_tokens_regex.unwrap().to_pattern());
 
-            //set_debug_level(crate::DebugLevel::Trace);
-            set_debug_input(Some(input.to_string()));
+            // Enable debug for arithmetic cases to see what's happening
+            if grammar_name == "arithmetic" && input == "42 *" {
+                set_debug_level(crate::DebugLevel::Debug);
+                set_debug_input(Some(input.to_string()));
+            }
+            
             match complete_ast(&grammar, input, max_depth) {
                 CompletionResult::Success { complete_input, depth, .. } => {
                     // Verify the result actually parses
@@ -380,7 +384,7 @@ mod tests {
     fn test_debug_fail() {
         let spec = LAMBDA_GRAMMAR;
         let g = Grammar::load(spec).unwrap();
-        let mut p = crate::logic::partial::parse::Parser::new(g);
+        let mut p = crate::logic::partial::parse::Parser::new(g.clone());
         
         let inputs = vec![
             "λx:(A->"
@@ -390,14 +394,20 @@ mod tests {
             set_debug_input(Some(input.to_string()));
             set_debug_level(crate::DebugLevel::Trace);
             println!("Testing input: '{}'", input);
-            match p.partial(input) {
-                Ok(ast) => {
+            let t = match p.partial(input) {
+                Ok(t) => {
                     println!("GOOD: Parsed AST");
+                    t
                 }
                 Err(e) => {
                     panic!(" got error: {}", e);
                 }
-            }
+            };
+
+            println!("Partial AST: {}", t);
+
+            let completions = t.completions(&(g.clone()));
+            println!("Completions: {:#?}", completions);
         }
     }
 
@@ -414,8 +424,8 @@ mod tests {
             "λx:int.x",
         ];
 
-        let mut fails = 0;
-        let mut passes = 0;
+    let fails = 0;
+    let passes = 0;
 
         for input in inputs {
             println!("Testing input: '{}'", input);

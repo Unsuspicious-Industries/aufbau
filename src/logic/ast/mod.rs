@@ -1,8 +1,6 @@
 use super::bind::BoundTypingRule;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::ParsedNode;
 use crate::logic::tokenizer::Segment;
-use crate::logic::{PartialAST, partial};
 use std::collections::HashSet;
 use std::path::Path;
 use std::{fs, io};
@@ -109,7 +107,60 @@ impl NonTerminal {
     pub fn as_node(&self) -> ASTNode {
         ASTNode::Nonterminal(self.clone())
     }
+
+    pub fn from_partial(nt: &crate::logic::partial::NonTerminal) -> Result<Self, String> {
+        let alt = nt.pick_complete_alt()
+            .ok_or_else(|| format!("No complete alternative for nonterminal '{}'", nt.name))?;
+        let mut children: Vec<ASTNode> = Vec::new();
+
+        let mut indices: Vec<usize> = alt.slots.keys().cloned().collect();
+        indices.sort_unstable();
+        for idx in indices {
+            if let Some(slot) = alt.slots.get(&idx) {
+                match slot {
+                    crate::logic::partial::Slot::Filled { nodes, .. } => {
+                        for node in nodes {
+                            match node {
+                                crate::logic::partial::ParsedNode::Terminal(t) => {
+                                    children.push(ASTNode::Terminal(
+                                        crate::logic::ast::Terminal {
+                                            value: t.value.clone(),
+                                            span: t.span.clone(),
+                                            binding: t.binding.clone(),
+                                        },
+                                    ));
+                                }
+                                crate::logic::partial::ParsedNode::NonTerminal(child_nt) => {
+                                    children.push(ASTNode::Nonterminal(NonTerminal::from_partial(
+                                        child_nt,
+                                    )?));
+                                }
+                            }
+                        }
+                    }
+                    crate::logic::partial::Slot::Partial { .. } => {
+                        return Err(format!(
+                            "Incomplete symbol remained in complete alternative '{}' at slot {}",
+                            nt.name, idx
+                        ));
+                    }
+                    
+                }
+            }
+        }
+
+        let full = NonTerminal {
+            value: nt.name.clone(),
+            span: nt.span.clone(),
+            children,
+            binding: nt.binding.clone(),
+            bound_typing_rule: None,
+        };
+
+        Ok(full)
+    }
 }
+
 
 /// Terminal-specific data from an ASTNode
 #[derive(Debug, Clone)]

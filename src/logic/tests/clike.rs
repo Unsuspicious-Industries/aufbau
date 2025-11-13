@@ -1,6 +1,4 @@
-#[cfg(test)]
-use crate::logic::{Parser, grammar::Grammar};
-use crate::{DebugLevel, debug_info, set_debug_input, set_debug_level};
+ 
 
 pub fn c_like_spec() -> String {
     use std::path::Path;
@@ -12,16 +10,16 @@ pub fn c_like_spec() -> String {
 
 #[test]
 fn test_pass_clike() {
-    set_debug_level(DebugLevel::Trace);
+    crate::set_debug_level(crate::DebugLevel::Trace);
 
-    let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
-    debug_info!(
+    let grammar = crate::logic::grammar::Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
+    crate::debug_info!(
         "test",
         "Loaded grammar with {} rules",
         grammar.typing_rules.len()
     );
-    let mut parser = Parser::new(grammar.clone());
-    debug_info!("test", "Initialized parser");
+    let mut parser = crate::logic::Parser::new(grammar.clone());
+    crate::debug_info!("test", "Initialized parser");
 
     let exprs = [
         "int main() {return 10;}",
@@ -55,7 +53,7 @@ fn test_pass_clike() {
     ];
 
     for expr in exprs {
-        set_debug_input(Some(expr.to_string()));
+    crate::set_debug_input(Some(expr.to_string()));
 
         println!("Parsing expression: {}", expr);
         println!("---==---");
@@ -69,16 +67,16 @@ fn test_pass_clike() {
 
 #[test]
 fn test_fail_clike() {
-    set_debug_level(DebugLevel::Debug);
+    crate::set_debug_level(crate::DebugLevel::Debug);
 
-    let grammar = Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
-    debug_info!(
+    let grammar = crate::logic::grammar::Grammar::load(&c_like_spec()).expect("Failed to load C-like grammar");
+    crate::debug_info!(
         "test",
         "Loaded grammar with {} rules",
         grammar.typing_rules.len()
     );
-    let mut parser = Parser::new(grammar.clone());
-    debug_info!("test", "Initialized parser");
+    let mut parser = crate::logic::Parser::new(grammar.clone());
+    crate::debug_info!("test", "Initialized parser");
 
     let exprs = [r#"int main() {
             int x = 0;
@@ -94,7 +92,7 @@ fn test_fail_clike() {
             }"#];
 
     for expr in exprs {
-        set_debug_input(Some(expr.to_string()));
+    crate::set_debug_input(Some(expr.to_string()));
 
         let _ = parser.parse(expr).unwrap_err();
         println!("---");

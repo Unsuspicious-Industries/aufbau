@@ -621,7 +621,7 @@ impl Regex {
             Concat(a, b) => Some(format!("{}{}", a.example()?, b.example()?)),
             Union(a, b) => a.example().or_else(|| b.example()),
             Star(_) => Some(String::new()),
-            Range(start, end) => Some(start.to_string()),
+            Range(start, _) => Some(start.to_string()),
         }
     }
 
@@ -978,7 +978,7 @@ mod tests {
             ("[a-z]+@[a-z]+", "", Prefix("[a-z]+@[a-z]+")),
             ("[a-z]+@[a-z]+", "user", Prefix("[a-z]*@[a-z]+")), // derivative is [a-z]*@[a-z]+
             ("[a-z]+@[a-z]+", "user@", Prefix("[a-z]+")),
-            ("[a-z]+@[a-z]+", "user@domain", Ext(("[a-z]*"))), // derivative is [a-z]*
+            ("[a-z]+@[a-z]+", "user@domain", Ext("[a-z]*")), // derivative is [a-z]*
             ("[a-z]+@[a-z]+", "userdomain.com", No),
             // Edge cases with empty matches
             ("a*", "", Ext("a*")),

@@ -245,30 +245,6 @@ fn scan_slot_bindings(
                 );
             }
         }
-        Slot::Group {
-            iterations,
-            partial_iteration,
-            ..
-        } => {
-            // Scan complete iterations
-            for (iter_idx, iteration) in iterations.iter().enumerate() {
-                for (slot_idx, inner_slot) in iteration.iter().enumerate() {
-                    let mut new_path = path.to_vec();
-                    new_path.push(iter_idx);
-                    new_path.push(slot_idx);
-                    scan_slot_bindings(inner_slot, symbol_index, &new_path, present, symbol_binding)?;
-                }
-            }
-            // Scan partial iteration if present
-            if let Some(partial) = partial_iteration {
-                for (slot_idx, inner_slot) in partial.iter().enumerate() {
-                    let mut new_path = path.to_vec();
-                    new_path.push(iterations.len()); // Use next iteration index
-                    new_path.push(slot_idx);
-                    scan_slot_bindings(inner_slot, symbol_index, &new_path, present, symbol_binding)?;
-                }
-            }
-        }
         _ => {}
     }
     Ok(())
@@ -330,7 +306,7 @@ fn check_completable(
     (completable, missing)
 }
 
-/// Check if a symbol has a specific binding (recursively for Single and Group)
+/// Check if a symbol has a specific binding (recursively for Single)
 fn symbol_has_binding(symbol: &Symbol, binding_name: &str) -> bool {
     match symbol {
         Symbol::Single { value, binding, .. } => {
@@ -338,9 +314,6 @@ fn symbol_has_binding(symbol: &Symbol, binding_name: &str) -> bool {
                 return true;
             }
             symbol_has_binding(value, binding_name)
-        }
-        Symbol::Group { symbols, .. } => {
-            symbols.iter().any(|s| symbol_has_binding(s, binding_name))
         }
         _ => false,
     }
@@ -446,10 +419,7 @@ fn set_slot_type_constraint(slot: &mut Slot, ty: Type) {
         } => {
             *type_constraint = Some(ty);
         }
-        Slot::Group { .. } => {
-            // Groups don't have direct type constraints
-            // Type constraints are applied to inner slots
-        }
+        
     }
 }
 
