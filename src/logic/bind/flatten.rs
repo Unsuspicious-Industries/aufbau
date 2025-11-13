@@ -1,12 +1,5 @@
 use std::collections::HashMap;
-use super::typing::{
-    BoundConclusion, BoundConclusionContext, BoundConclusionKind, BoundPremise, BoundType,
-    BoundTypeAscription, BoundTypeSetting, BoundTypingJudgment, BoundTypingRule,
-};
-
 use crate::logic::partial::{Alt, NonTerminal, ParsedNode, Slot};
-use crate::logic::typing::rule::ConclusionKind;
-use crate::logic::typing::{Type, TypingJudgment, TypingRule};
 
 
 impl NonTerminal {
@@ -80,19 +73,6 @@ fn flatten_alt_single_path(mut alt: Alt) -> Alt {
                     type_constraint: type_constraint.clone(),
                 }
             }
-            Slot::Group {
-                iterations,
-                partial_iteration,
-                group_size,
-                extensible,
-            } => Slot::Group {
-                iterations: flatten_group_iterations_single(iterations),
-                partial_iteration: partial_iteration
-                    .as_ref()
-                    .map(|p| flatten_iteration_single(p)),
-                group_size: *group_size,
-                extensible: *extensible,
-            },
             other => other.clone(),
         };
         alt.slots.insert(*idx, flattened_slot);
@@ -164,7 +144,7 @@ fn rebuild_alt_with_nodes(alt: Alt, nodes: Vec<ParsedNode>) -> Alt {
                         type_constraint: type_constraint.clone(),
                     }
                 }
-                Slot::Partial { partial_symbol, type_constraint, node } => {
+                Slot::Partial { partial_symbol, type_constraint, node: _ } => {
                     let node = node_iter.next();
                     Slot::Partial {
                         node,
@@ -172,34 +152,7 @@ fn rebuild_alt_with_nodes(alt: Alt, nodes: Vec<ParsedNode>) -> Alt {
                         type_constraint: type_constraint.clone(),
                     }
                 }
-                Slot::Group {
-                    iterations,
-                    partial_iteration,
-                    group_size,
-                    extensible,
-                } => {
-                    // For groups, reconstruct iterations with new nodes
-                    let total_nodes_in_group = count_nodes_in_group(iterations, partial_iteration.as_ref());
-                    
-                    // Consume nodes for this group
-                    let group_nodes: Vec<_> = (0..total_nodes_in_group)
-                        .filter_map(|_| node_iter.next())
-                        .collect();
-                    
-                    // Rebuild iterations with new nodes
-                    let (new_iterations, new_partial) = rebuild_group_iterations(
-                        iterations,
-                        partial_iteration.as_ref(),
-                        group_nodes,
-                    );
-                    
-                    Slot::Group {
-                        iterations: new_iterations,
-                        partial_iteration: new_partial,
-                        group_size: *group_size,
-                        extensible: *extensible,
-                    }
-                }
+                
             };
             new_slots.insert(idx, new_slot);
         }
@@ -213,162 +166,7 @@ fn rebuild_alt_with_nodes(alt: Alt, nodes: Vec<ParsedNode>) -> Alt {
     }
 }
 
-/// Count total nodes in a group (iterations + partial iteration)
-fn count_nodes_in_group(
-    iterations: &[Vec<Box<Slot>>],
-    partial_iteration: Option<&Vec<Box<Slot>>>,
-) -> usize {
-    let mut count = 0;
-    
-    for iteration in iterations {
-        for slot in iteration {
-            count += count_nodes_in_slot(slot);
-        }
-    }
-    
-    if let Some(partial) = partial_iteration {
-        for slot in partial {
-            count += count_nodes_in_slot(slot);
-        }
-    }
-    
-    count
-}
-
-/// Count nodes in a single slot
-fn count_nodes_in_slot(slot: &Slot) -> usize {
-    match slot {
-        Slot::Filled { nodes, .. } => nodes.len(),
-        Slot::Partial { node, .. } => if node.is_some() { 1 } else { 0 },
-        Slot::Group { iterations, partial_iteration, .. } => {
-            count_nodes_in_group(iterations, partial_iteration.as_ref())
-        }
-    }
-}
-
-/// Rebuild group iterations with new nodes
-fn rebuild_group_iterations(
-    old_iterations: &[Vec<Box<Slot>>],
-    old_partial: Option<&Vec<Box<Slot>>>,
-    nodes: Vec<ParsedNode>,
-) -> (Vec<Vec<Box<Slot>>>, Option<Vec<Box<Slot>>>) {
-    let mut node_iter = nodes.into_iter();
-    let mut new_iterations = Vec::new();
-    
-    for iteration in old_iterations {
-        let mut new_iteration = Vec::new();
-        for old_slot in iteration {
-            let new_slot = rebuild_slot_with_nodes(old_slot.as_ref(), &mut node_iter);
-            new_iteration.push(Box::new(new_slot));
-        }
-        new_iterations.push(new_iteration);
-    }
-    
-    let new_partial = if let Some(partial) = old_partial {
-        let mut new_partial_iteration = Vec::new();
-        for old_slot in partial {
-            let new_slot = rebuild_slot_with_nodes(old_slot.as_ref(), &mut node_iter);
-            new_partial_iteration.push(Box::new(new_slot));
-        }
-        Some(new_partial_iteration)
-    } else {
-        None
-    };
-    
-    (new_iterations, new_partial)
-}
-
-/// Rebuild a single slot with nodes from the iterator
-fn rebuild_slot_with_nodes<I>(slot: &Slot, node_iter: &mut I) -> Slot 
-where
-    I: Iterator<Item = ParsedNode>
-{
-    match slot {
-        Slot::Filled { extensible, nodes: original_nodes, type_constraint } => {
-            let node_count = original_nodes.len();
-            let new_nodes: Vec<_> = (0..node_count)
-                .filter_map(|_| node_iter.next())
-                .collect();
-            
-            Slot::Filled {
-                nodes: new_nodes,
-                extensible: *extensible,
-                type_constraint: type_constraint.clone(),
-            }
-        }
-        Slot::Partial { partial_symbol, type_constraint, node } => {
-            let node = node_iter.next();
-            Slot::Partial {
-                node,
-                partial_symbol: partial_symbol.clone(),
-                type_constraint: type_constraint.clone(),
-            }
-        }
-        Slot::Group { iterations, partial_iteration, group_size, extensible } => {
-            let total_nodes = count_nodes_in_group(iterations, partial_iteration.as_ref());
-            let group_nodes: Vec<_> = (0..total_nodes)
-                .filter_map(|_| node_iter.next())
-                .collect();
-            
-            let (new_iterations, new_partial) = rebuild_group_iterations(
-                iterations,
-                partial_iteration.as_ref(),
-                group_nodes,
-            );
-            
-            Slot::Group {
-                iterations: new_iterations,
-                partial_iteration: new_partial,
-                group_size: *group_size,
-                extensible: *extensible,
-            }
-        }
-    }
-}
-
-/// Flatten iterations for single-path (no branching).
-fn flatten_group_iterations_single(iterations: &[Vec<Box<Slot>>]) -> Vec<Vec<Box<Slot>>> {
-    iterations.iter()
-        .map(|iteration| flatten_iteration_single(iteration))
-        .collect()
-}
-
-/// Flatten a single iteration for single-path (no branching).
-fn flatten_iteration_single(iteration: &[Box<Slot>]) -> Vec<Box<Slot>> {
-    iteration.iter()
-        .map(|slot| {
-            Box::new(match slot.as_ref() {
-                Slot::Filled { nodes, extensible, type_constraint } => {
-                    let flattened_nodes: Vec<_> = nodes
-                        .iter()
-                        .map(|node| match node {
-                            ParsedNode::Terminal(t) => ParsedNode::Terminal(t.clone()),
-                            ParsedNode::NonTerminal(nt) if nt.alts.len() == 1 => {
-                                let forest = nt.clone().into_forest();
-                                ParsedNode::NonTerminal(forest.into_iter().next().unwrap())
-                            }
-                            ParsedNode::NonTerminal(nt) => ParsedNode::NonTerminal(nt.clone()),
-                        })
-                        .collect();
-                    Slot::Filled {
-                        nodes: flattened_nodes,
-                        extensible: *extensible,
-                        type_constraint: type_constraint.clone(),
-                    }
-                }
-                Slot::Group { iterations, partial_iteration, group_size, extensible } => {
-                    Slot::Group {
-                        iterations: flatten_group_iterations_single(iterations),
-                        partial_iteration: partial_iteration.as_ref().map(|p| flatten_iteration_single(p)),
-                        group_size: *group_size,
-                        extensible: *extensible,
-                    }
-                }
-                other => other.clone(),
-            })
-        })
-        .collect()
-}
+ 
 
 #[cfg(test)]
 mod tests {

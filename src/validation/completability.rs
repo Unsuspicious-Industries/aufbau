@@ -9,13 +9,11 @@
 // This avoids infinite loops on paths that don't terminate while still finding
 // successful completion sequences.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use crate::logic::ast::ASTNode;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::completion::CompletionSet;
 use crate::logic::partial::parse::Parser;
-use crate::logic::partial::PartialAST;
-use crate::{debug_debug, debug_trace, regex};
+use crate::{debug_debug};
 use crate::regex::Regex as DerivativeRegex;
 
 /// Represents a search state in the completion exploration
@@ -176,8 +174,25 @@ fn try_complete_parse(grammar: &Grammar, input: &str) -> Result<ASTNode, String>
 /// Extend input string with a completion token
 fn extend_input(input: &str, token: &DerivativeRegex) -> Result<String, String> {
     match token.example() {
-        Some(e) => Ok(format!("{}{}", input, e)),
-        None => Err("Empty or corrupted regex pattern.".to_string())
+        Some(e) => {
+            // Add a space before the token if the input is non-empty and doesn't already end with whitespace
+            let first = e.chars().next().unwrap_or(' ');
+            if input.is_empty()
+                || input.ends_with(' ')
+                || input.ends_with('\n')
+                || input.ends_with('\t')
+                || !first.is_alphanumeric()
+            {
+                Ok(format!("{}{}", input, e))
+            } else {
+                Ok(format!("{} {}", input, e))
+            }
+        }
+        None => {
+            // Empty regex - this shouldn't happen for valid completion tokens
+            // Skip this token by returning the input unchanged
+            Ok(input.to_string())
+        }
     }
 
 }

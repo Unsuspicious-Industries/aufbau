@@ -1,8 +1,7 @@
 use super::*;
 use crate::debug_trace;
-use crate::logic::grammar::{Grammar, RepetitionKind, Symbol};
+use crate::logic::grammar::{Grammar, Symbol};
 use std::collections::HashSet;
-use std::path::Prefix;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 
 
@@ -17,7 +16,7 @@ impl CompletionSet {
     fn new(mut tokens: Vec<DerivativeRegex>) -> Self {
         // Deduplicate and sort
         let unique: HashSet<_> = tokens.drain(..).collect();
-        let mut tokens: Vec<_> = unique.into_iter().collect();
+        let tokens: Vec<_> = unique.into_iter().collect();
         Self { tokens }
     }
 
@@ -31,7 +30,10 @@ impl CompletionSet {
             .iter()
             .any(|t| match t.prefix_match(text) {
                 PrefixStatus::Extensible(_) | PrefixStatus::Complete | PrefixStatus::Prefix(_) => true,
-                _ => false,
+                PrefixStatus::NoMatch => match DerivativeRegex::from_str(text) {
+                    Ok(parsed) => &parsed == t,
+                    Err(_) => false,
+                },
             })
     }
 }
@@ -86,15 +88,13 @@ impl Alt {
 
         let mut tokens = Vec::new();
         
-        // If complete, check for tail repetition
+        // If complete, collect tokens from any extensible symbols
         if self.is_complete() {
-            if let Some(last_symbol) = self.production.rhs.last() {
-                match last_symbol.repetition() {
-                    Some(RepetitionKind::OneOrMore | RepetitionKind::ZeroOrMore) => {
-                        // Tail repetition: can repeat the last symbol
-                        tokens.extend(first_set(last_symbol, grammar));
+            for idx in 0..self.production.rhs.len() {
+                if self.symbol_extensible(idx) {
+                    if let Some(symbol) = self.production.rhs.get(idx) {
+                        tokens.extend(first_set(symbol, grammar));
                     }
-                    _ => {}
                 }
             }
             return tokens;
@@ -103,15 +103,12 @@ impl Alt {
         // Not complete: get the cursor and find next valid tokens
         let cursor = self.cursor();
         
-        // Special case: check if there are completed repeatable symbols before the cursor
-        // These can be repeated even though we've moved past them
+        // Special case: check if there are completed repeatable or otherwise extensible symbols
+        // before the cursor. These can accept more input even though we've moved past them.
         for idx in 0..cursor {
-            if let Some(symbol) = self.production.rhs.get(idx) {
-                if matches!(symbol.repetition(), Some(RepetitionKind::ZeroOrMore | RepetitionKind::OneOrMore)) {
-                    // This symbol can repeat, add its FIRST set
-                    if self.symbol_complete(idx) {
-                        tokens.extend(first_set(symbol, grammar));
-                    }
+            if self.symbol_extensible(idx) {
+                if let Some(symbol) = self.production.rhs.get(idx) {
+                    tokens.extend(first_set(symbol, grammar));
                 }
             }
         }
@@ -197,24 +194,6 @@ fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
             first_set(value, grammar)
         }
         
-        Symbol::Group { symbols, .. } => {
-            // Group's FIRST set is the FIRST of its first symbol
-            // (with nullable handling for subsequent symbols if needed)
-            let mut tokens = Vec::new();
-            if symbols.is_empty() {
-                return tokens;
-            }
-            tokens.extend(first_set(&symbols[0], grammar));
-            for i in 1..symbols.len() {
-                // if previous symbol is nullable, include FIRST of this symbol
-                if grammar.symbol_nullable(&symbols[i - 1]) {
-                    tokens.extend(first_set(&symbols[i], grammar));
-                } else {
-                    break;
-                }
-            }
-            tokens
-        }
     }
 }
 
@@ -324,7 +303,8 @@ mod tests {
         Literal ::= Number[n]
         Variable ::= Identifier[x]
         AtomicExpr ::= Literal | Variable | '(' Expression ')'
-        BinaryOp ::= AtomicExpr[left] ('+' | '-' | '*' | '/')[op] AtomicExpr[right]
+    Operator ::= '+' | '-' | '*' | '/'
+    BinaryOp ::= AtomicExpr[left] Operator[op] AtomicExpr[right]
         Expression ::= AtomicExpr | BinaryOp
         "#;
 
@@ -357,7 +337,6 @@ mod tests {
         start ::= ('a')? 'b'
         "#;
         let completions = complete(spec, "");
-        println!("{:#?}", completions);
         assert!(completions.matches("a"), "nullable group allows 'a'");
         assert!(completions.matches("b"), "nullable group allows lookahead 'b'");
     }
@@ -623,11 +602,8 @@ mod tests {
         
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        let ast = p.partial("").unwrap();
-        
-        let untyped = ast.completions(&g);
-        
-;
+    let ast = p.partial("").unwrap();
+    let untyped = ast.completions(&g);
         assert!(untyped.matches("[0-9]+"));
     }
     
@@ -725,7 +701,8 @@ mod tests {
         Variable(var) ::= Identifier[x]
         
         AtomicExpr ::= Literal | Variable | '(' Expression ')'
-        BinaryOp(binop) ::= AtomicExpr[left] ('+' | '-' | '*' | '/')[op] AtomicExpr[right]
+    Operator ::= '+' | '-' | '*' | '/'
+    BinaryOp(binop) ::= AtomicExpr[left] Operator[op] AtomicExpr[right]
         
         Expression ::= AtomicExpr | BinaryOp
         "#;

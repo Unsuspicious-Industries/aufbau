@@ -18,8 +18,6 @@ fn format_alt(alt: &super::Alt, indent: usize) -> String {
         result.push_str(&format!("[@{}] ", rule));
     }
     
-    // Get cursor position
-    let cursor = alt.cursor();
     let total_symbols = alt.production.rhs.len();
     
     // Display all slots in order
@@ -42,10 +40,9 @@ fn format_alt(alt: &super::Alt, indent: usize) -> String {
     // Add status indicators
     if alt.is_complete() {
         result.push_str(" ✓");
-    } else if alt.is_progressing() {
-        result.push_str(&format!(" [progress:{}/{}]", cursor, total_symbols));
     } else {
-        result.push_str(" [stopped]");
+        let filled_count = indices.len();
+        result.push_str(&format!(" [progress:{}/{}]", filled_count, total_symbols));
     }
     
     // Show span if present
@@ -61,49 +58,21 @@ fn format_slot(slot: &super::Slot, indent: usize) -> String {
 }
 
 fn format_slot_detailed(slot: &super::Slot, slot_index: usize, indent: usize) -> String {
-    match slot {
-        super::Slot::Filled { nodes, .. } => {
-            if nodes.is_empty() {
-                format!("[{}:empty]", slot_index)
-            } else if nodes.len() == 1 {
-                format!("[{}:{}]", slot_index, format_node(&nodes[0], indent))
-            } else {
-                let inner: Vec<_> = nodes.iter().map(|n| format_node(n, indent)).collect();
-                format!("[{}:[{}]]", slot_index, inner.join(" "))
-            }
-        }
-        super::Slot::Partial { node, partial_symbol, .. } => {
-            if let Some(n) = node {
-                // If we have a node, show what's completed and what's pending
-                format!("[{}:{}+partial:{}]", slot_index, format_node(n, indent), partial_symbol)
-            } else {
-                // No node yet, show what we're waiting for
-                format!("[{}:waiting:{}]", slot_index, partial_symbol)
-            }
-        }
-        super::Slot::Group { iterations, partial_iteration, .. } => {
-            if iterations.is_empty() && partial_iteration.is_none() {
-                format!("[{}:group:empty]", slot_index)
-            } else {
-                let mut parts = Vec::new();
-                for (i, iter) in iterations.iter().enumerate() {
-                    let slots: Vec<_> = iter.iter().map(|s| format_slot(s, indent)).collect();
-                    parts.push(format!("iter{}:[{}]", i, slots.join(" ")));
-                }
-                if let Some(partial) = partial_iteration {
-                    let slots: Vec<_> = partial.iter().map(|s| format_slot(s, indent)).collect();
-                    parts.push(format!("partial:[{}]", slots.join(" ")));
-                }
-                format!("[slot{}:group:[{}]]", slot_index, parts.join(", "))
-            }
-        }
+    let nodes = slot.nodes();
+    if nodes.is_empty() {
+        format!("[{}:empty]", slot_index)
+    } else if nodes.len() == 1 {
+        format!("[{}:{}]", slot_index, format_node(&nodes[0], indent))
+    } else {
+        let inner: Vec<_> = nodes.iter().map(|n| format_node(n, indent)).collect();
+        format!("[{}:[{}]]", slot_index, inner.join(" "))
     }
 }
 
-fn format_node(node: &super::ParsedNode, indent: usize) -> String {
+fn format_node(node: &super::Node, indent: usize) -> String {
     match node {
-        super::ParsedNode::Terminal(t) => t.to_string(),
-        super::ParsedNode::NonTerminal(nt) => {
+        super::Node::Terminal(t) => t.to_string(),
+        super::Node::NonTerminal(nt) => {
             // For nested nonterminals, format with proper indentation
             let mut result = String::new();
             result.push('\n');
@@ -136,20 +105,31 @@ impl Display for super::NonTerminal {
 
 impl Display for super::Terminal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}\"", self.value)?;
-        if self.extension.is_some() {
-            write!(f, "<{}>", self.extension.as_ref().unwrap().to_pattern())?;
+        match self {
+            super::Terminal::Complete { value, extension, .. } => {
+                write!(f, "\"{}\"", value)?;
+                if let Some(ext) = extension {
+                    write!(f, "<{}>", ext.to_pattern())?;
+                }
+                Ok(())
+            }
+            super::Terminal::Partial { value, remainder, .. } => {
+                write!(f, "\"{}\"", value)?;
+                if let Some(rem) = remainder {
+                    write!(f, "~{}", rem.to_pattern())?;
+                }
+                Ok(())
+            }
         }
-        Ok(())
     }
 }
 
 // Simple Display implementations for use in debug/trace output
-impl Display for super::ParsedNode {
+impl Display for super::Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            super::ParsedNode::Terminal(t) => write!(f, "{}", t),
-            super::ParsedNode::NonTerminal(nt) => write!(f, "{}", nt.name),
+            super::Node::Terminal(t) => write!(f, "{}", t),
+            super::Node::NonTerminal(nt) => write!(f, "{}", nt.name),
         }
     }
 }
@@ -166,18 +146,7 @@ impl Display for super::Slot {
     }
 }
 
-impl Display for super::production::PartialSymbol {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            super::production::PartialSymbol::Terminal { derivative, .. } => {
-                write!(f, "{}", derivative.to_pattern())
-            }
-            super::production::PartialSymbol::NonTerminal { nt, .. } => {
-                write!(f, "{}", nt)
-            }
-        }
-    }
-}
+
 
 #[cfg(test)]
 mod tests {

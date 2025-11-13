@@ -1,4 +1,4 @@
-use super::{Grammar, RepetitionKind, Symbol};
+use super::{Grammar, Symbol};
 use crate::regex::Regex as DerivativeRegex;
 use regex::Regex as ExternalRegex;
 
@@ -39,22 +39,27 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
     Ok((nt_str.trim().to_string(), None))
 }
 
-/// Parse repetition suffix from a token and return (base_token, repetition_kind)
-pub fn parse_repetition_suffix(token: &str) -> (String, Option<RepetitionKind>) {
+/// Parse repetition suffix from a token and return (base_token, repetition_range)
+/// Repetition is represented as (min, max) where max=None means unbounded.
+/// Supported suffixes:
+///   * => (0, None)
+///   ? => (0, Some(1))
+///   + => (1, None)  (will be expanded during desugaring)
+pub fn parse_repetition_suffix(token: &str) -> (String, Option<(usize, Option<usize>)>) {
     if token.ends_with('*') {
         (
             token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::ZeroOrMore),
-        )
-    } else if token.ends_with('+') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::OneOrMore),
+            Some((0, None)),
         )
     } else if token.ends_with('?') {
         (
             token[..token.len() - 1].to_string(),
-            Some(RepetitionKind::ZeroOrOne),
+            Some((0, Some(1))),
+        )
+    } else if token.ends_with('+') {
+        (
+            token[..token.len() - 1].to_string(),
+            Some((1, None)),
         )
     } else {
         (token.to_string(), None)
@@ -165,155 +170,7 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
 }
 
 /// Inline-group aware parser. Ignores parentheses that are inside quoted literals.
-pub fn parse_rhs_with_groups(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
-    let mut alternatives: Vec<Vec<Symbol>> = Vec::new();
-    let alt_strings = split_alternatives(rhs)?;
-    for alt in alt_strings
-        .iter()
-        .map(|s| s.trim())
-        .filter(|alt| !alt.is_empty())
-    {
-        let mut symbols_in_alt: Vec<Symbol> = Vec::new();
-        let mut chars = alt.chars().peekable();
-        let mut in_single = false;
-        let mut in_double = false;
-        while let Some(ch) = chars.peek().cloned() {
-            if ch.is_whitespace() {
-                chars.next();
-                continue;
-            }
-            match ch {
-                '\'' => {
-                    in_single = !in_single;
-                }
-                '"' => {
-                    in_double = !in_double;
-                }
-                _ => {}
-            }
-            if ch == '(' && !in_single && !in_double {
-                // real group
-                chars.next(); // consume '('
-                let mut depth = 1usize;
-                let mut group_content = String::new();
-                while let Some(c2) = chars.next() {
-                    if c2 == '(' {
-                        depth += 1;
-                    } else if c2 == ')' {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
-                    }
-                    if depth > 0 {
-                        group_content.push(c2);
-                    }
-                }
-                if depth != 0 {
-                    return Err(format!("Unclosed group in RHS: {}", alt));
-                }
-                // Optional repetition suffix
-                let repetition = match chars.peek().cloned() {
-                    Some('*') => {
-                        chars.next();
-                        Some(RepetitionKind::ZeroOrMore)
-                    }
-                    Some('+') => {
-                        chars.next();
-                        Some(RepetitionKind::OneOrMore)
-                    }
-                    Some('?') => {
-                        chars.next();
-                        Some(RepetitionKind::ZeroOrOne)
-                    }
-                    _ => None,
-                };
-                let inner = parse_rhs_with_groups(group_content.trim())?;
-
-                if inner.len() > 1 {
-                    return Err(format!(
-                        "Nested alternatives inside group are not supported: {}",
-                        group_content
-                    ));
-                }
-
-                let inner_seq = if inner.is_empty() {
-                    Vec::new()
-                } else {
-                    inner.into_iter().next().unwrap()
-                };
-                symbols_in_alt.push(Symbol::group(inner_seq, repetition));
-                continue;
-            }
-            // token path
-            let mut token = String::new();
-            while let Some(c2) = chars.peek().cloned() {
-                if c2.is_whitespace() || (!in_single && !in_double && (c2 == '(' || c2 == ')')) {
-                    break;
-                }
-                token.push(c2);
-                chars.next();
-                if token.starts_with('\'') {
-                    // single quoted literal
-                    while let Some(c3) = chars.next() {
-                        token.push(c3);
-                        if c3 == '\'' {
-                            break;
-                        }
-                    }
-                } else if token.starts_with('"') {
-                    // double quoted literal
-                    while let Some(c3) = chars.next() {
-                        token.push(c3);
-                        if c3 == '"' {
-                            break;
-                        }
-                    }
-                } else if token == "/" {
-                    // regex
-                    while let Some(c3) = chars.next() {
-                        token.push(c3);
-                        if c3 == '/' {
-                            break;
-                        }
-                    }
-                } else if !token.starts_with('\'')
-                    && !token.starts_with('"')
-                    && token.contains('[')
-                    && !token.contains(']')
-                {
-                    while let Some(c3) = chars.next() {
-                        token.push(c3);
-                        if c3 == ']' {
-                            break;
-                        }
-                    }
-                }
-                if chars
-                    .peek()
-                    .map(|c| c.is_whitespace() || *c == '(' || *c == ')')
-                    .unwrap_or(true)
-                {
-                    break;
-                }
-            }
-            if token.is_empty() {
-                chars.next();
-                continue;
-            }
-            let parsed = parse_rhs(&token)?;
-            if parsed.len() != 1 || parsed[0].len() != 1 {
-                return Err(format!(
-                    "Unexpected token decomposition for '{}': parsed={:?}",
-                    token, parsed
-                ));
-            }
-            symbols_in_alt.push(parsed[0][0].clone());
-        }
-        alternatives.push(symbols_in_alt);
-    }
-    Ok(alternatives)
-}
+// parse_rhs_with_groups removed: groups are desugared into synthetic productions during Grammar::load
 
 /// Extract special tokens from a symbol (more efficient than parsing RHS string again)
 pub fn extract_special_tokens_from_symbol(symbol: &Symbol, tokens: &mut Vec<String>) {
@@ -325,11 +182,6 @@ pub fn extract_special_tokens_from_symbol(symbol: &Symbol, tokens: &mut Vec<Stri
         }
         Symbol::Single { value, .. } => {
             extract_special_tokens_from_symbol(value, tokens);
-        }
-        Symbol::Group { symbols, .. } => {
-            for sym in symbols {
-                extract_special_tokens_from_symbol(sym, tokens);
-            }
         }
         Symbol::Regex(_) | Symbol::Expression(_) => {
             // Not special tokens
@@ -436,11 +288,6 @@ fn collect_token_regexes(symbol: &Symbol, regexes: &mut Vec<DerivativeRegex>) {
         }
         Symbol::Single { value, .. } => {
             collect_token_regexes(value, regexes);
-        }
-        Symbol::Group { symbols, .. } => {
-            for sym in symbols {
-                collect_token_regexes(sym, regexes);
-            }
         }
         Symbol::Expression(_) => {
             // Expressions are non-terminals, not tokens

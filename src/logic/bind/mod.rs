@@ -1,4 +1,5 @@
 pub mod flatten;
+#[allow(unused_imports)]
 pub use flatten::*;
 
 pub mod typing;

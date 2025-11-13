@@ -10,6 +10,12 @@ spec grammar + typing rules  → (load) → `Grammar` (productions + `TypingRule
 
 Key invariant: By the time checking starts, every rule the checker sees is ground: all schematic term/type variables resolved to concrete AST nodes and `BoundType` structures.
 
+### Syntactic sugar
+
+While repetition are needed for same level multiple binding type parsing (see [[challenges.md]]), groups and other forms can be considered *syntactic sugar* that desugar into core forms before binding. 
+
+Here, groups are converted to phantom nonterminals that just wrap their contents, and other constructs can be similarly desugared.
+
 ## Components
 
 1. Grammar productions: syntax + optional `(rule RuleName)` annotation.

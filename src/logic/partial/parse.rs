@@ -1,18 +1,16 @@
 
 use std::fmt;
 
-use serde::de;
-use tracing_subscriber::field::debug;
+ 
 
 use crate::{debug_debug, debug_trace};
 use crate::logic::ast::{ASTNode, SegmentRange};
-use crate::logic::grammar::{Grammar, Production, RepetitionKind, Symbol};
+use crate::logic::grammar::{Grammar, Production, Symbol};
 use crate::logic::tokenizer::{Tokenizer, Segment};
-use crate::logic::partial::production::PartialSymbol;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use crate::logic::partial::{
     Alt, 
-    ParsedNode, 
+    Node, 
     PartialAST, 
     NonTerminal,
     Terminal
@@ -25,21 +23,10 @@ impl Segment {
     }
 }
 
-/// Parse result for a symbol
 #[derive(Clone, Debug)]
 pub enum ParseResult {
-    /// Symbol fully matched, advanced position
-    Match {
-        nodes: Vec<ParsedNode>,
-        next_pos: usize,
-    },
-    /// Symbol partially matched (prefix at end of input)
-    Partial {
-        /// The partially parsed node (e.g., a NonTerminal with some children)
-        node: Option<ParsedNode>,
-        partial_symbol: PartialSymbol,
-        pos: usize,
-    },
+    /// Symbol fully or partially matched, advanced position
+    Good(Node),
     /// Symbol failed to match (mismatch)
     Fail,
 }
@@ -47,22 +34,8 @@ pub enum ParseResult {
 impl fmt::Display for ParseResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseResult::Match { nodes, next_pos } => {
-                write!(f, "Match(next_pos={}, nodes=[", next_pos)?;
-                for (i, node) in nodes.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", node)?;
-                }
-                write!(f, "])")
-            }
-            ParseResult::Partial { node, partial_symbol, pos } => {
-                write!(f, "Partial(pos={}, partial_symbol={}", pos, partial_symbol)?;
-                if let Some(n) = node {
-                    write!(f, ", node={}", n)?;
-                }
-                write!(f, ")")
+            ParseResult::Good(node) => {
+                write!(f, "Good(node={})", node)
             }
             ParseResult::Fail => write!(f, "Fail"),
         }
@@ -109,9 +82,12 @@ impl Parser {
         let start_nt = self.grammar.start_nonterminal()
             .ok_or_else(|| "No start nonterminal in grammar".to_string())?;
         
+        debug_debug!("parser2      ", "Start nonterminal: {}", start_nt);
+        
         // Parse from start (allow partial consumption for partial parsing)
-        let root = self.parse_nonterminal(&segments, start_nt, 0, None, true, 0)?;
+        let root = self.parse_nonterminal(&segments, start_nt,  None,0)?;
         if root.alts.is_empty() {
+            debug_debug!("parser2      ", "No alternatives found for start symbol '{}'", start_nt);
             return Err("No valid parse alternatives found".to_string());
         }
 
@@ -133,30 +109,23 @@ impl Parser {
         &self,
         segments: &[Segment],
         nt_name: &str,
-        pos: usize,
         binding: Option<String>,
-        require_full_consumption: bool,
         level: usize,
     ) -> Result<NonTerminal, String> {
         let indent = "  ".repeat(level);
-        debug_trace!("parser2      ", "{}[L{}] Parsing nonterminal '{}' at pos {} (require_full={})", 
-            indent, level, nt_name, pos, require_full_consumption);
+        debug_trace!("parser2      ", "{}[L{}] Parsing nonterminal '{}'", 
+            indent, level, nt_name);
         
         let productions = self.grammar.productions.get(nt_name)
             .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?;
         
         let mut alts = Vec::new();
-        let mut max_pos = pos;
         
         for prod in productions {
-            debug_trace!("parser2      ", "{}[L{}] Trying production: {:?}", indent, level, prod.rhs);
-            
-            match self.parse_production(segments, prod, pos, require_full_consumption, level) {
+            debug_trace!("parser2      ", "{}[L{}] Trying production: {:?}", indent, level, prod.rhs);   
+            match self.parse_production(segments, &prod.rhs,  level) {
                 Ok(Some((alt, end_pos))) => {
                     debug_trace!("parser2      ", "{}[L{}] Production succeeded: complete={}, end_pos={}", indent, level, alt.is_complete(), end_pos);
-                    if end_pos > max_pos {
-                        max_pos = end_pos;
-                    }
                     alts.push(alt);
                 }
                 Ok(None) => {
@@ -167,148 +136,58 @@ impl Parser {
                 }
             }
         }
-        
-        // Compute span from start position to the furthest position reached by any alternative
-        let span = if max_pos > pos {
-            if let (Some(start_seg), Some(end_seg)) = (segments.get(pos), segments.get(max_pos.saturating_sub(1))) {
-                Some(SegmentRange::new(start_seg.index, end_seg.index))
-            } else {
-                Some(SegmentRange::new(pos, max_pos.saturating_sub(1)))
-            }
-        } else {
-            segments.get(pos).map(|seg| seg.seg_range())
-        };
 
-        debug_trace!("parser2      ", "{}[L{}] Finished parsing nonterminal '{}': {} alternatives found with max span {:?}",
-            indent, level, nt_name, alts.len(), span);
+        debug_trace!("parser2      ", "{}[L{}] Finished parsing nonterminal '{}': {} alternatives",
+            indent, level, nt_name, alts.len());
 
         Ok(NonTerminal {
             name: nt_name.to_string(),
             alts,
             binding,
-            span,
         })
     }
 
-    /// Parse a production as sequence of symbols
-    /// Returns Some((alt, end_pos)) on success where end_pos is the position after last consumed segment
     fn parse_production(
         &self,
         segments: &[Segment],
-        prod: &Production,
-        start_pos: usize,
-        require_full_consumption: bool,
+        symbols: &[Symbol],
         level: usize,
-    ) -> Result<Option<(Alt, usize)>, String> {
-        let mut alt = Alt::new(prod.clone());
-        let mut pos = start_pos;
-        let mut had_progress = false;
-        let mut stopped_due_to_partial = false;
+    ) -> Result<Option<Vec<Node>>, String> {
         
-        for (sym_idx, symbol) in prod.rhs.iter().enumerate() {
-            match self.parse_symbol(segments, symbol, sym_idx, pos, level)? {
-                ParseResult::Match { nodes, next_pos } => {
-                    debug_trace!("parser2.prod ", "{}[L{}] Full Symbol matched, advancing to pos {}", "  ".repeat(level), level, next_pos);
-                    // Symbol matched, add to filled slot
-                    for node in nodes {
-                        alt.add_filled(sym_idx, node);
-                        had_progress = true;
+        if symbols.is_empty() { return Ok(None); }
+        match self.parse_symbol(segments, &symbols[0],  level)? {
+            ParseResult::Good(node) => {
+                match node {
+                    Node::Terminal(terminal) => {
+                        return Ok(Some(vec![Node::Terminal(terminal)]));
                     }
-                    pos = next_pos;
-                }
-                ParseResult::Partial { node, partial_symbol, pos: partial_pos } => {
-                    debug_trace!("partial","Partial match found: {:?} until {:?}", partial_symbol, partial_pos);
-                    // Symbol partially matched at end of input
-                    // The node is already parsed and included in ParseResult
-                    alt.set_partial(sym_idx, node, partial_symbol);
-                    pos = partial_pos;
-                    had_progress = true;
-                    stopped_due_to_partial = true;
-                    // Can't continue past partial symbol
-                    break;
-                }
-                ParseResult::Fail => {
-                    // Mismatch: this production fails completely if we haven't made progress
-                    if !had_progress {
-                        return Ok(None);
+                    Node::NonTerminal(nonterminal) => {
+                        for alt in &nonterminal.alts {
+
+                        }
                     }
-                    // If we had progress, we stop here with partial
-                    break;
                 }
             }
+            ParseResult::Fail => return Ok(None),
         }
-        
-        // Compute span
-        if pos > start_pos {
-            if let (Some(start_seg), Some(end_seg)) = (segments.get(start_pos), segments.get(pos.saturating_sub(1))) {
-                alt.span = Some(SegmentRange::new(start_seg.index, end_seg.index));
-            }
-        }
-        
-        let alt_complete = alt.is_complete();
-
-        let indent = "  ".repeat(level);
-        debug_trace!("parser2.prod ", "{}[L{}] Production result: pos={}, segments.len={}, stopped_due_to_partial={}, alt={}, had_progress={}, require_full={} '{}'",
-            indent, level, pos, segments.len(), stopped_due_to_partial, alt, had_progress, require_full_consumption,segments.iter().map(|s| s.text()).collect::<Vec<_>>().join(" "));
-
-
-        // At the top level, reject alternatives that leave unconsumed tokens.
-        // This ensures we only accept parses that consume the entire input.
-        // For nested parses, we allow partial consumption since the parent will continue.
-        // also reject unconsumed if we stopped due to partial match
-        if (require_full_consumption || stopped_due_to_partial) && pos < segments.len() {
-            debug_trace!("parser2.prod ", "{}[L{}] Rejecting: unconsumed tokens at top or partial (pos={} < len={})", indent, level, pos, segments.len());
-            return Ok(None);
-        }
-
-        // Return the alternative if we made any progress 
-        if alt_complete {
-            debug_trace!("parser2.prod ", "{}[L{}] Accepting complete alternative !", indent, level);
-            Ok(Some((alt, pos)))
-        } else if had_progress  {
-            debug_trace!("parser2.prod ", "{}[L{}] Accepting partial alternative", indent, level);
-            Ok(Some((alt, pos)))
-        } else {
-            debug_trace!("parser2.prod ", "{}[L{}] Rejecting: no progress", indent, level);
-            Ok(None)
-        }
+        Ok(None)
     }
 
-    /// Parse a symbol (with repetition handling)
+    /// Parse a symbol with an explicit binding override
     fn parse_symbol(
         &self,
         segments: &[Segment],
         symbol: &Symbol,
-        sym_idx: usize,
-        pos: usize,
-        level: usize,
-    ) -> Result<ParseResult, String> {
-        self.parse_symbol_with_binding(segments, symbol, sym_idx, pos, None, level)
-    }
-
-    /// Parse a symbol with an explicit binding override
-    fn parse_symbol_with_binding(
-        &self,
-        segments: &[Segment],
-        symbol: &Symbol,
-        sym_idx: usize,
-        pos: usize,
-        binding_override: Option<String>,
         level: usize,
     ) -> Result<ParseResult, String> {
         let res = match symbol {
-            Symbol::Litteral(lit) => self.parse_literal(segments, lit, sym_idx, pos, binding_override, level),
-            Symbol::Regex(re) => self.parse_regex(segments, re, sym_idx, pos, binding_override, level),
+            Symbol::Litteral(lit) => self.parse_literal(segments, lit,  level),
+            Symbol::Regex(re) => self.parse_regex(segments, re, level),
             Symbol::Expression(nt) => {
-                let binding = binding_override.or_else(|| None);
-                self.parse_expression(segments, nt, sym_idx, pos, binding, level)
+                self.parse_expression(segments, nt, level)
             },
             Symbol::Single { value, binding, repetition } => {
-                let effective_binding = binding_override.or_else(|| binding.clone());
-                self.parse_single(segments, value.as_ref(), sym_idx, pos, effective_binding, repetition.clone(), level)
-            }
-            Symbol::Group { symbols, repetition } => {
-                self.parse_group(segments, symbols, sym_idx, pos, binding_override, repetition.clone(), level)
+                self.parse_single(segments, value.as_ref(), Some(binding.clone()), repetition.clone(), level)
             }
         };
         debug_trace!("parser2.sym ", "{}[L{}] Symbol parse result: {}", "  ".repeat(level), level, res.clone()?);
@@ -367,6 +246,7 @@ impl Parser {
                         extension: None,
                     })],
                     next_pos: pos + 1,
+                    extensible: false,
                 })
             }
             PrefixStatus::Prefix(derivative) => {
@@ -392,6 +272,7 @@ impl Parser {
                         extension: Some(derivative.clone()),
                     })],
                     next_pos: pos + 1,
+                    extensible: false,
                 })
             }
             PrefixStatus::NoMatch => {
@@ -412,7 +293,7 @@ impl Parser {
         level: usize,
     ) -> Result<ParseResult, String> {
         // Nested parse, so don't require full consumption
-        let nt_result = self.parse_nonterminal(segments, nt, pos, binding, false, level + 1)?;
+        let nt_result = self.parse_nonterminal(segments, nt, pos, binding, level + 1)?;
         
         debug_trace!("parser2.expr ", "{}[L{}] Nonterminal '{}'",
             "  ".repeat(level), level, nt);
@@ -435,6 +316,7 @@ impl Parser {
             Ok(ParseResult::Match {
                 nodes: vec![ParsedNode::NonTerminal(nt_result)],
                 next_pos,
+                extensible: false,
             })
         } else {
             if nt_result.is_progressing() {
@@ -471,92 +353,15 @@ impl Parser {
         sym_idx: usize,
         pos: usize,
         binding: Option<String>,
-        repetition: Option<RepetitionKind>,
+        repetition: Option<(usize, Option<usize>)>,
         level: usize,
     ) -> Result<ParseResult, String> {
         match repetition {
-            None => {
-                self.parse_symbol_with_binding(segments, symbol, sym_idx, pos, binding, level)
-            }
-            Some(RepetitionKind::ZeroOrMore) => {
-                self.parse_repetition(segments, symbol, sym_idx, pos, binding, 0, None, level)
-            }
-            Some(RepetitionKind::OneOrMore) => {
-                self.parse_repetition(segments, symbol, sym_idx, pos, binding, 1, None, level)
-            }
-            Some(RepetitionKind::ZeroOrOne) => {
-                self.parse_repetition(segments, symbol, sym_idx, pos, binding, 0, Some(1), level)
-            }
+            None => self.parse_symbol_with_binding(segments, symbol, sym_idx, pos, binding, level),
+            Some((min, max)) => self.parse_repetition(segments, symbol, sym_idx, pos, binding, min, max, level),
         }
     }
 
-    /// Parse group with optional repetition
-    fn parse_group(
-        &self,
-        segments: &[Segment],
-        symbols: &[Symbol],
-        sym_idx: usize,
-        pos: usize,
-        binding: Option<String>,
-        repetition: Option<RepetitionKind>,
-        level: usize,
-    ) -> Result<ParseResult, String> {
-        let res = match repetition {
-            None => {
-                // Parse group once as a sequence
-                self.parse_sequence(segments, symbols, pos, binding.clone(), level)
-            }
-            Some(RepetitionKind::ZeroOrMore) => {
-                self.parse_group_repetition(segments, symbols, sym_idx, pos, binding, 0, None, level)
-            }
-            Some(RepetitionKind::OneOrMore) => {
-                self.parse_group_repetition(segments, symbols, sym_idx, pos, binding, 1, None, level)
-            }
-            Some(RepetitionKind::ZeroOrOne) => {
-                self.parse_group_repetition(segments, symbols, sym_idx, pos, binding, 0, Some(1), level)
-            }
-        };
-        debug_trace!("parser2.grp ", "{}[L{}] Group parse result: {}", "  ".repeat(level), level, res.clone()?);
-        res
-    }
-
-    /// Parse a sequence of symbols (for groups)
-    fn parse_sequence(
-        &self,
-        segments: &[Segment],
-        symbols: &[Symbol],
-        start_pos: usize,
-        binding: Option<String>,
-        level: usize,
-    ) -> Result<ParseResult, String> {
-        let mut nodes = Vec::new();
-        let mut pos = start_pos;
-        
-        for (idx, symbol) in symbols.iter().enumerate() {
-            // Apply binding only to the first symbol in a sequence if binding is present
-            let symbol_binding = if idx == 0 { binding.clone() } else { None };
-            match self.parse_symbol_with_binding(segments, symbol, idx, pos, symbol_binding, level)? {
-                ParseResult::Match { nodes: mut new_nodes, next_pos } => {
-                    nodes.append(&mut new_nodes);
-                    pos = next_pos;
-                }
-                ParseResult::Partial { node, partial_symbol, pos: partial_pos } => {
-                    debug_trace!("parser2.seq ", "{}[L{}] Partial symbol in sequence at pos {}", "  ".repeat(level), level, partial_pos);
-                    // Partial in sequence means whole sequence is partial
-                    return Ok(ParseResult::Partial {
-                        node,
-                        partial_symbol,
-                        pos: partial_pos,
-                    });
-                }
-                ParseResult::Fail => {
-                    return Ok(ParseResult::Fail);
-                }
-            }
-        }
-        debug_trace!("parser2.seq ", "{}[L{}] Sequence matched up to pos {}", "  ".repeat(level), level, pos);
-        Ok(ParseResult::Match { nodes, next_pos: pos })
-    }
 
     /// Parse repetition of a single symbol
     fn parse_repetition(
@@ -570,9 +375,10 @@ impl Parser {
         max: Option<usize>,
         level: usize,
     ) -> Result<ParseResult, String> {
-        let mut nodes = Vec::new();
-        let mut current_pos = pos;
-        let mut count = 0;
+    let mut nodes = Vec::new();
+    let mut current_pos = pos;
+    let mut count = 0;
+    let mut child_extensible_seen = false;
         
         loop {
             // Check if we've hit max
@@ -586,7 +392,7 @@ impl Parser {
             // Apply binding to each occurrence in the repetition
             let result = self.parse_symbol_with_binding(segments, symbol, sym_idx, current_pos, binding.clone(), level)?;
             match result {
-                ParseResult::Match { nodes: mut new_nodes, next_pos } => {
+                ParseResult::Match { nodes: mut new_nodes, next_pos, extensible: child_extensible } => {
                     if next_pos == current_pos {
                         // No progress quit
                         break;
@@ -594,18 +400,40 @@ impl Parser {
                     nodes.append(&mut new_nodes);
                     current_pos = next_pos;
                     count += 1;
+                    // Remember if any child remains extensible so completions can flow through
+                    child_extensible_seen |= child_extensible;
                 }
                 ParseResult::Partial { node, partial_symbol, pos: partial_pos } => {
                     // Partial match in repetition
                     if count >= min {
-                        // We have enough matches so partial is optional continuation
-                        // Return what we have as match
-                        return Ok(ParseResult::Match {
-                            nodes,
-                            next_pos: current_pos,
-                        });
+                        // We already satisfied the minimum count.
+                        // Decide if we propagate the partial further or treat the
+                        // repetition as complete based on whether any progress was
+                        // made by the inner parser.
+                        let advanced = partial_pos > current_pos && segments.get(current_pos).is_some();
+                        if advanced {
+                            // Inner parser consumed at least one segment –
+                            // propagate partial to indicate more input is expected.
+                            return Ok(ParseResult::Partial {
+                                node,
+                                partial_symbol,
+                                pos: partial_pos,
+                            });
+                        } else {
+                            // No progress by inner parser. Treat current repetition
+                            // as finished and return what we have as a match.
+                            let repetition_extensible = match max {
+                                Some(max_count) => count < max_count,
+                                None => true,
+                            };
+                            return Ok(ParseResult::Match {
+                                nodes,
+                                next_pos: current_pos,
+                                extensible: repetition_extensible || child_extensible_seen,
+                            });
+                        }
                     } else {
-                        // We need more matches - propagate partial
+                        // Minimum not yet met – propagate partial unchanged
                         return Ok(ParseResult::Partial {
                             node,
                             partial_symbol,
@@ -622,9 +450,14 @@ impl Parser {
         
         // Check if we met minimum requirement
         if count >= min {
+            let repetition_extensible = match max {
+                Some(max_count) => count < max_count,
+                None => true,
+            };
             Ok(ParseResult::Match {
                 nodes,
                 next_pos: current_pos,
+                extensible: repetition_extensible || child_extensible_seen,
             })
         }  else {
             // No matches and minimum required
@@ -632,70 +465,6 @@ impl Parser {
         }
     }
 
-    /// Parse group repetition
-    fn parse_group_repetition(
-        &self,
-        segments: &[Segment],
-        symbols: &[Symbol],
-        _sym_idx: usize,
-        pos: usize,
-        binding: Option<String>,
-        min: usize,
-        max: Option<usize>,
-        level: usize,
-    ) -> Result<ParseResult, String> {
-        let mut nodes = Vec::new();
-        let mut current_pos = pos;
-        let mut count = 0;
-        
-        loop {
-            if let Some(max_count) = max {
-                if count >= max_count {
-                    break;
-                }
-            }
-            
-            // Apply binding to each occurrence in the repetition
-            match self.parse_sequence(segments, symbols, current_pos, binding.clone(), level)? {
-                ParseResult::Match { nodes: mut new_nodes, next_pos } => {
-                    if next_pos == current_pos {
-                        break;
-                    }
-                    nodes.append(&mut new_nodes);
-                    current_pos = next_pos;
-                    count += 1;
-                }
-                ParseResult::Partial { node, partial_symbol, pos: partial_pos } => {
-                    // Partial match in repetition
-                    debug_trace!("parser2.rep ", "{}[L{}] Partial symbol in repetition at pos {}", "  ".repeat(level), level, partial_pos);
-                    if count >= min {
-                        return Ok(ParseResult::Match {
-                            nodes,
-                            next_pos: partial_pos, // FIXED: it was returning current_pos here, which is incorrect
-                        });
-                    } else {
-                        return Ok(ParseResult::Partial {
-                            node,
-                            partial_symbol,
-                            pos: partial_pos,
-                        });
-                    }
-                }
-                ParseResult::Fail => {
-                    break;
-                }
-            }
-        }
-        
-        if count >= min {
-            Ok(ParseResult::Match {
-                nodes,
-                next_pos: current_pos,
-            })
-        } else {
-            Ok(ParseResult::Fail)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -888,28 +657,48 @@ mod tests {
         assert!(ast.root().is_complete());
         
         // Check that binding is applied to each occurrence
+        // Note: Number[n]+ is desugared into Number[n] Number[n]*
+        // So we have slot 0 with 1 node and slot 1 with 2 nodes
         let root = ast.root();
         assert_eq!(root.alts.len(), 1);
         let alt = &root.alts[0];
         
+        // Collect all Number nodes from both slots
+        let mut all_number_nodes = Vec::new();
+        
+        // Slot 0: the first Number[n]
         if let Some(slot) = alt.slots.get(&0) {
             match slot {
                 crate::logic::partial::Slot::Filled { nodes, .. } => {
-                    // Should have 3 Number nodes, each with the binding "n"
-                    assert_eq!(nodes.len(), 3);
-                    for node in nodes {
-                        if let ParsedNode::NonTerminal(nt) = node {
-                            assert_eq!(nt.name, "Number");
-                            assert_eq!(nt.binding, Some("n".to_string()));
-                        } else {
-                            panic!("Expected NonTerminal node");
-                        }
-                    }
+                    all_number_nodes.extend(nodes.clone());
                 }
-                _ => panic!("Expected Filled slot"),
+                _ => panic!("Expected Filled slot 0"),
             }
         } else {
             panic!("Expected slot 0");
+        }
+        
+        // Slot 1: the Number[n]* (zero or more repetitions)
+        if let Some(slot) = alt.slots.get(&1) {
+            match slot {
+                crate::logic::partial::Slot::Filled { nodes, .. } => {
+                    all_number_nodes.extend(nodes.clone());
+                }
+                _ => panic!("Expected Filled slot 1"),
+            }
+        } else {
+            panic!("Expected slot 1");
+        }
+        
+        // Should have 3 Number nodes total, each with the binding "n"
+        assert_eq!(all_number_nodes.len(), 3);
+        for node in all_number_nodes {
+            if let ParsedNode::NonTerminal(nt) = node {
+                assert_eq!(nt.name, "Number");
+                assert_eq!(nt.binding, Some("n".to_string()));
+            } else {
+                panic!("Expected NonTerminal node");
+            }
         }
     }
 }
