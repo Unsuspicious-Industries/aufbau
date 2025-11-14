@@ -117,41 +117,41 @@ impl NonTerminal {
         indices.sort_unstable();
         for idx in indices {
             if let Some(slot) = alt.slots.get(&idx) {
-                match slot {
-                    crate::logic::partial::Slot::Filled { nodes, .. } => {
-                        for node in nodes {
-                            match node {
-                                crate::logic::partial::ParsedNode::Terminal(t) => {
-                                    children.push(ASTNode::Terminal(
-                                        crate::logic::ast::Terminal {
-                                            value: t.value.clone(),
-                                            span: t.span.clone(),
-                                            binding: t.binding.clone(),
-                                        },
+                for node in slot.nodes() {
+                    match node {
+                        crate::logic::partial::Node::Terminal(t) => {
+                            let (value, binding) = match t {
+                                crate::logic::partial::Terminal::Complete { value, binding, .. } => {
+                                    (value.clone(), binding.clone())
+                                }
+                                crate::logic::partial::Terminal::Partial { .. } => {
+                                    return Err(format!(
+                                        "Partial terminal in complete alternative '{}' at slot {}",
+                                        nt.name, idx
                                     ));
                                 }
-                                crate::logic::partial::ParsedNode::NonTerminal(child_nt) => {
-                                    children.push(ASTNode::Nonterminal(NonTerminal::from_partial(
-                                        child_nt,
-                                    )?));
-                                }
-                            }
+                            };
+                            children.push(ASTNode::Terminal(
+                                crate::logic::ast::Terminal {
+                                    value,
+                                    span: None, // Span tracking removed in new structure
+                                    binding,
+                                },
+                            ));
+                        }
+                        crate::logic::partial::Node::NonTerminal(child_nt) => {
+                            children.push(ASTNode::Nonterminal(NonTerminal::from_partial(
+                                child_nt,
+                            )?));
                         }
                     }
-                    crate::logic::partial::Slot::Partial { .. } => {
-                        return Err(format!(
-                            "Incomplete symbol remained in complete alternative '{}' at slot {}",
-                            nt.name, idx
-                        ));
-                    }
-                    
                 }
             }
         }
 
         let full = NonTerminal {
             value: nt.name.clone(),
-            span: nt.span.clone(),
+            span: None, // Span tracking removed in new structure
             children,
             binding: nt.binding.clone(),
             bound_typing_rule: None,

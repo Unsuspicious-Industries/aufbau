@@ -1,93 +1,104 @@
 use std::fmt::{self, Display};
 
-// Helper functions for indented display
+// Helper functions for compact, *consistent* tree display.
 
-fn format_nonterminal(nt: &super::NonTerminal, indent: usize) -> String {
-    let mut result = format!("{}[{} alts]:\n", nt.name, nt.alts.len());
-    for alt in &nt.alts {
-        result.push_str(&format_alt(alt, indent + 1));
-    }
-    result
+fn indent(level: usize) -> String {
+    const INDENT: &str = "  ";
+    INDENT.repeat(level)
 }
 
-fn format_alt(alt: &super::Alt, indent: usize) -> String {
-    let mut result = String::new();
-    
-    // Display type rule info
-    if let Some(rule) = &alt.production.rule {
-        result.push_str(&format!("[@{}] ", rule));
+fn format_nonterminal(nt: &super::NonTerminal, level: usize) -> String {
+    let mut out = String::new();
+
+    out.push_str(&indent(level));
+    out.push_str(nt.name.as_str());
+    out.push_str(&format!(" ({} alt{})", nt.alts.len(), if nt.alts.len() == 1 { "" } else { "s" }));
+
+    for (i, alt) in nt.alts.iter().enumerate() {
+        out.push('\n');
+        out.push_str(&format_alt(alt, level + 1, i));
     }
-    
+
+    out
+}
+
+fn format_alt(alt: &super::Alt, level: usize, index: usize) -> String {
+    let mut out = String::new();
+
+    out.push_str(&indent(level));
+    out.push_str(&format!("alt {}", index));
+
+    if let Some(rule) = &alt.production.rule {
+        out.push_str(&format!(" [rule: {}]", rule));
+    }
+
     let total_symbols = alt.production.rhs.len();
-    
-    // Display all slots in order
+
     let mut indices: Vec<_> = alt.slots.keys().cloned().collect();
     indices.sort_unstable();
-    
-    let mut slot_displays = Vec::new();
-    for idx in &indices {
-        if let Some(slot) = alt.slots.get(idx) {
-            let formatted = format_slot_detailed(slot, *idx, indent);
-            slot_displays.push(formatted);
+
+    for slot_idx in &indices {
+        if let Some(slot) = alt.slots.get(&slot_idx) {
+            out.push('\n');
+            out.push_str(&format_slot(slot, level + 1, *slot_idx));
         }
     }
-    
-    // Join parts
-    if !slot_displays.is_empty() {
-        result.push_str(&slot_displays.join(" "));
-    }
-    
-    // Add status indicators
-    if alt.is_complete() {
-        result.push_str(" ✓");
-    } else {
-        let filled_count = indices.len();
-        result.push_str(&format!(" [progress:{}/{}]", filled_count, total_symbols));
-    }
-    
-    // Show span if present
-    if let Some(span) = &alt.span {
-        result.push_str(&format!(" (span:{}..{})", span.start, span.end));
-    }
-    
-    result
+
+    out.push_str(&format!(
+        "\n{}status: {}",
+        indent(level + 1),
+        if alt.is_complete() {
+            "complete ✓".to_string()
+        } else {
+            let filled = indices.len();
+            format!("partial ({}/{})", filled, total_symbols)
+        }
+    ));
+
+    out
 }
 
-fn format_slot(slot: &super::Slot, indent: usize) -> String {
-    format_slot_detailed(slot, 0, indent)
-}
-
-fn format_slot_detailed(slot: &super::Slot, slot_index: usize, indent: usize) -> String {
+fn format_slot(slot: &super::Slot, level: usize, index: usize) -> String {
+    let mut out = String::new();
     let nodes = slot.nodes();
+
+    out.push_str(&indent(level));
+    out.push_str(&format!("slot {}", index));
+
     if nodes.is_empty() {
-        format!("[{}:empty]", slot_index)
-    } else if nodes.len() == 1 {
-        format!("[{}:{}]", slot_index, format_node(&nodes[0], indent))
-    } else {
-        let inner: Vec<_> = nodes.iter().map(|n| format_node(n, indent)).collect();
-        format!("[{}:[{}]]", slot_index, inner.join(" "))
+        out.push_str(": <empty>");
+        return out;
     }
+
+    if nodes.len() == 1 {
+        match &nodes[0] {
+            super::Node::Terminal(_) => {
+                // Terminals stay inline
+                out.push_str(": ");
+                out.push_str(&format_node(&nodes[0], level));
+            }
+            super::Node::NonTerminal(_) => {
+                // NonTerminals get their own line
+                out.push('\n');
+                out.push_str(&format_node(&nodes[0], level + 1));
+            }
+        }
+        return out;
+    }
+
+    // Multiple nodes: print each on its own line.
+    for node in nodes {
+        out.push('\n');
+        out.push_str(&format_node(node, level + 1));
+    }
+
+    out
 }
 
-fn format_node(node: &super::Node, indent: usize) -> String {
+fn format_node(node: &super::Node, level: usize) -> String {
     match node {
         super::Node::Terminal(t) => t.to_string(),
-        super::Node::NonTerminal(nt) => {
-            // For nested nonterminals, format with proper indentation
-            let mut result = String::new();
-            result.push('\n');
-            result.push_str(&" ".repeat(indent));
-            result.push_str(&nt.name);
-            if !nt.alts.is_empty() {
-                result.push_str(&format!("[{} alts]:", nt.alts.len()));
-                for alt in &nt.alts {
-                    result.push('\n');
-                    result.push_str(&" ".repeat(indent + 1));
-                    result.push_str(&format_alt(alt, indent + 1));
-                }
-            }
-            result
-        }
+        super::Node::NonTerminal(nt) => format_nonterminal(nt, level),
     }
 }
 
@@ -136,13 +147,13 @@ impl Display for super::Node {
 
 impl Display for super::Alt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format_alt(self, 0))
+    write!(f, "{}", format_alt(self, 0, 0))
     }
 }
 
 impl Display for super::Slot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", format_slot(self, 0))
+        write!(f, "{}", format_slot(self, 0, 0))
     }
 }
 

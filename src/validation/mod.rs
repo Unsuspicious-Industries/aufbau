@@ -8,6 +8,7 @@ pub mod binding;
 #[cfg(test)]
 mod tests {
     use core::panic;
+    use std::fmt::write;
 
     use crate::{logic::grammar::Grammar, set_debug_input, set_debug_level};
     use super::completability::{complete_ast, CompletionResult};
@@ -36,11 +37,8 @@ mod tests {
     // Variables with var typing rule
     Variable(var) ::= Identifier[x]
 
-    // Type names (can be any identifier)
-    TypeName ::= Identifier
-
     // Base types (parentheses are literals, hence quoted)
-    BaseType ::= TypeName | '(' Type ')'
+    BaseType ::= Identifier | '(' Type ')'
 
     // Function types (right-associative)
     Type ::= BaseType[τ₁] '->' Type[τ₂] | BaseType[τ]
@@ -405,6 +403,24 @@ mod tests {
             };
 
             println!("Partial AST: {}", t);
+
+            // Persist the debug AST to a file for offline inspection
+            // NOTE: keep this extremely simple and robust; this is a debug-only helper.
+            let path = std::path::PathBuf::from("p7_debug_ast_fail.txt");
+            match std::fs::File::create(&path).and_then(|mut f| {
+                use std::io::Write as _;
+                writeln!(f, "Input: {}", input)?;
+                writeln!(f, "Grammar: LAMBDA_GRAMMAR")?;
+                writeln!(f, "Partial AST: {}", t)?;
+                Ok(())
+            }) {
+                Ok(()) => {
+                    println!("Saved debug AST to {}", path.display());
+                }
+                Err(e) => {
+                    println!("Failed to save debug AST to {}: {}", path.display(), e);
+                }
+            }
 
             let completions = t.completions(&(g.clone()));
             println!("Completions: {:#?}", completions);
