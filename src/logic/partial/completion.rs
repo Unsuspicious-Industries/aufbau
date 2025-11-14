@@ -81,84 +81,57 @@ impl Alt {
     fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
         debug_trace!(
             "partial.completion",
-            "Alt::collect_valid_tokens: is_complete={}, cursor={}",
-            self.is_complete(),
-            self.cursor()
+            "Alt::collect_valid_tokens: is_complete={}",
+            self.is_complete()
         );
 
         let mut tokens = Vec::new();
         
-        // If complete, collect tokens from any extensible symbols
+        // If complete, check for extensible terminals (terminals with extensions)
         if self.is_complete() {
-            for idx in 0..self.production.rhs.len() {
-                if self.symbol_extensible(idx) {
-                    if let Some(symbol) = self.production.rhs.get(idx) {
-                        tokens.extend(first_set(symbol, grammar));
+            for (idx, slot) in &self.slots {
+                for node in slot.nodes() {
+                    if let Node::Terminal(Terminal::Complete { extension: Some(ext), .. }) = node {
+                        tokens.push(ext.clone());
                     }
+                }
+                // Also check if symbol allows repetition
+                if let Some(symbol) = self.production.rhs.get(*idx) {
+                    tokens.extend(first_set(symbol, grammar));
                 }
             }
             return tokens;
         }
 
-        // Not complete: get the cursor and find next valid tokens
-        let cursor = self.cursor();
-        
-        // Special case: check if there are completed repeatable or otherwise extensible symbols
-        // before the cursor. These can accept more input even though we've moved past them.
-        for idx in 0..cursor {
-            if self.symbol_extensible(idx) {
-                if let Some(symbol) = self.production.rhs.get(idx) {
-                    tokens.extend(first_set(symbol, grammar));
+        // Not complete: find the first unfilled slot
+        let mut next_idx = 0;
+        for idx in 0..self.production.rhs.len() {
+            if !self.slots.contains_key(&idx) {
+                next_idx = idx;
+                break;
+            }
+            // Check if this slot has a partial terminal
+            if let Some(slot) = self.slots.get(&idx) {
+                for node in slot.nodes() {
+                    if let Node::Terminal(Terminal::Partial { remainder: Some(rem), .. }) = node {
+                        tokens.push(rem.clone());
+                        return tokens;
+                    }
+                    if let Node::NonTerminal(nt) = node {
+                        if !nt.is_complete() {
+                            // Partial nonterminal - get its completions
+                            tokens.extend(nt.collect_valid_tokens(grammar));
+                            return tokens;
+                        }
+                    }
                 }
             }
+            next_idx = idx + 1;
         }
         
-        // Check if we have a partial symbol in progress
-        let mut cursor_symbol_is_partial = false;
-        if let Some(slot) = self.slots.get(&cursor) {
-            if let Slot::Partial { partial_symbol, node,.. } = slot {
-                cursor_symbol_is_partial = true;
-                // If we have a partial node, get completions from it
-                if let Some(ParsedNode::NonTerminal(nt)) = node {
-                    let nt_tokens = nt.collect_valid_tokens(grammar);
-                    tokens.extend(nt_tokens);
-                } else {
-                    // No node yet, use the partial symbol's completions
-                    let partial_tokens = completion_for_partial_symbol(partial_symbol, grammar);
-                    tokens.extend(partial_tokens);
-                }
-            }
-        }
-        
-        // Include nullable symbols before cursor
-        for idx in 0..cursor {
-            if let Some(symbol) = self.production.rhs.get(idx) {
-                if grammar.symbol_nullable(symbol) && self.symbol_complete(idx) {
-                    let sym_tokens = first_set(symbol, grammar);
-                    tokens.extend(sym_tokens);
-                }
-            }
-        }
-        
-        // If the cursor symbol is currently partial, we must finish it before
-        // moving on to later symbols. The partial node's completions (and any
-        // repeatable/nullable prefixes above) already cover valid suggestions.
-        if cursor_symbol_is_partial {
-            return tokens;
-        }
-        
-        // Include symbols from cursor onward
-        for idx in cursor..self.production.rhs.len() {
-            if let Some(symbol) = self.production.rhs.get(idx) {
-                let sym_tokens = first_set(symbol, grammar);
-                tokens.extend(sym_tokens);
-                
-                // If this symbol is not nullable, stop here
-                if !grammar.symbol_nullable( symbol) {
-                    break;
-                }
-                // Otherwise, continue to next symbol (nullable symbols allow lookahead)
-            }
+        // Get first set of next expected symbol
+        if let Some(symbol) = self.production.rhs.get(next_idx) {
+            tokens.extend(first_set(symbol, grammar));
         }
         
         tokens
@@ -194,37 +167,6 @@ fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
             first_set(value, grammar)
         }
         
-    }
-}
-
-
-
-/// Get valid completions for a partial symbol in progress.
-fn completion_for_partial_symbol(partial_symbol: &PartialSymbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
-    match partial_symbol {
-        PartialSymbol::Terminal { derivative, .. } => {
-            vec![derivative.clone()]
-        }
-        
-        PartialSymbol::NonTerminal { nt, .. } => {
-            // Partial nonterminal: get FIRST set
-            // NOTE: This is only for when we haven't started parsing the nonterminal yet
-            // If we have a partial node, the caller should use that node's completions instead
-            if let Some(productions) = grammar.productions.get(nt) {
-                productions
-                    .iter()
-                    .flat_map(|prod| {
-                        if let Some(first_sym) = prod.rhs.first() {
-                            first_set(first_sym, grammar)
-                        } else {
-                            vec![]
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![]
-            }
-        }  
     }
 }
 
@@ -727,8 +669,8 @@ mod tests {
         println!("Alternatives: {}", partial2.root().alts.len());
         
         for (i, alt) in partial2.root().alts.iter().enumerate() {
-            println!("Alt {}: complete={}, progressing={}", 
-                i, alt.is_complete(), alt.is_progressing());
+            println!("Alt {}: complete={}", 
+                i, alt.is_complete());
             if let Some(rule) = &alt.production.rule {
                 println!("  Rule: {}", rule);
             }

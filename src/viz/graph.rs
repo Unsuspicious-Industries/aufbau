@@ -89,10 +89,7 @@ fn walk_nt(
             kind: "nonterminal-container".to_string(),
             value: Some(nt.name.clone()),
             binding: nt.binding.clone(),
-            span: nt.span.as_ref().map(|s| SpanView {
-                start: s.start,
-                end: s.end,
-            }),
+            span: None, // Span removed in new structure
             production: None,
             typing_rule: None,
         },
@@ -145,10 +142,7 @@ fn walk_alt(alt_id: &str, alt: &Alt, nodes: &mut Vec<GraphNode>, edges: &mut Vec
             kind: "alternative".to_string(),
             value: None,
             binding: None,
-            span: alt.span.as_ref().map(|s| SpanView {
-                start: s.start,
-                end: s.end,
-            }),
+            span: None, // Span removed in new structure
             production: Some(prod_info),
             typing_rule: None, // TODO: get typing rule if available
         },
@@ -177,12 +171,12 @@ fn walk_parsed_node(
 ) {
     match node {
         Node::Terminal(t) => {
-            let (value, binding, span) = match t {
-                crate::logic::partial::Terminal::Complete { value, binding, span, .. } => {
-                    (value.clone(), binding.clone(), span.clone())
+            let (value, binding) = match t {
+                crate::logic::partial::Terminal::Complete { value, binding, .. } => {
+                    (value.clone(), binding.clone())
                 }
-                crate::logic::partial::Terminal::Partial { value, binding, span, .. } => {
-                    (value.clone(), binding.clone(), span.clone())
+                crate::logic::partial::Terminal::Partial { value, binding, .. } => {
+                    (value.clone(), binding.clone())
                 }
             };
             
@@ -194,10 +188,7 @@ fn walk_parsed_node(
                     kind: "terminal".to_string(),
                     value: Some(value),
                     binding,
-                    span: span.as_ref().map(|s| SpanView {
-                        start: s.start,
-                        end: s.end,
-                    }),
+                    span: None, // Span removed in new structure
                     production: None,
                     typing_rule: None,
                 },
