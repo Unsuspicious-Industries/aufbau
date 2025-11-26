@@ -31,6 +31,6 @@ dev = ["pytest", "numpy"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-python-source = "python"
-module-name = "p7_constrained"
+python-source = "."
+module-name = "proposition_7.proposition_7"
 

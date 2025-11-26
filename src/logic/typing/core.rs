@@ -1,14 +1,9 @@
-//! Core typing types and operations
-//!
-//! Clean, minimal definitions for the typing system.
+//! Core typing types
 
 use crate::logic::typing::Type;
 use std::collections::HashMap;
 
-// ============================================================================
-// Context: Γ : String → Type
-// ============================================================================
-
+// Γ : String → Type
 #[derive(Clone, Debug, Default)]
 pub struct Context {
     pub bindings: HashMap<String, Type>,
@@ -19,31 +14,24 @@ impl Context {
         Self::default()
     }
 
-    /// Γ(x) - lookup
     pub fn lookup(&self, x: &str) -> Option<&Type> {
         self.bindings.get(x)
     }
 
-    /// Γ[x:τ] - functional extension (returns new context)
+    /// Γ[x:τ] - functional extension
     pub fn extend(&self, x: String, ty: Type) -> Self {
         let mut new = self.clone();
         new.bindings.insert(x, ty);
         new
     }
     
-    /// Mutable add (for imperative contexts)
     pub fn add(&mut self, x: String, ty: Type) {
         self.bindings.insert(x, ty);
     }
 }
 
-// ============================================================================
-// Substitution: inference variable → Type
-// ============================================================================
-
 pub type Substitution = HashMap<String, Type>;
 
-/// Apply substitution to type
 pub fn subst(ty: &Type, s: &Substitution) -> Type {
     subst_rec(ty, s, 0)
 }
@@ -72,10 +60,6 @@ fn subst_rec(ty: &Type, s: &Substitution, depth: usize) -> Type {
     }
 }
 
-// ============================================================================
-// Unification
-// ============================================================================
-
 /// Unify two types, extending substitution
 pub fn unify(t1: &Type, t2: &Type, s: &mut Substitution) -> bool {
     let t1 = subst(t1, s);
@@ -83,8 +67,7 @@ pub fn unify(t1: &Type, t2: &Type, s: &mut Substitution) -> bool {
     
     if t1 == t2 { return true; }
     
-    // Raw and Atom with same content should unify
-    // This handles cases like Type::Raw("int") unifying with Type::Atom("int")
+    // Raw and Atom with same content unify
     match (&t1, &t2) {
         (Type::Raw(n1), Type::Atom(n2)) | (Type::Atom(n1), Type::Raw(n2)) => {
             if n1 == n2 { return true; }
@@ -92,7 +75,7 @@ pub fn unify(t1: &Type, t2: &Type, s: &mut Substitution) -> bool {
         _ => {}
     }
     
-    // Bind inference variables
+    // Bind inference vars
     if let Type::Atom(name) = &t2 {
         if is_var(name) && !occurs(name, &t1) {
             s.insert(name.clone(), t1);
@@ -106,7 +89,6 @@ pub fn unify(t1: &Type, t2: &Type, s: &mut Substitution) -> bool {
         }
     }
     
-    // Structural
     match (&t1, &t2) {
         (Type::Arrow(l1, r1), Type::Arrow(l2, r2)) => {
             unify(l1, l2, s) && unify(r1, r2, s)
@@ -131,18 +113,10 @@ fn occurs(var: &str, ty: &Type) -> bool {
     }
 }
 
-// ============================================================================
-// Tree Status
-// ============================================================================
-
-/// Result of checking a tree
 #[derive(Clone, Debug)]
 pub enum TreeStatus {
-    /// Complete and well-typed
     Valid(Type),
-    /// Partial but well-formed (at frontier)
-    Partial(Type),
-    /// Malformed - drop this tree
+    Partial(Type),   // at frontier
     Malformed,
 }
 
@@ -158,4 +132,3 @@ impl TreeStatus {
         }
     }
 }
-

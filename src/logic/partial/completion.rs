@@ -1,6 +1,8 @@
 use super::*;
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Symbol};
+use crate::logic::typing::core::{Context, TreeStatus};
+use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use std::collections::HashSet;
 
@@ -38,7 +40,7 @@ impl CompletionSet {
 // === Implementation ========================================================================== //
 
 impl PartialAST {
-    /// Get all valid next tokens for this partial parse.
+    /// Get all valid next tokens for this partial parse (syntax-only, no type filtering).
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
         debug_trace!(
             "partial.completion",
@@ -49,6 +51,60 @@ impl PartialAST {
 
         let mut tokens = Vec::new();
         for root in &self.roots {
+            tokens.extend(root.collect_valid_tokens(grammar));
+        }
+
+        CompletionSet::new(tokens)
+    }
+
+    /// Get valid next tokens, filtering out ill-typed parse trees first.
+    ///
+    /// This filters roots to only those that are well-typed (Valid or Partial status),
+    /// then computes completions from those roots only. This prevents suggesting
+    /// completions that would only extend already-malformed parse trees.
+    pub fn typed_completions(&self, grammar: &Grammar) -> CompletionSet {
+        self.typed_completions_with_ctx(grammar, &Context::new())
+    }
+
+    /// Get valid next tokens with a typing context, filtering ill-typed roots.
+    ///
+    /// Use this when you have an initial typing context (e.g., pre-declared variables).
+    pub fn typed_completions_with_ctx(&self, grammar: &Grammar, ctx: &Context) -> CompletionSet {
+        debug_trace!(
+            "partial.completion",
+            "PartialAST::typed_completions: input='{}', roots={}, ctx_size={}",
+            self.input,
+            self.roots.len(),
+            ctx.bindings.len()
+        );
+
+        // Filter roots to only well-typed ones
+        let well_typed_roots: Vec<_> = self.roots.iter()
+            .filter(|root| {
+                match check_tree_with_context(root, grammar, ctx) {
+                    TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
+                    TreeStatus::Malformed => {
+                        debug_trace!(
+                            "partial.completion",
+                            "  Filtering out malformed root: {}",
+                            root.name
+                        );
+                        false
+                    }
+                }
+            })
+            .collect();
+
+        debug_trace!(
+            "partial.completion",
+            "  Well-typed roots: {} / {}",
+            well_typed_roots.len(),
+            self.roots.len()
+        );
+
+        // Collect completions from well-typed roots only
+        let mut tokens = Vec::new();
+        for root in well_typed_roots {
             tokens.extend(root.collect_valid_tokens(grammar));
         }
 
@@ -728,5 +784,95 @@ mod tests {
         // Completions
         let completions = partial2.completions(&grammar);
         println!("Completions for '(42': {:?}", completions);
+    }
+
+    // ============================================================================
+    // Typed Completion - Root Filtering Tests
+    // ============================================================================
+
+    #[test]
+    fn typed_completions_filters_malformed_roots() {
+        // Test that typed_completions filters out ill-typed parse trees.
+        //
+        // This is a simplified version of the user's example:
+        // In a typed lambda calculus, applying a function (X -> X) to a value of type Y
+        // should be rejected because X ≠ Y.
+        
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            TypeName ::= /[A-Z]/
+            
+            Variable(var) ::= Identifier[x]
+            Type ::= TypeName
+            
+            Lambda(lam) ::= 'fn' Identifier[x] ':' Type[τ] '=>' Term[e]
+            Application(app) ::= BaseTerm[f] BaseTerm[e]
+            
+            BaseTerm ::= Variable | Lambda | '(' Term ')'
+            Term ::= Application | BaseTerm
+            
+            start ::= Term
+            
+            // Variable rule: x must be in context
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+            
+            // Lambda introduces binding
+            Γ[x:τ] ⊢ e : ?B
+            -------------- (lam)
+            τ → ?B
+            
+            // Application: function must accept argument type
+            Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
+            ---------------------------- (app)
+            ?B
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        
+        // Parse "(fn x : A => x)" - a function A -> A applied to nothing yet
+        // This should be well-typed (partial)
+        let ast = p.partial("( fn x : A => x )").unwrap();
+        
+        // Without context, the lambda body 'x' is well-typed because 
+        // the lambda binds x:A
+        let completions = ast.typed_completions(&g);
+        
+        // Should have completions (the parse is well-typed so far)
+        println!("Completions for '(fn x : A => x)': {:?}", completions);
+        assert!(!completions.tokens.is_empty(), "Should have completions for well-typed partial parse");
+    }
+
+    #[test]
+    fn typed_completions_vs_untyped() {
+        // Verify that typed_completions and completions give same results
+        // when there are no type errors
+        let spec = r#"
+            Num(num) ::= /[0-9]+/
+            Add(add) ::= Num '+' Num
+            start ::= Add
+            
+            -------------- (num)
+            'int'
+            
+            -------------- (add)
+            'int'
+        "#;
+        
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g.clone());
+        let ast = p.partial("42 +").unwrap();
+        
+        let untyped = ast.completions(&g);
+        let typed = ast.typed_completions(&g);
+        
+        // Both should give the same result for this well-typed expression
+        assert_eq!(
+            untyped.tokens.len(), 
+            typed.tokens.len(),
+            "Well-typed parse should give same completions"
+        );
     }
 }

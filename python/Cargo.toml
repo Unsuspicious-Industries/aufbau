@@ -1,10 +1,10 @@
 [package]
-name = "p7_python"
+name = "proposition_7_py"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [lib]
-name = "p7_constrained"
+name = "proposition_7"
 crate-type = ["cdylib"]
 
 [dependencies]
