@@ -1,423 +1,360 @@
-# Unified Grammar & Typing Specification (Bound Rule Model)
+# P7 Grammar Specification
 
-This document specifies the unified grammar + typing rule format and explains how the bound rule pipeline works in the current implementation.
+**Version 1.0**
 
-## High-Level Flow
-
-spec grammar + typing rules  → (load) → `Grammar` (productions + `TypingRule`s)
-→ input source text → (parser) → AST (`NonTerminal.bound_typing_rule` attached where annotated)
-→ type checker consumes only `BoundTypingRule` (no meta lookup)
-
-Key invariant: By the time checking starts, every rule the checker sees is ground: all schematic term/type variables resolved to concrete AST nodes and `BoundType` structures.
-
-### Syntactic sugar
-
-While repetition are needed for same level multiple binding type parsing (see [[challenges.md]]), groups and other forms can be considered *syntactic sugar* that desugar into core forms before binding. 
-
-Here, groups are converted to phantom nonterminals that just wrap their contents, and other constructs can be similarly desugared.
-
-## Components
-
-1. Grammar productions: syntax + optional `(rule RuleName)` annotation.
-2. Typing rules: inference rules with premises and a conclusion.
-3. Binding phase (performed inside the parser): converts `TypingRule` → `BoundTypingRule` for each matched production instance.
-4. Type checker: interprets bound premises and conclusion; premises are pure (no ambient mutation); only conclusions may thread context via a transform.
-
-## Bound Rule Semantics (Recap)
-
-- No symbolic variables at check time.
-- Premise expansion handles repeated bound variables (Kleene sections) automatically.
-- Membership: concrete variable node must have extractable terminal text.
-- Ascription: node must infer to a type compatible with the expected bound type (after resolving any context lookups inside the type structure).
-- Conclusion may:
-  - Yield a type (identity context if no transform)
-  - Perform a lookup Γ(x)
-  - Thread context: `Γ_in → Γ_out ⊢ τ` where inline extensions produce a functional delta (no destructive removal).
-
-## Grammar Syntax
-
-Production form:
-```
-NonTerminal(ruleName)? ::= RHS
-```
-- `ruleName` must match a typing rule name declared in the spec.
-- RHS uses terminals, nonterminals, and optional semantic bindings `[binding]` (these become node.binding and drive the resolver).
-
-### Repetition Operators
-- `Symbol*` zero or more
-- `Symbol+` one or more
-- `Symbol?` zero or one
-Bindings attach before the operator: `Expr[e]*`.
-
-The binder collects all sibling nodes sharing a binding symbol to expand premises.
-
-## Type System
-
-The grammar system supports an extensible type language with various type expressions and constructs. This section details all supported type expressions and their syntax.
-
-### Type Expression Categories
-
-#### 1. Basic Types
-
-**Atom Types**: Simple type identifiers
-```
-int, string, bool, τ, σ, MyType
-```
-- Can contain alphanumeric characters, underscores, and Unicode type symbols
-- Examples: `int`, `string`, `τ₁`, `MyCustomType`
-
-**Raw/Concrete Types**: Quoted literal types
-```
-'int', 'string', 'void'
-```
-- Used for concrete language types that don't need variable resolution
-- Syntax: single quotes around the type name
-
-**Universe Type**: The type of all types
-```
-⊤
-```
-- Represents the universal type (top type)
-- Keyword: `⊤`
-
-**Empty Type**: The uninhabited type
-```
-∅
-```
-- Represents the empty type (bottom type)
-- Keyword: `∅`
-
-#### 2. Composite Types
-
-**Function Types**: Arrow types for functions
-```
-τ₁ → τ₂
-int → string
-(int → string) → bool
-```
-- Right-associative: `A → B → C` ≡ `A → (B → C)`
-- Alternative syntax: `->` (ASCII arrow)
-- Examples: `int → bool`, `string -> int -> bool`
-
-**Tuple Types**: Meta-types for tuples
-```
-(τ...)
-(int...)
-(MyType...)
-```
-- Used for representing tuple/product types at the meta level
-- Syntax: `(<identifier>...)` where identifier is the tuple element type
-
-
-#### 3. Logical Types
-
-**Union Types**: Either-or types
-```
-τ₁ ∨ τ₂
-int ∨ string
-A | B
-```
-- Represents values that can be either type
-- Alternative operators: `∨`, `v`, `|`
-- Left-associative
-
-**Intersection Types**: Both-and types
-```
-τ₁ ∧ τ₂
-Readable ∧ Writable
-A & B
-```
-- Represents values that are both types
-- Alternative operators: `∧`, `^`, `&`
-- Left-associative
-
-**Negation Types**: Complement types
-```
-¬τ
-¬int
-!string
-```
-- Represents "anything that is not τ"
-- Alternative operators: `¬`, `!`
-- Prefix syntax
-
-#### 4. Context Types
-
-**Context Calls**: Type lookups from typing context
-```
-Γ(x)
-Delta(variable)
-Θ(myVar)
-```
-- Syntax: `ContextName(variable)`
-- Used to look up the type of a variable in a typing context
-- Context names can use Greek letters and subscripts
-
-### Type Expression Parsing Rules
-
-#### Operator Precedence (highest to lowest)
-1. **Negation** (`¬`, `!`) - prefix
-2. **Pointer** (`*`) - prefix  
-3. **Array** (`[...]`) - postfix
-4. **Intersection** (`∧`, `^`, `&`) - left-associative
-5. **Union** (`∨`, `v`, `|`) - left-associative
-6. **Arrow** (`→`, `->`) - right-associative
-
-#### Parentheses
-- Regular parentheses `()` can be used to override precedence
-- Tuple syntax `(...)` is reserved for meta-types
-- Context calls `Context(var)` use parentheses for variable lookup
-
-#### Unicode Support
-The type system supports Unicode characters commonly used in type theory:
-- Greek letters: `τ`, `σ`, `Γ`, `Δ`, `Θ`, etc.
-- Subscripts: `τ₁`, `τ₂`, `₃₄₅₆₇₈₉₀`
-- Type theory symbols: `→`, `∧`, `∨`, `¬`, `⊢`, `∈`
-
-### Examples of Complex Type Expressions
-
-```
-// Function types
-int → string → bool
-(int → string) → (string → bool) → (int → bool)
-
-// Union and intersection
-Readable ∧ Writable ∨ Default
-¬(int ∨ string) ∧ Serializable
-
-// Pointers and arrays
-*int[10]           // Pointer to array of 10 ints
-(*int)[10]         // Array of 10 int pointers
-**char[]           // Pointer to pointer to dynamic char array
-
-// Context lookups in complex types
-Γ(f) → Γ(x) → Γ(result)
-(Γ(input) ∨ Default) → Γ(output)
-
-// Mixed complex types
-¬(*int ∨ *string) ∧ (Serializable → Γ(T))
-```
-
-## Typing Rule Concrete Format
-
-Strict textual shape in the spec (before binding):
-```
-p1, p2, ..., pN
-------------------- (rule_name)
-conclusion
-```
-Premises comma-separated. Empty premise list = axiom form.
-
-### Premise Forms
-1. **Typing Judgment**: `Γ[x:τ][y:σ] ⊢ term : τ'`
-   - Context `Γ` with optional extensions `[var:type]`
-   - Turnstile `⊢` separates context from judgment
-   - Term and its ascribed type separated by `:`
-
-2. **Membership**: `x ∈ Γ`
-   - Variable `x` is a member of context `Γ`
-   - Used to check if a variable is bound in the context
-
-3. **Bare Setting**: `Γ[x:τ]` (context only, rarely used)
-   - Just establishes context extensions without judgment
-   - Used for context manipulation
-
-### Conclusion Forms
-1. **Bare Type**: `τ` 
-   - Simple type result (desugars to identity context transform)
-   - Examples: `int`, `string → bool`, `Γ(x) → Γ(y)`
-
-2. **Context Lookup**: `Γ(x)`
-   - Look up the type of variable `x` in context `Γ`
-   - Returns the type that `x` was bound to
-
-3. **Context-Transformation**: `[Γ_in][→ Γ_out] ⊢ τ`
-   - We can modify the *output* context, based on declarations.
-   - Right now the name of the output context doesnt chnage anything, its for looks, 
-     what matters is the extensions applies to it. 
-   - Input context can also be extended:
-       - `Γ_in → Γ_out[y:σ] ⊢ τ'`
-   - Arrow sugar variants:
-     - `Γ_in ⊢ τ` ≡ `Γ_in → Γ_in ⊢ τ` (no context change)
-     - `→ Γ_out ⊢ τ` ≡ `Γ → Γ_out ⊢ τ` (inherit input context)
-     - `τ` ≡ `Γ → Γ ⊢ τ` (identity transform)
-
-#### Some examples
-This let rule modify the context to add the variable *binded* to `x`, with the type of the thing being binded to `τ`.
-```
--------------------------------- (let)
-Γ -> Γ[x:τ] ⊢ τ
-```
-
-Implementation stores these as structured `Conclusion { context: {input, output}, kind }`.
-
-## Binding Details
-
-`DefaultBindingResolver`:
-- Maps each schematic term variable to the concrete `NonTerminal` whose `binding` matches.
-- Resolves type expressions, substituting any schematic type atoms bound through the same mechanism (currently simple: atoms treated as raw names unless matched via bindings in premises/settings).
-- Expands a single schematic premise over repeated bindings (`collect_nt_bindings_same_level`). Zero matches → premise dropped.
-- Assembles `BoundTypingRule { premises, conclusion }` and performs a shallow well-formedness check.
-
-Errors during binding (missing binding, unresolvable type variable) abort the parse of that production instance.
-
-## Type Checking Algorithm (Bound)
-
-For a nonterminal node:
-1. If it has a `BoundTypingRule`, call `apply_bound_rule`.
-2. Else if exactly one nonterminal child, recursively check that child (bubbling through syntactic wrappers).
-3. Else error (no rule and ambiguous children).
-
-`apply_bound_rule`:
-- For each premise: build a child context (apply setting extensions), evaluate judgment. On success, merge any new bindings (delta) back into ambient context (current implementation commits variable types learned inside premise; can be tightened later if needed).
-- Evaluate conclusion:
-  - Type: apply input context (currently used for expression evaluation placeholder), then commit output extensions to ambient Γ.
-  - Lookup: extract terminal text from resolved node, look up type in Γ.
-
-Returned value is the bound type of the node (or None for terminals).
-
-## Serialization Boundary
-
-Serialized AST only keeps `(rule RuleName)` markers; bound internals are not persisted. Deserialization yields nodes without `bound_typing_rule`. Re-binding requires re-running resolver with the same `Grammar` rules (future helper planned).
-
-Headers:
-```
-;!ast 1
-;!rules: ruleA, ruleB
-
-(N ...)
-```
-Rules listed alphabetically if any appear.
-
-## Complete Grammar Examples
-
-### Example 1: Simple Typed Lambda Calculus
-
-Grammar with type expressions:
-```text
-// Variables and types
-Variable(var) ::= Identifier[x]
-Type ::= 'int' | 'bool' | Type[τ₁] '->' Type[τ₂]
-
-// Expressions  
-Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ₁] '.' Term[e]
-Application(app) ::= Term[f] Term[a]
-Term ::= Variable | Lambda | Application
-
-// Typing rules using type expressions
-x ∈ Γ
--------- (var)
-Γ(x)
-
-Γ[x:τ₁] ⊢ e : τ₂
--------------------- (lambda)
-τ₁ → τ₂
-
-Γ ⊢ f : τ₁ → τ₂, Γ ⊢ a : τ₁
------------------------------ (app)
-τ₂
-```
-
-### Example 3: Functional Language with Union Types
-
-Grammar using union and intersection types:
-```text
-// Advanced type system
-BaseType ::= 'int' | 'string' | 'bool'
-UnionType ::= Type[τ₁] '|' Type[τ₂]
-IntersectionType ::= Type[τ₁] '&' Type[τ₂]
-NegationType ::= '!' Type[τ]
-Type ::= BaseType | UnionType | IntersectionType | NegationType
-
-// Pattern matching with union types
-Match(match) ::= 'match' Expr[e] '{' Case+ '}'
-Case ::= Pattern '->' Expr
-
-// Typing rules with logical types
-Γ ⊢ e : τ₁ ∨ τ₂
------------------ (union_elim_left)
-τ₁
-
-Γ ⊢ e : τ₁
------------ (union_intro_left)
-τ₁ ∨ τ₂
-
-Γ ⊢ e : τ₁, Γ ⊢ e : τ₂
------------------------ (intersection_intro)
-τ₁ ∧ τ₂
-
-Γ ⊢ e : ¬τ, Γ ⊢ e : τ
---------------------- (negation_elim)
-∅
-```
-
-
-
-### Type Expression Usage Patterns
-
-#### In Grammar Productions
-```text
-// Type annotations in productions
-FunctionDef(func) ::= Type[ret] Identifier[name] '(' ParamList ')' Block[body]
-TypedParam ::= Type[τ] Identifier[x]
-Cast(cast) ::= '(' Type[target] ')' Expr[e]
-```
-
-
-#### In Typing Rule Conclusions
-```text
-// Different conclusion forms
-Γ ⊢ e : τ₁, Γ ⊢ e : τ₂
------------------------ (intersection)
-τ₁ ∧ τ₂
-
-x ∈ Γ
------ (lookup)
-Γ(x)
-
-Γ ⊢ value : τ
--------------- (extend_context)
-Γ → Γ[x:τ] ⊢ τ
-```
-
-
-Additional characters are dynamically added based on configured operators.
-
-### Integration with Grammar Productions
-
-Type expressions integrate seamlessly with grammar productions:
-
-```text
-// Type-annotated grammar productions
-FunctionDecl(func) ::= Type[returnType] Identifier[name] '(' ParamList ')' Block[body]
-VariableDecl(var) ::= Type[varType] Identifier[name] ('=' Expr[init])?
-TypeCast(cast) ::= '(' Type[targetType] ')' Expr[expr]
-
-// Corresponding typing rules use the same type expressions
-Γ ⊢ body : returnType, Γ ⊢ params : paramTypes
------------------------------------------------- (func)
-paramTypes → returnType
-
-Γ ⊢ init : varType
------------------- (var)
-Γ → Γ[name:varType] ⊢ varType
-
-// Type compatibility handles subtyping with ':'
-Γ ⊢ expr : sourceType, sourceType : targetType
------------------------------------------------ (cast)
-targetType
-```
-
-## Current Limitations / Future Work
-- Single context symbol Γ only (no Δ, Θ yet)
-- No polymorphism / quantifiers
-- No context joins/branching (if/else) or deletions
-- Re-binding after deserialize not automated
-- No pointer/reference/array type checking logic yet
-- Type compatibility currently simple (structural compatibility + equality); no subtyping lattice
-
-Planned enhancements: multi-context support, polymorphic/generalized types, context merging, richer repetition semantics, caching bound rule templates.
+This document defines the grammar file format for the P7 constraint system. A grammar file specifies both the syntax (production rules) and semantics (typing rules) of a target language.
 
 ---
-Concise: Grammar + typing rules produce ground `BoundTypingRule`s at parse time; the checker executes pure evaluation over these ground rules with optional functional context threading.
 
+## 1. File Structure
+
+A grammar file consists of **blocks** separated by blank lines. Each block is either:
+- A **production block** (syntax rules)
+- A **typing rule block** (semantic rules)
+
+```
+// Comments start with double slashes
+ProductionBlock
+
+TypingRuleBlock
+
+ProductionBlock
+```
+
+**Start Symbol**: The last declared non-terminal becomes the start symbol.
+
+---
+
+## 2. Production Rules
+
+### 2.1 Basic Syntax
+
+```
+NonTerminal ::= Symbol₁ Symbol₂ ... Symbolₙ
+```
+
+A production defines how a non-terminal expands into a sequence of symbols.
+
+### 2.2 Non-Terminal Names
+
+Non-terminals are identifiers starting with an uppercase letter:
+```
+Expression
+AtomicType
+FunctionDecl
+```
+
+### 2.3 Rule Annotation
+
+Associate a typing rule with a production using parentheses:
+```
+NonTerminal(ruleName) ::= ...
+```
+
+The `ruleName` must match a declared typing rule.
+
+### 2.4 Symbols
+
+| Symbol Type | Syntax | Example |
+|-------------|--------|---------|
+| Non-terminal | `Name` | `Expression`, `Type` |
+| Literal (single quotes) | `'text'` | `'λ'`, `'let'`, `'->'` |
+| Literal (double quotes) | `"text"` | `"if"`, `"then"` |
+| Regex pattern | `/pattern/` | `/[a-z]+/`, `/[0-9]+/` |
+| Empty (epsilon) | `ε` | `ε` |
+
+**Note**: ASCII placeholders like `epsilon` or `EPS` are **not** accepted. Use `ε` (U+03B5).
+
+### 2.5 Bindings
+
+Attach a binding to any symbol using square brackets:
+```
+NonTerminal ::= Symbol[bindingName]
+```
+
+Bindings create anchors for the typing system to reference AST nodes.
+
+```
+Lambda(abs) ::= 'λ' Identifier[x] ':' Type[τ] '.' Expression[e]
+```
+
+### 2.6 Alternatives
+
+Multiple alternatives are separated by `|`:
+```
+Type ::= BaseType | FunctionType | '(' Type ')'
+```
+
+Alternatives may span multiple lines if continuation lines start with `|`:
+```
+Expression ::= Variable
+             | Lambda
+             | Application
+             | '(' Expression ')'
+```
+
+### 2.7 Empty Productions
+
+Use `ε` alone to define a nullable production:
+```
+OptionalArgs ::= ArgList | ε
+```
+
+Epsilon cannot:
+- Carry a binding
+- Mix with other symbols in the same alternative
+
+---
+
+## 3. Typing Rules
+
+### 3.1 Structure
+
+```
+premise₁, premise₂, ...
+----------------------- (ruleName)
+conclusion
+```
+
+### 3.2 Premise Forms
+
+| Form | Syntax | Semantics |
+|------|--------|-----------|
+| Judgment | `Γ ⊢ e : τ` | Term `e` has type `τ` in context `Γ` |
+| Membership | `x ∈ Γ` | Variable `x` is bound in `Γ` |
+| Extension | `Γ[x:τ] ⊢ e : σ` | Check `e : σ` with `x:τ` added to `Γ` |
+
+**Premise extensions are local**: `Γ[x:τ]` in a premise only affects that premise's scope.
+
+```
+Γ[x:τ₁] ⊢ e : τ₂      // x:τ₁ visible only when checking e
+----------------------- (abs)
+τ₁ → τ₂
+```
+
+### 3.3 Conclusion Forms
+
+| Form | Syntax | Semantics |
+|------|--------|-----------|
+| Bare type | `τ` | Rule produces type `τ` |
+| Lookup | `Γ(x)` | Return type of `x` from context |
+| Transform | `Γ → Γ'[x:τ] ⊢ σ` | Extend parent context with `x:τ` |
+
+**Conclusion extensions propagate upward**: The arrow `→` in conclusions modifies the context visible to *parent* nodes.
+
+```
+----------------------- (let)
+Γ → Γ[x:τ] ⊢ τ         // x:τ added to context for subsequent code
+```
+
+### 3.4 Context Scoping Summary
+
+| Location | Syntax | Scope |
+|----------|--------|-------|
+| Premise | `Γ[x:τ] ⊢ ...` | Local to that premise only |
+| Conclusion | `Γ → Γ[x:τ] ⊢ ...` | Propagates to parent/siblings |
+
+### 3.5 Axioms
+
+Rules with empty premises:
+```
+----------------------- (literal)
+'int'
+```
+
+---
+
+## 4. Type Expressions
+
+### 4.1 Base Types
+
+| Type | Syntax | Description |
+|------|--------|-------------|
+| Atom | `τ`, `Int`, `Bool` | Type variable or named type |
+| Raw | `'int'`, `'void'` | Literal/concrete type |
+| Universe | `⊤` | Top type (all values) |
+| Empty | `∅` | Bottom type (no values) |
+
+### 4.2 Composite Types
+
+| Type | Syntax | Description |
+|------|--------|-------------|
+| Function | `τ₁ → τ₂` or `τ₁ -> τ₂` | Function type (right-associative) |
+| Tuple | `(τ...)` | Tuple/product meta-type |
+| Union | `τ₁ ∨ τ₂` or `τ₁ \| τ₂` | Either type |
+| Intersection | `τ₁ ∧ τ₂` or `τ₁ & τ₂` | Both types |
+| Negation | `¬τ` or `!τ` | Complement type |
+| Context Call | `Γ(x)` | Type lookup |
+
+### 4.3 Inference Variables
+
+Variables prefixed with `?` are inference variables for pattern matching:
+```
+?A, ?B, ?Result
+```
+
+These unify during type checking and enable rules like:
+```
+Γ ⊢ f : ?A → ?B, Γ ⊢ x : ?A
+----------------------------- (app)
+?B
+```
+
+### 4.4 Operator Precedence
+
+From highest to lowest:
+1. Negation (`¬`, `!`) — prefix
+2. Intersection (`∧`, `&`) — left-associative
+3. Union (`∨`, `|`) — left-associative  
+4. Arrow (`→`, `->`) — right-associative
+
+Use parentheses to override: `(τ₁ → τ₂) → τ₃`
+
+---
+
+## 5. Unicode Support
+
+### 5.1 Recommended Symbols
+
+| Symbol | Unicode | Description |
+|--------|---------|-------------|
+| `→` | U+2192 | Arrow (function type) |
+| `λ` | U+03BB | Lambda |
+| `τ` | U+03C4 | Tau (type variable) |
+| `Γ` | U+0393 | Gamma (context) |
+| `⊢` | U+22A2 | Turnstile |
+| `∈` | U+2208 | Element of |
+| `∧` | U+2227 | Logical and |
+| `∨` | U+2228 | Logical or |
+| `¬` | U+00AC | Negation |
+| `⊤` | U+22A4 | Top/universe |
+| `∅` | U+2205 | Empty set |
+| `ε` | U+03B5 | Epsilon |
+
+### 5.2 Subscripts
+
+Subscript digits for distinguishing variables:
+```
+τ₁ τ₂ τ₃ τ₄ τ₅ τ₆ τ₇ τ₈ τ₉ τ₀
+```
+
+---
+
+## 6. Complete Example: Simply Typed Lambda Calculus
+
+```
+// Lexical elements
+Identifier ::= /[a-z][a-zA-Z0-9]*/
+
+// Expressions
+Variable(var) ::= Identifier[x]
+Abstraction(abs) ::= 'λ' Identifier[x] ':' Type[τ] '.' Expression[e]
+
+AtomicExpression ::= Variable | '(' Expression ')'
+Application(app) ::= AtomicExpression[e₁] AtomicExpression[e₂]
+
+Expression ::= AtomicExpression | Abstraction | Application
+
+// Types
+BaseType ::= 'Int' | 'Bool'
+AtomicType ::= BaseType | '(' Type ')'
+FunctionType ::= AtomicType[τ₁] '→' Type[τ₂]
+Type ::= AtomicType | FunctionType
+
+// Variable lookup
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+// Lambda abstraction
+Γ[x:τ] ⊢ e : τ₂
+----------------------- (abs)
+τ → τ₂
+
+// Function application
+Γ ⊢ e₁ : ?A → ?B, Γ ⊢ e₂ : ?A
+-------------------------------- (app)
+?B
+```
+
+---
+
+## 7. Restrictions
+
+### 7.1 Not Supported
+
+- **Repetition operators** (`*`, `+`, `?`) — use recursive productions instead
+- **Inline grouping** — use separate non-terminals
+- **EBNF extensions** — pure BNF only
+
+### 7.2 Recursive Patterns
+
+Instead of `A*`, use:
+```
+AList ::= ε | A AList
+```
+
+Instead of `A+`, use:
+```
+AList ::= A | A AList
+```
+
+Instead of `A?`, use:
+```
+OptA ::= A | ε
+```
+
+---
+
+## 8. Grammar Constraints
+
+1. Every `ruleName` in a production annotation must have a corresponding typing rule
+2. Every binding referenced in a typing rule must exist in the annotated production (or reachable via non-terminals)
+3. The grammar must be unambiguous for deterministic binding resolution
+4. Epsilon alternatives cannot carry bindings or mix with other symbols
+
+---
+
+## 9. File Extension
+
+Grammar files use the `.spec` extension by convention.
+
+---
+
+## Appendix: BNF of the Grammar Format
+
+```
+GrammarFile   ::= Block (BlankLine Block)*
+Block         ::= ProductionBlock | TypingBlock
+BlankLine     ::= '\n' '\n'+
+
+ProductionBlock ::= Production (ContinuationLine)*
+Production      ::= NonTerminal '::=' RHS
+ContinuationLine ::= '|' RHS
+NonTerminal     ::= Identifier ('(' RuleName ')')?
+RuleName        ::= Identifier
+RHS             ::= Alternative ('|' Alternative)*
+Alternative     ::= Symbol+ | 'ε'
+Symbol          ::= (Terminal | NonTerminalRef | Regex) Binding?
+Terminal        ::= SingleQuoted | DoubleQuoted
+SingleQuoted    ::= "'" [^']+ "'"
+DoubleQuoted    ::= '"' [^"]+ '"'
+Regex           ::= '/' [^/]+ '/'
+NonTerminalRef  ::= Identifier
+Binding         ::= '[' Identifier ']'
+
+TypingBlock   ::= Premises? Separator Conclusion
+Premises      ::= Premise (',' Premise)*
+Premise       ::= Setting? (Judgment)?
+Setting       ::= Context Extension*
+Context       ::= Identifier
+Extension     ::= '[' Identifier ':' TypeExpr ']'
+Judgment      ::= Ascription | Membership
+Ascription    ::= Term ':' TypeExpr
+Membership    ::= Identifier '∈' Context
+Separator     ::= '-'+ '(' RuleName ')'
+Conclusion    ::= TypeExpr | ContextLookup | ContextTransform
+ContextLookup ::= Context '(' Identifier ')'
+ContextTransform ::= Context '->' Setting '⊢' TypeExpr
+TypeExpr      ::= ... (see Section 4)
+```

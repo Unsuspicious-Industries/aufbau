@@ -85,15 +85,62 @@ impl TypingRule {
             .filter_map(|p| match Self::parse_premise(p) {
                 Ok(Some(pr)) => Some(Ok(pr)),
                 Ok(None) => None,
-                Err(e) => Some(Err(e)),
+                Err(e) => {
+                    println!("DEBUG: Failed to parse premise '{}': {}", p, e);
+                    Some(Err(e))
+                },
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let conclusion = Self::parse_conclusion(&conclusion)?;
+        let conclusion = match Self::parse_conclusion(&conclusion) {
+            Ok(c) => c,
+            Err(e) => {
+                println!("DEBUG: Failed to parse conclusion '{}': {}", conclusion, e);
+                return Err(e);
+            }
+        };
         Ok(Self {
             name,
             premises,
             conclusion,
         })
+    }
+
+    /// Get set of binding names used by this rule
+    pub fn used_bindings(&self) -> std::collections::HashSet<&str> {
+        let mut bindings = std::collections::HashSet::new();
+        
+        // Collect from premises
+        for premise in &self.premises {
+            // From setting extensions
+            if let Some(setting) = &premise.setting {
+                for (var, _) in &setting.extensions {
+                    bindings.insert(var.as_str());
+                }
+            }
+            // From judgments
+            if let Some(judgment) = &premise.judgment {
+                match judgment {
+                    TypingJudgment::Ascription((term, _)) => {
+                        bindings.insert(term.as_str());
+                    }
+                    TypingJudgment::Membership(var, _) => {
+                        bindings.insert(var.as_str());
+                    }
+                }
+            }
+        }
+        
+        // Collect from conclusion
+        if let Some(output) = &self.conclusion.context.output {
+            for (var, _) in &output.extensions {
+                bindings.insert(var.as_str());
+            }
+        }
+        if let ConclusionKind::ContextLookup(_, var) = &self.conclusion.kind {
+            bindings.insert(var.as_str());
+        }
+        
+        bindings
     }
 
     /// Parse a conclusion string into a Conclusion struct

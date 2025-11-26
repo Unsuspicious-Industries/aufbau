@@ -53,7 +53,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
-    /// use beam::regex::Regex;
+    /// use p7::regex::Regex;
     ///
     /// let r = Regex::from_str("a+").unwrap();
     /// let r = Regex::from_str("[a-z]{2,5}").unwrap();
@@ -276,6 +276,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::literal("hello");
     /// assert!(r.match_full("hello"));
     /// assert!(!r.match_full("world"));
@@ -294,6 +295,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::zero_or_more(Regex::Char('a'));
     /// // Equivalent to "a*"
     /// ```
@@ -307,6 +309,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::one_or_more(Regex::Char('a'));
     /// // Equivalent to "a+"
     /// ```
@@ -320,6 +323,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::optional(Regex::Char('a'));
     /// // Equivalent to "a?"
     /// ```
@@ -333,6 +337,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::exactly(Regex::Char('a'), 3);
     /// // Equivalent to "aaa" or "a{3}"
     /// ```
@@ -352,6 +357,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::at_least(Regex::Char('a'), 2);
     /// // Equivalent to "a{2,}" or "aa+"
     /// ```
@@ -364,6 +370,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::between(Regex::Char('a'), 2, 4);
     /// // Equivalent to "a{2,4}"
     /// ```
@@ -394,6 +401,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::any_of("abc");
     /// // Equivalent to "[abc]" or "a|b|c"
     /// ```
@@ -416,6 +424,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::concat(Regex::Char('a'), Regex::Char('b'));
     /// // Equivalent to "ab"
     /// ```
@@ -427,6 +436,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::union(Regex::Char('a'), Regex::Char('b'));
     /// // Equivalent to "a|b"
     /// ```
@@ -438,6 +448,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::concat_many(vec![
     ///     Regex::Char('a'),
     ///     Regex::Char('b'),
@@ -459,6 +470,7 @@ impl Regex {
     ///
     /// # Examples
     /// ```
+    /// use p7::regex::Regex;
     /// let r = Regex::union_many(vec![
     ///     Regex::Char('a'),
     ///     Regex::Char('b'),

@@ -1,0 +1,13 @@
+[package]
+name = "p7_python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "p7_constrained"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+p7 = { path = ".." }
+

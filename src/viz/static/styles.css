@@ -69,6 +69,147 @@ body {
 .btn:hover { filter: brightness(1.1); }
 .status { color: var(--muted); }
 .error { color: var(--red); white-space: pre-wrap; }
+.parse-status { color: var(--accent); font-size: 12px; }
+
+.divider { border-top: 1px solid var(--border); margin: 12px 0; }
+
+.completions-panel {
+	background: #0e131b;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 8px;
+	min-height: 60px;
+	max-height: 200px;
+	overflow: auto;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.completion-item {
+	background: var(--border);
+	color: var(--green);
+	padding: 2px 8px;
+	border-radius: 4px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+.completion-item:hover {
+	background: var(--green);
+	color: var(--bg);
+	transform: scale(1.05);
+}
+.completion-item.rejected {
+	background: transparent;
+	color: var(--muted);
+	border: 1px dashed var(--border);
+	opacity: 0.5;
+	cursor: not-allowed;
+	text-decoration: line-through;
+}
+.completion-item.rejected:hover {
+	background: transparent;
+	color: var(--red);
+	transform: none;
+	opacity: 0.7;
+}
+.muted { color: var(--muted); font-style: italic; }
+
+.context-panel {
+	background: #0e131b;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 8px;
+	min-height: 40px;
+	max-height: 120px;
+	overflow: auto;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.context-entry {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 8px;
+	border-radius: 4px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 11px;
+	background: rgba(108, 182, 255, 0.15);
+	border: 1px solid var(--accent);
+	color: var(--accent);
+}
+.context-entry .ctx-name { color: var(--text); }
+.context-entry .ctx-colon { color: var(--muted); }
+.context-entry .ctx-type { color: var(--yellow); }
+
+.details-panel {
+	background: #0e131b;
+	border: 1px solid var(--border);
+	border-radius: 6px;
+	padding: 8px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 11px;
+	white-space: pre-wrap;
+	min-height: 80px;
+	max-height: 300px;
+	overflow: auto;
+	color: var(--muted);
+}
+
+.checkbox-label { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 4px; }
+
+.filter-controls {
+	display: flex;
+	gap: 6px;
+	margin-bottom: 8px;
+}
+.btn-small {
+	background: var(--border);
+	color: var(--muted);
+	border: none;
+	border-radius: 4px;
+	padding: 4px 10px;
+	font-size: 12px;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+.btn-small:hover { background: #2a3140; color: var(--text); }
+.btn-small.active { background: var(--accent); color: #081018; }
+.btn-small.btn-accent { border: 1px solid var(--green); color: var(--green); }
+.btn-small.btn-accent:hover { background: rgba(63, 185, 80, 0.2); }
+.btn-small.btn-accent.active { background: var(--green); color: #081018; }
+
+.tree-selector {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	max-height: 100px;
+	overflow-y: auto;
+}
+.tree-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px;
+	border-radius: 4px;
+	font-size: 11px;
+	cursor: pointer;
+	border: 1px solid var(--border);
+	transition: all 0.15s ease;
+}
+.tree-chip.complete { background: rgba(63, 185, 80, 0.15); border-color: var(--green); color: var(--green); }
+.tree-chip.partial { background: rgba(242, 204, 96, 0.15); border-color: var(--yellow); color: var(--yellow); }
+.tree-chip.type-error { background: rgba(248, 81, 73, 0.15); border-color: var(--red); color: var(--red); }
+.tree-chip.hidden { opacity: 0.3; }
+.tree-chip:hover { filter: brightness(1.2); }
+.tree-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+.tree-chip.complete .dot { background: var(--green); }
+.tree-chip.partial .dot { background: var(--yellow); }
+.tree-chip.type-error .dot { background: var(--red); }
+
+.hint { font-size: 10px; color: var(--muted); font-weight: normal; }
 
 svg { width: 100%; height: 100%; background: #0e131b; }
 .edge { stroke: #6b7280; stroke-width: 1.5; }

@@ -1,1 +1,6 @@
-/target
+target
+*/target
+tmp
+*/tmp
+proptest
+

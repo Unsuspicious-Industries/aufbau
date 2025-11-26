@@ -109,42 +109,32 @@ impl NonTerminal {
     }
 
     pub fn from_partial(nt: &crate::logic::partial::NonTerminal) -> Result<Self, String> {
-        let alt = nt.pick_complete_alt()
-            .ok_or_else(|| format!("No complete alternative for nonterminal '{}'", nt.name))?;
-        let mut children: Vec<ASTNode> = Vec::new();
+        if !nt.is_complete() {
+            return Err(format!("Nonterminal '{}' is not complete", nt.name));
+        }
 
-        let mut indices: Vec<usize> = alt.slots.keys().cloned().collect();
-        indices.sort_unstable();
-        for idx in indices {
-            if let Some(slot) = alt.slots.get(&idx) {
-                for node in slot.nodes() {
-                    match node {
-                        crate::logic::partial::Node::Terminal(t) => {
-                            let (value, binding) = match t {
-                                crate::logic::partial::Terminal::Complete { value, binding, .. } => {
-                                    (value.clone(), binding.clone())
-                                }
-                                crate::logic::partial::Terminal::Partial { .. } => {
-                                    return Err(format!(
-                                        "Partial terminal in complete alternative '{}' at slot {}",
-                                        nt.name, idx
-                                    ));
-                                }
-                            };
-                            children.push(ASTNode::Terminal(
-                                crate::logic::ast::Terminal {
-                                    value,
-                                    span: None, // Span tracking removed in new structure
-                                    binding,
-                                },
+        let mut children: Vec<ASTNode> = Vec::new();
+        for child in &nt.children {
+            match child {
+                crate::logic::partial::Node::Terminal(t) => {
+                    match t {
+                        crate::logic::partial::Terminal::Complete { value, binding, .. } => {
+                            children.push(ASTNode::Terminal(crate::logic::ast::Terminal {
+                                value: value.clone(),
+                                span: None, // Span tracking removed in new structure
+                                binding: binding.clone(),
+                            }));
+                        }
+                        crate::logic::partial::Terminal::Partial { .. } => {
+                            return Err(format!(
+                                "Partial terminal in complete nonterminal '{}'",
+                                nt.name
                             ));
                         }
-                        crate::logic::partial::Node::NonTerminal(child_nt) => {
-                            children.push(ASTNode::Nonterminal(NonTerminal::from_partial(
-                                child_nt,
-                            )?));
-                        }
                     }
+                }
+                crate::logic::partial::Node::NonTerminal(child_nt) => {
+                    children.push(ASTNode::Nonterminal(NonTerminal::from_partial(child_nt)?));
                 }
             }
         }
@@ -160,7 +150,6 @@ impl NonTerminal {
         Ok(full)
     }
 }
-
 
 /// Terminal-specific data from an ASTNode
 #[derive(Debug, Clone)]

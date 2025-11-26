@@ -71,43 +71,22 @@ impl Grammar {
 
     fn format_symbol(&self, symbol: &Symbol) -> String {
         match symbol {
-            Symbol::Single { value, binding, repetition } => {
-                let base = self.format_symbol(value);
-                let rep = match repetition {
-                    Some((0, None)) => "*",
-                    Some((0, Some(1))) => "?",
-                    // We currently only serialize common forms (* and ?).
-                    // Other forms should not appear post-desugaring.
-                    Some(_) => "",
-                    None => "",
-                };
+            Symbol::Expression { name, binding } => {
                 if let Some(b) = binding {
-                    format!("{}[{}]{}", base, b, rep)
+                    format!("{}[{}]", name, b)
                 } else {
-                    format!("{}{}", base, rep)
+                    name.to_string()
                 }
             }
-            Symbol::Litteral(value) => format!("'{}'", value),
-            Symbol::Regex(value) => format!("/{}/", value.to_pattern()),
-            Symbol::Expression(value) => self.base_symbol_str(value),
+            Symbol::Regex { regex, binding } => {
+                let base = format!("/{}/", regex.to_pattern());
+                if let Some(b) = binding {
+                    format!("{}[{}]", base, b)
+                } else {
+                    base
+                }
+            }
         }
-    }
-
-    fn base_symbol_str(&self, value: &str) -> String {
-        if value.starts_with('/') && value.ends_with('/') {
-            return value.to_string();
-        }
-        let is_nt = self.productions.contains_key(value);
-        if is_nt {
-            return value.to_string();
-        }
-        if value.starts_with('\'') && value.ends_with('\'') {
-            return value.to_string();
-        }
-        if value.starts_with('"') && value.ends_with('"') {
-            return value.to_string();
-        }
-        format!("'{}'", value)
     }
 
     /// Write the textual specification to a file on disk.
@@ -134,18 +113,24 @@ fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
                     format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
                 }
             }
-            (None, Some(crate::logic::typing::TypingJudgment::Ascription((term, ty)))) => {
+            (
+                std::option::Option::None,
+                Some(crate::logic::typing::TypingJudgment::Ascription((term, ty))),
+            ) => {
                 format!("{} : {}", term, ty)
             }
-            (None, Some(crate::logic::typing::TypingJudgment::Membership(var, ctx))) => {
+            (
+                std::option::Option::None,
+                Some(crate::logic::typing::TypingJudgment::Membership(var, ctx)),
+            ) => {
                 format!("{} ∈ {}", var, ctx)
             }
             (Some(_), Some(crate::logic::typing::TypingJudgment::Membership(var, ctx))) => {
                 // Membership with setting doesn't make sense in current design, but handle it
                 format!("{} ∈ {}", var, ctx)
             }
-            (Some(setting), None) => format!("{}", setting.name),
-            (None, None) => String::new(),
+            (Some(setting), std::option::Option::None) => format!("{}", setting.name),
+            (std::option::Option::None, std::option::Option::None) => String::new(),
         })
         .collect::<Vec<_>>()
         .join(", ")

@@ -1,9 +1,8 @@
 use super::*;
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Symbol};
-use std::collections::HashSet;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
-
+use std::collections::HashSet;
 
 /// The result of computing valid next tokens for a partial parse.
 #[derive(Clone, Debug)]
@@ -26,15 +25,13 @@ impl CompletionSet {
 
     pub fn matches(&self, text: &str) -> bool {
         let text = text.as_ref();
-        self.tokens
-            .iter()
-            .any(|t| match t.prefix_match(text) {
-                PrefixStatus::Extensible(_) | PrefixStatus::Complete | PrefixStatus::Prefix(_) => true,
-                PrefixStatus::NoMatch => match DerivativeRegex::from_str(text) {
-                    Ok(parsed) => &parsed == t,
-                    Err(_) => false,
-                },
-            })
+        self.tokens.iter().any(|t| match t.prefix_match(text) {
+            PrefixStatus::Extensible(_) | PrefixStatus::Complete | PrefixStatus::Prefix(_) => true,
+            PrefixStatus::NoMatch => match DerivativeRegex::from_str(text) {
+                Ok(parsed) => &parsed == t,
+                Err(_) => false,
+            },
+        })
     }
 }
 
@@ -45,113 +42,115 @@ impl PartialAST {
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
         debug_trace!(
             "partial.completion",
-            "PartialAST::completions: input='{}'",
-            self.input
-        );
-        let tokens = self.root().collect_valid_tokens(grammar);
-        CompletionSet::new(tokens)
-    }
-
-}
-
-impl NonTerminal {
-    /// Collect valid next tokens from all alternatives.
-    /// 
-    /// Key invariant: If any alternative is complete, we should NOT suggest tokens
-    /// from incomplete alternatives. This prevents suggesting tokens that would lead
-    /// to dead-end states (violating the core theorem that incomplete ASTs must have
-    /// valid completions).
-    fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
-        debug_trace!(
-            "partial.completion",
-            "NonTerminal::collect_valid_tokens: nt='{}', alts={}, has_complete={}",
-            self.name,
-            self.alts.len(),
-            self.is_complete()
-        );
-        self.alts
-            .iter()
-            .flat_map(|alt| alt.collect_valid_tokens(grammar))
-            .collect()
-    }
-}
-
-impl Alt {
-    /// Collect valid next tokens for this alternative.
-    fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
-        debug_trace!(
-            "partial.completion",
-            "Alt::collect_valid_tokens: is_complete={}",
-            self.is_complete()
+            "PartialAST::completions: input='{}', roots={}",
+            self.input,
+            self.roots.len()
         );
 
         let mut tokens = Vec::new();
-        
-        // If complete, check for extensible terminals (terminals with extensions)
+        for root in &self.roots {
+            tokens.extend(root.collect_valid_tokens(grammar));
+        }
+
+        CompletionSet::new(tokens)
+    }
+}
+
+impl NonTerminal {
+    pub fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
+        let mut tokens = Vec::new();
+
         if self.is_complete() {
-            for (idx, slot) in &self.slots {
-                for node in slot.nodes() {
-                    if let Node::Terminal(Terminal::Complete { extension: Some(ext), .. }) = node {
-                        tokens.push(ext.clone());
-                    }
-                }
-                // Also check if symbol allows repetition
-                if let Some(symbol) = self.production.rhs.get(*idx) {
-                    tokens.extend(first_set(symbol, grammar));
-                }
+            // If complete, we can only extend the last token if it is extensible
+            if let Some(last) = self.children.last() {
+                tokens.extend(last.collect_extensions());
             }
             return tokens;
         }
 
-        // Not complete: find the first unfilled slot
-        let mut next_idx = 0;
-        for idx in 0..self.production.rhs.len() {
-            if !self.slots.contains_key(&idx) {
-                next_idx = idx;
-                break;
-            }
-            // Check if this slot has a partial terminal
-            if let Some(slot) = self.slots.get(&idx) {
-                for node in slot.nodes() {
-                    if let Node::Terminal(Terminal::Partial { remainder: Some(rem), .. }) = node {
-                        tokens.push(rem.clone());
-                        return tokens;
-                    }
-                    if let Node::NonTerminal(nt) = node {
-                        if !nt.is_complete() {
-                            // Partial nonterminal - get its completions
-                            tokens.extend(nt.collect_valid_tokens(grammar));
-                            return tokens;
+        // Partial node: find the frontier
+        if let Some(last_child) = self.children.last() {
+            match last_child {
+                Node::Terminal(Terminal::Partial {
+                    remainder: Some(rem),
+                    ..
+                }) => {
+                    tokens.push(rem.clone());
+                }
+                Node::NonTerminal(nt) => {
+                    if !nt.is_complete() {
+                        tokens.extend(nt.collect_valid_tokens(grammar));
+                    } else {
+                        // Last child is complete. We need the next symbol in the production.
+                        let next_idx = self.children.len();
+                        if let Some(symbol) = self.production.rhs.get(next_idx) {
+                            tokens.extend(first_set(symbol, grammar));
                         }
                     }
                 }
+                Node::Terminal(Terminal::Complete { .. }) => {
+                    // Last child is complete terminal. Next symbol.
+                    let next_idx = self.children.len();
+                    if let Some(symbol) = self.production.rhs.get(next_idx) {
+                        tokens.extend(first_set(symbol, grammar));
+                    }
+                }
+                _ => {}
             }
-            next_idx = idx + 1;
+        } else {
+            // No children. First symbol.
+            if let Some(symbol) = self.production.rhs.first() {
+                tokens.extend(first_set(symbol, grammar));
+            }
         }
-        
-        // Get first set of next expected symbol
-        if let Some(symbol) = self.production.rhs.get(next_idx) {
-            tokens.extend(first_set(symbol, grammar));
-        }
-        
+
         tokens
+    }
+}
+
+impl Node {
+    fn collect_extensions(&self) -> Vec<DerivativeRegex> {
+        match self {
+            Node::Terminal(Terminal::Complete {
+                extension: Some(ext),
+                ..
+            }) => vec![ext.clone()],
+            Node::NonTerminal(nt) => {
+                if let Some(last) = nt.children.last() {
+                    last.collect_extensions()
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![],
+        }
     }
 }
 
 /// Get the FIRST set for a symbol (all tokens that can start this symbol).
 fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
-    match symbol {
-        Symbol::Litteral(text) => vec![DerivativeRegex::literal(&text)],
-        Symbol::Regex(re) => vec![re.clone()],
+    first_set_rec(symbol, grammar, &mut HashSet::new())
+}
 
-        Symbol::Expression(nt_name) => {
-            // Look up nonterminal in grammar and get FIRST set of all its productions
-            if let Some(productions) = grammar.productions.get(nt_name) {
+fn first_set_rec(
+    symbol: &Symbol,
+    grammar: &Grammar,
+    visited: &mut HashSet<String>,
+) -> Vec<DerivativeRegex> {
+    match symbol {
+        Symbol::Regex { regex, .. } => vec![regex.clone()],
+        Symbol::Expression { name: nt_name, .. } => {
+            if visited.contains(nt_name) {
+                return vec![];
+            }
+            visited.insert(nt_name.clone());
+
+            let res = if let Some(productions) = grammar.productions.get(nt_name) {
                 productions
                     .iter()
                     .flat_map(|prod| {
                         if let Some(first_sym) = prod.rhs.first() {
-                            first_set(first_sym, grammar)
+                            first_set_rec(first_sym, grammar, visited)
                         } else {
                             vec![]
                         }
@@ -159,14 +158,11 @@ fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
                     .collect()
             } else {
                 vec![]
-            }
+            };
+
+            visited.remove(nt_name);
+            res
         }
-        
-        Symbol::Single { value, .. } => {
-            // Single just wraps another symbol
-            first_set(value, grammar)
-        }
-        
     }
 }
 
@@ -174,8 +170,8 @@ fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
 
 #[cfg(test)]
 mod tests {
-    use crate::logic::partial::parse::Parser;
     use super::*;
+    use crate::logic::partial::parse::Parser;
 
     fn complete(spec: &str, input: &str) -> CompletionSet {
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
@@ -187,21 +183,20 @@ mod tests {
     #[test]
     fn test_completions() {
         let spec = r#"
-        U ::= 'b' 'a' 'r' 'c' 'b' 'a' 'r' 'c' 'u'
-        A ::= 'a'
-        B ::= 'b' A 'r'
-        start ::= U | (B 'c')* | 't'
+    U ::= 'b' 'a' 'r' 'c' 'b' 'a' 'r' 'c' 'u'
+    A ::= 'a'
+    B ::= 'b' A 'r'
+    Loop ::= B 'c' Loop | B 'c'
+    start ::= U | Loop | 't'
         "#;
 
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
         let input = "b a r c b a r c";
         let past = p.partial(input).unwrap();
-        
-        println!("Partial AST root: {}", past.root().name);
-        println!("Number of alternatives: {}", past.root().alts.len());
-        println!("Alternatives: {}", past.root());
-        
+
+        println!("Partial AST roots: {}", past.roots.len());
+
         let completions = past.completions(&g);
         println!("Completions: {:?}", completions);
 
@@ -218,7 +213,7 @@ mod tests {
     #[test]
     fn completion_first_sets_with_alternatives() {
         let spec = r#"
-        A(ruleA) ::= 'a' 'x'?
+    A(ruleA) ::= 'a' 'x' | 'a'
         B(ruleB) ::= 'b'
         start ::= A | B
         "#;
@@ -264,7 +259,7 @@ mod tests {
     #[test]
     fn completion_tail_repetition_plus() {
         let spec = r#"
-        start ::= 'a'+
+    start ::= 'a' | 'a' start
         "#;
         let completions = complete(spec, "a");
         assert!(
@@ -276,17 +271,20 @@ mod tests {
     #[test]
     fn completion_nullable_group_lookahead() {
         let spec = r#"
-        start ::= ('a')? 'b'
+    start ::= 'a' 'b' | 'b'
         "#;
         let completions = complete(spec, "");
         assert!(completions.matches("a"), "nullable group allows 'a'");
-        assert!(completions.matches("b"), "nullable group allows lookahead 'b'");
+        assert!(
+            completions.matches("b"),
+            "nullable group allows lookahead 'b'"
+        );
     }
 
     #[test]
     fn completion_group_repetition_tail() {
         let spec = r#"
-        start ::= ('a' 'b')* 'c'
+    start ::= 'c' | 'a' 'b' start
         "#;
         let completions = complete(spec, "ab");
         // For group repetition, FIRST set for the group starts with 'a'
@@ -337,11 +335,14 @@ mod tests {
             .iter()
             .filter(|t| t.equiv(&DerivativeRegex::literal("x")))
             .count();
-        assert_eq!(count_x, 1, "expected deduplication of identical 'x' suggestions");
+        assert_eq!(
+            count_x, 1,
+            "expected deduplication of identical 'x' suggestions"
+        );
     }
 
     // ============================================================================
-    // Some tests on edge cases, not full suit 
+    // Some tests on edge cases, not full suit
     // ============================================================================
 
     #[test]
@@ -352,13 +353,17 @@ mod tests {
         let completions = complete(spec, "");
         // Single literal production
         assert!(completions.matches("hello"), "should suggest 'hello'");
-        assert_eq!(completions.tokens.len(), 1, "should have exactly one completion");
+        assert_eq!(
+            completions.tokens.len(),
+            1,
+            "should have exactly one completion"
+        );
     }
 
     #[test]
     fn completion_nested_nullable_groups() {
         let spec = r#"
-        start ::= ('a')? ('b')? 'c'
+    start ::= 'a' 'b' 'c' | 'a' 'c' | 'b' 'c' | 'c'
         "#;
         let completions = complete(spec, "");
         // Should suggest 'a', 'b', and 'c' (all three are valid starts)
@@ -370,12 +375,18 @@ mod tests {
     #[test]
     fn completion_group_with_optional_prefix() {
         let spec = r#"
-        start ::= ('a' 'b')? 'c' 'd'
+    start ::= 'a' 'b' 'c' 'd' | 'c' 'd'
         "#;
         let completions = complete(spec, "");
         // Group is optional, so should suggest both 'a' (from group) and 'c' (skipping group)
-        assert!(completions.matches("a"), "should suggest 'a' from optional group");
-        assert!(completions.matches("c"), "should suggest 'c' (skipping optional group)");
+        assert!(
+            completions.matches("a"),
+            "should suggest 'a' from optional group"
+        );
+        assert!(
+            completions.matches("c"),
+            "should suggest 'c' (skipping optional group)"
+        );
     }
 
     #[test]
@@ -391,7 +402,11 @@ mod tests {
         assert!(completions.matches("x"), "should include 'x' from A");
         assert!(completions.matches("y"), "should include 'y' from B");
         assert!(completions.matches("z"), "should include 'z' from C");
-        assert_eq!(completions.tokens.len(), 3, "should have exactly 3 completions");
+        assert_eq!(
+            completions.tokens.len(),
+            3,
+            "should have exactly 3 completions"
+        );
     }
 
     #[test]
@@ -405,8 +420,15 @@ mod tests {
         "#;
         let completions = complete(spec, "");
         // Should drill down through all nonterminals to find 'd'
-        assert!(completions.matches("d"), "should find 'd' through nested nonterminals");
-        assert_eq!(completions.tokens.len(), 1, "should have exactly one completion");
+        assert!(
+            completions.matches("d"),
+            "should find 'd' through nested nonterminals"
+        );
+        assert_eq!(
+            completions.tokens.len(),
+            1,
+            "should have exactly one completion"
+        );
     }
 
     #[test]
@@ -416,26 +438,35 @@ mod tests {
         "#;
         let completions = complete(spec, "hello");
         // After matching first literal, should suggest second
-        assert!(completions.matches("world"), "should suggest 'world' after 'hello'");
+        assert!(
+            completions.matches("world"),
+            "should suggest 'world' after 'hello'"
+        );
     }
 
     #[test]
     fn completion_star_repetition_can_skip() {
         let spec = r#"
-        A ::= 'a'
-        start ::= A* 'b'
+    A ::= 'a'
+    start ::= 'b' | A start
         "#;
         let completions = complete(spec, "");
         // * allows zero matches, so both 'a' and 'b' are valid
-        assert!(completions.matches("a"), "should suggest 'a' from repetition");
-        assert!(completions.matches("b"), "should suggest 'b' since * is nullable");
+        assert!(
+            completions.matches("a"),
+            "should suggest 'a' from repetition"
+        );
+        assert!(
+            completions.matches("b"),
+            "should suggest 'b' since * is nullable"
+        );
     }
 
     #[test]
     fn completion_plus_repetition_after_one_match() {
         let spec = r#"
-        A ::= 'a'
-        start ::= A+ 'b'
+    A ::= 'a'
+    start ::= A 'b' | A start
         "#;
         let completions = complete(spec, "a");
         // After one match of A, can repeat or continue to 'b'
@@ -446,13 +477,19 @@ mod tests {
     #[test]
     fn completion_optional_single_symbol() {
         let spec = r#"
-        Foo ::= 'foo'
-        start ::= Foo? 'bar'
+    Foo ::= 'foo'
+    start ::= Foo 'bar' | 'bar'
         "#;
         let completions = complete(spec, "");
         // Optional nonterminal's FIRST and following symbol
-        assert!(completions.matches("foo"), "should suggest 'foo' from optional Foo");
-        assert!(completions.matches("bar"), "should suggest 'bar' since Foo is optional");
+        assert!(
+            completions.matches("foo"),
+            "should suggest 'foo' from optional Foo"
+        );
+        assert!(
+            completions.matches("bar"),
+            "should suggest 'bar' since Foo is optional"
+        );
     }
 
     #[test]
@@ -464,7 +501,10 @@ mod tests {
         "#;
         let completions = complete(spec, "");
         assert!(completions.matches("[0-9]+"), "should suggest number regex");
-        assert!(completions.matches("[a-z]+"), "should suggest identifier regex");
+        assert!(
+            completions.matches("[a-z]+"),
+            "should suggest identifier regex"
+        );
     }
 
     #[test]
@@ -476,19 +516,28 @@ mod tests {
         let completions = complete(spec, "");
         assert!(completions.matches("let"), "should suggest 'let' first");
         // Note: may also suggest other tokens from alternative parses
-        
+
         let completions = complete(spec, "let");
-        assert!(completions.matches("[0-9]+"), "should suggest regex after 'let'");
+        assert!(
+            completions.matches("[0-9]+"),
+            "should suggest regex after 'let'"
+        );
     }
 
     #[test]
     fn completion_multiple_completed_repetitions() {
         let spec = r#"
-        start ::= ('a')* ('b')* 'c'
+    ASeq ::= ε | 'a' ASeq
+    BSeq ::= ε | 'b' BSeq
+    start ::= ASeq BSeq 'c'
         "#;
         let completions = complete(spec, "aabb");
-        // After matching 'aa' and 'bb', can continue either repetition or move to 'c'
-        assert!(completions.matches("a"), "can continue first repetition");
+        // After matching 'aa' and 'bb', can continue second repetition or move to 'c'
+        // Cannot continue first repetition because we have already started BSeq (seen 'b')
+        assert!(
+            !completions.matches("a"),
+            "cannot continue first repetition after starting second"
+        );
         assert!(completions.matches("b"), "can continue second repetition");
         assert!(completions.matches("c"), "can move to 'c'");
     }
@@ -496,7 +545,8 @@ mod tests {
     #[test]
     fn completion_group_with_multiple_symbols() {
         let spec = r#"
-        start ::= ('a' 'b' 'c')+ 'd'
+    start ::= 'a' 'b' 'c' Tail
+    Tail ::= 'd' | 'a' 'b' 'c' Tail
         "#;
         let completions = complete(spec, "abc");
         // After one complete group iteration, can repeat or continue
@@ -512,7 +562,11 @@ mod tests {
         let completions = complete(spec, "ab");
         // Unambiguous: only 'c' is valid next
         assert!(completions.matches("c"), "should suggest 'c'");
-        assert_eq!(completions.tokens.len(), 1, "should have exactly one completion");
+        assert_eq!(
+            completions.tokens.len(),
+            1,
+            "should have exactly one completion"
+        );
     }
 
     #[test]
@@ -527,11 +581,11 @@ mod tests {
         assert!(completions.matches("b"), "should suggest 'b' from A");
         assert!(completions.matches("c"), "should suggest 'c' from B");
     }
-    
+
     // ============================================================================
     // Typed Completion Tests
     // ============================================================================
-    
+
     #[test]
     fn typed_completion_basic() {
         let spec = r#"
@@ -541,16 +595,14 @@ mod tests {
         -------------- (num)
         'int'
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-    let ast = p.partial("").unwrap();
-    let untyped = ast.completions(&g);
+        let ast = p.partial("").unwrap();
+        let untyped = ast.completions(&g);
         assert!(untyped.matches("[0-9]+"));
     }
-    
 
-    
     #[test]
     fn typed_completion_with_context() {
         let spec = r#"
@@ -568,21 +620,24 @@ mod tests {
         -------------- (assign)
         'unit'
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        
+
         // At start, should suggest variable
         let ast1 = p.partial("").unwrap();
         let completions1 = ast1.completions(&g);
-        assert!(completions1.matches("[a-z]+"), "should suggest var at start");
-        
+        assert!(
+            completions1.matches("[a-z]+"),
+            "should suggest var at start"
+        );
+
         // After var and =, should suggest number
         let ast2 = p.partial("x =").unwrap();
         let completions2 = ast2.completions(&g);
         assert!(completions2.matches("[0-9]+"), "should suggest num after =");
     }
-    
+
     #[test]
     fn typed_completion_preserves_all_valid() {
         let spec = r#"
@@ -596,19 +651,19 @@ mod tests {
         -------------- (ruleB)
         'typeB'
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
         let ast = p.partial("").unwrap();
-        
+
         let typed = ast.completions(&g);
-        
+
         // Both should be suggested (both have valid typing rules)
         assert!(typed.matches("a"), "should suggest 'a'");
         assert!(typed.matches("b"), "should suggest 'b'");
         assert_eq!(typed.tokens.len(), 2);
     }
-    
+
     #[test]
     fn typed_completion_complex_expression() {
         let spec = r#"
@@ -622,15 +677,18 @@ mod tests {
         -------------- (add)
         'int'
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        
+
         let ast = p.partial("42 +").unwrap();
         let completions = ast.completions(&g);
-        
+
         // After '+', should suggest another number
-        assert!(completions.matches("[0-9]+"), "should suggest number after +");
+        assert!(
+            completions.matches("[0-9]+"),
+            "should suggest number after +"
+        );
     }
 
     #[test]
@@ -648,34 +706,25 @@ mod tests {
         
         Expression ::= AtomicExpr | BinaryOp
         "#;
-        
+
         let grammar = crate::logic::grammar::Grammar::load(spec).unwrap();
-        
+
         crate::set_debug_level(crate::DebugLevel::Trace);
         crate::set_debug_input(Some("(42)".to_string()));
-        
+
         let mut parser1 = crate::logic::Parser::new(grammar.clone());
         let partial1 = parser1.partial("42").unwrap();
         println!("=== Parsing '42' ===");
         println!("Complete: {}", partial1.complete());
-        println!("Alternatives: {}", partial1.root().alts.len());
-        
+        println!("Roots: {}", partial1.roots.len());
+
         // Second test: parse "(42" - this is where the issue is
         let mut parser2 = crate::logic::Parser::new(grammar.clone());
         let partial2 = parser2.partial("(42").unwrap();
         println!("\n=== Parsing '(42' ===");
         println!("Complete: {}", partial2.complete());
-        println!("Root nonterminal: {}", partial2.root().name);
-        println!("Alternatives: {}", partial2.root().alts.len());
-        
-        for (i, alt) in partial2.root().alts.iter().enumerate() {
-            println!("Alt {}: complete={}", 
-                i, alt.is_complete());
-            if let Some(rule) = &alt.production.rule {
-                println!("  Rule: {}", rule);
-            }
-        }
-        
+        println!("Roots: {}", partial2.roots.len());
+
         // Completions
         let completions = partial2.completions(&grammar);
         println!("Completions for '(42': {:?}", completions);

@@ -1,39 +1,79 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PartialAST Radial Viz</title>
-    <link rel="stylesheet" href="/static/styles.css" />
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand">Parser Visualizer</div>
-      <div class="spacer"></div>
-      <a class="link" href="/synth">Synthesis Viz</a>
-    </header>
-    <main class="layout">
-      <section class="sidebar">
-        <div class="group">
-          <label class="label">Spec file</label>
-          <input id="specFile" type="file" accept=".spec,.txt" />
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>P7 Visualizer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">P7 Parser Visualizer</div>
+    <div class="spacer"></div>
+    <span id="parseStatus" class="parse-status"></span>
+  </header>
+  <main class="layout">
+    <section class="sidebar">
+      <div class="group">
+        <label class="label">Grammar Spec</label>
+        <input id="specFile" type="file" accept=".spec,.txt" />
+      </div>
+      <div class="group">
+        <label class="label">Input</label>
+        <textarea id="input" class="code" placeholder="Type code to parse"></textarea>
+      </div>
+      <div class="row">
+        <button id="render" class="btn">Parse</button>
+        <label class="checkbox-label">
+          <input type="checkbox" id="autoUpdate" checked />
+          Auto-update
+        </label>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="group">
+        <label class="label">Tree Filter</label>
+        <div class="filter-controls">
+          <button id="showAll" class="btn-small active">All</button>
+          <button id="showValid" class="btn-small">Complete</button>
+          <button id="showWellTyped" class="btn-small">Well-typed</button>
+          <button id="showFullyValid" class="btn-small btn-accent">✓ Valid</button>
         </div>
-        <div class="group">
-          <label class="label">Input</label>
-          <textarea id="input" class="code" placeholder="Type code to parse"></textarea>
+        <div id="treeSelector" class="tree-selector">
+          <span class="muted">Parse to see trees</span>
         </div>
-        <div class="row">
-          <button id="render" class="btn">Render</button>
-          <span id="status" class="status"></span>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="group">
+        <label class="label">Completions <span id="completionStats" class="hint"></span></label>
+        <div id="completions" class="completions-panel">
+          <span class="muted">Parse input to see completions</span>
         </div>
-        <pre id="err" class="error"></pre>
-      </section>
-      <section class="stage">
-        <svg id="viz"></svg>
-      </section>
-    </main>
-    <script src="/static/app.js"></script>
-  </body>
-  </html>
-
-
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="group">
+        <label class="label">Typing Context Γ</label>
+        <div id="contextPanel" class="context-panel">
+          <span class="muted">No context bindings</span>
+        </div>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div class="group">
+        <label class="label">Node Details</label>
+        <pre id="details" class="details-panel">Click a node to inspect</pre>
+      </div>
+    </section>
+    <section class="stage">
+      <svg id="viz"></svg>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>

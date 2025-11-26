@@ -1,24 +1,25 @@
+pub mod binding;
 pub mod load;
 pub mod save;
 pub mod utils;
-pub mod desugar;
 
 #[cfg(test)]
 mod tests;
 
 use crate::regex::Regex as DerivativeRegex;
+use binding::BindingMap;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
 pub enum Symbol {
-    Litteral(String),
-    Expression(String),
-    Regex(DerivativeRegex),
-    Single {
-        value: Box<Symbol>,
+    Expression {
+        name: String,
         binding: Option<String>,
-        repetition: Option<(usize, Option<usize>)>,
+    },
+    Regex {
+        regex: DerivativeRegex,
+        binding: Option<String>,
     },
 }
 
@@ -27,21 +28,28 @@ impl Eq for Symbol {}
 impl PartialEq for Symbol {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Symbol::Litteral(a), Symbol::Litteral(b)) => a == b,
-            (Symbol::Expression(a), Symbol::Expression(b)) => a == b,
-            (Symbol::Regex(a), Symbol::Regex(b)) => a.equiv(b),
             (
-                Symbol::Single {
-                    value: va,
+                Symbol::Expression {
+                    name: a,
                     binding: ba,
-                    repetition: ra,
                 },
-                Symbol::Single {
-                    value: vb,
+                Symbol::Expression {
+                    name: b,
                     binding: bb,
-                    repetition: rb,
                 },
-            ) => va == vb && ba == bb && ra == rb,
+            ) => a == b && ba == bb,
+            (
+                Symbol::Regex {
+                    regex: a,
+                    binding: ba,
+                    ..
+                },
+                Symbol::Regex {
+                    regex: b,
+                    binding: bb,
+                    ..
+                },
+            ) => a.equiv(b) && ba == bb,
             _ => false,
         }
     }
@@ -50,105 +58,78 @@ impl PartialEq for Symbol {
 impl Hash for Symbol {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Symbol::Litteral(s) => {
+            Symbol::Expression { name, binding } => {
                 0u8.hash(state);
-                s.hash(state);
-            }
-            Symbol::Expression(s) => {
-                1u8.hash(state);
-                s.hash(state);
-            }
-            Symbol::Regex(r) => {
-                2u8.hash(state);
-                r.to_pattern().hash(state);
-            }
-            Symbol::Single {
-                value,
-                binding,
-                repetition,
-            } => {
-                3u8.hash(state);
-                value.hash(state);
+                name.hash(state);
                 binding.hash(state);
-                repetition.hash(state);
+            }
+            Symbol::Regex { regex, binding, .. } => {
+                1u8.hash(state);
+                regex.to_pattern().hash(state);
+                binding.hash(state);
             }
         }
     }
 }
 
-// Repetition is represented uniformly as a range (min, max), where max=None means unbounded.
-
 impl Symbol {
     pub fn new(value: String) -> Self {
         debug_trace!("grammar", "Creating symbol from value: {}", value);
         if value.starts_with('\'') && value.ends_with('\'') {
-            Self::Litteral(value[1..value.len() - 1].to_string())
+            let literal = value[1..value.len() - 1].to_string();
+            Self::Regex {
+                regex: DerivativeRegex::literal(&literal),
+                binding: None,
+            }
+        } else if value.starts_with('"') && value.ends_with('"') {
+            let literal = value[1..value.len() - 1].to_string();
+            Self::Regex {
+                regex: DerivativeRegex::literal(&literal),
+                binding: None,
+            }
         } else if value.starts_with('/') && value.ends_with('/') && value.len() > 2 {
-            Self::Regex(DerivativeRegex::new(&value[1..value.len() - 1]).unwrap())
+            let pattern = value[1..value.len() - 1].to_string();
+            Self::Regex {
+                regex: DerivativeRegex::new(&pattern).expect("invalid regex literal"),
+                binding: None,
+            }
         } else {
-            Self::Expression(value)
-        }
-    }
-    pub fn with_binding(value: String, binding: String) -> Self {
-        Self::Single {
-            value: Box::new(Self::new(value)),
-            binding: Some(binding),
-            repetition: None,
-        }
-    }
-    pub fn with_repetition(value: String, repetition: (usize, Option<usize>)) -> Self {
-        Self::Single {
-            value: Box::new(Self::new(value)),
-            binding: None,
-            repetition: Some(repetition),
-        }
-    }
-    pub fn with_binding_and_repetition(
-        value: String,
-        binding: String,
-        repetition: (usize, Option<usize>),
-    ) -> Self {
-        Self::Single {
-            value: Box::new(Self::new(value)),
-            binding: Some(binding),
-            repetition: Some(repetition),
+            Self::Expression {
+                name: value,
+                binding: None,
+            }
         }
     }
 
-    pub fn value(&self) -> String {
-        match self {
-            Symbol::Litteral(value) => value.clone(),
-            Symbol::Expression(value) => value.clone(),
-            Symbol::Regex(regex) => format!("/{}/", regex.to_pattern()),
-            Symbol::Single { value, .. } => value.value(),
-        }
+    pub fn with_binding(value: String, binding: String) -> Self {
+        Self::new(value).attach_binding(binding)
     }
+
+    pub fn attach_binding(mut self, binding: String) -> Self {
+        match &mut self {
+            Symbol::Expression { binding: slot, .. } | Symbol::Regex { binding: slot, .. } => {
+                *slot = Some(binding);
+            }
+        }
+        self
+    }
+
     pub fn binding(&self) -> Option<&String> {
         match self {
-            Symbol::Single { binding, .. } => binding.as_ref(),
-            _ => None,
+            Symbol::Expression { binding, .. } | Symbol::Regex { binding, .. } => binding.as_ref(),
         }
     }
-    pub fn repetition(&self) -> Option<&(usize, Option<usize>)> {
-        match self {
-            Symbol::Single { repetition, .. } => repetition.as_ref(),
-            _ => None,
-        }
-    }
+
     pub fn has_binding(&self) -> bool {
         self.binding().is_some()
     }
-    pub fn is_litteral(&self) -> bool {
-        matches!(self, Symbol::Litteral(_))
-    }
+
     pub fn is_regex(&self) -> bool {
-        matches!(self, Symbol::Regex(_))
+        matches!(self, Symbol::Regex { .. })
     }
-    pub fn is_terminal(&self) -> bool {
-        self.is_litteral() || self.is_regex()
-    }
+
     pub fn is_nonterminal(&self) -> bool {
-        !self.is_terminal()
+        matches!(self, Symbol::Expression { .. })
     }
 }
 
@@ -177,11 +158,13 @@ pub struct Grammar {
     pub production_order: Vec<Nonterminal>,
     // Regex representing the union of all accepted tokens (special tokens + regex patterns)
     pub accepted_tokens_regex: Option<DerivativeRegex>,
+    // Binding map for resolving bindings in typing rules
+    pub binding_map: BindingMap,
 }
 
 impl PartialEq for Grammar {
     fn eq(&self, other: &Self) -> bool {
-        // Compare everything except accepted_tokens_regex
+        // Compare everything except accepted_tokens_regex and binding_map
         self.productions == other.productions
             && self.typing_rules == other.typing_rules
             && self.special_tokens == other.special_tokens
@@ -199,6 +182,7 @@ impl Default for Grammar {
             start: None,
             production_order: Vec::default(),
             accepted_tokens_regex: None,
+            binding_map: BindingMap::new(),
         }
     }
 }
@@ -207,6 +191,11 @@ impl Grammar {
     /// Create an empty grammar
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Rebuild the binding map from the current productions and typing rules
+    pub fn rebuild_bindings(&mut self) {
+        self.binding_map = binding::build_binding_map(self);
     }
 
     /// Add a special token to the grammar if not already present.
@@ -234,9 +223,8 @@ impl Grammar {
     /// Check if a symbol is nullable (can match zero tokens).
     pub fn symbol_nullable(&self, symbol: &Symbol) -> bool {
         match symbol {
-            Symbol::Litteral(_) | Symbol::Regex(_) => false,
-
-            Symbol::Expression(nt) => {
+            Symbol::Regex { .. } => false,
+            Symbol::Expression { name: nt, .. } => {
                 let nt = self.productions.get(nt);
                 nt.map(|prod| {
                     prod.iter()
@@ -244,10 +232,6 @@ impl Grammar {
                 })
                 .unwrap_or(false)
             }
-
-            Symbol::Single { repetition, .. } => repetition.map(|(min, _)| min == 0).unwrap_or(false)
-            
         }
     }
 }
-

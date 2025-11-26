@@ -1,5 +1,3 @@
- 
-
 // Extended Typed Lambda Calculus
 pub fn xtlc_spec() -> String {
     use std::path::Path;
@@ -13,7 +11,8 @@ pub fn xtlc_spec() -> String {
 fn test_pass_xtlc() {
     crate::set_debug_level(crate::DebugLevel::Debug);
 
-    let grammar = crate::logic::grammar::Grammar::load(&xtlc_spec()).expect("Failed to load XTLC grammar");
+    let grammar =
+        crate::logic::grammar::Grammar::load(&xtlc_spec()).expect("Failed to load XTLC grammar");
     crate::debug_info!(
         "test",
         "Loaded grammar with {} rules",
@@ -25,9 +24,9 @@ fn test_pass_xtlc() {
     let exprs = ["λx:a->b.x"];
 
     for expr in exprs {
-    crate::set_debug_input(Some(expr.to_string()));
+        crate::set_debug_input(Some(expr.to_string()));
 
         let past = parser.partial(expr).unwrap();
-        println!("Partial AST: {:#?}", past.root);
+        println!("Partial AST: {:#?}", past.roots);
     }
 }

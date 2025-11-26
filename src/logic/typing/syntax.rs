@@ -175,14 +175,14 @@ impl Type {
             }
         }
 
-        if s.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        if s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '?') {
             return Ok(Type::Atom(s.to_string()));
         }
         Err(format!("Invalid type expression: {}", s))
     }
 }
 
-const TYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀ ∧∨()!¬*[] where,.;''";
+const TYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀ ∧∨()!¬*[] where,.;''?";
 pub fn validate_type_expr(expr: &str) -> bool {
     !expr.is_empty() && expr.chars().all(|c| TYPE_CHARS.contains(c))
 }

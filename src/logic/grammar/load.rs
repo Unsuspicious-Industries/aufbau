@@ -1,10 +1,8 @@
 use super::utils::{
-    build_accepted_tokens_regex, extract_special_tokens_from_symbol, parse_inference_rule,
-    parse_nonterminal, parse_production,
+    ParsedRhs, build_accepted_tokens_regex, parse_inference_rule, parse_nonterminal,
+    parse_production, parse_rhs,
 };
-use super::desugar::desugarify_rhs;
 use crate::logic::grammar::{Grammar, Production, TypingRule};
- 
 
 impl Grammar {
     /// Parse the textual specification into a `Grammar`.
@@ -51,8 +49,11 @@ impl Grammar {
                         let (lhs_str, rhs_str) =
                             parse_production(&production_str.replace('\n', " "))?;
                         let (name, rule_name) = parse_nonterminal(&lhs_str)?;
-                        // Desugar groups and expand OneOrMore before constructing grammar
-                        let desugared = desugarify_rhs(&name, &rhs_str)?;
+                        let parsed_rhs = parse_rhs(&rhs_str)?;
+                        let ParsedRhs {
+                            alternatives,
+                            literal_tokens,
+                        } = parsed_rhs;
 
                         // Record first time we see this nonterminal (declaration order)
                         if !nt_order.contains(&name) {
@@ -60,16 +61,12 @@ impl Grammar {
                             grammar.production_order.push(name.clone());
                         }
 
-                        // Create productions and extract special tokens from parsed symbols
-                        for alt_symbols in desugared.alternatives {
-                            // Extract special tokens from this alternative
-                            for symbol in &alt_symbols {
-                                extract_special_tokens_from_symbol(
-                                    symbol,
-                                    &mut grammar.special_tokens,
-                                );
-                            }
+                        for literal in literal_tokens {
+                            grammar.add_special_token(literal);
+                        }
 
+                        // Create productions for each alternative
+                        for alt_symbols in alternatives {
                             let production = Production {
                                 rule: rule_name.clone(),
                                 rhs: alt_symbols,
@@ -79,27 +76,6 @@ impl Grammar {
                                 .entry(name.clone())
                                 .or_default()
                                 .push(production);
-                        }
-
-                        // Add synthetic productions introduced by desugaring
-                        // Note: Don't add synthetic nonterminals to production_order
-                        // because they shouldn't become the start symbol
-                        for (synth_name, rhs) in desugared.synthetic {
-                            if !nt_order.contains(&synth_name) {
-                                nt_order.push(synth_name.clone());
-                                // DO NOT add to grammar.production_order - synthetics are internal
-                            }
-                            for symbol in &rhs {
-                                extract_special_tokens_from_symbol(
-                                    symbol,
-                                    &mut grammar.special_tokens,
-                                );
-                            }
-                            grammar
-                                .productions
-                                .entry(synth_name.clone())
-                                .or_default()
-                                .push(Production { rule: None, rhs });
                         }
                     } else {
                         i += 1;
@@ -120,6 +96,9 @@ impl Grammar {
 
         // Build the unified accepted tokens regex
         grammar.accepted_tokens_regex = build_accepted_tokens_regex(&grammar);
+
+        // Build the binding map
+        grammar.rebuild_bindings();
 
         Ok(grammar)
     }
