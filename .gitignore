@@ -1,5 +1,7 @@
 target
 python/target
+python/.venv
+.venv
 tmp
 proptest
 

@@ -742,14 +742,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p7_python"
-version = "0.1.0"
-dependencies = [
- "p7",
- "pyo3",
-]
-
-[[package]]
 name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,6 +784,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ee95bc4ef87b8d5ba32e8b7714ccc834865276eab0aed5c9958d00ec45f49e8"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proposition_7_py"
+version = "0.1.0"
+dependencies = [
+ "p7",
+ "pyo3",
 ]
 
 [[package]]
