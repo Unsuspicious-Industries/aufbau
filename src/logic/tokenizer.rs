@@ -1,4 +1,7 @@
-use crate::{debug_trace, regex::{PrefixStatus, Regex as DerivativeRegex}};
+use crate::{
+    debug_trace,
+    regex::{PrefixStatus, Regex as DerivativeRegex},
+};
 
 /// A tokenized segment of input with text and position information
 /// Uses byte-based positions and storage to avoid Unicode issues
@@ -88,11 +91,8 @@ impl Tokenizer {
         delimiters: Vec<char>,
         validation_regex: Option<DerivativeRegex>,
     ) -> Self {
-        let special_tokens_bytes = special_tokens
-            .into_iter()
-            .map(|s| s.into_bytes())
-            .collect();
-        
+        let special_tokens_bytes = special_tokens.into_iter().map(|s| s.into_bytes()).collect();
+
         // Convert chars to their UTF-8 byte representation
         // For ASCII chars (0-127), this will be a single byte
         let mut delimiter_bytes = Vec::new();
@@ -103,9 +103,14 @@ impl Tokenizer {
             if bytes.len() == 1 {
                 delimiter_bytes.push(bytes[0]);
             }
-            debug_trace!("tokenizer","Delimiter '{}' encoded to bytes: {:?}", ch, bytes);
+            debug_trace!(
+                "tokenizer",
+                "Delimiter '{}' encoded to bytes: {:?}",
+                ch,
+                bytes
+            );
         }
-        
+
         Self {
             special_tokens: special_tokens_bytes,
             delimiters: delimiter_bytes,
@@ -194,7 +199,12 @@ impl Tokenizer {
                 // Validate token if validation regex is provided
                 if let Some(ref validation_regex) = self.validation_regex {
                     let token_text = segment.text();
-                    debug_trace!("tokenizer","Validating token: '{}' against regex: {:?}", token_text, validation_regex.to_pattern());
+                    debug_trace!(
+                        "tokenizer",
+                        "Validating token: '{}' against regex: {:?}",
+                        token_text,
+                        validation_regex.to_pattern()
+                    );
                     if matches!(
                         validation_regex.prefix_match(&token_text),
                         PrefixStatus::NoMatch
@@ -260,12 +270,12 @@ pub(crate) mod tests {
         let special_tokens = vec!["->".to_string(), "+".to_string()];
         let delimiters = vec![' '];
         let tokenizer = Tokenizer::new(special_tokens, delimiters, None);
-        
+
         let segments = tokenizer.tokenize(input).unwrap();
         let tokens: Vec<_> = segments.iter().map(|s| s.text()).collect();
-        
+
         assert_eq!(tokens, vec!["foo", "->", "bar", "+", "baz"]);
-        
+
         // Verify all segments use byte-based storage
         for seg in &segments {
             assert_eq!(seg.bytes().len(), seg.end - seg.start);
@@ -279,10 +289,10 @@ pub(crate) mod tests {
         let special_tokens = vec![b"::".to_vec()];
         let delimiters = vec![b' '];
         let tokenizer = Tokenizer::from_bytes(special_tokens, delimiters, None);
-        
+
         let segments = tokenizer.tokenize(input).unwrap();
         let tokens: Vec<_> = segments.iter().map(|s| s.text()).collect();
-        
+
         assert_eq!(tokens, vec!["a", "::", "b"]);
     }
 }

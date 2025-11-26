@@ -9,7 +9,9 @@ Variable(var) ::= Identifier[x]
 // Type system with various type expressions
 BaseType ::= 'int' | 'bool' | 'string'
 PointerType ::= '*' Type[base]
-ArrayType ::= Type[base] '[' Number? ']'
+Number ::= /[0-9]+/
+ArrayType ::= Type[base] '[' ArrayLength ']'
+ArrayLength ::= ε | Number
 FunctionType ::= Type[τ₁] '->' Type[τ₂]
 UnionType ::= Type[τ₁] '|' Type[τ₂]
 IntersectionType ::= Type[τ₁] '&' Type[τ₂]

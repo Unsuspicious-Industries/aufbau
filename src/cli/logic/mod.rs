@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use anstyle::{AnsiColor, Style};
 use p7::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
 use p7::logic::{Parser, grammar::Grammar};
- 
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {

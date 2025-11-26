@@ -1,7 +1,12 @@
 // Type system core definitions and re-exports
 
+pub mod core;
+pub mod eval;
 pub mod rule;
-pub mod syntax; // parsing / pretty-printing of types // typing rules (inference rule structures & parsing)
+pub mod syntax;
+
+pub use core::Context;
+pub use eval::evaluate_typing;
 
 ///---------------
 /// Type Representation

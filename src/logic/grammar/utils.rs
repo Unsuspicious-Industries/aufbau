@@ -39,33 +39,6 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
     Ok((nt_str.trim().to_string(), None))
 }
 
-/// Parse repetition suffix from a token and return (base_token, repetition_range)
-/// Repetition is represented as (min, max) where max=None means unbounded.
-/// Supported suffixes:
-///   * => (0, None)
-///   ? => (0, Some(1))
-///   + => (1, None)  (will be expanded during desugaring)
-pub fn parse_repetition_suffix(token: &str) -> (String, Option<(usize, Option<usize>)>) {
-    if token.ends_with('*') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some((0, None)),
-        )
-    } else if token.ends_with('?') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some((0, Some(1))),
-        )
-    } else if token.ends_with('+') {
-        (
-            token[..token.len() - 1].to_string(),
-            Some((1, None)),
-        )
-    } else {
-        (token.to_string(), None)
-    }
-}
-
 /// Split a RHS string by | but respect quoted strings
 fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
     let mut alternatives = Vec::new();
@@ -119,9 +92,16 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
     Ok(alternatives)
 }
 
+/// Result of parsing a RHS: the concrete symbols plus any literal tokens encountered.
+pub struct ParsedRhs {
+    pub alternatives: Vec<Vec<Symbol>>,
+    pub literal_tokens: Vec<String>,
+}
+
 /// Parse RHS with bindings like "'λ' Variable[x] ':' Type[τ₁] '.' Term[e]"
-pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
+pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
     let mut alternatives = Vec::new();
+    let mut literal_tokens = Vec::new();
     let alt_strings = split_alternatives(rhs)?;
     for alt in alt_strings
         .iter()
@@ -129,64 +109,42 @@ pub fn parse_rhs(rhs: &str) -> Result<Vec<Vec<Symbol>>, String> {
         .filter(|alt| !alt.is_empty())
     {
         let mut symbols_in_alt = Vec::new();
+        let mut is_epsilon_alt = false;
         for token in alt.split_whitespace() {
-            let (base_token, repetition) = parse_repetition_suffix(token);
-            if is_regex(&base_token) {
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
+            let (base_token, binding) = split_binding(token)?;
+            ensure_no_repetition_suffix(&base_token)?;
+            if base_token == "ε" {
+                // epsion is for empty alternative
+                if binding.is_some() {
+                    return Err("Epsilon production cannot carry a binding".into());
                 }
-            } else if let Some(open_bracket) = base_token.find('[') {
-                if let Some(close_bracket) = base_token.rfind(']') {
-                    if close_bracket > open_bracket {
-                        let value = base_token[..open_bracket].to_string();
-                        let binding = base_token[open_bracket + 1..close_bracket].to_string();
-                        if let Some(rep) = repetition {
-                            symbols_in_alt
-                                .push(Symbol::with_binding_and_repetition(value, binding, rep));
-                        } else {
-                            symbols_in_alt.push(Symbol::with_binding(value, binding));
-                        }
-                        continue;
-                    }
+                if is_epsilon_alt || !symbols_in_alt.is_empty() {
+                    return Err("Epsilon alternative cannot mix with other symbols".into());
                 }
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
-                }
-            } else {
-                if let Some(rep) = repetition {
-                    symbols_in_alt.push(Symbol::with_repetition(base_token, rep));
-                } else {
-                    symbols_in_alt.push(Symbol::new(base_token));
+                is_epsilon_alt = true;
+                continue;
+            }
+            if let Some(lit) = literal_token_value(&base_token) {
+                if !literal_tokens.contains(&lit) {
+                    literal_tokens.push(lit.clone());
                 }
             }
+            let mut symbol = Symbol::new(base_token);
+            if let Some(binding) = binding {
+                symbol = symbol.attach_binding(binding);
+            }
+            symbols_in_alt.push(symbol);
+        }
+        if is_epsilon_alt {
+            alternatives.push(Vec::new());
+            continue;
         }
         alternatives.push(symbols_in_alt);
     }
-    Ok(alternatives)
-}
-
-/// Inline-group aware parser. Ignores parentheses that are inside quoted literals.
-// parse_rhs_with_groups removed: groups are desugared into synthetic productions during Grammar::load
-
-/// Extract special tokens from a symbol (more efficient than parsing RHS string again)
-pub fn extract_special_tokens_from_symbol(symbol: &Symbol, tokens: &mut Vec<String>) {
-    match symbol {
-        Symbol::Litteral(lit) => {
-            if !lit.is_empty() && !tokens.contains(lit) {
-                tokens.push(lit.clone());
-            }
-        }
-        Symbol::Single { value, .. } => {
-            extract_special_tokens_from_symbol(value, tokens);
-        }
-        Symbol::Regex(_) | Symbol::Expression(_) => {
-            // Not special tokens
-        }
-    }
+    Ok(ParsedRhs {
+        alternatives,
+        literal_tokens,
+    })
 }
 
 /// =========
@@ -276,21 +234,48 @@ pub fn build_accepted_tokens_regex(grammar: &Grammar) -> Option<DerivativeRegex>
 /// Recursively collect regex patterns from a symbol
 fn collect_token_regexes(symbol: &Symbol, regexes: &mut Vec<DerivativeRegex>) {
     match symbol {
-        Symbol::Litteral(lit) => {
-            // Convert literal tokens to regex
-            if !lit.is_empty() {
-                regexes.push(DerivativeRegex::literal(lit));
-            }
+        Symbol::Regex { regex, .. } => regexes.push(regex.clone()),
+        Symbol::Expression { .. } => {}
+    }
+}
+
+fn split_binding(token: &str) -> Result<(String, Option<String>), String> {
+    if !token.ends_with(']') {
+        return Ok((token.to_string(), None));
+    }
+
+    let close_bracket = token.len() - 1;
+    let open_bracket = token[..close_bracket]
+        .rfind('[')
+        .ok_or_else(|| format!("Malformed binding in token '{}': missing '['", token))?;
+
+    let value = token[..open_bracket].to_string();
+    let binding = token[open_bracket + 1..close_bracket].to_string();
+    if binding.is_empty() {
+        return Err(format!("Empty binding name in token '{}'", token));
+    }
+
+    Ok((value, Some(binding)))
+}
+
+fn ensure_no_repetition_suffix(token: &str) -> Result<(), String> {
+    if let Some(last) = token.chars().last() {
+        if matches!(last, '*' | '+' | '?') {
+            return Err(format!(
+                "Repetition operators (*, +, ?) are not supported anymore (found in '{}')",
+                token
+            ));
         }
-        Symbol::Regex(derivative_regex) => {
-            // Use the derivative regex directly
-            regexes.push(derivative_regex.clone());
-        }
-        Symbol::Single { value, .. } => {
-            collect_token_regexes(value, regexes);
-        }
-        Symbol::Expression(_) => {
-            // Expressions are non-terminals, not tokens
-        }
+    }
+    Ok(())
+}
+
+fn literal_token_value(token: &str) -> Option<String> {
+    if token.len() >= 2 && token.starts_with('\'') && token.ends_with('\'') {
+        Some(token[1..token.len() - 1].to_string())
+    } else if token.len() >= 2 && token.starts_with('"') && token.ends_with('"') {
+        Some(token[1..token.len() - 1].to_string())
+    } else {
+        None
     }
 }

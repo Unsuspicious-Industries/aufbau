@@ -1,79 +1,47 @@
-# AST Serialization Format
+# AST Serialization
 
-Useless but funy and easy for some tests. Not really used anymore complete ASTs are weird. 
+S-expression format for complete ASTs. Testing/debugging only.
 
-## File Structure
-
-A serialized AST file consists of:
-
-1. A version header.
-2. An optional rules header listing all typing rules encountered in the tree.
-3. A blank line separating headers from the body.
-4. An S-expression body representing the AST.
-
-### 1. Version Header
-
-    ;!ast 1
-
-The version header must appear at the top of the file and currently must be exactly `;!ast 1`.
-
-### 2. Rules Header (Optional)
-
-If the tree uses any typing rules, they are listed in alphabetical order:
-
-    ;!rules: ruleA, ruleB, ruleC
-
-This line must start with `;!rules:` followed by a comma-separated list of rule names.
-
-### 3. Blank Line
-
-A single blank line separates the headers from the S-expression body.
-
-### 4. S-Expression Body
-
-The body is a nested S-expression describing the AST. There are two node types:
-
-- **Terminal** nodes, tagged with `T`.
-- **Nonterminal** nodes, tagged with `N`.
-
-Whitespace and newlines are only for readability; the parser ignores them outside of string literals.
-
-#### 4.1 Terminal Node
-
-    (T "value" [ (b binding) ])
-
-- `T`: Atom indicating a terminal node.
-- `"value"`: A string literal containing the terminal text, with standard C-style escapes (`\\`, `\"`, `\n`, etc.).
-- Optional `(b binding)`: An atom binding name for subsequent referencing.
-
-**Example:**
-
-    (T "123" (b num))
-
-#### 4.2 Nonterminal Node
-
-    (N name [ (rule ruleName) ] [ (b binding) ] [ children... ])
-
-- `N`: Atom indicating a nonterminal node.
-- `name`: Atom naming the nonterminal symbol.
-- Optional `(rule ruleName)`: Indicates the typing rule applied to this node.
-- Optional `(b binding)`: An atom binding name for this subtree.
-- `children...`: Zero or more nested S-expressions, each representing a child node.
-
-If there are children, you may format them over multiple lines and indent for readability:
+## Format
 
 ```lisp
-(N Expr (rule Add)
-  (N Expr (rule Num) (T "1"))
-  (T "+")
-  (N Expr (rule Num) (T "2"))
-)
+;!ast 1
+;!rules: rule1, rule2
+
+(N Root ...)
 ```
 
-If there are no children, the nonterminal closes immediately:
+## Nodes
+
+**Terminal**: `(T "value")` or `(T "value" (b binding))`
+
+**Nonterminal**: `(N Name)` or `(N Name (rule r) (b b) children...)`
+
+## Example
 
 ```lisp
-(N Empty)
+;!ast 1
+;!rules: abs, var
+
+(N Expression
+  (N Abstraction (rule abs)
+    (T "λ")
+    (N Identifier (b x) (T "x"))
+    (T ":")
+    (N Type (T "Int"))
+    (T ".")
+    (N Expression
+      (N Variable (rule var)
+        (N Identifier (T "x"))))))
 ```
 
-This is useful for tests and verifying ASTs. Only used for **complete ASTs**.
+## Limitations
+
+- Complete ASTs only
+- Bound rule internals not preserved
+- Re-binding requires grammar
+
+## See Also
+
+- [grammar.md](grammar.md)
+- [partial.md](partial.md)

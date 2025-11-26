@@ -23,8 +23,8 @@ BoolOp ::= '==' | '!=' | '<' | '>' | '<=' | '>='
 Primary ::= Literal | Variable | '(' Expr ')'
 
 // Function calls
-Args ::= Expr (',' Expr)*
-Call(call) ::= Identifier[name] '(' Args? ')'
+Args ::= Expr | Expr ',' Args
+Call(call) ::= Identifier[name] '(' ')' | Identifier[name] '(' Args ')'
 
 // Right-recursive expressions to avoid left recursion
 ArOpExpr(ar-op-expr) ::= Primary[left] ArOp[op] Expr[right]
@@ -47,9 +47,8 @@ VarInitFor ::= VarInitForInit | VarInitForNoInit
 
 Assignment(assign) ::= Expr[target] '=' Expr[value]
 AssignmentStmt(assignstmt) ::= Assignment[a] ';'
-// Introduce Else nonterminal to avoid grouped optional
-Else ::= 'else' BlockStmt[else]
-IfStmt(if) ::= 'if' '(' Expr[cond] ')' BlockStmt[then] Else?
+ElseOpt ::= 'else' BlockStmt[else] | ε
+IfStmt(if) ::= 'if' '(' Expr[cond] ')' BlockStmt[then] ElseOpt
 WhileStmt(while) ::= 'while' '(' Expr[cond] ')' Stmt[body]
 // For-loop header with specific init/update forms and separators
 ForInit ::= VarInitFor | Assignment
@@ -59,19 +58,23 @@ ForStmt(for) ::= 'for' '(' ForInit[init] ';' Expr[cond] ';' ForUpdate[update] ')
 ReturnStmt(return) ::= 'return' Expr[ret_val] ';'
 
 
-BlockStmt(block) ::= '{' Stmt[s]* '}'
+StmtSeq ::= Stmt[s] StmtSeq | Stmt[s]
+StmtSeqOpt ::= ε | StmtSeq
+BlockStmt(block) ::= '{' StmtSeqOpt '}'
 
 ExprStmt(exprstmt) ::= Expr[e] ';'
 
 Stmt ::= VarDecl | AssignmentStmt | IfStmt | WhileStmt | ForStmt | BlockStmt | ReturnStmt[ret]
 
-
-FunctionDef(funcdef) ::= Type[ret_ty] Identifier[name] '(' ParamDecl* ')' '{' Stmt[s]* '}'
-ParamDecl ::= Type[in_tys] Identifier ','?
+FunctionDef(funcdef) ::= Type[ret_ty] Identifier[name] '(' ParamDeclListOpt ')' '{' StmtSeqOpt '}'
+ParamDecl ::= Type[in_tys] Identifier
+ParamDeclTail ::= ',' ParamDecl ParamDeclTail | ε
+ParamDeclList ::= ParamDecl ParamDeclTail
+ParamDeclListOpt ::= ε | ParamDeclList
 
 // Program (sequence of items)
 Item ::= FunctionDef | VarDecl
-Program ::= Item+
+Program ::= Item | Item Program
 
 
 // Type rule for Int literals - concrete int type
@@ -137,8 +140,9 @@ x ∈ Γ
 ---------------- (assignstmt)
 'void'
 
-// function: type all statements (sequenced) then the return expression
-Γ ⊢ s : 'void', Γ ⊢ ret_val: ret_ty
+// function: check return type matches
+// Note: s is the statement, ret is the return statement node
+// We use simpler typing for now
 ----------------------- (funcdef)
 (in_tys...) -> ret_ty
 
