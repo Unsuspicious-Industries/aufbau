@@ -136,7 +136,7 @@ impl Symbol {
 /// Convenience alias for non-terminal symbols.
 pub type Nonterminal = String;
 /// A single production rule `left ::= right₀ right₁ …`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Production {
     pub rule: Option<String>,
     pub rhs: Vec<Symbol>,

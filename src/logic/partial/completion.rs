@@ -40,36 +40,15 @@ impl CompletionSet {
 // === Implementation ========================================================================== //
 
 impl PartialAST {
-    /// Get all valid next tokens for this partial parse (syntax-only, no type filtering).
+
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
-        debug_trace!(
-            "partial.completion",
-            "PartialAST::completions: input='{}', roots={}",
-            self.input,
-            self.roots.len()
-        );
-
-        let mut tokens = Vec::new();
-        for root in &self.roots {
-            tokens.extend(root.collect_valid_tokens(grammar));
-        }
-
-        CompletionSet::new(tokens)
-    }
-
-    /// Get valid next tokens, filtering out ill-typed parse trees first.
-    ///
-    /// This filters roots to only those that are well-typed (Valid or Partial status),
-    /// then computes completions from those roots only. This prevents suggesting
-    /// completions that would only extend already-malformed parse trees.
-    pub fn typed_completions(&self, grammar: &Grammar) -> CompletionSet {
-        self.typed_completions_with_ctx(grammar, &Context::new())
+        self.completions_in_ctx(grammar, &Context::new())
     }
 
     /// Get valid next tokens with a typing context, filtering ill-typed roots.
     ///
     /// Use this when you have an initial typing context (e.g., pre-declared variables).
-    pub fn typed_completions_with_ctx(&self, grammar: &Grammar, ctx: &Context) -> CompletionSet {
+    pub fn completions_in_ctx(&self, grammar: &Grammar, ctx: &Context) -> CompletionSet {
         debug_trace!(
             "partial.completion",
             "PartialAST::typed_completions: input='{}', roots={}, ctx_size={}",
@@ -838,7 +817,7 @@ mod tests {
         
         // Without context, the lambda body 'x' is well-typed because 
         // the lambda binds x:A
-        let completions = ast.typed_completions(&g);
+        let completions = ast.completions(&g);
         
         // Should have completions (the parse is well-typed so far)
         println!("Completions for '(fn x : A => x)': {:?}", completions);
@@ -866,7 +845,7 @@ mod tests {
         let ast = p.partial("42 +").unwrap();
         
         let untyped = ast.completions(&g);
-        let typed = ast.typed_completions(&g);
+        let typed = ast.completions(&g);
         
         // Both should give the same result for this well-typed expression
         assert_eq!(

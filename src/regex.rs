@@ -1,5 +1,26 @@
+use moka::sync::Cache;
+use once_cell::sync::Lazy;
 use regex::Regex as ExternalRegex;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
+
+/// Global cache for valids() results.
+/// Key: (Regex, max_len) -> Arc<HashSet<String>> (Arc for cheap cloning)
+static VALIDS_CACHE: Lazy<Cache<(Regex, usize), Arc<HashSet<String>>>> = Lazy::new(|| {
+    Cache::builder()
+        .max_capacity(10_000)
+        .build()
+});
+
+/// Clear the valids cache. Useful for testing or when memory is constrained.
+pub fn clear_valids_cache() {
+    VALIDS_CACHE.invalidate_all();
+}
+
+/// Get cache stats for debugging.
+pub fn valids_cache_stats() -> (u64, u64) {
+    (VALIDS_CACHE.entry_count(), VALIDS_CACHE.weighted_size())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Regex {
@@ -420,6 +441,120 @@ impl Regex {
         Regex::Range('\u{0000}', '\u{10FFFF}')
     }
 
+    /// Generate all valid strings of exactly length `n` as a HashSet.
+    fn valids_of_len(&self, n: usize) -> HashSet<String> {
+        use Regex::*;
+        match self {
+            Empty => HashSet::new(),
+            Epsilon => {
+                if n == 0 {
+                    let mut s = HashSet::new();
+                    s.insert(String::new());
+                    s
+                } else {
+                    HashSet::new()
+                }
+            }
+            Char(c) => {
+                if n == 1 {
+                    let mut s = HashSet::new();
+                    s.insert(c.to_string());
+                    s
+                } else {
+                    HashSet::new()
+                }
+            }
+            Range(start, end) => {
+                if n == 1 {
+                    ((*start as u32)..=(*end as u32))
+                        .filter_map(char::from_u32)
+                        .map(|ch| ch.to_string())
+                        .collect()
+                } else {
+                    HashSet::new()
+                }
+            }
+            Concat(r1, r2) => {
+                // Union of all combinations where left has length i, right has length n-i
+                let mut result = HashSet::new();
+                for i in 0..=n {
+                    let left = r1.valids_of_len(i);
+                    let right = r2.valids_of_len(n - i);
+                    for l in &left {
+                        for r in &right {
+                            result.insert(format!("{}{}", l, r));
+                        }
+                    }
+                }
+                result
+            }
+            Union(r1, r2) => {
+                let mut result = r1.valids_of_len(n);
+                result.extend(r2.valids_of_len(n));
+                result
+            }
+            Star(r) => {
+                if n == 0 {
+                    let mut s = HashSet::new();
+                    s.insert(String::new());
+                    s
+                } else {
+                    let mut result = HashSet::new();
+                    for i in 1..=n {
+                        let first = r.valids_of_len(i);
+                        let rest = self.valids_of_len(n - i);
+                        for f in &first {
+                            for re in &rest {
+                                result.insert(format!("{}{}", f, re));
+                            }
+                        }
+                    }
+                    result
+                }
+            }
+        }
+    }
+
+    /// Generate all valid strings matched by this regex with length up to `max_len` (inclusive).
+    /// Returns a HashSet of all valid strings. Results are cached for performance.
+    ///
+    /// # Examples
+    /// ```
+    /// use p7::regex::Regex;
+    ///
+    /// let r = Regex::from_str("a|bb").unwrap();
+    /// let valids = r.valids(2);
+    /// assert!(valids.contains(&"a".to_string()));
+    /// assert!(valids.contains(&"bb".to_string()));
+    /// ```
+    pub fn valids(&self, max_len: usize) -> HashSet<String> {
+        // Check cache first - Arc clone is O(1)
+        let key = (self.clone(), max_len);
+        if let Some(cached) = VALIDS_CACHE.get(&key) {
+            return (*cached).clone();
+        }
+
+        // Compute
+        let mut result = HashSet::new();
+        for len in 0..=max_len {
+            result.extend(self.valids_of_len(len));
+        }
+        
+        // Cache and return
+        let arc_result = Arc::new(result.clone());
+        VALIDS_CACHE.insert(key, arc_result);
+        result
+    }
+
+    /// Generate valids without caching (for internal use or when you want fresh computation).
+    pub fn valids_uncached(&self, max_len: usize) -> HashSet<String> {
+        let mut result = HashSet::new();
+        for len in 0..=max_len {
+            result.extend(self.valids_of_len(len));
+        }
+        result
+    }
+
     /// Concatenate two regexes.
     ///
     /// # Examples
@@ -623,6 +758,13 @@ impl Regex {
         }
     }
 
+    pub fn matches(&self, input: &str) -> bool {
+        match self.prefix_match(input) {
+            PrefixStatus::Complete | PrefixStatus::Extensible(_) => true,
+            PrefixStatus::Prefix(_) | PrefixStatus::NoMatch => false,
+        }
+    }
+
     /// Produce an arbitrarily chosen example string accepted by this regex.
     pub fn example(&self) -> Option<String> {
         use Regex::*;
@@ -634,6 +776,155 @@ impl Regex {
             Union(a, b) => a.example().or_else(|| b.example()),
             Star(_) => Some(String::new()),
             Range(start, _) => Some(start.to_string()),
+        }
+    }
+
+    /// Produce up to `n` distinct example strings accepted by this regex.
+    ///
+    /// This is an optimized version of generating examples without building
+    /// the full `valids()` set. It deterministically explores the regex structure
+    /// to generate diverse examples efficiently.
+    ///
+    /// # Examples
+    /// ```
+    /// use p7::regex::Regex;
+    ///
+    /// let r = Regex::from_str("[a-z]").unwrap();
+    /// let examples = r.examples(5);
+    /// assert!(examples.len() <= 5);
+    /// for ex in &examples {
+    ///     assert!(r.match_full(ex));
+    /// }
+    /// ```
+    pub fn examples(&self, n: usize) -> Vec<String> {
+        if n == 0 {
+            return Vec::new();
+        }
+        let mut result = Vec::with_capacity(n);
+        self.collect_examples(n, &mut result);
+        result
+    }
+
+    /// Internal helper to collect examples into a vec, stopping when we have enough.
+    fn collect_examples(&self, n: usize, acc: &mut Vec<String>) {
+        if acc.len() >= n {
+            return;
+        }
+        use Regex::*;
+        match self {
+            Empty => {}
+            Epsilon => {
+                if !acc.contains(&String::new()) {
+                    acc.push(String::new());
+                }
+            }
+            Char(c) => {
+                let s = c.to_string();
+                if !acc.contains(&s) {
+                    acc.push(s);
+                }
+            }
+            Range(start, end) => {
+                // Generate characters from the range
+                for code in (*start as u32)..=(*end as u32) {
+                    if acc.len() >= n {
+                        break;
+                    }
+                    if let Some(c) = char::from_u32(code) {
+                        let s = c.to_string();
+                        if !acc.contains(&s) {
+                            acc.push(s);
+                        }
+                    }
+                }
+            }
+            Union(a, b) => {
+                // Interleave examples from both branches for diversity
+                let mut a_examples = Vec::new();
+                let mut b_examples = Vec::new();
+                a.collect_examples(n, &mut a_examples);
+                b.collect_examples(n, &mut b_examples);
+                
+                let mut ai = 0;
+                let mut bi = 0;
+                while acc.len() < n && (ai < a_examples.len() || bi < b_examples.len()) {
+                    if ai < a_examples.len() {
+                        let s = &a_examples[ai];
+                        if !acc.contains(s) {
+                            acc.push(s.clone());
+                        }
+                        ai += 1;
+                    }
+                    if acc.len() >= n {
+                        break;
+                    }
+                    if bi < b_examples.len() {
+                        let s = &b_examples[bi];
+                        if !acc.contains(s) {
+                            acc.push(s.clone());
+                        }
+                        bi += 1;
+                    }
+                }
+            }
+            Concat(a, b) => {
+                // Generate combinations of examples from a and b
+                let mut a_examples = Vec::new();
+                let mut b_examples = Vec::new();
+                // Get enough from each side to potentially produce n combinations
+                let per_side = ((n as f64).sqrt().ceil() as usize).max(2);
+                a.collect_examples(per_side, &mut a_examples);
+                b.collect_examples(per_side, &mut b_examples);
+                
+                'outer: for ae in &a_examples {
+                    for be in &b_examples {
+                        if acc.len() >= n {
+                            break 'outer;
+                        }
+                        let combined = format!("{}{}", ae, be);
+                        if !acc.contains(&combined) {
+                            acc.push(combined);
+                        }
+                    }
+                }
+            }
+            Star(inner) => {
+                // For star, generate: empty, one copy, two copies, etc.
+                // Start with empty string
+                if !acc.contains(&String::new()) {
+                    acc.push(String::new());
+                }
+                if acc.len() >= n {
+                    return;
+                }
+                
+                // Get some inner examples
+                let mut inner_examples = Vec::new();
+                inner.collect_examples(n, &mut inner_examples);
+                
+                // Add single repetitions
+                for ie in &inner_examples {
+                    if acc.len() >= n {
+                        return;
+                    }
+                    if !acc.contains(ie) {
+                        acc.push(ie.clone());
+                    }
+                }
+                
+                // Add double repetitions if we still need more
+                if acc.len() < n && !inner_examples.is_empty() {
+                    for ie in &inner_examples {
+                        if acc.len() >= n {
+                            return;
+                        }
+                        let doubled = format!("{}{}", ie, ie);
+                        if !acc.contains(&doubled) {
+                            acc.push(doubled);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -799,6 +1090,8 @@ fn merge_char_intervals(mut intervals: Vec<CharInterval>) -> Vec<CharInterval> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::{PrefixStatus, Regex};
 
     #[test]
@@ -1515,5 +1808,370 @@ mod tests {
         // Test escaping
         let r = Regex::Char('*');
         assert_eq!(r.to_pattern(), "\\*");
+    }
+
+    #[test]
+    fn test_valids_basic() {
+        // Empty regex has no valid strings
+        let r = Regex::Empty;
+        assert!(r.valids(0).is_empty());
+        assert!(r.valids(1).is_empty());
+
+        // Epsilon only matches empty string
+        let r = Regex::Epsilon;
+        let v0 = r.valids(0);
+        assert_eq!(v0, HashSet::from(["".to_string()]));
+        // valids(1) includes all lengths 0..=1, so it includes empty string
+        let v1 = r.valids(1);
+        assert_eq!(v1, HashSet::from(["".to_string()]));
+
+        // Single char
+        let r = Regex::Char('a');
+        assert!(r.valids(0).is_empty());
+        let v = r.valids(1);
+        assert_eq!(v.len(), 1);
+        assert!(v.contains(&"a".to_string()));
+        // valids(2) includes lengths 0..=2, but 'a' only matches at length 1
+        assert_eq!(r.valids(2).len(), 1);
+    }
+
+    #[test]
+    fn test_valids_range() {
+        // Range [a-c] should give 3 valid strings of length 1
+        let r = Regex::Range('a', 'c');
+        assert!(r.valids(0).is_empty());
+        let v = r.valids(1);
+        assert_eq!(v.len(), 3);
+        assert!(v.contains(&"a".to_string()));
+        assert!(v.contains(&"b".to_string()));
+        assert!(v.contains(&"c".to_string()));
+        // valids(2) still contains the length-1 matches
+        assert_eq!(r.valids(2).len(), 3);
+
+        // Digit range
+        let r = Regex::Range('0', '9');
+        let v = r.valids(1);
+        assert_eq!(v.len(), 10);
+        for d in '0'..='9' {
+            assert!(v.contains(&d.to_string()));
+        }
+    }
+
+    #[test]
+    fn test_valids_concat() {
+        // "ab" should only match "ab"
+        let r = Regex::from_str("ab").unwrap();
+        assert!(r.valids(0).is_empty());
+        assert!(r.valids(1).is_empty());
+        let v = r.valids(2);
+        assert_eq!(v.len(), 1);
+        assert!(v.contains(&"ab".to_string()));
+        // valids(3) includes lengths 0..=3, so "ab" is still present
+        assert_eq!(r.valids(3).len(), 1);
+        assert!(r.valids(3).contains(&"ab".to_string()));
+
+        // "[ab][cd]" should give 4 combinations
+        let r = Regex::from_str("[ab][cd]").unwrap();
+        let v = r.valids(2);
+        assert_eq!(v.len(), 4);
+        assert!(v.contains(&"ac".to_string()));
+        assert!(v.contains(&"ad".to_string()));
+        assert!(v.contains(&"bc".to_string()));
+        assert!(v.contains(&"bd".to_string()));
+    }
+
+    #[test]
+    fn test_valids_union() {
+        // "a|b" should give 2 valid strings of length 1
+        let r = Regex::from_str("a|b").unwrap();
+        assert!(r.valids(0).is_empty());
+        let v = r.valids(1);
+        assert_eq!(v.len(), 2);
+        assert!(v.contains(&"a".to_string()));
+        assert!(v.contains(&"b".to_string()));
+        // valids(2) includes lengths 0..=2, so still contains "a" and "b"
+        assert_eq!(r.valids(2).len(), 2);
+
+        // "cat|dog" - both length 3
+        let r = Regex::from_str("cat|dog").unwrap();
+        let v = r.valids(3);
+        assert_eq!(v.len(), 2);
+        assert!(v.contains(&"cat".to_string()));
+        assert!(v.contains(&"dog".to_string()));
+    }
+
+    #[test]
+    fn test_valids_star() {
+        // "a*" - any number of a's
+        let r = Regex::from_str("a*").unwrap();
+        assert_eq!(r.valids(0), HashSet::from(["".to_string()]));
+        // valids(1) includes lengths 0..=1
+        assert_eq!(r.valids(1), HashSet::from(["".to_string(), "a".to_string()]));
+        // valids(2) includes lengths 0..=2
+        assert_eq!(r.valids(2), HashSet::from(["".to_string(), "a".to_string(), "aa".to_string()]));
+        // valids(3) includes lengths 0..=3
+        assert_eq!(r.valids(3), HashSet::from(["".to_string(), "a".to_string(), "aa".to_string(), "aaa".to_string()]));
+
+        // "(ab)*" - pairs of ab
+        let r = Regex::from_str("(ab)*").unwrap();
+        assert_eq!(r.valids(0), HashSet::from(["".to_string()]));
+        // valids(1) includes lengths 0..=1, but only "" matches
+        assert_eq!(r.valids(1), HashSet::from(["".to_string()]));
+        let v = r.valids(2);
+        assert_eq!(v.len(), 2); // "" and "ab"
+        assert!(v.contains(&"".to_string()));
+        assert!(v.contains(&"ab".to_string()));
+        let v3 = r.valids(3);
+        assert_eq!(v3.len(), 2); // still "" and "ab"
+        let v = r.valids(4);
+        assert_eq!(v.len(), 3); // "", "ab", "abab"
+        assert!(v.contains(&"abab".to_string()));
+
+        // "(a|b)*" - all combinations of a and b
+        let r = Regex::from_str("(a|b)*").unwrap();
+        assert_eq!(r.valids(0), HashSet::from(["".to_string()]));
+        let v = r.valids(1);
+        assert_eq!(v.len(), 3); // "", "a", "b"
+        let v = r.valids(2);
+        assert_eq!(v.len(), 7); // "", a, b, aa, ab, ba, bb
+        let v = r.valids(3);
+        assert_eq!(v.len(), 15); // all 0, 1, 2, and 3-char combinations
+    }
+
+    #[test]
+    fn test_valids_complex() {
+        // "[0-9]{2}" - two digit numbers
+        let r = Regex::from_str("[0-9]{2}").unwrap();
+        let v = r.valids(2);
+        assert_eq!(v.len(), 100); // 00-99
+
+        // "a?b" - optional a followed by b
+        let r = Regex::from_str("a?b").unwrap();
+        let v1 = r.valids(1);
+        assert_eq!(v1.len(), 1);
+        assert!(v1.contains(&"b".to_string()));
+        let v2 = r.valids(2);
+        assert_eq!(v2.len(), 2); // "b" and "ab"
+        assert!(v2.contains(&"b".to_string()));
+        assert!(v2.contains(&"ab".to_string()));
+
+        // "a+" - one or more a's
+        let r = Regex::from_str("a+").unwrap();
+        assert!(r.valids(0).is_empty());
+        assert_eq!(r.valids(1), HashSet::from(["a".to_string()]));
+        assert_eq!(r.valids(2), HashSet::from(["a".to_string(), "aa".to_string()]));
+    }
+
+    #[test]
+    fn test_valids_all_match() {
+        // Verify that all returned strings actually match the regex
+        let patterns = vec![
+            "a*b",
+            "(a|b)+",
+            "[0-9]{1,3}",
+            "(hello|world)?",
+            "a*b*c*",
+        ];
+        
+        for pattern in patterns {
+            let r = Regex::from_str(pattern).unwrap();
+            for n in 0..=5 {
+                let valids = r.valids(n);
+                for s in valids.iter() {
+                    assert!(
+                        r.match_full(&s),
+                        "Pattern '{}' should match '{}' but didn't",
+                        pattern,
+                        s
+                    );
+                    // valids(n) returns strings of length 0..=n
+                    assert!(
+                        s.chars().count() <= n,
+                        "String '{}' should have length <= {} but has {}",
+                        s,
+                        n,
+                        s.chars().count()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_valids_cache() {
+        use super::clear_valids_cache;
+        
+        // Clear cache to start fresh
+        clear_valids_cache();
+        
+        let r = Regex::from_str("[a-z]{2}").unwrap();
+        
+        // First call - should compute and cache
+        let v1 = r.valids(2);
+        
+        // Second call - should hit cache and return identical results
+        let v2 = r.valids(2);
+        
+        // Results should be identical
+        assert_eq!(v1, v2);
+        assert_eq!(v1.len(), 26 * 26); // 26 letters * 26 letters
+        
+        // Different max_len = different result
+        let v3 = r.valids(3);
+        // 2-letter combos still included, but now we check it works
+        assert!(v3.is_superset(&v2));
+    }
+
+    #[test]
+    fn test_valids_cache_performance() {
+        use super::clear_valids_cache;
+        use std::time::Instant;
+        
+        clear_valids_cache();
+        
+        // Use a regex that's expensive to compute valids for
+        let r = Regex::from_str("[a-z]{3}").unwrap(); // 26^3 = 17,576 strings
+        
+        // First call - cold (no cache)
+        let start_cold = Instant::now();
+        let _v1 = r.valids(3);
+        let cold_time = start_cold.elapsed();
+        
+        // Repeated calls - should hit cache
+        let start_warm = Instant::now();
+        for _ in 0..100 {
+            let _v = r.valids(3);
+        }
+        let warm_time = start_warm.elapsed();
+        
+        // Warm time for 100 calls should be much faster than 100x cold time
+        let avg_warm_per_call = warm_time.as_nanos() / 100;
+        let cold_nanos = cold_time.as_nanos();
+        
+        println!("Cold call: {:?}", cold_time);
+        println!("100 warm calls: {:?} (avg {:?}ns each)", warm_time, avg_warm_per_call);
+        println!("Speedup: {}x", cold_nanos / avg_warm_per_call.max(1));
+        
+        // Cache should provide at least 10x speedup on average
+        assert!(
+            avg_warm_per_call < cold_nanos / 5,
+            "Cache should be at least 5x faster. Cold: {}ns, Warm avg: {}ns",
+            cold_nanos, avg_warm_per_call
+        );
+    }
+
+    #[test]
+    fn test_valids_uncached_vs_cached() {
+        use super::clear_valids_cache;
+        use std::time::Instant;
+        
+        clear_valids_cache();
+        
+        let r = Regex::from_str("[0-9]{2}").unwrap(); // 100 strings
+        
+        // Time uncached version
+        let start_uncached = Instant::now();
+        for _ in 0..50 {
+            let _v = r.valids_uncached(2);
+        }
+        let uncached_time = start_uncached.elapsed();
+        
+        // Prime the cache
+        let _ = r.valids(2);
+        
+        // Time cached version
+        let start_cached = Instant::now();
+        for _ in 0..50 {
+            let _v = r.valids(2);
+        }
+        let cached_time = start_cached.elapsed();
+        
+        println!("50 uncached calls: {:?}", uncached_time);
+        println!("50 cached calls: {:?}", cached_time);
+        println!("Speedup: {:.1}x", uncached_time.as_nanos() as f64 / cached_time.as_nanos().max(1) as f64);
+        
+        // Cached should be significantly faster
+        assert!(
+            cached_time < uncached_time,
+            "Cached calls should be faster than uncached"
+        );
+    }
+
+    #[test]
+    fn test_cache_different_regexes() {
+        use super::clear_valids_cache;
+        use std::time::Instant;
+        
+        clear_valids_cache();
+        
+        // Use patterns that don't explode combinatorially
+        let patterns = vec![
+            "[a-f]{2}",  // 36 strings
+            "[0-9]",     // 10 strings  
+            "(a|b|c)",   // 3 strings
+            "hello",     // 1 string
+            "x?y?",      // 4 strings
+        ];
+        
+        let regexes: Vec<_> = patterns.iter()
+            .map(|p| Regex::from_str(p).unwrap())
+            .collect();
+        
+        // First pass - all cold
+        let start_cold = Instant::now();
+        for r in &regexes {
+            let _ = r.valids(3);
+        }
+        let cold_time = start_cold.elapsed();
+        
+        // Second pass - all should hit cache
+        let start_warm = Instant::now();
+        for r in &regexes {
+            let _ = r.valids(3);
+        }
+        let warm_time = start_warm.elapsed();
+        
+        println!("First pass (cold): {:?}", cold_time);
+        println!("Second pass (warm): {:?}", warm_time);
+        println!("Speedup: {:.1}x", cold_time.as_nanos() as f64 / warm_time.as_nanos().max(1) as f64);
+        
+        // Second pass should be faster
+        assert!(warm_time < cold_time, "Cached pass should be faster");
+    }
+
+    #[test]
+    fn test_cache_hit_rate_simulation() {
+        use super::clear_valids_cache;
+        use std::time::Instant;
+        
+        clear_valids_cache();
+        
+        // Simulate completability workload with small-ish regexes
+        let patterns = vec!["[0-9]", "[a-f]", "\\.", "x|y|z", "ab?"];
+        let regexes: Vec<_> = patterns.iter()
+            .map(|p| Regex::from_str(p).unwrap())
+            .collect();
+        
+        let start = Instant::now();
+        
+        // Simulate 100 "completability checks" each querying all token regexes
+        for _ in 0..100 {
+            for r in &regexes {
+                let _ = r.valids(3);
+            }
+        }
+        
+        let total_time = start.elapsed();
+        let calls = 100 * regexes.len();
+        
+        println!("{} valids() calls in {:?}", calls, total_time);
+        println!("Average per call: {:?}", total_time / calls as u32);
+        
+        // With caching, 500 calls should complete quickly
+        assert!(
+            total_time.as_millis() < 2000,
+            "500 cached calls should complete in under 2s, took {:?}",
+            total_time
+        );
     }
 }

@@ -2,6 +2,7 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
+use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree_with_context;
@@ -115,6 +116,26 @@ impl PartialAST {
     /// Simple predicate: any well-typed tree exists?
     pub fn has_well_typed(&self, g: &Grammar) -> bool {
         self.roots.iter().any(|r| check_tree_with_context(r, g, &Context::new()).is_ok())
+    }
+
+    // filter to an AST with only well-typed trees
+    pub fn filter_typed(&self, g: &Grammar) -> Result<PartialAST, String> {
+        let roots: Vec<_> = self.roots.iter()
+            .filter(|r| check_tree_with_context(r, g, &Context::new()).is_ok())
+            .cloned()
+            .collect();
+        match roots.is_empty() {
+            true => Err("No well-typed trees".into()),
+            false => Ok(PartialAST { roots, input: self.input.clone() }),
+        }
+    }
+}
+
+
+impl Parser {
+    pub fn partial_typed(&mut self, input: &str) -> Result<PartialAST, String> {
+        let partial_ast = self.partial(input)?;
+        partial_ast.filter_typed(&self.grammar)
     }
 }
 

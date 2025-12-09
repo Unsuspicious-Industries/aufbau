@@ -42,6 +42,7 @@
           pytest
           numpy
           accelerate
+          ipykernel
 
           # Optional: transformers integration
           # Note: Using CPU-only torch from nixpkgs (pre-built)
@@ -95,7 +96,7 @@
               pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
               
               # Install other deps
-              pip install --quiet transformers tokenizers huggingface-hub safetensors
+              pip install --quiet transformers tokenizers huggingface-hub safetensors ipykernel
               pip install --quiet numpy pytest tqdm
             else
               source .venv/bin/activate

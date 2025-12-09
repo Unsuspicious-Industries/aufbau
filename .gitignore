@@ -4,4 +4,7 @@ python/.venv
 .venv
 tmp
 proptest
+perf.data*
+test.perf
+flamegraph.svg
 

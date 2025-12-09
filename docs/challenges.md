@@ -633,35 +633,12 @@ COLLECT-VALID-TOKENS(node, grammar):
 
 ---
 
-## Implementation Correspondence
 
-The following table maps formal concepts to implementation files:
+### TODO
+ - Understand correctness, add test cases
+ - Improve performance (algorithmically, )
+ - Ensure method is sound and complete, unly accept correct output
+ - Compelteness: ANY completeable input should be generated
+ - SOundess: accept only well typed, completable
+ 
 
-| Formal Concept | Implementation |
-|----------------|----------------|
-| Grammar $G$ | `src/logic/grammar/mod.rs` |
-| Partial Tree $T$ | `src/logic/partial/structure.rs` |
-| Parser $\Psi_L$ | `src/logic/partial/parse.rs` |
-| Binding Map $\beta$ | `src/logic/grammar/binding.rs` |
-| Binding Resolution | `src/logic/partial/binding.rs` |
-| Type Language $\mathcal{T}$ | `src/logic/typing/mod.rs` |
-| Typing Rules $\theta$ | `src/logic/typing/rule.rs` |
-| Type Evaluation | `src/logic/typing/eval.rs` |
-| FIRST Sets | `src/logic/partial/completion.rs` |
-| Completability | `src/validation/completability.rs` |
-
----
-
-## Conclusion
-
-This formalization covers:
-- **Partial parsing**: Forest representation with alternatives and frontiers
-- **Binding resolution**: Grammar paths and tree path matching
-- **Typing core**: Type language, unification, and evaluation algorithm
-- **Completion**: FIRST sets and type-constrained filtering
-
-Remaining challenges:
-- Formally ensuring no conflicts for binding with regular tree paths
-- Proving soundness of the type system composition
-- Verifying correctness of structure-preserving BNF parser
-- Optimizing completion exploration for large search spaces

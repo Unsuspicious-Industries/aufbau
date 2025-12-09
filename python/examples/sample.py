@@ -129,7 +129,7 @@ def main():
             with timer("feed"):
                 sampler.feed(token)
             generated += token
-            if step % 10 == 0:
+            if step % 1 == 0:
                 print(f"  Step {step:3d}: '{repr(token)[1:-1]}' (valid: {valid_count}/{len(VOCAB)})")
         except TypeError as e:
             print(f"  Step {step:3d}: Rejected '{token}' - {e}")
@@ -141,7 +141,7 @@ def main():
     
     print("\n--- Valid tokens rn ---")
     with timer("infer_text"):
-        top_k = sampler.infer_text(k=10, pre_top_k=50)
+        top_k = sampler.infer_text(k=10, pre_top_k=20)
     print(f"Top 10: {top_k}")
     
     print("\n--- S-expr AST ---")

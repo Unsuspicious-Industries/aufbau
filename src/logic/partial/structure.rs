@@ -3,7 +3,7 @@ use crate::logic::grammar::Production;
 use crate::regex::Regex as DerivativeRegex;
 
 /// Top-level partial AST result
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PartialAST {
     pub roots: Vec<NonTerminal>,
     pub input: String,
@@ -42,7 +42,7 @@ impl PartialAST {
 }
 
 /// A nonterminal node representing a specific choice of production
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NonTerminal {
     /// Name of the nonterminal (e.g., "Expr", "start")
     pub name: String,
@@ -58,7 +58,7 @@ pub struct NonTerminal {
     pub consumed_segments: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Terminal {
     Complete {
         value: String,
@@ -159,7 +159,7 @@ impl NonTerminal {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug,Hash, PartialEq, Eq)]
 pub enum Node {
     NonTerminal(NonTerminal),
     Terminal(Terminal),

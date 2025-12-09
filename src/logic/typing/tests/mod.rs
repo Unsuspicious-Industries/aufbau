@@ -3,6 +3,7 @@
 
 mod contradiction;
 mod repro;
+mod proofs;
 
 use super::*;
 use crate::logic::grammar::Grammar;
