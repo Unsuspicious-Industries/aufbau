@@ -1,10 +1,8 @@
-// ASSUME: Partial AST edges correspond bijectively to grammar-path steps (𝒫 = ℕ* with
-// optional alternative annotations) from docs/challenges.md. Example: resolving binding `e`
+// ASSUME: Partial AST edges correspond bijectively to grammar-path steps with 
+// (𝒫 = ℕ* optional alternative annotations) 
+// Using the formal spec docs/challenges.md. Example: resolving binding `e`
 // in `Application(app)` follows path `[1]`, so this module trusts that every non-terminal
 // stores the selected alternative index used by the parser.
-// ASSUME: Partial AST edges correspond bijectively to the grammar paths 𝒫 = ℕ* (with
-// alternative annotations) defined in docs/challenges.md. Example: resolving binding `e`
-// in `Application(app)` follows path `[1]`, so we reject mismatched alternative indices.
 use crate::logic::grammar::{
     Grammar,
     binding::{GrammarPath, PathStep},
@@ -36,16 +34,8 @@ impl<'a> ResolutionResult<'a> {
     }
 }
 
-/// Resolve a binding for a given non-terminal node in the partial tree.
-///
-/// # Arguments
-/// * `root` - The non-terminal node where the binding is defined (or associated with).
-/// * `binding_name` - The name of the binding to resolve.
-/// * `rule_name` - The name of the rule (production) that defines the context for the binding.
-/// * `grammar` - The grammar containing the binding map.
-///
-/// # Returns
-/// A list of nodes that are bound to the given name.
+// Resolve a binding for a given non-terminal node in the partial tree.
+// Used stored grammar paths
 pub fn resolve_binding<'a>(
     root: &'a Node,
     binding_name: &str,
@@ -80,7 +70,8 @@ fn collect_nodes_from_nt<'a>(nt: &'a NonTerminal, nt_node: &'a Node, steps: &[Pa
         // We reached the target node, but we are at a NonTerminal.
         // We can't return &Node from &NonTerminal.
         // This case should be handled by the caller (collect_nodes_from_node) pushing the node before recursing if steps become empty.
-        // If we are here, it means we started with empty steps or something went wrong.
+        // this is a big issue in our design thing
+        // Thats why we droll
         return Ok(());
     }
 
@@ -133,6 +124,7 @@ fn collect_nodes_from_node<'a>(
         // If we are at a Terminal (partial or complete) and have steps remaining,
         // we can't go deeper.
         // If it's Terminal::Partial, return it.
+        // Beware heuristic might be incorrect
         if let Node::Terminal(Terminal::Partial { .. }) = current_node {
              results.push(ResolutionResult::Partial(current_node));
              return Ok(());

@@ -3,10 +3,12 @@
 pub mod core;
 pub mod eval;
 pub mod rule;
+pub mod symbols;
 pub mod syntax;
 
 pub use core::Context;
 pub use eval::evaluate_typing;
+pub use symbols::{gather_symbols, gather_symbols_with_context};
 
 ///---------------
 /// Type Representation

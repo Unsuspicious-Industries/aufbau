@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Phi-3.5-mini demo: Typed constrained vs unconstrained generation.
+Phi-3.5-mini demo: ReasoningEnvironment with CoT + Grammar-constrained output.
 
-Demonstrates how type-aware constrained decoding keeps generation well-typed,
-while unconstrained generation often produces invalid/ill-typed terms.
+Demonstrates the new ReasoningEnvironment that allows the model to:
+1. Think freely in <think>...</think> blocks (unconstrained CoT)
+2. Produce typed output in <xtlc>...</xtlc> blocks (grammar-constrained)
 
-Uses Microsoft's Phi-3.5-mini-instruct for higher quality reasoning.
+Uses Microsoft's Phi-3.5-mini-instruct.
 https://huggingface.co/microsoft/Phi-3.5-mini-instruct
 """
 
@@ -15,237 +16,215 @@ sys.path.insert(0, '/home/pkd/code/p7/python')
 import proposition_7 as p7
 
 
-# XTLC examples - Church encodings, combinators, higher-order functions
-# Syntax: λx:T.e for abstraction, (f e) for application, A->B for function types
-# Initial strings are SHORT to give more room for divergence
-XTLC_EXAMPLES = {
-    "const_K": {
-        "description": "K combinator: λx.λy.x (constant, returns first)",
+# Tasks for the environment to solve
+TASKS = [
+    {
+        "name": "identity",
+        "task": "Create the identity function for Int",
+        "initial": "λx:",
+        "description": "Should produce λx:Int.x",
+    },
+    {
+        "name": "const_K",
+        "task": "Create the K combinator (constant function) that takes an Int, then a Bool, and returns the Int",
         "initial": "λx:Int.",
-        "expected": "λx:Int.λy:Bool.x",
+        "description": "Should produce λx:Int.λy:Bool.x",
     },
-    "apply_fn": {
-        "description": "Apply function to arg: λf.λx.(f x)",
+    {
+        "name": "apply",
+        "task": "Create a function that applies a function f:(Int->Bool) to an argument x:Int",
         "initial": "λf:(Int->Bool).",
-        "expected": "λf:(Int->Bool).λx:Int.(f x)",
+        "description": "Should produce λf:(Int->Bool).λx:Int.(f x)",
     },
-    "compose_B": {
-        "description": "B combinator (compose): λf.λg.λx.(f (g x))",
+    {
+        "name": "compose",
+        "task": "Create the B combinator (function composition) for f:(Int->Bool) and g:(Bool->Int)",
         "initial": "λf:(Int->Bool).",
-        "expected": "λf:(Int->Bool).λg:(Bool->Int).λx:Bool.(f (g x))",
+        "description": "Should produce something like λf:(Int->Bool).λg:(Bool->Int).λx:Bool.(f (g x))",
     },
-    "flip_C": {
-        "description": "C combinator (flip): λf.λx.λy.((f y) x)",
-        "initial": "λf:(Bool->(Int->Bool)).",
-        "expected": "λf:(Bool->(Int->Bool)).λx:Int.λy:Bool.((f y) x)",
-    },
-    "twice_apply": {
-        "description": "Apply function twice: λf.λx.(f (f x))",
+    {
+        "name": "twice",
+        "task": "Create a function that applies f:(Int->Int) twice to x:Int",
         "initial": "λf:(Int->Int).",
-        "expected": "λf:(Int->Int).λx:Int.(f (f x))",
+        "description": "Should produce λf:(Int->Int).λx:Int.(f (f x))",
     },
-    "church_pair": {
-        "description": "Church pair: {a}{b}λs.(s a b)",
-        "initial": "{a:Int}{b:Bool}λs:",
-        "expected": "{a:Int}{b:Bool}λs:(Int->(Bool->Int)).(s a)b",
-    },
-    "nested_app": {
-        "description": "Nested application with multiple args",
-        "initial": "{f:Int->Int->Bool}{x:Int}{y:Int}(",
-        "expected": "{f:Int->Int->Bool}{x:Int}{y:Int}((f x)y)",
-    },
-    "S_combinator": {
-        "description": "S combinator: λf.λg.λx.((f x) (g x))",
-        "initial": "λf:(Int->(Int->Bool)).",
-        "expected": "λf:(Int->(Int->Bool)).λg:(Int->Int).λx:Int.((f x)(g x))",
-    },
-}
+]
 
 
-# C-like examples - typed imperative programming
-# Syntax: int x = expr;, x = expr;, if/while/return
-CLIKE_EXAMPLES = {
-    "simple_add": {
-        "description": "Declare int function that adds two numbers a and b.",
-        "initial": "int add(",
-        "expected": "int add(int a, int b) { return a + b; }",
-    },
-    "type_mismatch": {
-        "description": "Variable assignment must match declared type",
-        "initial": "int a = 5; int b = a + ",
-        "expected": "int a = 5; int b = a + 1;",
-    },
-}
+def print_header(text: str, char: str = "=", width: int = 80):
+    print(char * width)
+    print(text)
+    print(char * width)
 
 
-XTLC_PROMPT = """You are an expert in typed lambda calculus. Generate well-typed lambda terms.
-
-The grammar uses:
-- λx:T.e for lambda abstraction (function taking x of type T, returning e)
-- {x:T} to declare a variable x of type T in scope
-- (f e) for function application
-- Types: base types or function types like Int->Bool, (Int->Int)->Bool
-
-Complete the lambda term to make it well-typed:
-
-"""
-
-
-CLIKE_PROMPT = """You are an expert programmer. Generate well-typed C-like code.
-
-The grammar uses:
-- Type var = expr; for variable declarations (int, float, char, bool)
-- var = expr; for assignments
-- Operators: + - * / for arithmetic, == != < > for comparisons
-- if/while statements with { } blocks
-
-Complete the code to make it well-typed:
-
-"""
-
-
-def run_examples(model, examples, prompt_template, grammar_name, results):
-    """Run a set of examples with a given grammar."""
-    
-    for name, example in examples.items():
-        print("\n" + "=" * 80)
-        print(f"[{grammar_name}] Example: {name}")
-        print(f"  {example['description']}")
-        print(f"  Initial:  '{example['initial']}'")
-        print(f"  Expected: '{example['expected']}'")
-        print("=" * 80)
-        
-        initial_code = example["initial"]
-        prompt = prompt_template + f"Initial: {initial_code}\nComplete: "
-        
-        # --- Constrained Generation ---
-        print("\n--- Constrained (type-aware) ---")
-        constrained_tokens = []
-        
-        try:
-            constrained_result = model.until_complete(
-                initial=initial_code,
-                prompt=prompt,
-                max_tokens=40,
-                greedy_k=1,
-                pre_top_k=50,
-                on_token=lambda tok, step: constrained_tokens.append(tok) or print(f"  +'{repr(tok)[1:-1]}'", end="", flush=True),
-            )
-        except Exception as e:
-            print(f"\n  ERROR: {e}")
-            constrained_result = p7.GenerationResult(
-                text=initial_code, is_complete=False, tokens_generated=0, stopped_reason=f"error: {e}"
-            )
-        print()  # newline after tokens
-        
-        # --- Unconstrained Generation ---
-        print("\n--- Unconstrained (raw model) ---")
-        unconstrained_tokens = []
-        
-        try:
-            unconstrained_result = model.generate_unconstrained(
-                initial=initial_code,
-                prompt=prompt,
-                max_tokens=40,
-                on_token=lambda tok, step: unconstrained_tokens.append(tok) or print(f"  +'{repr(tok)[1:-1]}'", end="", flush=True),
-                stop_tokens=["\n", "<|end|>", "<|endoftext|>"],
-            )
-        except Exception as e:
-            print(f"\n  ERROR: {e}")
-            unconstrained_result = p7.GenerationResult(
-                text=initial_code, is_complete=False, tokens_generated=0, stopped_reason=f"error: {e}"
-            )
-        print()  # newline after tokens
-        
-        # Results comparison
-        print("\n--- Comparison ---")
-        print(f"  Constrained:   '{constrained_result.text}'")
-        print(f"  Unconstrained: '{unconstrained_result.text}'")
-        print(f"  Expected:      '{example['expected']}'")
-        print(f"  Well-typed:    {constrained_result.is_complete} (constrained) | ? (unconstrained)")
-        
-        # Check match
-        constrained_match = constrained_result.text.strip() == example['expected']
-        print(f"  Match:         {'✓' if constrained_match else '≠'}")
-        
-        # Show divergence
-        if constrained_result.text != unconstrained_result.text:
-            print(f"  → Diverged! Unconstrained went: {''.join(unconstrained_tokens)}")
-        
-        results.append({
-            "grammar": grammar_name,
-            "name": name,
-            "constrained": constrained_result.text,
-            "unconstrained": unconstrained_result.text,
-            "expected": example["expected"],
-            "complete": constrained_result.is_complete,
-            "match": constrained_match,
-            "diverged": constrained_result.text != unconstrained_result.text,
-        })
-
-
-def main():
-    print("=" * 80)
-    print("Phi-3.5-mini: Constrained vs Unconstrained Generation")
-    print("=" * 80)
-    
-    model_name = "microsoft/Phi-3.5-mini-instruct"
-    print(f"\nLoading {model_name}...")
+def run_environment_demo(env: p7.ReasoningEnvironment):
+    """Run the ReasoningEnvironment demo with all tasks."""
     
     results = []
     
-    # --- XTLC (Lambda Calculus) ---
-    print("\n" + "#" * 80)
-    print("# XTLC - Extended Typed Lambda Calculus")
-    print("#" * 80)
+    for task in TASKS:
+        print_header(f"Task: {task['name']}", "=")
+        print(f"  Description: {task['description']}")
+        print(f"  Task:        {task['task']}")
+        print(f"  Initial:     {task['initial']}")
+        print()
+        
+        # Callbacks for streaming output
+        def on_mode_switch(mode: p7.Mode, tag: str):
+            print(f"\n--- Mode: {mode.value} ({tag}) ---")
+        
+        def on_think_token(tok: str, step: int):
+            print(tok, end="", flush=True)
+        
+        def on_grammar_token(tok: str, step: int):
+            print(f"\033[92m{tok}\033[0m", end="", flush=True)  # Green for grammar
+        
+        try:
+            result = env.generate(
+                prompt=task["task"],
+                initial=task["initial"],
+                max_blocks=4,
+                start_thinking=True,
+                on_mode_switch=on_mode_switch,
+                on_think_token=on_think_token,
+                on_grammar_token=on_grammar_token,
+            )
+            
+            print("\n")
+            print_header("Result", "-", 40)
+            print(f"  Complete:      {result.is_complete}")
+            print(f"  Total tokens:  {result.total_tokens}")
+            print(f"  Stop reason:   {result.stopped_reason}")
+            print(f"  Think blocks:  {len(result.think_blocks)}")
+            print(f"  Grammar blocks: {len(result.grammar_blocks)}")
+            
+            if result.final_output:
+                print(f"\n  Final output:  {result.final_output.content}")
+            
+            results.append({
+                "name": task["name"],
+                "complete": result.is_complete,
+                "output": result.final_output.content if result.final_output else None,
+                "tokens": result.total_tokens,
+            })
+            
+        except Exception as e:
+            print(f"\n  ERROR: {e}")
+            results.append({
+                "name": task["name"],
+                "complete": False,
+                "output": None,
+                "tokens": 0,
+                "error": str(e),
+            })
+        
+        print("\n")
     
-    xtlc_model = p7.ConstrainedModel.from_pretrained(
+    return results
+
+
+def run_simple_demo(model: p7.ConstrainedModel, grammar_name: str):
+    """Run the SimpleEnvironment demo."""
+    
+    print_header("SimpleEnvironment Demo", "#")
+    print("Single-shot CoT + Grammar generation\n")
+    
+    env = p7.SimpleEnvironment(
+        model=model,
+        grammar_name=grammar_name,
+        cot_tokens=100,
+        grammar_tokens=50,
+    )
+    
+    task = "Create a function that takes an Int and returns an Int"
+    initial = "λx:Int."
+    
+    print(f"Task: {task}")
+    print(f"Initial: {initial}")
+    print()
+    
+    print("--- Chain of Thought ---")
+    cot, output, is_complete = env.generate(
+        task=task,
+        initial=initial,
+        on_cot=lambda x: print(x),
+        on_output=lambda x: print(f"\n--- Output ---\n\033[92m{x}\033[0m"),
+    )
+    
+    print(f"\nComplete: {is_complete}")
+    print(f"Final: {output}")
+
+
+def main():
+    print_header("P7 ReasoningEnvironment Demo with Phi-3.5-mini", "#", 80)
+    
+    model_name = "microsoft/Phi-3.5-mini-instruct"
+    grammar_name = "xtlc"
+    
+    print(f"\nLoading {model_name}...")
+    print(f"Grammar: {grammar_name}")
+    print()
+    
+    # Show the auto-generated system prompt
+    system_prompt = p7.build_system_prompt(grammar_name)
+    print_header("Auto-generated System Prompt", "-", 60)
+    print(system_prompt)
+    print()
+    
+    # Load model
+    model = p7.ConstrainedModel.from_pretrained(
         model_name,
-        grammar=p7.GRAMMARS["xtlc"],
+        grammar=p7.GRAMMARS[grammar_name],
         device_map="auto",
         torch_dtype="auto",
         trust_remote_code=True,
     )
-    print(f"Vocabulary size: {len(xtlc_model.vocab)}")
+    print(f"Vocabulary size: {len(model.vocab)}")
+    print()
     
-    run_examples(xtlc_model, XTLC_EXAMPLES, XTLC_PROMPT, "xtlc", results)
-    
-    # --- C-like ---
-    print("\n" + "#" * 80)
-    print("# CLIKE - C-like Imperative Language")
-    print("#" * 80)
-    
-    clike_model = p7.ConstrainedModel.from_pretrained(
-        model_name,
-        grammar=p7.GRAMMARS["clike"],
-        device_map="auto",
-        torch_dtype="auto",
-        trust_remote_code=True,
+    # Create reasoning environment
+    env = p7.ReasoningEnvironment(
+        model=model,
+        grammar_name=grammar_name,
+        think_budget=150,
+        grammar_budget=50,
     )
-    print(f"Vocabulary size: {len(clike_model.vocab)}")
     
-    run_examples(clike_model, CLIKE_EXAMPLES, CLIKE_PROMPT, "clike", results)
+    # Run main demo
+    print_header("ReasoningEnvironment Demo", "#")
+    print("CoT reasoning with <think> blocks, typed output with <xtlc> blocks\n")
+    
+    results = run_environment_demo(env)
     
     # Summary
-    print("\n" + "=" * 80)
-    print("SUMMARY")
-    print("=" * 80)
-    print(f"\n{'Grammar':<8} {'Example':<16} {'Complete':<10} {'Match':<8} {'Diverged':<10}")
-    print("-" * 60)
+    print_header("SUMMARY", "=")
+    print(f"\n{'Task':<15} {'Complete':<10} {'Output':<40}")
+    print("-" * 65)
     for r in results:
-        print(f"{r['grammar']:<8} {r['name']:<16} {str(r['complete']):<10} {'✓' if r['match'] else '≠':<8} {'YES' if r['diverged'] else 'no':<10}")
+        output = r['output'][:35] + "..." if r['output'] and len(r['output']) > 35 else (r['output'] or "N/A")
+        print(f"{r['name']:<15} {str(r['complete']):<10} {output:<40}")
     
     complete = sum(1 for r in results if r['complete'])
-    matches = sum(1 for r in results if r['match'])
-    diverged = sum(1 for r in results if r['diverged'])
-    print("-" * 60)
-    print(f"Complete: {complete}/{len(results)}, Matches: {matches}/{len(results)}, Diverged: {diverged}/{len(results)}")
+    print("-" * 65)
+    print(f"Complete: {complete}/{len(results)}")
     
-    print("\n" + "=" * 80)
-    print("KEY INSIGHT:")
-    print("  Constrained generation ALWAYS produces well-typed terms.")
-    print("  Unconstrained generation often diverges to invalid/ill-typed code.")
-    print("=" * 80)
+    # Also run simple demo
+    print("\n")
+    run_simple_demo(model, grammar_name)
+    
+    print("\n")
+    print_header("KEY INSIGHT", "=")
+    print("""
+  The ReasoningEnvironment enables structured generation where:
+  
+  1. <think>...</think> blocks allow free-form reasoning (unconstrained)
+  2. <{grammar}>...</{grammar}> blocks produce well-typed output (constrained)
+  
+  This combines the flexibility of Chain-of-Thought reasoning with the
+  guarantees of grammar-constrained generation.
+  
+  Tags are grammar-specific: <xtlc>, <clike>, etc. - not a generic <formal>.
+""")
 
 
 if __name__ == "__main__":

@@ -166,8 +166,9 @@ class ConstrainedModel:
         
         full_prompt = prompt + initial
         self._input_ids = self.tokenizer.encode(full_prompt, return_tensors="pt")
+        initial_len = self._input_ids.shape[1]
         
-        generated_text = initial
+        generated_token_ids = []
         tokens_generated = 0
         stopped_reason = "max_tokens"
         
@@ -176,19 +177,35 @@ class ConstrainedModel:
             
             # Get top token
             top_idx = max(range(len(logits)), key=lambda i: logits[i])
-            token = self.vocab[top_idx]
+            
+            # Get the raw token string for stop checking
+            token_str = self.tokenizer.decode([top_idx])
             
             # Check stop conditions
-            if token in stop_tokens or any(stop in token for stop in stop_tokens):
+            if token_str in stop_tokens or any(stop in token_str for stop in stop_tokens):
                 stopped_reason = "stop_token"
                 break
             
-            generated_text += token
+            # Add token ID and update model state
+            generated_token_ids.append(top_idx)
             tokens_generated += 1
-            self._update_input_ids(token)
+            
+            new_ids = torch.tensor([[top_idx]])
+            self._input_ids = torch.cat([self._input_ids, new_ids], dim=1)
             
             if on_token:
-                on_token(token, step)
+                # Decode incrementally to get proper spacing
+                # Decode all generated tokens to get proper text with spaces
+                current_text = self.tokenizer.decode(generated_token_ids)
+                if tokens_generated == 1:
+                    token_display = current_text
+                else:
+                    prev_text = self.tokenizer.decode(generated_token_ids[:-1])
+                    token_display = current_text[len(prev_text):]
+                on_token(token_display, step)
+        
+        # Decode all generated tokens at once to preserve proper spacing
+        generated_text = initial + self.tokenizer.decode(generated_token_ids)
         
         return GenerationResult(
             text=generated_text,

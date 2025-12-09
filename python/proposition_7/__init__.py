@@ -19,6 +19,18 @@ from .sampler import CompletionEngine, TypedSampler
 from .grammars import GRAMMARS, list_grammars, get_grammar
 from .inference import generate, until_complete, GenerationResult
 from .llm import ConstrainedModel
+from .environment import (
+    ReasoningEnvironment,
+    SimpleEnvironment,
+    EnvironmentResult,
+    ThinkBlock,
+    GrammarBlock,
+    Mode,
+    create_environment,
+    build_system_prompt,
+    get_grammar_info,
+    GRAMMAR_INFO,
+)
 
 __all__ = [
     # rust bindings
@@ -34,6 +46,17 @@ __all__ = [
     "until_complete",
     "GenerationResult",
     "ConstrainedModel",
+    # environment
+    "ReasoningEnvironment",
+    "SimpleEnvironment", 
+    "EnvironmentResult",
+    "ThinkBlock",
+    "GrammarBlock",
+    "Mode",
+    "create_environment",
+    "build_system_prompt",
+    "get_grammar_info",
+    "GRAMMAR_INFO",
     # grammars
     "GRAMMARS",
     "list_grammars",

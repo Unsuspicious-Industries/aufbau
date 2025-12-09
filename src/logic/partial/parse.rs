@@ -15,7 +15,7 @@ impl Segment {
 }
 
 pub struct Parser {
-    grammar: Grammar,
+    pub (crate) grammar: Grammar,
     tokenizer: Tokenizer,
 }
 

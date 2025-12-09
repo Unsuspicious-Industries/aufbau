@@ -483,7 +483,6 @@ fn eval_conclusion(
 // ============================================================================
 // Frontier Detection
 // ============================================================================
-
 fn is_at_frontier(node: &Node) -> bool {
     match node {
         Node::Terminal(Terminal::Partial { .. }) => true,

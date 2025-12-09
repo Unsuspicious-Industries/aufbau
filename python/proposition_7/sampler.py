@@ -18,6 +18,9 @@ class CompletionEngine:
     
     def feed(self, prompt: str) -> None:
         self.generator.feed_raw(prompt)
+    
+    def reset(self) -> None:
+        self.generator.reset()
 
     def get_completions(self) -> List[str]:
         return self.generator.get_completions()

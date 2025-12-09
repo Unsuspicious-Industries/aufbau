@@ -316,13 +316,12 @@ impl ConstrainedGenerator {
 }
 
 impl ConstrainedGenerator {
-    // typed_completions filters out ill-typed parses before computing completions
     fn get_completions(&mut self) -> PyResult<CompletionSet> {
         let ast = self
             .parser
             .partial(&self.current_text)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Parse error: {}", e)))?;
-        Ok(ast.typed_completions(&self.grammar))
+        Ok(ast.completions(&self.grammar))
     }
 }
 
