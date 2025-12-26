@@ -8,10 +8,9 @@
 // The algorithm explores the partial parse forest and uses the typing core
 // to filter out invalid branches based on defined type rules.
 use crate::logic::PartialAST;
-use crate::logic::ast::ASTNode;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
-use crate::logic::partial::{Node, Terminal};
+use crate::logic::partial::{Node, NonTerminal, Terminal};
 use crate::logic::typing::Context;
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::{HashSet, VecDeque};
@@ -21,23 +20,29 @@ use std::collections::{HashSet, VecDeque};
 fn extract_tokens_from_ast(ast: &PartialAST) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut seen = HashSet::new();
-    
+
     for root in ast.roots() {
         collect_tokens_from_node(&Node::NonTerminal(root.clone()), &mut tokens, &mut seen);
     }
-    
+
     tokens
 }
 
 fn collect_tokens_from_node(node: &Node, tokens: &mut Vec<String>, seen: &mut HashSet<String>) {
     match node {
         Node::Terminal(Terminal::Complete { value, .. }) => {
-            if !value.is_empty() && !value.chars().all(|c| c.is_whitespace()) && seen.insert(value.clone()) {
+            if !value.is_empty()
+                && !value.chars().all(|c| c.is_whitespace())
+                && seen.insert(value.clone())
+            {
                 tokens.push(value.clone());
             }
         }
         Node::Terminal(Terminal::Partial { value, .. }) => {
-            if !value.is_empty() && !value.chars().all(|c| c.is_whitespace()) && seen.insert(value.clone()) {
+            if !value.is_empty()
+                && !value.chars().all(|c| c.is_whitespace())
+                && seen.insert(value.clone())
+            {
                 tokens.push(value.clone());
             }
         }
@@ -48,8 +53,6 @@ fn collect_tokens_from_node(node: &Node, tokens: &mut Vec<String>, seen: &mut Ha
         }
     }
 }
-
-
 
 /// Represents a search state in the completion exploration
 #[derive(Clone, Debug)]
@@ -70,7 +73,7 @@ pub enum CompletionResult {
         /// The complete input string that parses to a full AST
         complete_input: String,
         /// The resulting AST
-        ast: ASTNode,
+        ast: NonTerminal,
         /// The sequence of completion tokens used
         completion_path: Vec<DerivativeRegex>,
         /// Depth required to reach completion
@@ -96,7 +99,6 @@ pub enum CompletionResult {
     Error(String),
 }
 
-
 /// Result of prefix soundness check with detailed information
 #[derive(Debug)]
 pub struct PrefixSoundnessResult {
@@ -108,17 +110,20 @@ pub struct PrefixSoundnessResult {
     pub prefixes_checked: usize,
     /// Details about each prefix check
     pub prefix_details: Vec<(String, bool)>,
+    /// The complete input string that was checked
+    pub complete_string: Option<String>,
 }
 
 /// Check sound completion for a given string
 // Check for all the possible prefixes of the string
 // if they are completable
 // Simple implementation
-pub fn check_sound_completion(
-    grammar: &Grammar, 
-    input: &str, 
+pub fn sound_complete(
+    grammar: &Grammar,
+    input: &str,
     max_depth: usize,
-    opt_ctx: Option<Context>
+    opt_ctx: Option<Context>,
+    max_states: Option<usize>,
 ) -> PrefixSoundnessResult {
     let chars: Vec<char> = input.chars().collect();
     let mut prefix_details = Vec::new();
@@ -129,42 +134,51 @@ pub fn check_sound_completion(
         Some(c) => c,
         None => Context::new(),
     };
-    
-    
+
+    let mut complete_string = String::new();
+
     for len in 0..=chars.len() {
         let prefix: String = chars[..len].iter().collect();
-        
+
         // Skip whitespace-only prefixes after the first
         if len > 0 && prefix.trim().is_empty() {
             continue;
         }
-        
-        let is_completable = matches!(
-            complete(
-                grammar, 
-                &prefix, 
-                max_depth + (chars.len() - len), 
-                Some(ctx.clone()),
-                None
-            ),
-            CompletionResult::Success { .. }
+
+        let result = complete(
+            grammar,
+            &prefix,
+            max_depth + (chars.len() - len),
+            Some(ctx.clone()),
+            max_states,
         );
-        
+        let is_completable = matches!(result, CompletionResult::Success { .. });
+        if is_completable {
+            complete_string = match result {
+                CompletionResult::Success { complete_input, .. } => complete_input,
+                _ => complete_string,
+            };
+        }
+
         prefix_details.push((prefix.clone(), is_completable));
-        
+
         if !is_completable && failing_prefix.is_none() {
             failing_prefix = Some(prefix);
         }
     }
-    
+
     PrefixSoundnessResult {
         is_sound: failing_prefix.is_none(),
         failing_prefix,
         prefixes_checked: prefix_details.len(),
         prefix_details,
+        complete_string: if complete_string.is_empty() {
+            None
+        } else {
+            Some(complete_string)
+        },
     }
 }
-
 
 /// Complete with typing context - always enforces type rules
 pub fn complete(
@@ -174,7 +188,6 @@ pub fn complete(
     opt_ctx: Option<Context>,
     max_states: Option<usize>,
 ) -> CompletionResult {
-
     let ctx = match opt_ctx {
         Some(c) => c,
         None => Context::new(),
@@ -203,11 +216,11 @@ pub fn complete(
 
     while let Some(current_state) = queue.pop_front() {
         states_explored += 1;
-        
+
         // Avoid revisiting the same input string
         if visited.contains(&current_state.tree) {
             continue;
-        } else if max_states.is_some_and(|max|states_explored > max) {
+        } else if max_states.is_some_and(|max| states_explored > max) {
             return CompletionResult::Error(format!(
                 "Exceeded maximum states explored limit: {}",
                 max_states.unwrap()
@@ -218,7 +231,7 @@ pub fn complete(
 
         // Check if we have a complete AND well-typed AST
         if ast.typed_complete_ctx(grammar, &ctx).is_ok() {
-            if let Ok(complete_ast) = ast.clone().into_complete() {
+            if let Some(complete_ast) = ast.clone().complete() {
                 return CompletionResult::Success {
                     complete_input: current_state.tree.input.clone(),
                     ast: complete_ast,
@@ -227,7 +240,7 @@ pub fn complete(
                 };
             }
         }
-        
+
         // If we haven't reached max depth, explore next completion tokens
         // here we add all new states
         if current_state.depth >= max_depth {
@@ -248,10 +261,11 @@ pub fn complete(
 
         for token in completions.tokens.iter() {
             let next_tree = match extend_tree(
-                &current_state.tree, 
-                &token, grammar, 
-                &state_symbols, 
-                max_completion_search
+                &current_state.tree,
+                &token,
+                grammar,
+                &state_symbols,
+                max_completion_search,
             ) {
                 Some(extended) => extended,
                 None => continue, // Could not extend with this token
@@ -281,13 +295,7 @@ pub fn complete(
     }
 }
 
-
-
-fn try_extend(
-    tree: &PartialAST,
-    grammar: &Grammar,
-    token: String,
-) -> Result<PartialAST, String> {
+fn try_extend(tree: &PartialAST, grammar: &Grammar, token: String) -> Result<PartialAST, String> {
     // add a space as delimiter
     // TODO improve this weird behavior
     let new_input = format!("{} {}", tree.input(), token);
@@ -295,7 +303,10 @@ fn try_extend(
     let mut parser = Parser::new(grammar.clone());
     match parser.partial_typed(&new_input) {
         Ok(new_tree) => Ok(new_tree),
-        Err(e) => Err(format!("Failed to extend tree with token {:?}: {}", token, e)),
+        Err(e) => Err(format!(
+            "Failed to extend tree with token {:?}: {}",
+            token, e
+        )),
     }
 }
 
@@ -306,7 +317,6 @@ fn extend_tree(
     symbols: &[String],
     n_search: usize,
 ) -> Option<PartialAST> {
-
     // Phase 1: Try context symbols first (symbols that match the token regex)
     // Symbols are already shuffled for better exploration
     let filtered_sybols: Vec<String> = symbols
@@ -320,7 +330,6 @@ fn extend_tree(
         if let Ok(extended) = try_extend(tree, grammar, candidate.clone()) {
             return Some(extended);
         }
-
     }
     let examples = token.examples(n_search);
     for candidate in &examples {
@@ -339,7 +348,3 @@ pub fn is_completable(grammar: &Grammar, input: &str, max_depth: usize) -> bool 
         CompletionResult::Success { .. }
     )
 }
-
-
-
-

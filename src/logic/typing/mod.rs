@@ -1,14 +1,17 @@
 // Type system core definitions and re-exports
 
+pub mod binding;
 pub mod core;
 pub mod eval;
+pub mod ops;
 pub mod rule;
 pub mod symbols;
 pub mod syntax;
 
 pub use core::Context;
 pub use eval::evaluate_typing;
-pub use symbols::{gather_symbols, gather_symbols_with_context};
+pub use ops::{Substitution, apply, equal, subtype, unify};
+pub use symbols::{gather_raw_types, gather_terminal_nodes, gather_terminals, gather_type_symbols};
 
 ///---------------
 /// Type Representation
@@ -16,20 +19,18 @@ pub use symbols::{gather_symbols, gather_symbols_with_context};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-    // Base types
+    // Base types as bindable vars
     Atom(String),
     // Raw/concrete types (e.g., 'int', 'string') - literal types that don't need variable resolution
     Raw(String),
+    // Meta varibable ?A, ?B from type rules
+    Meta(String),
     // Function types (τ₁ → τ₂)
     Arrow(Box<Type>, Box<Type>),
     // Tuple
     Tuple(String),
     // Negation type (¬τ) - "anything that is not τ"
     Not(Box<Type>),
-    // Intersection (τ₁ ∧ τ₂) - "both τ₁ and τ₂"
-    Intersection(Box<Type>, Box<Type>),
-    // Union (τ₁ ∨ τ₂) - "either τ₁ or τ₂"
-    Union(Box<Type>, Box<Type>),
     // Context call (Γ(x)) - lookup the type of variable x in context Γ
     ContextCall(String, String), // (context_name, variable_name)
     // The universe of all types (needed for negation to make sense)

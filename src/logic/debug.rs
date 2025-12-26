@@ -1,5 +1,5 @@
-use crate::logic::ast::{ASTNode, SegmentRange};
-use crate::logic::tokenizer::Segment;
+use crate::logic::grammar::Segment;
+use crate::logic::segment::SegmentRange;
 
 use std::fmt::{self, Display};
 
@@ -188,53 +188,6 @@ impl DebugUtils {
             }
         }
         result
-    }
-
-    /// Format an error with span information (segments required)
-    pub fn format_error_with_segments(
-        node: &ASTNode,
-        message: &str,
-        segments: &[Segment],
-    ) -> String {
-        let span_info = node
-            .span()
-            .map(|s| Self::format_span(Some(s), segments))
-            .unwrap_or_else(|| "no span".to_string());
-        format!("{} at {}", message, span_info)
-    }
-
-    /// Extract the actual text content from a node using its span and segments
-    pub fn extract_text(node: &ASTNode, segments: &[Segment]) -> String {
-        match node.span() {
-            Some(span) => Self::extract_span_text(span, segments),
-            None => format!("<{}>", node.value()),
-        }
-    }
-
-    /// Get a compact representation of a node for debugging
-    pub fn node_summary(node: &ASTNode) -> String {
-        match node {
-            ASTNode::Terminal(t) => format!("T({})", t.value),
-            ASTNode::Nonterminal(nt) => format!("NT({})", nt.value),
-        }
-    }
-
-    /// Pretty print an AST node tree with indentation
-    pub fn pretty_print_ast(node: &ASTNode, indent: usize) -> String {
-        let indent_str = "  ".repeat(indent);
-        match node {
-            ASTNode::Terminal(t) => {
-                format!("{}T: {}", indent_str, t.value)
-            }
-            ASTNode::Nonterminal(nt) => {
-                let mut result = format!("{}NT: {}", indent_str, nt.value);
-                for child in &nt.children {
-                    result.push('\n');
-                    result.push_str(&Self::pretty_print_ast(child, indent + 1));
-                }
-                result
-            }
-        }
     }
 }
 

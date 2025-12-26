@@ -2,6 +2,26 @@
 name = "p7"
 version = "0.1.0"
 edition = "2024"
+authors = ["Paul Kronlund-Drouault"]
+description = "Type-aware constrained decoding for LLMs using context-dependent grammars with typing rules"
+license = "MIT"
+repository = "https://github.com/Unsuspicious-Industries/p7"
+homepage = "https://unsuspicious.org/blog/proposition-7"
+documentation = "https://docs.rs/p7"
+readme = "readme.md"
+keywords = ["llm", "constrained-decoding", "type-systems", "grammar", "parsing"]
+categories = ["parsing", "text-processing", "development-tools"]
+exclude = [
+    "target/",
+    "python/target/",
+    "python/.venv/",
+    ".venv/",
+    "tmp/",
+    "perf.data*",
+    "test.perf",
+    "flamegraph.svg",
+    ".git/",
+]
 
 [lib]
 path = "src/mod.rs"

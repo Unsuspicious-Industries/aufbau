@@ -2,12 +2,13 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
+use super::structure::{Node, NonTerminal, PartialAST, Terminal};
+use crate::debug_trace;
 use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
+use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree_with_context;
-use crate::logic::typing::Type;
-use super::structure::{Node, NonTerminal, PartialAST, Terminal};
 
 // ============================================================================
 // Types
@@ -15,8 +16,16 @@ use super::structure::{Node, NonTerminal, PartialAST, Terminal};
 
 #[derive(Clone, Debug)]
 pub enum TypedNode {
-    Term { val: String, ty: Type },
-    Expr { name: String, children: Vec<TypedNode>, ty: Type, complete: bool },
+    Term {
+        val: String,
+        ty: Type,
+    },
+    Expr {
+        name: String,
+        children: Vec<TypedNode>,
+        ty: Type,
+        complete: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -31,7 +40,9 @@ pub struct TypedAST {
 
 impl TypedNode {
     pub fn ty(&self) -> &Type {
-        match self { Self::Term { ty, .. } | Self::Expr { ty, .. } => ty }
+        match self {
+            Self::Term { ty, .. } | Self::Expr { ty, .. } => ty,
+        }
     }
 
     pub fn is_complete(&self) -> bool {
@@ -46,9 +57,14 @@ impl TypedNode {
         match node {
             Node::Terminal(t) => {
                 let val = match t {
-                    Terminal::Complete { value, .. } | Terminal::Partial { value, .. } => value.clone(),
+                    Terminal::Complete { value, .. } | Terminal::Partial { value, .. } => {
+                        value.clone()
+                    }
                 };
-                Some(Self::Term { val, ty: Type::Universe })
+                Some(Self::Term {
+                    val,
+                    ty: Type::Universe,
+                })
             }
             Node::NonTerminal(nt) => Self::from_nt(nt, g, ctx),
         }
@@ -56,16 +72,27 @@ impl TypedNode {
 
     fn from_nt(nt: &NonTerminal, g: &Grammar, ctx: &Context) -> Option<Self> {
         let status = check_tree_with_context(nt, g, ctx);
-        if matches!(status, TreeStatus::Malformed) { return None; }
+        if matches!(status, TreeStatus::Malformed) {
+            return None;
+        } else if matches!(status, TreeStatus::TooDeep) {
+            debug_trace!("typing", "Recursion error in checking {}", nt.name);
+            return None;
+        }
         let ty = status.ty().cloned().unwrap_or(Type::Universe);
-        let children = nt.children
+        let children = nt
+            .children
             .iter()
             .filter(|c| matches!(c, Node::NonTerminal(_)))
             .filter_map(|c| Self::from_node(c, g, ctx))
             .collect();
         // Use the original AST's completeness
         let complete = nt.is_complete();
-        Some(Self::Expr { name: nt.name.clone(), children, ty, complete })
+        Some(Self::Expr {
+            name: nt.name.clone(),
+            children,
+            ty,
+            complete,
+        })
     }
 }
 
@@ -74,16 +101,25 @@ impl TypedNode {
 // ============================================================================
 
 impl TypedAST {
-    pub fn first(&self) -> Option<&TypedNode> { self.roots.first() }
-    pub fn is_empty(&self) -> bool { self.roots.is_empty() }
+    pub fn first(&self) -> Option<&TypedNode> {
+        self.roots.first()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.roots.is_empty()
+    }
 
     /// Filter to complete trees (consumes self)
     pub fn complete(self) -> Result<Self, String> {
         let roots: Vec<_> = self.roots.into_iter().filter(|r| r.is_complete()).collect();
-        if roots.is_empty() { Err("No complete trees".into()) }
-        else { Ok(Self { roots, input: self.input }) }
+        if roots.is_empty() {
+            Err("No complete trees".into())
+        } else {
+            Ok(Self {
+                roots,
+                input: self.input,
+            })
+        }
     }
-
 }
 
 // ============================================================================
@@ -97,11 +133,19 @@ impl PartialAST {
     }
 
     pub fn typed_ctx(&self, g: &Grammar, ctx: &Context) -> Result<TypedAST, String> {
-        let roots: Vec<_> = self.roots.iter()
+        let roots: Vec<_> = self
+            .roots
+            .iter()
             .filter_map(|r| TypedNode::from_nt(r, g, ctx))
             .collect();
-        if roots.is_empty() { Err("No well-typed trees".into()) }
-        else { Ok(TypedAST { roots, input: self.input.clone() }) }
+        if roots.is_empty() {
+            Err("No well-typed trees".into())
+        } else {
+            Ok(TypedAST {
+                roots,
+                input: self.input.clone(),
+            })
+        }
     }
 
     /// typed().complete() - composition
@@ -115,22 +159,34 @@ impl PartialAST {
 
     /// Simple predicate: any well-typed tree exists?
     pub fn has_well_typed(&self, g: &Grammar) -> bool {
-        self.roots.iter().any(|r| check_tree_with_context(r, g, &Context::new()).is_ok())
+        self.roots
+            .iter()
+            .any(|r| check_tree_with_context(r, g, &Context::new()).is_ok())
     }
 
     // filter to an AST with only well-typed trees
     pub fn filter_typed(&self, g: &Grammar) -> Result<PartialAST, String> {
-        let roots: Vec<_> = self.roots.iter()
+        let roots: Vec<_> = self
+            .roots
+            .iter()
             .filter(|r| check_tree_with_context(r, g, &Context::new()).is_ok())
             .cloned()
             .collect();
         match roots.is_empty() {
             true => Err("No well-typed trees".into()),
-            false => Ok(PartialAST { roots, input: self.input.clone() }),
+            false => Ok(PartialAST {
+                roots,
+                input: self.input.clone(),
+            }),
         }
     }
 }
 
+impl NonTerminal {
+    pub fn typed(&self, g: &Grammar) -> Option<TypedNode> {
+        TypedNode::from_nt(self, g, &Context::new())
+    }
+}
 
 impl Parser {
     pub fn partial_typed(&mut self, input: &str) -> Result<PartialAST, String> {
@@ -199,7 +255,7 @@ mod tests {
         let spec = "start ::= 'a' 'b' 'c'";
         let (ast, g) = parse(spec, "a b");
         // The partial AST itself is not complete
-        assert!(!ast.complete(), "partial input should not be complete");
+        assert!(!ast.is_complete(), "partial input should not be complete");
         // typed_complete should fail for partial
         assert!(ast.typed_complete(&g).is_err());
     }
@@ -239,21 +295,24 @@ mod tests {
             Variable(var) ::= Identifier[x]
             Lambda(lam) ::= 'λ' Identifier[x] '.' Variable[e]
             start ::= Lambda
-            
+
             x ∈ Γ
             -------------- (var)
             Γ(x)
-            
+
             Γ[x:'int'] ⊢ e : ?B
             -------------- (lam)
             'int' → ?B
         "#;
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        
+
         // λx.x should typecheck - x is bound by lambda
         let ast = p.partial("λ x . x").unwrap();
-        assert!(ast.typed_complete(&g).is_ok(), "lambda should bind its variable");
+        assert!(
+            ast.typed_complete(&g).is_ok(),
+            "lambda should bind its variable"
+        );
     }
 
     #[test]
@@ -262,19 +321,22 @@ mod tests {
             Identifier ::= /[a-z]+/
             Variable(var) ::= Identifier[x]
             start ::= Variable
-            
+
             x ∈ Γ
             -------------- (var)
             Γ(x)
         "#;
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        
+
         // Variable with context should work
         let ast = p.partial("y").unwrap();
         let ctx = Context::new().extend("y".into(), Type::Atom("Int".into()));
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
-        println!("Typed AST with context: {}", ast.typed_ctx(&g, &ctx).unwrap());
+        println!(
+            "Typed AST with context: {}",
+            ast.typed_ctx(&g, &ctx).unwrap()
+        );
     }
 
     #[test]
@@ -285,7 +347,6 @@ mod tests {
         let filtered = typed.complete().unwrap();
         assert!(!filtered.is_empty());
     }
-
 
     // ========================================================================
     // Display tests

@@ -7,17 +7,12 @@ impl Grammar {
     pub fn to_spec_string(&self) -> String {
         let mut out = String::new();
         // Preserve original declaration order; fall back to sorted for any missing
-        let mut nt_list: Vec<_> = self.production_order.clone();
-        for k in self.productions.keys() {
-            if !nt_list.contains(k) {
-                nt_list.push(k.clone());
-            }
-        }
+        let mut nt_list: Vec<&String> = self.productions.keys().collect();
 
         // ---------- Productions ----------
         out.push_str("// --- Production Rules ---\n");
         for nt in nt_list {
-            if let Some(alts) = self.productions.get(&nt) {
+            if let Some(alts) = self.productions.get(nt) {
                 let mut first = true;
                 for prod in alts {
                     let lhs = if let Some(rule_name) = &prod.rule {
@@ -71,14 +66,14 @@ impl Grammar {
 
     fn format_symbol(&self, symbol: &Symbol) -> String {
         match symbol {
-            Symbol::Expression { name, binding } => {
+            Symbol::Nonterminal { name, binding } => {
                 if let Some(b) = binding {
                     format!("{}[{}]", name, b)
                 } else {
                     name.to_string()
                 }
             }
-            Symbol::Regex { regex, binding } => {
+            Symbol::Terminal { regex, binding } => {
                 let base = format!("/{}/", regex.to_pattern());
                 if let Some(b) = binding {
                     format!("{}[{}]", base, b)
@@ -97,10 +92,12 @@ impl Grammar {
 
 /// Helper to format a list of premises as a string
 fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
+    use crate::logic::typing::TypingJudgment;
+    
     premises
         .iter()
         .map(|p| match (&p.setting, &p.judgment) {
-            (Some(setting), Some(crate::logic::typing::TypingJudgment::Ascription((term, ty)))) => {
+            (Some(setting), Some(TypingJudgment::Ascription((term, ty)))) => {
                 if setting.extensions.is_empty() {
                     format!("{} ⊢ {} : {}", setting.name, term, ty)
                 } else {
@@ -113,24 +110,21 @@ fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
                     format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
                 }
             }
-            (
-                std::option::Option::None,
-                Some(crate::logic::typing::TypingJudgment::Ascription((term, ty))),
-            ) => {
+            (None, Some(TypingJudgment::Ascription((term, ty)))) => {
                 format!("{} : {}", term, ty)
             }
-            (
-                std::option::Option::None,
-                Some(crate::logic::typing::TypingJudgment::Membership(var, ctx)),
-            ) => {
+            (None, Some(TypingJudgment::Membership(var, ctx))) => {
                 format!("{} ∈ {}", var, ctx)
             }
-            (Some(_), Some(crate::logic::typing::TypingJudgment::Membership(var, ctx))) => {
+            (Some(_), Some(TypingJudgment::Membership(var, ctx))) => {
                 // Membership with setting doesn't make sense in current design, but handle it
                 format!("{} ∈ {}", var, ctx)
             }
-            (Some(setting), std::option::Option::None) => format!("{}", setting.name),
-            (std::option::Option::None, std::option::Option::None) => String::new(),
+            (_, Some(TypingJudgment::Operation { left, op, right })) => {
+                format!("{} {} {}", left, op, right)
+            }
+            (Some(setting), None) => format!("{}", setting.name),
+            (None, None) => String::new(),
         })
         .collect::<Vec<_>>()
         .join(", ")

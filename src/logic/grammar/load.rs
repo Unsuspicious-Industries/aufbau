@@ -1,6 +1,5 @@
 use super::utils::{
-    ParsedRhs, build_accepted_tokens_regex, parse_inference_rule, parse_nonterminal,
-    parse_production, parse_rhs,
+    ParsedRhs, parse_inference_rule, parse_nonterminal, parse_production, parse_rhs,
 };
 use crate::logic::grammar::{Grammar, Production, TypingRule};
 
@@ -58,7 +57,6 @@ impl Grammar {
                         // Record first time we see this nonterminal (declaration order)
                         if !nt_order.contains(&name) {
                             nt_order.push(name.clone());
-                            grammar.production_order.push(name.clone());
                         }
 
                         for literal in literal_tokens {
@@ -89,16 +87,16 @@ impl Grammar {
 
         // By convention, set the start symbol to the last declared production LHS
         if grammar.start_nonterminal().is_none() {
-            if let Some(last) = grammar.production_order.last() {
+            if let Some(last) = nt_order.last() {
                 grammar.set_start(last.clone());
             }
         }
 
-        // Build the unified accepted tokens regex
-        grammar.accepted_tokens_regex = build_accepted_tokens_regex(&grammar);
-
         // Build the binding map
         grammar.rebuild_bindings();
+
+        // Prepare the tokenizer regexes
+        grammar.prepare_tokenizer();
 
         Ok(grammar)
     }

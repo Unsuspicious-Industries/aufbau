@@ -1,41 +1,32 @@
-// Identifier (supports Unicode)
-Identifier ::= /[A-Za-z_][A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]*/
+// this is a tentative sec for an extended lambda calculus with
+// product types (pairs)
 
-// Variables with var typing rule
-Variable(var) ::= Identifier[x]
-
-// Type names (supports Unicode type variables like τ₁, τ₂)
+Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
+// Type syntax
 TypeName ::= Identifier
-
-// Base types (parentheses are literals, hence quoted)
 BaseType ::= TypeName | '(' Type ')'
-
-// Function types (right-associative)
-Type ::= BaseType[τ₁] '->' Type[τ₂] | BaseType[τ]
-
-// Lambda abstraction (dot is a literal)
+Type ::= BaseType '->' Type | BaseType
+// Term syntax
+Variable(var) ::= Identifier[x]
 Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
+Let(let) ::= '{' Identifier[x] ':' Type[τ]  '}'
+BaseTerm ::= Variable | Lambda |  '(' Term ')'
 
-// variable declaration
-Let(let) ::= '{' Identifier[x] ':' Type[τ] '}'
+// Application is left-associative: f x y = (f x) y
+// Using right-recursive grammar that builds left-associative structure:
+// - AppChain matches "BaseTerm BaseTerm*" 
+// - Each Application node is created for adjacent pairs
+// - The AppTail wraps the result to build nested structure
+Application(app) ::= BaseTerm[f] AppTail[e]
+AppTail ::= BaseTerm AppTail | BaseTerm
 
-
-// Base terms (cannot be applications; parentheses are literal tokens)
-BaseTerm ::= Variable | Lambda | '(' Term ')' 
-
-// Applications (left-associative via iteration)
-Application(app) ::= BaseTerm[f] BaseTerm[e]
-
-
-// Terms
-Term ::=  Application[e] | BaseTerm[e] 
-
+Term ::= Application[e] | BaseTerm[e]
 Expr ::= Term | Let
-
 Program ::= Expr ProgramTail
 ProgramTail ::= ε | Expr ProgramTail
 
-// Typing Rules
+// typing rules
+
 x ∈ Γ
 ----------- (var)
 Γ(x)
@@ -49,4 +40,5 @@ x ∈ Γ
 ?B
 
 -------------------------------- (let)
-Γ -> Γ[x:τ] ⊢ τ
+Γ → Γ[x:τ] ⊢ ∅
+

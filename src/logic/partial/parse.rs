@@ -1,11 +1,12 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
-use crate::logic::ast::{ASTNode, SegmentRange};
-use crate::logic::grammar::{Grammar, Production, Symbol};
+use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
 use crate::logic::partial::{Node, NonTerminal, PartialAST, Terminal};
-use crate::logic::tokenizer::{Segment, Tokenizer};
+use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use crate::{debug_debug, debug_trace};
+
+const MAX_REC_DEPTH: usize = 1;
 
 impl Segment {
     /// Get the segment range (just its own index)
@@ -15,21 +16,19 @@ impl Segment {
 }
 
 pub struct Parser {
-    pub (crate) grammar: Grammar,
-    tokenizer: Tokenizer,
+    pub(crate) grammar: Grammar,
 }
 
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
-        let specials = grammar.special_tokens.clone();
-        let validation_regex = grammar.accepted_tokens_regex.clone();
-        Self {
-            grammar,
-            tokenizer: Tokenizer::new(specials, vec![' ', '\n', '\t'], validation_regex),
-        }
+        let mut specials = grammar.special_tokens.clone();
+        // Ensure longest-match for multi-char literals (e.g. "<=", ">=", "==")
+        // by checking longer specials before their prefixes ("<", ">", "=").
+        specials.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        Self { grammar }
     }
 
-    pub fn parse(&mut self, input: &str) -> Result<ASTNode, String> {
+    pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
         let past = self
             .partial(input)
             .map_err(|e| format!("Parse error: {}", e))?;
@@ -45,8 +44,7 @@ impl Parser {
             .find(|r| r.is_complete() && r.consumed_segments == total_segments);
 
         if let Some(_) = complete_root {
-            past.into_complete()
-                .map_err(|e| format!("Incomplete parse: {}", e))
+            Ok(past)
         } else {
             Err(format!(
                 "Parse error: no complete parse found consuming all {} tokens",
@@ -72,7 +70,7 @@ impl Parser {
         debug_debug!("parser2      ", "Start nonterminal: {}", start_nt);
 
         // Parse from start
-        let mut visited = HashSet::new();
+        let mut visited = HashMap::new();
         let roots = self.parse_nonterminal(&segments, start_nt, None, 0, &mut visited)?;
 
         let total_segments = segments.len();
@@ -98,11 +96,9 @@ impl Parser {
         Ok(ast)
     }
 
-    /// Tokenize input into segments
+    /// Tokenize input into segments using the grammar's tokenizer
     fn tokenize(&self, input: &str) -> Result<Vec<Segment>, String> {
-        self.tokenizer
-            .tokenize(input)
-            .map_err(|e| format!("Tokenization failed: {:?}", e))
+        self.grammar.tokenize(input)
     }
 
     /// Parse a nonterminal: try all productions, return all valid trees
@@ -112,7 +108,7 @@ impl Parser {
         nt_name: &str,
         binding: Option<String>,
         level: usize,
-        visited: &mut HashSet<(String, usize)>,
+        visited: &mut HashMap<(String, usize), usize>,
     ) -> Result<Vec<NonTerminal>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
@@ -125,18 +121,45 @@ impl Parser {
 
         // Check for recursion on same input position
         let key = (nt_name.to_string(), segments.len());
-        if visited.contains(&key) {
+        if let Some(count) = visited.get(&key) {
             debug_trace!(
                 "parser2      ",
-                "{}[L{}] Recursion detected for '{}' at len {}",
+                "{}[L{}] Recursion detected for '{}' at len {} depth {}",
                 indent,
                 level,
                 nt_name,
-                segments.len()
+                segments.len(),
+                count
             );
-            return Ok(Vec::new());
+            if count > &MAX_REC_DEPTH {
+                debug_debug!(
+                    "parser2",
+                    "Too much recursion (> {}) exiting",
+                    MAX_REC_DEPTH
+                );
+                return Ok(Vec::new());
+            } else {
+                debug_trace!(
+                    "parser2      ",
+                    "{}[L{}] Upping debug count to {}",
+                    indent,
+                    level,
+                    count + 1
+                );
+                visited.insert(key.clone(), count + 1);
+            }
+        } else {
+            debug_trace!(
+                "parser2      ",
+                "{}[L{}] Starting new parse for '{}' at len {} depth {}",
+                indent,
+                level,
+                nt_name,
+                segments.len(),
+                1
+            );
+            visited.insert(key.clone(), 1);
         }
-        visited.insert(key.clone());
 
         let productions = self
             .grammar
@@ -208,7 +231,7 @@ impl Parser {
         segments: &[Segment],
         prod: &Production,
         level: usize,
-        visited: &mut HashSet<(String, usize)>,
+        visited: &mut HashMap<(String, usize), usize>,
     ) -> Result<Vec<Vec<Node>>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
@@ -237,7 +260,7 @@ impl Parser {
         segments: &[Segment],
         symbols: &[Symbol],
         level: usize,
-        visited: &mut HashSet<(String, usize)>,
+        visited: &mut HashMap<(String, usize), usize>,
     ) -> Result<Vec<Vec<Node>>, String> {
         if symbols.is_empty() {
             return Ok(vec![vec![]]);
@@ -305,13 +328,13 @@ impl Parser {
         segments: &[Segment],
         symbol: &Symbol,
         level: usize,
-        visited: &mut HashSet<(String, usize)>,
+        visited: &mut HashMap<(String, usize), usize>,
     ) -> Result<Vec<Node>, String> {
         let res = match symbol {
-            Symbol::Regex { regex, binding } => {
+            Symbol::Terminal { regex, binding } => {
                 self.parse_regex(segments, regex, binding.clone(), level)
             }
-            Symbol::Expression { name, binding } => {
+            Symbol::Nonterminal { name, binding } => {
                 let nts =
                     self.parse_nonterminal(segments, name, binding.clone(), level + 1, visited)?;
                 Ok(nts.into_iter().map(Node::NonTerminal).collect())
@@ -429,7 +452,7 @@ mod tests {
         let mut p = Parser::new(g);
 
         let ast = p.partial("hello").unwrap();
-        assert!(ast.complete());
+        assert!(ast.is_complete());
         println!("AST: {:?}", ast);
     }
 
@@ -443,7 +466,7 @@ mod tests {
         let mut p = Parser::new(g);
 
         let ast = p.partial("hel").unwrap();
-        assert!(!ast.complete());
+        assert!(!ast.is_complete());
     }
 
     #[test]
@@ -458,7 +481,7 @@ mod tests {
 
         let ast = p.partial("a").unwrap();
         std::println!("AST: {:?}", ast);
-        assert!(ast.complete());
+        assert!(ast.is_complete());
         assert_eq!(ast.roots.len(), 1);
         assert_eq!(ast.roots[0].name, "start");
         // Check children
@@ -497,7 +520,7 @@ mod tests {
         let mut p = Parser::new(g);
 
         let ast = p.partial("hello wor").unwrap();
-        assert!(!ast.complete());
+        assert!(!ast.is_complete());
     }
 
     #[test]
@@ -523,7 +546,7 @@ mod tests {
         let mut p = Parser::new(g);
 
         let ast = p.partial("1 + 2 - 3").unwrap();
-        assert!(ast.complete());
+        assert!(ast.is_complete());
     }
 
     #[test]
@@ -537,7 +560,7 @@ mod tests {
 
         let ast = p.partial("42").unwrap();
         println!("AST: {:#?}", ast);
-        assert!(ast.complete());
+        assert!(ast.is_complete());
 
         let root = &ast.roots[0];
         let child = &root.children[0];
@@ -546,5 +569,48 @@ mod tests {
         } else {
             panic!("Expected NonTerminal node");
         }
+    }
+
+    #[test]
+    fn test_partial_special_token_arrow() {
+        // Test parsing partial input where "-" is the start of "->" special token
+        // This tests the fix for tokenization of partial special tokens at end of input
+        let spec = r#"
+        Identifier ::= /[A-Za-z]+/
+        BaseType ::= Identifier
+        Type ::= BaseType '->' Type | BaseType
+        start ::= Type
+        "#;
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g);
+
+        // "A-" should parse as partial, where "-" is a prefix of "->"
+        let result = p.partial("A-");
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        let ast = result.unwrap();
+        assert!(!ast.is_complete(), "AST should be partial (incomplete)");
+    }
+
+    #[test]
+    fn test_partial_lambda_arrow() {
+        // Test a more realistic lambda calculus scenario
+        let spec = r#"
+        Identifier ::= /[A-Za-z]+/
+        Variable ::= Identifier
+        BaseType ::= Identifier | '(' Type ')'
+        Type ::= BaseType '->' Type | BaseType
+        Lambda ::= 'λ' Variable ':' Type '.' Expr
+        Expr ::= Variable | Lambda | '(' Expr ')'
+        start ::= Expr
+        "#;
+        let g = Grammar::load(spec).unwrap();
+        let mut p = Parser::new(g);
+
+        // "λf:(A-" should parse as partial
+        // The "-" at the end is a prefix of the "->" special token
+        let result = p.partial("λf:(A-");
+        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+        let ast = result.unwrap();
+        assert!(!ast.is_complete(), "AST should be partial (incomplete)");
     }
 }

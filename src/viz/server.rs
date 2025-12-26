@@ -12,11 +12,20 @@ pub fn serve(bind_addr: &str) {
                 let html = include_str!("./static/index.html");
                 Response::html(html)
             },
+            (GET) (/specs) => {
+                viz::handle_list_specs(request)
+            },
             (POST) (/graph) => {
                 viz::handle_parser_viz_request(request)
             },
+            (POST) (/analyze) => {
+                viz::handle_analyze_request(request)
+            },
             (GET) (/static/{file: String}) => {
                 serve_static_file(&file)
+            },
+            (GET) (/examples/{file: String}) => {
+                serve_example_spec(&file)
             },
             _ => Response::empty_404()
         )
@@ -34,5 +43,21 @@ fn serve_static_file(file: &str) -> Response {
             Response::from_data("text/css", css.to_string())
         }
         _ => Response::empty_404(),
+    }
+}
+
+fn serve_example_spec(file: &str) -> Response {
+    // Simple allowlist: `examples/*.spec` only.
+    if file.contains("/") || file.contains("..") {
+        return Response::empty_404();
+    }
+    if !file.ends_with(".spec") {
+        return Response::empty_404();
+    }
+
+    let path = format!("examples/{file}");
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Response::from_data("text/plain", s),
+        Err(_) => Response::empty_404(),
     }
 }
