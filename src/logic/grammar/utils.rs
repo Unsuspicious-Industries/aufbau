@@ -1,5 +1,4 @@
-use super::{Grammar, Symbol};
-use crate::regex::Regex as DerivativeRegex;
+use super::Symbol;
 use regex::Regex as ExternalRegex;
 
 // collection of utils for working with grammar definitions
@@ -200,43 +199,6 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), 
     }
 
     Ok((premises, conclusion, name))
-}
-
-// build a big regex to validate tokenizer input
-pub fn build_accepted_tokens_regex(grammar: &Grammar) -> Option<DerivativeRegex> {
-    let mut regexes = Vec::new();
-
-    // Extract both literal tokens and regex patterns from all productions in a single pass
-    for productions in grammar.productions.values() {
-        for production in productions {
-            for symbol in &production.rhs {
-                collect_token_regexes(symbol, &mut regexes);
-            }
-        }
-    }
-
-    // If we have no patterns, return None
-    if regexes.is_empty() {
-        return None;
-    }
-
-    // Build union regex using our custom regex type
-    // Sort and deduplicate for consistency
-    regexes.sort_by(|a, b| a.to_pattern().cmp(&b.to_pattern()));
-    regexes.dedup_by(|a, b| a.equiv(b));
-
-    // The union of the regexes would be the alphabet of accepted tokens
-    // We want the Kleene star of that to accept sequences of tokens
-    let union = DerivativeRegex::union_many(regexes);
-    Some(DerivativeRegex::zero_or_more(union))
-}
-
-/// Recursively collect regex patterns from a symbol
-fn collect_token_regexes(symbol: &Symbol, regexes: &mut Vec<DerivativeRegex>) {
-    match symbol {
-        Symbol::Regex { regex, .. } => regexes.push(regex.clone()),
-        Symbol::Expression { .. } => {}
-    }
 }
 
 fn split_binding(token: &str) -> Result<(String, Option<String>), String> {

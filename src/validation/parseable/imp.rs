@@ -1,0 +1,44 @@
+use super::*;
+
+fn imp_grammar() -> Grammar {
+    load_example_grammar("imp")
+}
+
+#[test]
+fn valid_expressions_imp() {
+    let grammar = imp_grammar();
+    let cases = vec![
+        ParseTestCase::valid("assign int", "x:Int=5;"),
+        ParseTestCase::valid("operation", "x:Int=5; y:Int=3; x+y;"),
+        ParseTestCase::valid("parentheses", "x:Int=5; y:Int=3; x+y;"),
+    ];
+
+    println!("\n=== IMP Valid Expressions ({} cases) ===", cases.len());
+    let res = run_parse_batch(&grammar, &cases);
+    assert_eq!(res.failed, 0, "{}", res.format_failures());
+    println!(
+        "All {} tests passed in {:?} (avg: {:?})",
+        cases.len(),
+        res.total_duration,
+        res.avg_duration
+    );
+}
+
+#[test]
+fn invalid_expressions_imp() {
+    let grammar = imp_grammar();
+    let cases = vec![
+        ParseTestCase::type_error("unbound var", "y:Int=x;"),
+        ParseTestCase::type_error("unbound var", "y:Int=1;y-x;"),
+    ];
+
+    println!("\n=== IMP Invalid Expressions ({} cases) ===", cases.len());
+    let res = run_parse_batch(&grammar, &cases);
+    assert_eq!(res.failed, 0, "{}", res.format_failures());
+    println!(
+        "All {} tests passed in {:?} (avg: {:?})",
+        cases.len(),
+        res.total_duration,
+        res.avg_duration
+    );
+}

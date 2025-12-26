@@ -64,7 +64,7 @@ BlockStmt(block) ::= '{' StmtSeqOpt '}'
 
 ExprStmt(exprstmt) ::= Expr[e] ';'
 
-Stmt ::= VarDecl | AssignmentStmt | IfStmt | WhileStmt | ForStmt | BlockStmt | ReturnStmt[ret]
+Stmt ::= VarDecl | AssignmentStmt | ExprStmt | IfStmt | WhileStmt | ForStmt | BlockStmt | ReturnStmt[ret]
 
 FunctionDef(funcdef) ::= Type[ret_ty] Identifier[name] '(' ParamDeclListOpt ')' '{' StmtSeqOpt '}'
 ParamDecl ::= Type[in_tys] Identifier
@@ -143,6 +143,7 @@ x ∈ Γ
 // function: check return type matches
 // Note: s is the statement, ret is the return statement node
 // We use simpler typing for now
+Γ ⊢ ret_val : ret_ty
 ----------------------- (funcdef)
 (in_tys...) -> ret_ty
 

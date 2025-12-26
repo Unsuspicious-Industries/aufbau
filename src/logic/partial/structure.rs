@@ -1,5 +1,5 @@
-use crate::logic::ast::SegmentRange;
 use crate::logic::grammar::Production;
+use crate::logic::segment::SegmentRange;
 use crate::regex::Regex as DerivativeRegex;
 
 /// Top-level partial AST result
@@ -22,22 +22,25 @@ impl PartialAST {
         &self.input
     }
     /// Check if the AST is complete (has at least one complete tree)
-    pub fn complete(&self) -> bool {
-        self.roots.iter().any(|root| root.is_complete())
+    /// returns the first complete tree if it exists
+    pub fn complete(&self) -> Option<NonTerminal> {
+        self.roots
+            .iter()
+            .filter(|root| root.is_complete())
+            .next()
+            .cloned()
     }
 
-    /// Convert to a completed AST by selecting the first fully matched tree
-    pub fn into_complete(self) -> Result<crate::logic::ast::ASTNode, String> {
-        use crate::logic::ast::{ASTNode, NonTerminal as FullNT};
+    pub fn completes(&self) -> Vec<NonTerminal> {
+        self.roots
+            .iter()
+            .filter(|root| root.is_complete())
+            .cloned()
+            .collect()
+    }
 
-        let root = self
-            .roots
-            .into_iter()
-            .find(|r| r.is_complete())
-            .ok_or_else(|| "No complete tree found".to_string())?;
-
-        let root = FullNT::from_partial(&root)?;
-        Ok(ASTNode::Nonterminal(root))
+    pub fn is_complete(&self) -> bool {
+        self.complete().is_some()
     }
 }
 
@@ -112,6 +115,10 @@ impl NonTerminal {
         })
     }
 
+    pub fn size(&self) -> usize {
+        self.children.iter().map(|c| c.size()).sum::<usize>() + 1
+    }
+
     pub fn consumed_segments(&self) -> usize {
         self.consumed_segments
     }
@@ -119,7 +126,7 @@ impl NonTerminal {
     /// Get the segment range covered by this nonterminal.
     pub fn complete_len(
         &self,
-        segments: &[crate::logic::tokenizer::Segment],
+        segments: &[crate::logic::grammar::Segment],
     ) -> Option<SegmentRange> {
         if !self.is_complete() {
             return None;
@@ -159,7 +166,19 @@ impl NonTerminal {
     }
 }
 
-#[derive(Clone, Debug,Hash, PartialEq, Eq)]
+impl PartialOrd for NonTerminal {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.size().cmp(&other.size()))
+    }
+}
+
+impl Ord for NonTerminal {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.size().cmp(&other.size())
+    }
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Node {
     NonTerminal(NonTerminal),
     Terminal(Terminal),
@@ -172,5 +191,24 @@ impl Node {
             Node::Terminal(Terminal::Complete { .. }) => true,
             Node::Terminal(Terminal::Partial { .. }) => false,
         }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Node::NonTerminal(nt) => nt.size(),
+            Node::Terminal(Terminal::Complete { .. }) => 1,
+            Node::Terminal(Terminal::Partial { .. }) => 1,
+        }
+    }
+}
+
+impl PartialOrd for Node {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.size().cmp(&other.size()))
+    }
+}
+impl Ord for Node {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.size().cmp(&other.size())
     }
 }

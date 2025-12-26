@@ -2,6 +2,11 @@
 name = "proposition_7_py"
 version = "0.1.0"
 edition = "2021"
+authors = ["Paul Kronlund-Drouault"]
+description = "Python bindings for P7 - Type-aware constrained decoding for LLMs"
+license = "MIT"
+repository = "https://github.com/Unsuspicious-Industries/p7"
+readme = "README.md"
 
 [lib]
 name = "proposition_7"

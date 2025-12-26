@@ -17,7 +17,7 @@ fn literal_tokens_become_regex_symbols() {
     let symbols = &productions[0].rhs;
     assert_eq!(symbols.len(), 1);
     match &symbols[0] {
-        Symbol::Regex { regex, binding } => {
+        Symbol::Terminal { regex, binding } => {
             assert!(regex.equiv(&literal_regex("foo")));
             assert!(binding.is_none());
         }
@@ -31,7 +31,7 @@ fn regex_literals_round_trip() {
     let grammar = Grammar::load(spec).unwrap();
     let productions = grammar.productions.get("start").unwrap();
     match &productions[0].rhs[0] {
-        Symbol::Regex { regex, .. } => {
+        Symbol::Terminal { regex, .. } => {
             assert!(regex.equiv(&DerivativeRegex::new("[a-z]+").unwrap()));
         }
         other => panic!("expected regex symbol, got {:?}", other),
@@ -47,7 +47,7 @@ fn expression_bindings_are_preserved() {
     let grammar = Grammar::load(spec).unwrap();
     let start_prod = grammar.productions.get("start").unwrap();
     match &start_prod[0].rhs[0] {
-        Symbol::Expression { name, binding } => {
+        Symbol::Nonterminal { name, binding } => {
             assert_eq!(name, "Expr");
             assert_eq!(binding.as_deref(), Some("val"));
         }
@@ -63,10 +63,7 @@ fn grammar_tracks_special_tokens_for_literals() {
 }
 
 fn steps(path: &binding::GrammarPath) -> Vec<(usize, Option<usize>)> {
-    path.steps()
-        .iter()
-        .map(|s| (s.child_index, s.alternative_index))
-        .collect()
+    path.steps().iter().map(|s| (s.i, s.a)).collect()
 }
 
 #[test]
@@ -99,14 +96,34 @@ fn stlc_abs_binding_paths_match_spec() {
 
     assert_path("x", "abs", vec![vec![(1, None)]]);
     assert_path("e", "abs", vec![vec![(5, None)]]);
-    assert_path("τ1", "abs", vec![
-        vec![(3, Some(1)), (0, Some(0)), (0, None)],
-        vec![(3, Some(0)), (0, Some(1)), (1, Some(1)), (0, Some(0)), (0, None)],
-    ]);
-    assert_path("τ2", "abs", vec![
-        vec![(3, Some(1)), (0, Some(0)), (2, None)],
-        vec![(3, Some(0)), (0, Some(1)), (1, Some(1)), (0, Some(0)), (2, None)],
-    ]);
+    assert_path(
+        "τ1",
+        "abs",
+        vec![
+            vec![(3, Some(1)), (0, Some(0)), (0, None)],
+            vec![
+                (3, Some(0)),
+                (0, Some(1)),
+                (1, Some(1)),
+                (0, Some(0)),
+                (0, None),
+            ],
+        ],
+    );
+    assert_path(
+        "τ2",
+        "abs",
+        vec![
+            vec![(3, Some(1)), (0, Some(0)), (2, None)],
+            vec![
+                (3, Some(0)),
+                (0, Some(1)),
+                (1, Some(1)),
+                (0, Some(0)),
+                (2, None),
+            ],
+        ],
+    );
 
     assert_path("e1", "app", vec![vec![(0, None)]]);
     assert_path("e2", "app", vec![vec![(1, None)]]);

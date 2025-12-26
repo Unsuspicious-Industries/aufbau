@@ -1,10 +1,40 @@
+# Build artifacts
 target
 python/target
+
+# Virtual environments
 python/.venv
 .venv
+
+# Temporary files
 tmp
 proptest
+
+# Profiling data
 perf.data*
 test.perf
 flamegraph.svg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Rust
+**/*.rs.bk
+
+# OS
+.DS_Store
+Thumbs.db
 

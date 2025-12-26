@@ -1,9 +1,11 @@
-// Typing system tests
-// Main tests + submodules
+/*
+Typing system tests
+Main tests + submodules
+*/
 
 mod contradiction;
+mod lc;
 mod repro;
-mod proofs;
 
 use super::*;
 use crate::logic::grammar::Grammar;
@@ -16,10 +18,7 @@ fn test_debug_quoted_type_parsing() {
     let test_cases = vec!["'int'", "'void'", "'string'"];
 
     let cfg = TypeSyntaxConfig::default();
-    println!("Config union operators: {:?}", cfg.union);
-    println!("Config intersection operators: {:?}", cfg.intersection);
     println!("Config negation operators: {:?}", cfg.negation);
-    println!("Config pointer operators: {:?}", cfg.pointer);
     println!();
 
     for case in test_cases {
@@ -29,24 +28,9 @@ fn test_debug_quoted_type_parsing() {
         println!("  Ends with ': {}", case.ends_with('\''));
         println!("  Length > 2: {}", case.len() > 2);
 
-        for op in &cfg.union {
-            if case.contains(op) {
-                println!("union operator: '{}'", op);
-            }
-        }
-        for op in &cfg.intersection {
-            if case.contains(op) {
-                println!("intersection operator: '{}'", op);
-            }
-        }
         for op in &cfg.negation {
             if case.contains(op) {
                 println!("negation operator: '{}'", op);
-            }
-        }
-        for op in &cfg.pointer {
-            if case.contains(op) {
-                println!("pointer operator: '{}'", op);
             }
         }
 
@@ -207,7 +191,7 @@ fn test_tuple_meta_types() {
 fn evaluate_typing_frontier_aware() {
     // New semantics: partial trees with bindings at frontier are VALID
     // Only trees with bindings missing in COMPLETE portions are malformed
-    
+
     let spec = r#"
     start(rule) ::= 'a'[first] 'b'[second]
     "#;
@@ -235,14 +219,14 @@ fn evaluate_typing_frontier_aware() {
 fn evaluate_typing_rejects_malformed() {
     // A tree is MALFORMED only if bindings fail in the complete portion
     // This happens when the parser chose a wrong alternative
-    
+
     let spec = r#"
     A(ruleA) ::= 'x'[a] 'y'[b]
     B(ruleB) ::= 'x'[c]
     start ::= A | B
     "#;
     let grammar = Grammar::load(spec).expect("load grammar");
-    
+
     // Input 'x' matches both A (partial) and B (complete)
     // Both should be considered valid
     let mut parser = Parser::new(grammar.clone());
@@ -252,4 +236,3 @@ fn evaluate_typing_rejects_malformed() {
         "should have at least one valid tree"
     );
 }
-

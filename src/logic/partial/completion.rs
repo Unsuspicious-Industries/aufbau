@@ -40,7 +40,6 @@ impl CompletionSet {
 // === Implementation ========================================================================== //
 
 impl PartialAST {
-
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
         self.completions_in_ctx(grammar, &Context::new())
     }
@@ -58,18 +57,26 @@ impl PartialAST {
         );
 
         // Filter roots to only well-typed ones
-        let well_typed_roots: Vec<_> = self.roots.iter()
-            .filter(|root| {
-                match check_tree_with_context(root, grammar, ctx) {
-                    TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                    TreeStatus::Malformed => {
-                        debug_trace!(
-                            "partial.completion",
-                            "  Filtering out malformed root: {}",
-                            root.name
-                        );
-                        false
-                    }
+        let well_typed_roots: Vec<_> = self
+            .roots
+            .iter()
+            .filter(|root| match check_tree_with_context(root, grammar, ctx) {
+                TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
+                TreeStatus::Malformed => {
+                    debug_trace!(
+                        "partial.completion",
+                        "  Filtering out malformed root: {}",
+                        root.name
+                    );
+                    false
+                }
+                TreeStatus::TooDeep => {
+                    debug_trace!(
+                        "partial.completion",
+                        " Recursion error too deep: {}",
+                        root.name
+                    );
+                    false
                 }
             })
             .collect();
@@ -173,8 +180,8 @@ fn first_set_rec(
     visited: &mut HashSet<String>,
 ) -> Vec<DerivativeRegex> {
     match symbol {
-        Symbol::Regex { regex, .. } => vec![regex.clone()],
-        Symbol::Expression { name: nt_name, .. } => {
+        Symbol::Terminal { regex, .. } => vec![regex.clone()],
+        Symbol::Nonterminal { name: nt_name, .. } => {
             if visited.contains(nt_name) {
                 return vec![];
             }
@@ -626,7 +633,7 @@ mod tests {
         let spec = r#"
         Num(num) ::= /[0-9]+/
         start ::= Num
-        
+
         -------------- (num)
         'int'
         "#;
@@ -645,13 +652,13 @@ mod tests {
         Num(num) ::= /[0-9]+/
         Assign(assign) ::= Var '=' Num
         start ::= Assign
-        
+
         -------------- (var)
         'string'
-        
+
         -------------- (num)
         'int'
-        
+
         -------------- (assign)
         'unit'
         "#;
@@ -679,10 +686,10 @@ mod tests {
         A(ruleA) ::= 'a'
         B(ruleB) ::= 'b'
         start ::= A | B
-        
+
         -------------- (ruleA)
         'typeA'
-        
+
         -------------- (ruleB)
         'typeB'
         "#;
@@ -705,10 +712,10 @@ mod tests {
         Num(num) ::= /[0-9]+/
         Add(add) ::= Num '+' Num
         start ::= Add
-        
+
         -------------- (num)
         'int'
-        
+
         -------------- (add)
         'int'
         "#;
@@ -731,14 +738,14 @@ mod tests {
         let spec = r#"
         Number ::= /[0-9]+/
         Identifier ::= /[a-z][a-zA-Z0-9]*/
-        
+
         Literal(lit) ::= Number[n]
         Variable(var) ::= Identifier[x]
-        
+
         AtomicExpr ::= Literal | Variable | '(' Expression ')'
     Operator ::= '+' | '-' | '*' | '/'
     BinaryOp(binop) ::= AtomicExpr[left] Operator[op] AtomicExpr[right]
-        
+
         Expression ::= AtomicExpr | BinaryOp
         "#;
 
@@ -750,14 +757,14 @@ mod tests {
         let mut parser1 = crate::logic::Parser::new(grammar.clone());
         let partial1 = parser1.partial("42").unwrap();
         println!("=== Parsing '42' ===");
-        println!("Complete: {}", partial1.complete());
+        println!("Complete: {}", partial1.is_complete());
         println!("Roots: {}", partial1.roots.len());
 
         // Second test: parse "(42" - this is where the issue is
         let mut parser2 = crate::logic::Parser::new(grammar.clone());
         let partial2 = parser2.partial("(42").unwrap();
         println!("\n=== Parsing '(42' ===");
-        println!("Complete: {}", partial2.complete());
+        println!("Complete: {}", partial2.is_complete());
         println!("Roots: {}", partial2.roots.len());
 
         // Completions
@@ -776,52 +783,55 @@ mod tests {
         // This is a simplified version of the user's example:
         // In a typed lambda calculus, applying a function (X -> X) to a value of type Y
         // should be rejected because X ≠ Y.
-        
+
         let spec = r#"
             Identifier ::= /[a-z]+/
             TypeName ::= /[A-Z]/
-            
+
             Variable(var) ::= Identifier[x]
             Type ::= TypeName
-            
+
             Lambda(lam) ::= 'fn' Identifier[x] ':' Type[τ] '=>' Term[e]
             Application(app) ::= BaseTerm[f] BaseTerm[e]
-            
+
             BaseTerm ::= Variable | Lambda | '(' Term ')'
             Term ::= Application | BaseTerm
-            
+
             start ::= Term
-            
+
             // Variable rule: x must be in context
             x ∈ Γ
             ----------- (var)
             Γ(x)
-            
+
             // Lambda introduces binding
             Γ[x:τ] ⊢ e : ?B
             -------------- (lam)
             τ → ?B
-            
+
             // Application: function must accept argument type
             Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
             ---------------------------- (app)
             ?B
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
-        
+
         // Parse "(fn x : A => x)" - a function A -> A applied to nothing yet
         // This should be well-typed (partial)
         let ast = p.partial("( fn x : A => x )").unwrap();
-        
-        // Without context, the lambda body 'x' is well-typed because 
+
+        // Without context, the lambda body 'x' is well-typed because
         // the lambda binds x:A
         let completions = ast.completions(&g);
-        
+
         // Should have completions (the parse is well-typed so far)
         println!("Completions for '(fn x : A => x)': {:?}", completions);
-        assert!(!completions.tokens.is_empty(), "Should have completions for well-typed partial parse");
+        assert!(
+            !completions.tokens.is_empty(),
+            "Should have completions for well-typed partial parse"
+        );
     }
 
     #[test]
@@ -832,24 +842,24 @@ mod tests {
             Num(num) ::= /[0-9]+/
             Add(add) ::= Num '+' Num
             start ::= Add
-            
+
             -------------- (num)
             'int'
-            
+
             -------------- (add)
             'int'
         "#;
-        
+
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
         let ast = p.partial("42 +").unwrap();
-        
+
         let untyped = ast.completions(&g);
         let typed = ast.completions(&g);
-        
+
         // Both should give the same result for this well-typed expression
         assert_eq!(
-            untyped.tokens.len(), 
+            untyped.tokens.len(),
             typed.tokens.len(),
             "Well-typed parse should give same completions"
         );

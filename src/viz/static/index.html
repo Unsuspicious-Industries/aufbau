@@ -3,75 +3,140 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>P7 Visualizer</title>
+  <title>P7 Debug</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">P7 Parser Visualizer</div>
+    <div class="brand">
+      <span class="brand-mark">P7</span>
+      <span class="brand-title">Parser Debugger</span>
+    </div>
     <div class="spacer"></div>
     <span id="parseStatus" class="parse-status"></span>
   </header>
+  
   <main class="layout">
     <section class="sidebar">
+      <!-- Grammar Selection -->
       <div class="group">
-        <label class="label">Grammar Spec</label>
-        <input id="specFile" type="file" accept=".spec,.txt" />
+        <label class="label">Grammar</label>
+        <div class="row">
+          <select id="specLibrary" class="select">
+            <option value="">Loading…</option>
+          </select>
+        </div>
       </div>
+
+      <!-- Program Input -->
       <div class="group">
         <label class="label">Input</label>
-        <textarea id="input" class="code" placeholder="Type code to parse"></textarea>
+        <textarea id="input" class="code" placeholder="Type code to parse…"></textarea>
+        <div class="row">
+          <button id="render" class="btn">Parse</button>
+          <label class="checkbox-label">
+            <input type="checkbox" id="autoUpdate" checked />
+            Live
+          </label>
+        </div>
       </div>
-      <div class="row">
-        <button id="render" class="btn">Parse</button>
-        <label class="checkbox-label">
-          <input type="checkbox" id="autoUpdate" checked />
-          Auto-update
-        </label>
-      </div>
-      
-      <div class="divider"></div>
-      
+
+      <!-- Reconstructed Input Display -->
       <div class="group">
-        <label class="label">Tree Filter</label>
+        <label class="label">Reconstructed <span class="hint">(from complete trees)</span></label>
+        <div id="reconstructedPanel" class="reconstructed-panel">
+          <span class="muted">Parse to see reconstructed input</span>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Trees (all matched full input, filter by AST completeness) -->
+      <div class="group">
+        <label class="label">Parse Trees <span id="treeStats" class="hint"></span></label>
         <div class="filter-controls">
           <button id="showAll" class="btn-small active">All</button>
-          <button id="showValid" class="btn-small">Complete</button>
-          <button id="showWellTyped" class="btn-small">Well-typed</button>
-          <button id="showFullyValid" class="btn-small btn-accent">✓ Valid</button>
+          <button id="showValid" class="btn-small btn-valid">✓ Valid</button>
+          <button id="showComplete" class="btn-small">Complete</button>
+          <button id="showTyped" class="btn-small">Well-typed</button>
         </div>
         <div id="treeSelector" class="tree-selector">
           <span class="muted">Parse to see trees</span>
         </div>
       </div>
-      
+
       <div class="divider"></div>
-      
+
+      <!-- Completions -->
       <div class="group">
         <label class="label">Completions <span id="completionStats" class="hint"></span></label>
         <div id="completions" class="completions-panel">
-          <span class="muted">Parse input to see completions</span>
+          <span class="muted">Parse to see completions</span>
         </div>
       </div>
-      
+
       <div class="divider"></div>
-      
-      <div class="group">
-        <label class="label">Typing Context Γ</label>
-        <div id="contextPanel" class="context-panel">
-          <span class="muted">No context bindings</span>
+
+      <!-- Debug Controls (collapsible) -->
+      <details class="debug-section">
+        <summary class="label">Debug Options</summary>
+        <div class="debug-inner">
+          <div class="row">
+            <select id="debugLevel" class="select select-small">
+              <option value="none">none</option>
+              <option value="error">error</option>
+              <option value="warn">warn</option>
+              <option value="info">info</option>
+              <option value="debug">debug</option>
+              <option value="trace">trace</option>
+            </select>
+            <input id="debugModules" class="input input-small" placeholder="modules…" />
+          </div>
+          <div class="sub-group">
+            <label class="label-small">Typing Context Γ</label>
+            <textarea id="typingContext" class="code code-mini" placeholder="x : Int"></textarea>
+          </div>
         </div>
-      </div>
-      
-      <div class="divider"></div>
-      
-      <div class="group">
-        <label class="label">Node Details</label>
-        <pre id="details" class="details-panel">Click a node to inspect</pre>
-      </div>
+      </details>
     </section>
+
     <section class="stage">
-      <svg id="viz"></svg>
+      <div class="stage-header">
+        <div class="tabs">
+          <button class="tab active" data-tab="forest">Tree</button>
+          <button class="tab" data-tab="typed">Typed AST</button>
+          <button class="tab" data-tab="tokens">Tokens</button>
+          <button class="tab" data-tab="json">JSON</button>
+        </div>
+        <span id="timings" class="hint"></span>
+      </div>
+
+      <div class="stage-main">
+        <div class="pane active" data-pane="forest">
+          <svg id="viz"></svg>
+        </div>
+        <div class="pane" data-pane="typed">
+          <div id="typedAst" class="mono-panel">Parse to see typed AST</div>
+        </div>
+        <div class="pane" data-pane="tokens">
+          <pre id="tokensPanel" class="mono-panel">Parse to see tokens</pre>
+        </div>
+        <div class="pane" data-pane="json">
+          <pre id="rawJson" class="mono-panel">Parse to see raw response</pre>
+        </div>
+      </div>
+
+      <div class="stage-footer">
+        <div class="inspector">
+          <div class="inspector-header">
+            <span class="label">Node Inspector</span>
+            <span id="inspectorNodeId" class="hint"></span>
+          </div>
+          <div id="inspectorContent" class="inspector-content">
+            <span class="muted">Click a node to inspect</span>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
   <script src="/static/app.js"></script>

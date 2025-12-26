@@ -1,30 +1,39 @@
-// Simple Typed Lambda Calculus (STLC)
-// Mirrors the specification described in docs/challenges.md
+// Identifier (supports Unicode)
+Identifier ::= /[A-Za-z_][A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]*/
 
-// Grammar for expressions
-Identifier ::= /[a-z][a-zA-Z0-9]*/
-Variable(dec) ::= Identifier[x]
-Abstraction(abs) ::= 'λ' Identifier[x] ':' Type[τ] '.' Expression[e]
+// Variables with var typing rule
+Variable(var) ::= Identifier[x]
 
-AtomicExpression ::= Variable | '(' Expression ')'
-Application(app) ::= AtomicExpression[e1] AtomicExpression[e2]
+// Type names (supports Unicode type variables like τ₁, τ₂)
+TypeName ::= Identifier
 
-BaseType ::= 'Int' | 'Bool'
-AtomicType ::= BaseType | '(' Type ')'
-FunctionType ::= AtomicType[τ1] '→' Type[τ2]
-Type ::= AtomicType | FunctionType
+// Base types (parentheses are literals, hence quoted)
+BaseType ::= TypeName | '(' Type ')'
 
-Expression ::= AtomicExpression | Abstraction | Application
+// Function types (right-associative)
+Type ::= BaseType[τ₁] '->' Type[τ₂] | BaseType[τ]
 
-// Typing rules (dec, abs, app)
+// Lambda abstraction (dot is a literal)
+Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
+
+BaseTerm ::= Term | Variable
+
+// Applications (left-associative via iteration)
+Application(app) ::= BaseTerm[f] BaseTerm[e]
+
+// Terms
+Term ::=  Application | Lambda | '(' Term ')'
+
+
+// Typing Rules
 x ∈ Γ
------------ (dec)
+----------- (var)
 Γ(x)
 
-Γ[x:τ1] ⊢ e : τ2
------------------------ (abs)
-τ1 → τ2
+Γ[x:τ] ⊢ e : ?B
+--------------------------- (lambda)
+τ → ?B
 
-Γ ⊢ e1 : ?A → ?B, Γ ⊢ e2 : ?A
+Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
 -------------------------------- (app)
 ?B

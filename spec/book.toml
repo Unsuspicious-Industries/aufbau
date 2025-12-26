@@ -1,0 +1,15 @@
+[book]
+authors = ["pkd"]
+language = "en"
+src = "src"
+title = "Proposition 7: Truth by Construction"
+
+[output.html]
+mathjax-support = true
+additional-js = ["theme/collapse-examples.js"]
+additional-css = ["theme/proofs.css","theme/uncertainty.css","theme/status.css"]
+
+[preprocessor.links]
+
+[preprocessor.custom]
+command = "python3 preprocessor"

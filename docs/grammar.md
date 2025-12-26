@@ -180,9 +180,7 @@ Rules with empty premises:
 | Type | Syntax | Description |
 |------|--------|-------------|
 | Function | `τ₁ → τ₂` or `τ₁ -> τ₂` | Function type (right-associative) |
-| Tuple | `(τ...)` | Tuple/product meta-type |
-| Union | `τ₁ ∨ τ₂` or `τ₁ \| τ₂` | Either type |
-| Intersection | `τ₁ ∧ τ₂` or `τ₁ & τ₂` | Both types |
+| Tuple | `(τ...)` | Tuple meta-type |
 | Negation | `¬τ` or `!τ` | Complement type |
 | Context Call | `Γ(x)` | Type lookup |
 
@@ -204,9 +202,7 @@ These unify during type checking and enable rules like:
 
 From highest to lowest:
 1. Negation (`¬`, `!`) — prefix
-2. Intersection (`∧`, `&`) — left-associative
-3. Union (`∨`, `|`) — left-associative  
-4. Arrow (`→`, `->`) — right-associative
+2. Arrow (`→`, `->`) — right-associative
 
 Use parentheses to override: `(τ₁ → τ₂) → τ₃`
 
@@ -224,8 +220,6 @@ Use parentheses to override: `(τ₁ → τ₂) → τ₃`
 | `Γ` | U+0393 | Gamma (context) |
 | `⊢` | U+22A2 | Turnstile |
 | `∈` | U+2208 | Element of |
-| `∧` | U+2227 | Logical and |
-| `∨` | U+2228 | Logical or |
 | `¬` | U+00AC | Negation |
 | `⊤` | U+22A4 | Top/universe |
 | `∅` | U+2205 | Empty set |

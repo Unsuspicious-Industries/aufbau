@@ -412,13 +412,11 @@ The typing core is the heart of the constraint system. It evaluates typing rules
 
 The type language $\mathcal{T}$ is defined inductively:
 
-$$\tau ::= \text{atom} ~|~ \tau_1 \to \tau_2 ~|~ \tau_1 \land \tau_2 ~|~ \tau_1 \lor \tau_2 ~|~ \neg\tau ~|~ \top ~|~ \bot ~|~ \Gamma(x) ~|~ \text{'raw'}$$
+$$\tau ::= \text{atom} ~|~ \tau_1 \to \tau_2 ~|~ \neg\tau ~|~ \top ~|~ \bot ~|~ \Gamma(x) ~|~ \text{'raw'}$$
 
 Where:
 - **Atom** ($\text{atom}$): Type variables like `τ`, `σ`, `Int`, `Bool`
 - **Arrow** ($\tau_1 \to \tau_2$): Function types
-- **Intersection** ($\tau_1 \land \tau_2$): Values that are both types
-- **Union** ($\tau_1 \lor \tau_2$): Values that are either type  
 - **Negation** ($\neg\tau$): Complement types
 - **Universe** ($\top$): Top type (all values)
 - **Empty** ($\bot$): Bottom type (no values)
@@ -633,6 +631,11 @@ COLLECT-VALID-TOKENS(node, grammar):
 
 ---
 
+## Ideas and stuff to write about
+
+Validation syste that gathers explorable states as paths. See grammar/paths.rs and partial/validation.rs
+
+EBNF expressions carry the same syntactic meaning as regular expressions, but they offer more semantic information. This is why we cannot reduce them for the typing association.
 
 ### TODO
  - Understand correctness, add test cases
@@ -640,5 +643,3 @@ COLLECT-VALID-TOKENS(node, grammar):
  - Ensure method is sound and complete, unly accept correct output
  - Compelteness: ANY completeable input should be generated
  - SOundess: accept only well typed, completable
- 
-
