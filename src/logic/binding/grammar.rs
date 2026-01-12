@@ -21,6 +21,9 @@ impl PathStep {
     pub fn new(i: usize, a: Option<usize>) -> Self {
         Self { i, a }
     }
+    pub fn a(&self) -> usize {
+        self.a.unwrap_or(0)
+    }
 }
 
 /// A concrete grammar path represented as a finite sequence of `PathStep`s.
@@ -67,6 +70,30 @@ impl GrammarPath {
 
     pub fn steps(&self) -> &[PathStep] {
         &self.steps
+    }
+
+    pub fn forward(&self) -> Option<(PathStep, Self)> {
+        let first = match self.steps.first().cloned() {
+            Some(step) => step,
+            None => return None,
+        };
+        let rest = self.steps[1..].to_vec();
+        Some((first, Self { steps: rest }))
+    }
+
+    // return a list of the `a` fields
+    pub fn alts(&self) -> Vec<usize> {
+        self.steps
+            .iter()
+            .map(|step| match step.a {
+                Some(a) => a,
+                None => 0, // default to zero when no `a` field
+            })
+            .collect()
+    }
+    // path in the tree
+    pub fn idxs(&self) -> Vec<usize> {
+        self.steps.iter().map(|step| step.i).collect()
     }
 }
 

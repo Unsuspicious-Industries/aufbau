@@ -7,7 +7,7 @@ impl Grammar {
     pub fn to_spec_string(&self) -> String {
         let mut out = String::new();
         // Preserve original declaration order; fall back to sorted for any missing
-        let mut nt_list: Vec<&String> = self.productions.keys().collect();
+        let nt_list: Vec<&String> = self.productions.keys().collect();
 
         // ---------- Productions ----------
         out.push_str("// --- Production Rules ---\n");
@@ -93,7 +93,7 @@ impl Grammar {
 /// Helper to format a list of premises as a string
 fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
     use crate::logic::typing::TypingJudgment;
-    
+
     premises
         .iter()
         .map(|p| match (&p.setting, &p.judgment) {

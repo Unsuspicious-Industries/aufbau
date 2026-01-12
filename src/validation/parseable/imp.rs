@@ -31,7 +31,6 @@ fn invalid_expressions_imp() {
         ParseTestCase::type_error("unbound var", "y:Int=x;"),
         ParseTestCase::type_error("unbound var", "y:Int=1;y-x;"),
     ];
-
     println!("\n=== IMP Invalid Expressions ({} cases) ===", cases.len());
     let res = run_parse_batch(&grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());

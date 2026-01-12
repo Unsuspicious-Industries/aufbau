@@ -31,7 +31,7 @@ pub type Term = String;
 pub type TypeAscription = (Term, Type);
 
 /// Typing context with optional extensions: Γ or Γ[x:τ]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TypeSetting {
     /// Context name (typically "Γ")
     pub name: String,
@@ -40,7 +40,7 @@ pub struct TypeSetting {
 }
 
 /// A judgment that can appear in premises
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum TypingJudgment {
     /// Type ascription: e : τ
     Ascription(TypeAscription),
@@ -55,7 +55,7 @@ pub enum TypingJudgment {
 }
 
 /// A premise in a typing rule
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Premise {
     /// Optional context setting (Γ or Γ[x:τ])
     pub setting: Option<TypeSetting>,
@@ -64,7 +64,7 @@ pub struct Premise {
 }
 
 /// Context transform specification in a conclusion
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ConclusionContext {
     /// Input context name
     pub input: String,
@@ -79,7 +79,7 @@ impl ConclusionContext {
 }
 
 /// What a conclusion produces
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum ConclusionKind {
     /// A type result
     Type(Type),
@@ -88,7 +88,7 @@ pub enum ConclusionKind {
 }
 
 /// The conclusion of a typing rule
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct Conclusion {
     /// Optional context transform (Γ → Γ[x:τ])
     pub context: ConclusionContext,
@@ -97,7 +97,7 @@ pub struct Conclusion {
 }
 
 /// A complete typing rule with premises and conclusion
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct TypingRule {
     /// Rule name (e.g., "var", "lambda", "app")
     pub name: String,

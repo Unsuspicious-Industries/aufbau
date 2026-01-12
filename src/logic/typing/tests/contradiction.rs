@@ -4,10 +4,11 @@ use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
 use crate::logic::typing::eval::check_tree;
 use crate::logic::typing::core::TreeStatus;
+use crate::set_debug_level;
 
 fn load_grammar() -> Grammar {
-    let spec = include_str!("../../../../examples/xtlc.spec");
-    Grammar::load(spec).expect("Failed to load XTLC grammar")
+    let spec = include_str!("../../../../examples/stlc.spec");
+    Grammar::load(spec).expect("Failed to load STLC grammar")
 }
 
 #[test]
@@ -59,35 +60,6 @@ fn test_simple_lambda() {
     assert!(valid, "Simple lambda should type-check");
 }
 
-#[test]
-fn test_let_context_extension() {
-    // Test that let expressions properly extend the context
-    // {a:X}((λx:X.x)a) should be valid
-    let grammar = load_grammar();
-    let mut parser = Parser::new(grammar.clone());
-    
-    let input = "{a:X}((λx:X.x)a)";
-    println!("\n=== Testing let context extension ===");
-    println!("Input: {}", input);
-    
-    let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast.roots.iter()
-        .filter(|r| r.is_complete())
-        .collect();
-    
-    println!("Complete trees: {}", complete_trees.len());
-    for (i, tree) in complete_trees.iter().enumerate() {
-        println!("\n--- Tree {} ---", i);
-        let status = check_tree(tree, &grammar);
-        println!("Type status: {:?}", status);
-    }
-    
-    let any_valid = complete_trees.iter().any(|tree| {
-        !matches!(check_tree(tree, &grammar), TreeStatus::Malformed)
-    });
-    
-    assert!(any_valid, "Expression with let should be well-typed");
-}
 
 #[test]
 fn test_unbound_variable() {
@@ -99,6 +71,7 @@ fn test_unbound_variable() {
     println!("\n=== Unbound variable test ===");
     println!("Input: {}", input);
     
+    set_debug_level(crate::DebugLevel::Trace);
     let ast = parser.partial(input).expect("Failed to parse");
     let complete_trees: Vec<_> = ast.roots.iter()
         .filter(|r| r.is_complete())

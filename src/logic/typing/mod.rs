@@ -7,43 +7,53 @@ pub mod ops;
 pub mod rule;
 pub mod symbols;
 pub mod syntax;
+pub mod tree;
 
-pub use core::Context;
+pub use tree::*;
+
+pub use core::{Context, TreeRef};
 pub use eval::evaluate_typing;
-pub use ops::{Substitution, apply, equal, subtype, unify};
+pub use ops::{equal, subtype};
 pub use symbols::{gather_raw_types, gather_terminal_nodes, gather_terminals, gather_type_symbols};
-
 ///---------------
 /// Type Representation
 ///---------------
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Type {
     // Base types as bindable vars
     Atom(String),
+    // Meta type variables for inference (e.g. ?A, ?B in typing rules)
+    Meta(String),
     // Raw/concrete types (e.g., 'int', 'string') - literal types that don't need variable resolution
     Raw(String),
-    // Meta varibable ?A, ?B from type rules
-    Meta(String),
     // Function types (τ₁ → τ₂)
     Arrow(Box<Type>, Box<Type>),
-    // Tuple
-    Tuple(String),
     // Negation type (¬τ) - "anything that is not τ"
     Not(Box<Type>),
     // Context call (Γ(x)) - lookup the type of variable x in context Γ
     ContextCall(String, String), // (context_name, variable_name)
-    // The universe of all types (needed for negation to make sense)
-    Universe,
-    // Empty type (∅)
-    Empty,
+    // Any type - accepts all inputs (⊤, the universal type)
+    Any,
+    // None type - rejects all inputs (∅, the empty type)
+    None,
+
+    // partial expression: parsed type-so-far plus original input string for continuation analysis
+    Partial(Box<Type>, String),
+
+    // "Fake" type for binding resolution
+    Path(TreePath),   // Absolute path to a binding location
+    // path of the node at this location
+    // type is a pattern 
+    PathOf(Box<Type>,TreePath), 
 }
 
 // Re-export frequently used items for external users of the module.
 pub use rule::{
     Conclusion, Premise, Term, TypeAscription, TypeSetting, TypingJudgment, TypingRule,
 };
-pub use syntax::{TypeSyntaxConfig, validate_type_expr};
+
+use crate::logic::typing::core::TreePath;
 
 #[cfg(test)]
 mod tests;

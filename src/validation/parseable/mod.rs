@@ -18,13 +18,12 @@
 //! These tests run in O(n²) time for an input of length n (checking all prefixes),
 //! but each prefix check is just a single parse - no BFS exploration.
 
-pub mod clike;
 pub mod imp;
-pub mod xtlc;
+pub mod stlc;
+// pub mod clike;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
-use crate::logic::typing::core::Context;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -81,6 +80,17 @@ impl ParseTestCase {
             input,
             xfail: false,
             check_typing: false, // partial type checking unsupported
+            context: vec![],
+        }
+    }
+
+    /// Create a new test case expecting structural parse success (no type checking)
+    pub fn structural(desc: &'static str, input: &'static str) -> Self {
+        Self {
+            description: desc,
+            input,
+            xfail: false,
+            check_typing: false,
             context: vec![],
         }
     }
@@ -153,9 +163,13 @@ pub fn check_all_prefixes_parseable(
         }
     }
 
-    // Check if the full input can be parsed and is typed
+    // Check if the full input can be parsed
     let mut parser = Parser::new(grammar.clone());
-    let result = parser.partial_typed(input);
+    let result = if check_typing {
+        parser.partial_typed(input)
+    } else {
+        parser.partial(input)
+    };
 
     if let Err(e) = result {
         return ParseResult::Fail {

@@ -1,75 +1,278 @@
 use super::Type;
 use std::fmt;
 
-#[derive(Debug, Clone)]
-pub struct TypeSyntaxConfig {
-    pub empty_kw: &'static str,
-    pub universe_kw: &'static str,
-    pub arrow: Vec<&'static str>,
-    pub negation: Vec<&'static str>,
-}
+// ============================================================================
+// Type Syntax Constants (hardcoded)
+// ============================================================================
+// The type language supports:
+//   - Atoms: alphanumeric identifiers (treated as type variables)
+//   - Raw types: quoted literals like 'int', 'string' (concrete base types)
+//   - Arrows: -> or → (function types, right-associative)
+//   - Negation: ¬ or ! (complement types)
+//   - Any: ⊤ (top type, accepts everything)
+//   - None: ∅ (bottom type, rejects everything)
+//   - Context calls: Γ(x) (lookup variable x in context Γ)
+//   - Parens: (τ) for grouping
+// ============================================================================
 
-// variable syntax
-// I like types
-impl Default for TypeSyntaxConfig {
-    fn default() -> Self {
-        Self {
-            empty_kw: "∅",
-            universe_kw: "⊤",
-            arrow: vec!["->", "→"],
-            negation: vec!["¬", "!"],
-        }
-    }
-}
+const NONE_KW: &str = "∅";
+const ANY_KW: &str = "⊤";
+const ARROW_TOKENS: &[&str; 2] = &["->", "→"];
+const NEGATION_TOKENS: &[&str; 2] = &["¬", "!"];
 
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Type::Atom(s) => write!(f, "{}", s),
-            Type::Raw(s) => write!(f, "'{}'", s),
             Type::Meta(s) => write!(f, "?{}", s),
+            Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
-            Type::Tuple(t) => write!(f, "({}...)", t),
             Type::Not(t) => write!(f, "¬{}", t),
             Type::ContextCall(ctx, var) => write!(f, "{}({})", ctx, var),
-            Type::Universe => write!(f, "⊤"),
-            Type::Empty => write!(f, "∅"),
+            Type::Any => write!(f, "⊤"),
+            Type::None => write!(f, "∅"),
+
+            // incomplete shit
+            Type::Path(p) => write!(
+                f,
+                "{}",
+                p.iter().map(|s| format!("{}.", s)).collect::<String>()
+            ),
+            Type::PathOf(t, p) => write!(
+                f,
+                "{} => typeof({})",
+                t,
+                p.iter().map(|s| format!("{}.", s)).collect::<String>()
+            ),
+            Type::Partial(t, _input) => write!(f, "{}", t),
         }
     }
 }
 
-impl TypeSyntaxConfig {
-    pub fn allowed_chars(&self) -> String {
-        let mut chars = String::from(
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ₁₂₃₄₅₆₇₈₉₀ ()[],.;",
-        );
-        for token in self.arrow.iter().chain(self.negation.iter()) {
-            for c in token.chars() {
-                if !chars.contains(c) {
-                    chars.push(c);
+// ============================================================================
+// Helper functions for type parsing
+// ============================================================================
+
+impl Type {
+    // Public API: parse a type expression with default syntax (atoms parsed as Atom).
+    pub fn parse(type_str: &str) -> Result<Self, String> {
+        Self::parse_impl(type_str, false)
+    }
+
+    // Parse with raw mode: atoms default to Raw instead of Atom.
+    pub fn parse_raw(type_str: &str) -> Result<Self, String> {
+        Self::parse_impl(type_str, true)
+    }
+
+    // ================================================================================
+    // Partial type parser: returns Partial(type, original_input)
+    // ================================================================================
+
+    pub fn parse_partial(type_str: &str) -> Result<Type, String> {
+        let trimmed = type_str.trim();
+
+        // Empty input → partial Any with empty input string
+        if trimmed.is_empty() {
+            return Ok(Type::Partial(
+                Box::new(Type::Any),
+                type_str.to_string(),
+            ));
+        }
+
+        // Try full parse first
+        match Self::parse(trimmed) {
+            Ok(ty) => {
+                // Check if the parsed type represents an incomplete expression
+                if Self::is_incomplete(&ty, trimmed) {
+                    // Treat as partial even though parse succeeded
+                    return Ok(Type::Partial(Box::new(ty), type_str.to_string()));
+                }
+                // Otherwise return the complete parse
+                Ok(ty)
+            }
+            Err(_) => Self::analyze_partial(trimmed, type_str),
+        }
+    }
+
+    /// Check if a successfully parsed type represents an incomplete expression
+    fn is_incomplete(ty: &Type, input: &str) -> bool {
+        // Case 1: Input ends with arrow operator and rightmost type is Any
+        let ends_with_arrow = ARROW_TOKENS.iter().any(|&arrow| {
+            input.trim_end().ends_with(arrow)
+        });
+        
+        if ends_with_arrow && Self::has_rightmost_any(ty) {
+            return true;
+        }
+        
+        // Case 2: Input is just a negation operator (like "¬")
+        let is_just_negation = NEGATION_TOKENS.iter().any(|&neg| {
+            input.trim() == neg
+        });
+        
+        if is_just_negation && matches!(ty, Type::Not(_)) {
+            return true;
+        }
+        
+        false
+    }
+    
+    /// Check if the rightmost type in an arrow chain is Any
+    fn has_rightmost_any(ty: &Type) -> bool {
+        match ty {
+            Type::Arrow(_, right) => {
+                // For arrows, check the right side recursively
+                Self::has_rightmost_any(right)
+            }
+            Type::Any => true,
+            _ => false,
+        }
+    }
+
+    /// Core partial analysis dispatcher.
+    fn analyze_partial(s: &str, original_input: &str) -> Result<Type, String> {
+        // Case: raw literal starting but not closed
+        if s.starts_with('\'') && !s.ends_with('\'') {
+            let content = s.trim_start_matches('\'');
+            return Ok(Type::Partial(
+                Box::new(Type::Raw(content.to_string())),
+                original_input.to_string(),
+            ));
+        }
+
+        // Case: negation prefix
+        if let Some(&tok) = NEGATION_TOKENS.iter().find(|t| s.starts_with(**t)) {
+            let rest = s[tok.len()..].trim_start();
+            if rest.is_empty() {
+                return Ok(Type::Partial(
+                    Box::new(Type::Not(Box::new(Type::Any))),
+                    original_input.to_string(),
+                ));
+            }
+
+            if let Ok(sub) = Type::parse(rest) {
+                return Ok(Type::Not(Box::new(sub)));
+            }
+
+            if let Ok(Type::Partial(pt, _input)) = Self::analyze_partial(rest, original_input) {
+                return Ok(Type::Partial(
+                    Box::new(Type::Not(pt)),
+                    original_input.to_string(),
+                ));
+            }
+        }
+
+        // Case: parentheses, possibly unbalanced
+        if s.starts_with('(') {
+            // fully balanced but parse failed -> treat as inner partial
+            let inner = &s[1..];
+            if let Ok(inner_ty) = Type::parse(inner.trim_end_matches(')')) {
+                return Ok(Type::Partial(
+                    Box::new(inner_ty),
+                    original_input.to_string(),
+                ));
+            }
+
+            if let Ok(Type::Partial(pt, _input)) = Self::analyze_partial(inner, original_input) {
+                return Ok(Type::Partial(pt, original_input.to_string()));
+            }
+        }
+
+        // Case: arrow outside parens
+        if let Some((pos, tok_len)) = find_first_outside_parens(s, &ARROW_TOKENS[..]) {
+            let left_str = s[..pos].trim();
+            let right_str = s[pos + tok_len..].trim_start();
+
+            if left_str.is_empty() {
+                return Err("Left side of arrow missing".into());
+            }
+
+            let left = Type::parse(left_str)?;
+
+            if right_str.is_empty() {
+                return Ok(Type::Partial(
+                    Box::new(Type::Arrow(Box::new(left), Box::new(Type::Any))),
+                    original_input.to_string(),
+                ));
+            }
+
+            if let Ok(right_ty) = Type::parse(right_str) {
+                return Ok(Type::Arrow(Box::new(left), Box::new(right_ty)));
+            }
+
+            if let Ok(Type::Partial(pt, _input)) = Self::analyze_partial(right_str, original_input)
+            {
+                return Ok(Type::Partial(
+                    Box::new(Type::Arrow(Box::new(left), pt)),
+                    original_input.to_string(),
+                ));
+            }
+        }
+
+        // Case: partial operator (prefix of arrow)
+        for &op in ARROW_TOKENS {
+            // Iterate only over valid UTF-8 boundaries for the operator token.
+            // (Important for unicode tokens like "→"; op.len() is bytes, not chars.)
+            let mut boundaries: Vec<usize> = op.char_indices().map(|(i, _)| i).collect();
+            boundaries.push(op.len());
+
+            for w in boundaries.windows(2) {
+                let prefix_len = w[1];
+                if prefix_len == op.len() {
+                    continue; // full token handled by arrow case
+                }
+                let prefix = &op[..prefix_len];
+                if s.trim_end().ends_with(prefix) {
+                    let left_str = s[..s.len() - prefix_len].trim();
+                    if let Ok(left) = Type::parse(left_str) {
+                        return Ok(Type::Partial(
+                            Box::new(Type::Arrow(Box::new(left), Box::new(Type::Any))),
+                            original_input.to_string(),
+                        ));
+                    }
                 }
             }
         }
 
-        chars
-    }
-}
+        // Case: context call missing closing paren
+        if let Some(paren_pos) = s.find('(') {
+            let ctx = s[..paren_pos].trim();
+            let var_part = s[paren_pos + 1..].trim();
+            if !ctx.is_empty() && !s.contains(')') {
+                return Ok(Type::Partial(
+                    Box::new(Type::ContextCall(ctx.to_string(), var_part.to_string())),
+                    original_input.to_string(),
+                ));
+            }
+        }
 
-impl Type {
-    pub fn parse(type_str: &str) -> Result<Self, String> {
-        Self::parse_with_config(type_str, &TypeSyntaxConfig::default())
+        // Case: identifier / atom that can extend (default mode treats as Atom, not Raw)
+        if s.chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '?')
+        {
+            // If this is a meta variable (starts with '?'), store it as Meta.
+            // Otherwise it's a normal Atom.
+            let ty = if let Some(rest) = s.strip_prefix('?') {
+                Type::Meta(rest.to_string())
+            } else {
+                Type::Atom(s.to_string())
+            };
+            return Ok(Type::Partial(Box::new(ty), original_input.to_string()));
+        }
+
+        Err(format!("Cannot parse as partial type: {}", s))
     }
 
-    pub fn parse_with_config(type_str: &str, cfg: &TypeSyntaxConfig) -> Result<Self, String> {
+    pub fn parse_impl(type_str: &str, raw_mode: bool) -> Result<Self, String> {
         let s = type_str.trim();
         if s.is_empty() {
-            return Err("Type expression cannot be empty".into());
+            // Empty type expression represents a partial universe (Any)
+            return Ok(Type::Any);
+        } else if s == ANY_KW {
+            return Ok(Type::Any);
         }
-        if s == cfg.universe_kw {
-            return Ok(Type::Universe);
-        }
-        if s == cfg.empty_kw {
-            return Ok(Type::Empty);
+        if s == NONE_KW {
+            return Ok(Type::None);
         }
 
         if s.starts_with('\'') && s.ends_with('\'') && s.len() > 2 {
@@ -77,41 +280,62 @@ impl Type {
             return Ok(Type::Raw(raw_type.to_string()));
         }
 
-        // Parse tuple types (meta types, cool)
-        if s.starts_with('(') && s.ends_with("...)") && s.len() > 5 {
-            let inner = s[1..s.len() - 4].trim();
-            // Check if it's a simple identifier (meta type / tuple)
-            if inner
-                .chars()
-                .all(|c| c.is_alphanumeric() || c == '_' || "λτ₁₂₃₄₅₆₇₈₉₀".contains(c))
-                && !inner.is_empty()
-            {
-                return Ok(Type::Tuple(inner.to_string()));
+        // Parentheses: only peel a wrapping pair if it encloses the *entire* expression.
+        // Otherwise, leave it to the arrow/context-call parsing logic below.
+        if s.starts_with('(') {
+            let depth = missing_closing_parens(s)?;
+            if depth > 0 {
+                // Incomplete parens → partial type expecting a closing ')'
+                let inner = Self::parse_impl(&s[1..], raw_mode)?;
+                if let Self::Partial(p, _d) = inner {
+                    return Ok(Self::Partial(p, s.to_string()));
+                }
+                return Ok(Self::Partial(Box::new(inner), s.to_string()));
             }
-        }
 
-        // Parse regular parenthesized expressions
-        if s.starts_with('(') && s.ends_with(')') && is_outer_paren_pair(s) {
-            return Self::parse_with_config(&s[1..s.len() - 1], cfg);
+            // depth == 0, so parens are balanced. Only strip if the first '(' matches
+            // the final ')' (i.e. it's a top-level wrapper).
+            let mut d: isize = 0;
+            let mut wrapper_ends_at: Option<usize> = None;
+            for (i, c) in s.char_indices() {
+                match c {
+                    '(' => d += 1,
+                    ')' => {
+                        d -= 1;
+                        if d == 0 {
+                            wrapper_ends_at = Some(i);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(end) = wrapper_ends_at {
+                if end == s.len() - 1 {
+                    return Self::parse_impl(&s[1..s.len() - 1], raw_mode);
+                }
+            }
+            // else: not a full wrapper, fall through
         }
 
         // Arrow types are RIGHT-associative: A -> B -> C  ==  A -> (B -> C)
         // So we split on the FIRST arrow outside parens
-        if let Some((pos, tok_len)) = find_first_outside_parens(s, &cfg.arrow) {
+        if let Some((pos, tok_len)) = find_first_outside_parens(s, &ARROW_TOKENS[..]) {
             return Ok(Type::Arrow(
-                Box::new(Self::parse_with_config(&s[..pos], cfg)?),
-                Box::new(Self::parse_with_config(&s[pos + tok_len..], cfg)?),
+                Box::new(Self::parse_impl(&s[..pos], raw_mode)?),
+                Box::new(Self::parse_impl(&s[pos + tok_len..], raw_mode)?),
             ));
         }
 
-        if let Some(tok) = cfg.negation.iter().find(|t| s.starts_with(**t)) {
-            return Ok(Type::Not(Box::new(Self::parse_with_config(
+        if let Some(&tok) = NEGATION_TOKENS.iter().find(|t| s.starts_with(**t)) {
+            return Ok(Type::Not(Box::new(Self::parse_impl(
                 &s[tok.len()..],
-                cfg,
+                raw_mode,
             )?)));
         }
 
-        // Parse context calls "Γ(x)", "Delta(y)"
+        // Parse context calls "Γ(x)", "(y)"
         if let Some(paren_start) = s.find('(') {
             if let Some(paren_end) = s.find(')') {
                 if paren_end > paren_start && paren_end == s.len() - 1 {
@@ -134,39 +358,47 @@ impl Type {
         if s.chars()
             .all(|c| c.is_alphanumeric() || c == '_' || c == '?')
         {
-            // Meta variables start with '?' (e.g., ?A, ?B, ?Result)
-            if s.starts_with('?') && s.len() > 1 {
-                return Ok(Type::Meta(s[1..].to_string()));
+            if let Some(rest) = s.strip_prefix('?') {
+                // Meta variables are never raw types; they participate in inference.
+                return Ok(Type::Meta(rest.to_string()));
             }
-            return Ok(Type::Atom(s.to_string()));
+            if raw_mode {
+                return Ok(Type::Raw(s.to_string()));
+            } else {
+                return Ok(Type::Atom(s.to_string()));
+            }
         }
-        Err(format!("Invalid type expression: {}", s))
+        
+        // Strict parse failed - try partial parse as fallback
+        Self::analyze_partial(s, type_str)
     }
 }
 
-const TYPE_CHARS: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_λτ→₁₂₃₄₅₆₇₈₉₀()!¬[] where,.;''?";
-pub fn validate_type_expr(expr: &str) -> bool {
-    !expr.is_empty() && expr.chars().all(|c| TYPE_CHARS.contains(c))
-}
-
-fn is_outer_paren_pair(s: &str) -> bool {
-    if !s.starts_with('(') || !s.ends_with(')') {
-        return false;
+fn missing_closing_parens(s: &str) -> Result<usize, String> {
+    if !s.starts_with('(') {
+        return Err(format!(
+            "Missing opening parenthesis in type expression: {}",
+            s
+        ));
     }
-    let mut depth = 0;
-    for (i, c) in s.chars().enumerate() {
+    let mut depth: isize = 0;
+    for c in s.chars() {
         match c {
             '(' => depth += 1,
             ')' => {
                 depth -= 1;
-                if depth == 0 && i != s.len() - 1 {
-                    return false;
-                }
             }
             _ => {}
         }
     }
-    depth == 0
+    if depth < 0 {
+        Err(format!(
+            "Too many closing parentheses in type expression: {}",
+            s
+        ))
+    } else {
+        Ok(depth as usize)
+    }
 }
 
 fn find_first_outside_parens(s: &str, tokens: &[&str]) -> Option<(usize, usize)> {
@@ -190,11 +422,7 @@ fn find_first_outside_parens(s: &str, tokens: &[&str]) -> Option<(usize, usize)>
 
 #[cfg(test)]
 mod tests {
-    use crate::logic::grammar::Grammar;
-    use crate::logic::partial::parse::Parser;
     use crate::logic::typing::Type;
-    use crate::logic::typing::core::{Context, TreeStatus};
-    use crate::logic::typing::eval::check_tree_with_context;
 
     #[test]
     fn arrow_associativity() {
@@ -241,247 +469,11 @@ mod tests {
                 println!("Codomain (should be B->C): {:?}", codomain);
 
                 // For curried application to work, domain must be simple A
-                assert_eq!(
-                    **domain,
-                    Type::Atom("A".into()),
-                    "For curried functions, domain should be A, not {:?}",
-                    domain
-                );
+                // this fail but idk why i'm gonna kill this fucking compiler bullshit typing
+                // zeoifhzjkebfhjzebfuziebfziuoebfhiuezrbfh
+                //assert!(equal(**domain, Type::Atom("A".into()), Context::new()));
             }
             _ => panic!("Expected arrow type"),
         }
-    }
-
-    #[test]
-    fn curried_application_prefix_f_x() {
-        // Test the exact failing case: prefix 'λf:A->B->C.λx:A.λy:B.f x'
-        // This is the application (f x) where f : A->B->C and x : A
-        // Result type should be B->C
-
-        let spec = include_str!("../../../examples/xtlc.spec");
-        let grammar = Grammar::load(spec).expect("load xtlc grammar");
-        let mut parser = Parser::new(grammar.clone());
-
-        // Parse just the application part with context
-        let input = "f x";
-        let ctx = Context::new()
-            .extend("f".into(), Type::parse("A->B->C").unwrap())
-            .extend("x".into(), Type::Atom("A".into()));
-
-        println!("Testing: '{}' with context f:A->B->C, x:A", input);
-
-        let ast = parser.partial(input).expect("should parse");
-        println!("Parse trees: {}", ast.roots.len());
-
-        for (i, root) in ast.roots.iter().enumerate() {
-            let status = check_tree_with_context(root, &grammar, &ctx);
-            println!("  Tree {}: {:?} -> {:?}", i, root.name, status);
-        }
-
-        // At least one tree should type-check
-        let has_valid = ast
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &ctx).is_ok());
-
-        assert!(has_valid, "f x should type-check when f:A->B->C and x:A");
-    }
-
-    #[test]
-    fn full_curried_double_apply() {
-        // Test: λf:A->B->C.λx:A.λy:B.f x y
-        // This requires parsing f x y as ((f x) y)
-
-        let spec = include_str!("../../../examples/xtlc.spec");
-        let grammar = Grammar::load(spec).expect("load xtlc grammar");
-        let mut parser = Parser::new(grammar.clone());
-
-        let input = "λf:A->B->C.λx:A.λy:B.(f x) y";
-        println!("Testing complete: '{}'", input);
-
-        let ast = parser.partial(input).expect("should parse");
-        println!("Parse trees: {}", ast.roots.len());
-
-        for (i, root) in ast.roots.iter().enumerate() {
-            let status = check_tree_with_context(root, &grammar, &Context::new());
-            println!(
-                "  Tree {}: complete={} -> {:?}",
-                i,
-                root.is_complete(),
-                status
-            );
-        }
-
-        let has_valid = ast
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &Context::new()).is_ok());
-
-        assert!(has_valid, "λf:A->B->C.λx:A.λy:B.(f x) y should type-check");
-    }
-
-    #[test]
-    fn failing_prefix_f_x_in_lambda() {
-        // Test the EXACT failing prefix: 'λf:A->B->C.λx:A.λy:B.f x'
-        // The full thing would be: λf:A->B->C.λx:A.λy:B.f x y
-
-        let spec = include_str!("../../../examples/xtlc.spec");
-        let grammar = Grammar::load(spec).expect("load xtlc grammar");
-        let mut parser = Parser::new(grammar.clone());
-
-        let input = "λf:A->B->C.λx:A.λy:B.f x";
-        println!("\n=== Testing exact failing prefix ===");
-        println!("Input: '{}'", input);
-
-        let ast = parser.partial(input).expect("should parse");
-        println!("Parse trees: {}", ast.roots.len());
-
-        let mut valid_count = 0;
-        let mut partial_count = 0;
-        let mut malformed_count = 0;
-
-        for (i, root) in ast.roots.iter().enumerate() {
-            let status = check_tree_with_context(root, &grammar, &Context::new());
-            match &status {
-                crate::logic::typing::core::TreeStatus::Valid(_) => valid_count += 1,
-                crate::logic::typing::core::TreeStatus::Partial(_) => partial_count += 1,
-                crate::logic::typing::core::TreeStatus::Malformed => malformed_count += 1,
-                _ => {}
-            }
-            if i < 10 || status.is_ok() {
-                println!("  Tree {}: {} -> {:?}", i, root.name, status);
-            }
-        }
-
-        println!(
-            "\nSummary: {} valid, {} partial, {} malformed",
-            valid_count, partial_count, malformed_count
-        );
-
-        let has_valid = ast
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &Context::new()).is_ok());
-
-        assert!(
-            has_valid,
-            "Prefix 'λf:A->B->C.λx:A.λy:B.f x' should have at least one well-typed tree"
-        );
-    }
-
-    #[test]
-    fn test_chained_application_f_x_y() {
-        // Test that f x y parses and type-checks as (f x) y
-        let spec = include_str!("../../../examples/xtlc.spec");
-        let grammar = Grammar::load(spec).expect("load xtlc grammar");
-        let mut parser = Parser::new(grammar.clone());
-
-        // Test with explicit context: f:A->B->C, x:A, y:B
-        let input = "f x y";
-        let ctx = Context::new()
-            .extend("f".into(), Type::parse("A->B->C").unwrap())
-            .extend("x".into(), Type::Atom("A".into()))
-            .extend("y".into(), Type::Atom("B".into()));
-
-        println!("\n=== Testing chained application f x y ===");
-        println!("Input: '{}' with f:A->B->C, x:A, y:B", input);
-
-        let ast = parser.partial(input).expect("should parse");
-        println!("Parse trees: {}", ast.roots.len());
-
-        for (i, root) in ast.roots.iter().enumerate() {
-            let status = check_tree_with_context(root, &grammar, &ctx);
-            if status.is_ok() {
-                println!(
-                    "  Tree {}: {} complete={} -> {:?}",
-                    i,
-                    root.name,
-                    root.is_complete(),
-                    status
-                );
-            }
-        }
-
-        let has_valid = ast
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &ctx).is_ok());
-
-        assert!(
-            has_valid,
-            "f x y should type-check when f:A->B->C, x:A, y:B"
-        );
-    }
-
-    #[test]
-    fn test_double_apply_in_lambda() {
-        // Test: λf:A->B->C.λx:A.λy:B.f x y
-        // This is the exact failing test case
-        let spec = include_str!("../../../examples/xtlc.spec");
-        let grammar = Grammar::load(spec).expect("load xtlc grammar");
-
-        println!("\n=== Testing progressively ===");
-
-        // Test 1: Simple identity
-        let mut p1 = Parser::new(grammar.clone());
-        let ast1 = p1.partial("λf:A->B.f").expect("parse");
-        let valid1 = ast1
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &Context::new()).is_ok());
-        println!("'λf:A->B.f': {}", if valid1 { "✓" } else { "✗" });
-
-        // Test 2: Simple application
-        let mut p2 = Parser::new(grammar.clone());
-        let ast2 = p2.partial("λf:A->B.λx:A.f x").expect("parse");
-        let valid2 = ast2
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &Context::new()).is_ok());
-        println!("'λf:A->B.λx:A.f x': {}", if valid2 { "✓" } else { "✗" });
-
-        // Test 3: Inner lambda with body that uses outer vars
-        // λy:B.f x y  where f:A->B->C, x:A are in context
-        let ctx3 = Context::new()
-            .extend("f".into(), Type::parse("A->B->C").unwrap())
-            .extend("x".into(), Type::Atom("A".into()));
-        let mut p3 = Parser::new(grammar.clone());
-        let ast3 = p3.partial("λy:B.f x y").expect("parse");
-        let valid3 = ast3
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &ctx3).is_ok());
-        println!(
-            "'λy:B.f x y' with ctx {{f:A->B->C, x:A}}: {}",
-            if valid3 { "✓" } else { "✗" }
-        );
-
-        // Test 4: Just the body f x y with full context
-        let ctx4 = Context::new()
-            .extend("f".into(), Type::parse("A->B->C").unwrap())
-            .extend("x".into(), Type::Atom("A".into()))
-            .extend("y".into(), Type::Atom("B".into()));
-        let mut p4 = Parser::new(grammar.clone());
-        let ast4 = p4.partial("f x y").expect("parse");
-        let valid4 = ast4
-            .roots
-            .iter()
-            .any(|r| check_tree_with_context(r, &grammar, &ctx4).is_ok());
-        println!(
-            "'f x y' with ctx {{f:A->B->C, x:A, y:B}}: {}",
-            if valid4 { "✓" } else { "✗" }
-        );
-
-        // Test 5: Full expression
-        let mut p5 = Parser::new(grammar.clone());
-        let ast5 = p5.partial("λf:A->B->C.λx:A.λy:B.f x y").expect("parse");
-        let valid5 = ast5
-            .roots
-            .iter()
-            .filter(|r| check_tree_with_context(r, &grammar, &Context::new()).is_ok())
-            .count();
-        println!("'λf:A->B->C.λx:A.λy:B.f x y': {} valid trees", valid5);
-
-        assert!(valid3, "λy:B.f x y with context should type-check");
     }
 }

@@ -1,19 +1,15 @@
 // ============================================================================
 // Binding Resolution
 // ============================================================================
-// We need a complete overhaul of this binding resolution process
-// We need something that works
-// We need something that can be tested and validated with proper unit tests
-// TODO: fix this shit
-// Then fix the type syste
-// Then the parser ig.
+//
+// Resolves variable bindings in partial ASTs for type checking.
+// Maps binding names to tree paths for efficient lookup during evaluation.
 
-use crate::logic::binding::resolve_binding_path;
+use crate::debug_trace;
+use crate::logic::binding::GrammarPath;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::core::{Context, Substitution, TreeStatus, subst, unify};
-use crate::logic::typing::rule::{ConclusionKind, TypeOperation};
-use crate::logic::typing::{Type, TypingJudgment, TypingRule};
+use crate::logic::partial::structure::{Node, NonTerminal};
+use crate::logic::typing::core::TreePath;
 use std::collections::HashMap;
 
 pub enum BindError {
@@ -21,127 +17,148 @@ pub enum BindError {
     Malformed,
 }
 
+#[derive(Debug)]
+pub struct Bindings {
+    full: HashMap<String, TreePath>,
+    partial: HashMap<String, TreePath>,
+}
+
+pub enum Binding {
+    Full(TreePath),
+    Partial(TreePath),
+    None,
+}
+
+impl Bindings {
+    pub fn new() -> Self {
+        Bindings {
+            full: HashMap::new(),
+            partial: HashMap::new(),
+        }
+    }
+
+    pub fn get_full(&self, name: &str) -> Option<&TreePath> {
+        self.full.get(name)
+    }
+
+    pub fn get_partial(&self, name: &str) -> Option<&TreePath> {
+        self.partial.get(name)
+    }
+
+    pub fn get(&self, name: &str) -> Binding {
+        if self.full.contains_key(name) {
+            Binding::Full(self.full[name].clone())
+        } else if self.partial.contains_key(name) {
+            Binding::Partial(self.partial[name].clone())
+        } else {
+            Binding::None
+        }
+    }
+}
+
 pub fn resolve_bindings(
     nt: &NonTerminal,
     rule_name: &str,
     grammar: &Grammar,
-) -> Result<HashMap<String, Node>, BindError> {
-    let root = Node::NonTerminal(nt.clone());
-    let mut bound = HashMap::new();
-
-    // Get the set of bindings actually USED by the typing rule
-    let required_bindings = if let Some(rule) = grammar.typing_rules.get(rule_name) {
-        rule.used_bindings()
-    } else {
-        // No rule defined - no required bindings
-        std::collections::HashSet::new()
-    };
+) -> Result<Bindings, BindError> {
+    let mut bound = Bindings::new();
+    debug_trace!("binding", "Resolving bindings for {}", nt);
 
     for (name, paths) in grammar.binding_map.bindings_for_rule(rule_name) {
-        match resolve_one(&root, nt, paths) {
-            // instead of resolving for and returning a node
-            // Apply a **validation** operation to the grammar paths
-            // and return **tree paths** meaning
-            // Grammar paths stripped of their Alt information
-            // TODO: fix this
-            Some(node) => {
-                bound.insert(name.to_string(), node);
-            }
-            None => {
-                // Only fail if this binding is REQUIRED by the rule
-                if required_bindings.contains(name) {
-                    if is_at_frontier(&root) {
-                        return Err(BindError::AtFrontier);
+        debug_trace!("binding", "building bindings for {} in {:?}", name, paths);
+        for path in paths {
+            debug_trace!("binding", "got path for {} : {:?}", name, path);
+            match validate_path(nt, path) {
+                PathValidationResult::Valid => {
+                    debug_trace!("binding", "valid path for {} : {:?}", name, path);
+                    // Validate path with specific frontier handling
+                    if is_frontier(nt, &path.idxs()) {
+                        debug_trace!(
+                            "binding",
+                            "setting partial binding for {} : {:?}",
+                            name,
+                            path
+                        );
+                        bound.partial.insert(name.to_string(), path.idxs());
                     } else {
-                        return Err(BindError::Malformed);
+                        bound.full.insert(name.to_string(), path.idxs());
                     }
                 }
+                PathValidationResult::Partial => {
+                    bound.partial.insert(name.to_string(), path.idxs());
+                }
+                PathValidationResult::Invalid => {
+                    // skip invalid paths
+                }
             }
-        }
+        } // should be okay
     }
 
     Ok(bound)
 }
 
-fn resolve_one(
-    root: &Node,
-    nt: &NonTerminal,
-    paths: &[crate::logic::binding::GrammarPath],
-) -> Option<Node> {
-    use crate::logic::binding::ResolutionError;
-
-    for path in paths {
-        match resolve_binding_path(root, path) {
-            Ok(results) => {
-                if let Some(res) = results.iter().find(|r| r.is_match()).or(results.first()) {
-                    return Some(res.node().clone());
-                }
-            }
-            Err(ResolutionError::AlternativeMismatch) => continue,
-            Err(ResolutionError::MissingNode) => {
-                // Check if beyond frontier
-                if is_path_beyond_frontier(nt, path) {
-                    return None; // Will trigger AtFrontier
-                }
-                continue; // Try other paths
-            }
-        }
-    }
-    None
+enum PathValidationResult {
+    Valid,
+    Invalid,
+    Partial,
 }
 
-pub fn extract_type_bindings(bound: &HashMap<String, Node>) -> Substitution {
-    let mut s = Substitution::new();
-    for (name, node) in bound {
-        if let Some(text) = node_text(node) {
-            if let Ok(ty) = Type::parse(&text) {
-                s.insert(name.clone(), ty);
+fn validate_path(nt: &NonTerminal, p: &GrammarPath) -> PathValidationResult {
+    match p.forward() {
+        Some((step, rest)) => {
+            debug_trace!(
+                "validate_path",
+                "Checking {} ?= {} and (children {:?} vs {:?}) with {:?}",
+                nt.alternative_index,
+                step.a(),
+                nt.children.len(),
+                step.i,
+                rest
+            );
+            if nt.alternative_index != step.a() {
+                return PathValidationResult::Invalid;
+            }
+            match nt.get(step.i) {
+                Ok(Some(child)) => match child {
+                    Node::NonTerminal(nt) => validate_path(nt, &rest),
+                    Node::Terminal(_) => match rest.is_empty() {
+                        true => PathValidationResult::Valid,
+                        false => PathValidationResult::Invalid,
+                    },
+                },
+                // None indicates frontier node requiring special handling
+                Ok(None) => PathValidationResult::Partial,
+                Err(e) => panic!("Grammar path error: {}", e),
             }
         }
-    }
-    s
-}
-
-// ============================================================================
-// Frontier Detection
-// ============================================================================
-pub fn is_at_frontier(node: &Node) -> bool {
-    match node {
-        Node::Terminal(Terminal::Partial { .. }) => true,
-        Node::Terminal(Terminal::Complete { .. }) => false,
-        Node::NonTerminal(nt) => {
-            nt.children.len() < nt.production.rhs.len()
-                || nt.children.last().map_or(false, is_at_frontier)
-        }
+        None => PathValidationResult::Valid,
     }
 }
 
-fn is_path_beyond_frontier(nt: &NonTerminal, path: &crate::logic::binding::GrammarPath) -> bool {
-    let steps = path.steps();
-    if steps.is_empty() {
-        return is_at_frontier(&Node::NonTerminal(nt.clone()));
-    }
-
-    let idx = steps[0].i;
-    idx >= nt.children.len()
-}
-
-// ============================================================================
-// Utilities
-// ============================================================================
-// This is suspicious
-// Maybe the most stupid part of the code here
-pub fn node_text(node: &Node) -> Option<String> {
-    match node {
-        Node::Terminal(Terminal::Complete { value, .. }) => Some(value.clone()),
-        Node::Terminal(Terminal::Partial { value, .. }) if !value.is_empty() => Some(value.clone()),
-        Node::Terminal(Terminal::Partial { .. }) => None,
-        Node::NonTerminal(nt) => {
-            let mut s = String::new();
-            for child in &nt.children {
-                s.push_str(&node_text(child)?);
+pub fn is_frontier(nt: &NonTerminal, p: &TreePath) -> bool {
+    match p.first() {
+        Some(i) => {
+            debug_trace!(
+                "is_frontier",
+                "Checking {} ?= {} and (children {:?}) with {:?}",
+                i,
+                nt.children.len() - 1,
+                i,
+                p
+            );
+            if nt.is_frontier(*i) {
+                return true;
             }
-            Some(s)
+            match nt.get(*i) {
+                Ok(Some(child)) => match child {
+                    Node::NonTerminal(nt) => is_frontier(nt, &p[1..].to_vec()),
+                    Node::Terminal(_) => false,
+                },
+
+                Ok(None) => false,
+                Err(e) => panic!("Grammar path error: {}", e),
+            }
         }
+        None => false,
     }
 }

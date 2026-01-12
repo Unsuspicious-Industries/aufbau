@@ -4,13 +4,13 @@ Integer(int) ::= /[0-9]+/[n]
 
 Variable(var) ::= Identifier[x]
 Value ::= Integer | Variable
-Assignment(assign) ::= Identifier[x] ':' TypeName[τ] '=' Value[v] ';'
+Assignment(assign) ::=  Identifier[x] ':' TypeName[τ] '=' Value[v] ';'
 
 Operator ::= '+' | '-' | '*' | '/'
 Operation(op) ::= Value[lhs] Operator[op] Value[rhs] ';'
 
 Expression(expr) ::= Assignment | Operation
-Program ::= Expression Program | Expression
+Program(prog) ::= Expression[a] Program[b] | ε
 
 
 // Typing rules
@@ -22,9 +22,14 @@ x ∈ Γ
 -------------------------------- (assign)
 Γ → Γ[x:τ] ⊢ ∅
 
-Γ ⊢ lhs : ?A, Γ ⊢ rhs : ?B, ?A = ?B
+Γ ⊢ lhs : ?A, Γ ⊢ rhs : ?A
 --------------------------------------(op)
 ?A
 
 -------------------------------- (int)
 'Int'
+
+// weird placeholder
+Γ ⊢ a : ?A, Γ ⊢ b : ?B
+--------------------------------(prog)
+?A -> ?B

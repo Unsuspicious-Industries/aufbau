@@ -2,8 +2,8 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
 use crate::logic::typing::Type;
+use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
 
 // =============================================================================
 // Terminal Gathering from AST
@@ -56,7 +56,7 @@ fn collect_terminal_nodes_from_node(node: &Node, out: &mut Vec<Terminal>) {
 // Type Symbol Gathering from Typing Rules
 // =============================================================================
 
-/// Collect all type symbols (Raw, Atom, Meta, Tuple) from all typing rules in the grammar.
+/// Collect all type symbols (Raw, Atom, Meta) from all typing rules in the grammar.
 /// Returns deduplicated symbols.
 pub fn gather_type_symbols(grammar: &Grammar) -> Vec<String> {
     let mut symbols = Vec::new();
@@ -168,9 +168,8 @@ fn collect_raws_from_rule(rule: &TypingRule, out: &mut Vec<String>) {
 fn collect_symbols_from_type(ty: &Type, out: &mut Vec<String>) {
     match ty {
         Type::Atom(name) => out.push(name.clone()),
-        Type::Raw(name) => out.push(name.clone()),
         Type::Meta(name) => out.push(format!("?{}", name)),
-        Type::Tuple(name) => out.push(name.clone()),
+        Type::Raw(name) => out.push(name.clone()),
         Type::Arrow(l, r) => {
             collect_symbols_from_type(l, out);
             collect_symbols_from_type(r, out);
@@ -180,7 +179,9 @@ fn collect_symbols_from_type(ty: &Type, out: &mut Vec<String>) {
             out.push(ctx.clone());
             out.push(var.clone());
         }
-        Type::Universe | Type::Empty => {}
+        Type::Partial(t, _) => collect_symbols_from_type(t, out),
+        Type::PathOf(t, _) => collect_symbols_from_type(t, out),
+        Type::Any | Type::None | Type::Path(_) => {}
     }
 }
 
@@ -193,8 +194,10 @@ fn collect_raws_from_type(ty: &Type, out: &mut Vec<String>) {
             collect_raws_from_type(r, out);
         }
         Type::Not(t) => collect_raws_from_type(t, out),
-        Type::Atom(_) | Type::Meta(_) | Type::Tuple(_) | Type::ContextCall(_, _) => {}
-        Type::Universe | Type::Empty => {}
+        Type::Partial(t, _) => collect_raws_from_type(t, out),
+        Type::PathOf(t, _) => collect_raws_from_type(t, out),
+        Type::Atom(_) | Type::Meta(_) | Type::ContextCall(_, _) => {}
+        Type::Any | Type::None | Type::Path(_) => {}
     }
 }
 

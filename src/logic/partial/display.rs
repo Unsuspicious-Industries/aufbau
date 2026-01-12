@@ -93,47 +93,6 @@ impl Display for super::Node {
     }
 }
 
-// ============================================================================
-// TypedAST Display (IDE-style type annotations)
-// ============================================================================
-
-impl super::TypedNode {
-    fn fmt_tree(&self, f: &mut fmt::Formatter<'_>, prefix: &str, is_last: bool) -> fmt::Result {
-        use crate::logic::typing::Type;
-        let branch = if is_last { "└─ " } else { "├─ " };
-        let ty_str = match self.ty() {
-            Type::Universe => String::new(),
-            t => format!(" : {}", t),
-        };
-        match self {
-            Self::Term { val, .. } => writeln!(f, "{}{}{}{}", prefix, branch, val, ty_str),
-            Self::Expr { name, children, .. } => {
-                writeln!(f, "{}{}{}{}", prefix, branch, name, ty_str)?;
-                let child_prefix = format!("{}{}", prefix, if is_last { "   " } else { "│  " });
-                for (i, child) in children.iter().enumerate() {
-                    child.fmt_tree(f, &child_prefix, i == children.len() - 1)?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Display for super::TypedNode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.fmt_tree(f, "", true) }
-}
-
-impl Display for super::TypedAST {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Input: \"{}\"", self.input)?;
-        for (i, root) in self.roots.iter().enumerate() {
-            writeln!(f, "\nTree {}:", i)?;
-            write!(f, "{}", root)?;
-        }
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::logic::grammar::Grammar;

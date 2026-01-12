@@ -1,15 +1,16 @@
 //! Validation Test Suite for Constrained Generation
 
 pub mod arithmetic;
-pub mod clike;
-pub mod typescript;
+
 pub mod weird;
-pub mod xtlc;
+pub mod stlc;
+
+pub mod imp;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
 use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::eval::{check_tree, check_tree_with_context};
+use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::Regex as DerivativeRegex;
 use crate::validation::completability::{
     CompletionResult, PrefixSoundnessResult, complete, sound_complete 
@@ -115,8 +116,40 @@ pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (Tes
                 // Expected success
                 TestResult::Pass(result.complete_string)
             } else {
-                // Unexpectedly failed
-                TestResult::Fail(format!("Expected success but got unsound completion"))
+                // Unexpectedly failed - provide detailed error information
+                let mut error_msg = format!("Expected success but got unsound completion\n");
+                error_msg.push_str(&format!("  Input: '{}'\n", case.input));
+                error_msg.push_str(&format!("  Prefixes checked: {}\n", result.prefixes_checked));
+                
+                if let Some(ref failing) = result.failing_prefix {
+                    error_msg.push_str(&format!("  ❌ First failing prefix: '{}'\n", failing));
+                }
+                
+                // Show sample of visited states if available
+                if let Some(ref visited) = result.failing_prefix_visited_states {
+                    if !visited.is_empty() {
+                        error_msg.push_str(&format!("  � Sample visited states ({} total):\n", visited.len()));
+                        for (i, state) in visited.iter().take(10).enumerate() {
+                            error_msg.push_str(&format!("    {}: '{}'\n", i + 1, state));
+                        }
+                        if visited.len() > 10 {
+                            error_msg.push_str(&format!("    ... and {} more\n", visited.len() - 10));
+                        }
+                    }
+                }
+                
+                // Show detailed prefix results
+                error_msg.push_str("  Prefix completion results:\n");
+                for (prefix, success) in &result.prefix_details {
+                    let status = if *success { "✓" } else { "✗" };
+                    error_msg.push_str(&format!("    {} '{}'\n", status, prefix));
+                }
+                
+                if let Some(ref complete) = result.complete_string {
+                    error_msg.push_str(&format!("  Completed to: '{}'\n", complete));
+                }
+                
+                TestResult::Fail(error_msg)
             }
         }
         // Expecting failure
@@ -130,10 +163,35 @@ pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (Tes
             let is_completable = matches!(result, CompletionResult::Success { .. });
             
             if is_completable {
-                // Unexpectedly succeeded
-                TestResult::Fail(format!("Expected failure but got successful completion"))
+                // Unexpectedly succeeded - provide details about what completed
+                let mut error_msg = format!("Expected failure but got successful completion\n");
+                error_msg.push_str(&format!("  Input: '{}'\n", case.input));
+                
+                if let CompletionResult::Success { complete_input, depth, completion_path, .. } = result {
+                    error_msg.push_str(&format!("  Completed to: '{}'\n", complete_input));
+                    error_msg.push_str(&format!("  Depth: {}\n", depth));
+                    error_msg.push_str(&format!("  Completion path: {} tokens\n", completion_path.len()));
+                }
+                
+                TestResult::Fail(error_msg)
             } else {
-                // Expected failure
+                // Expected failure - log what kind of failure
+                match result {
+                    CompletionResult::Failure { max_depth_reached, states_explored, .. } => {
+                        eprintln!("  ✓ Failed as expected (explored {} states, max depth: {})", 
+                                  states_explored, max_depth_reached);
+                    }
+                    CompletionResult::Invalid(ref msg) => {
+                        eprintln!("  ✓ Invalid as expected: {}", msg);
+                    }
+                    CompletionResult::StateOverflow(limit) => {
+                        eprintln!("  ✓ State overflow as expected (limit: {})", limit);
+                    }
+                    CompletionResult::Error(ref msg) => {
+                        eprintln!("  ✓ Error as expected: {}", msg);
+                    }
+                    _ => {}
+                }
                 TestResult::Pass(None)
             }
         }
@@ -161,22 +219,48 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
     let mut failures = Vec::new();
     let mut total_time = Duration::new(0, 0);
 
-    for case in cases {
-        println!("Running test: {}", case.description);
-        let (result,duration )= run_test_timed(grammar, case);
+    eprintln!("\n═══════════════════════════════════════════════════════");
+    eprintln!("Running test batch: {} cases", cases.len());
+    eprintln!("═══════════════════════════════════════════════════════\n");
+
+    for (idx, case) in cases.iter().enumerate() {
+        eprintln!("[{}/{}] Running test: {}", idx + 1, cases.len(), case.description);
+        eprintln!("  Input: '{}'", case.input);
+        eprintln!("  Expected: {}", if case.xfail { "FAIL" } else { "PASS" });
+        eprintln!("  Max depth: {}", case.max_depth);
+        if !case.context.is_empty() {
+            eprintln!("  Context: {:?}", case.context);
+        }
+        
+        let (result, duration) = run_test_timed(grammar, case);
+        
         match result {
             TestResult::Pass(completed) => {
-                println!("Passed {:?}", completed);
+                eprintln!("  ✓ PASSED in {:?}", duration);
+                if let Some(ref complete) = completed {
+                    eprintln!("    Completed: '{}'", complete);
+                }
                 passed += 1;
             }
             TestResult::Fail(msg) => {
-                println!("Failed: {}", msg);
+                eprintln!("  ✗ FAILED in {:?}", duration);
+                eprintln!("  Error details:");
+                for line in msg.lines() {
+                    eprintln!("    {}", line);
+                }
                 failed += 1;
                 failures.push((case.description, case.input, msg));
             }
         }
+        eprintln!();
         total_time += duration;
     }
+
+    eprintln!("═══════════════════════════════════════════════════════");
+    eprintln!("Batch results: {} passed, {} failed", passed, failed);
+    eprintln!("Average duration: {:?}", total_time / (cases.len() as u32));
+    eprintln!("Total duration: {:?}", total_time);
+    eprintln!("═══════════════════════════════════════════════════════\n");
 
     BatchResult {
         passed,
@@ -198,12 +282,25 @@ pub struct BatchResult {
 impl BatchResult {
     pub fn assert_all_passed(&self) {
         if self.failed > 0 {
-            eprintln!("\n=== {} FAILURES ===", self.failed);
-            for (desc, input, msg) in &self.failures {
-                eprintln!("  [{}] '{}': {}", desc, input, msg);
+            eprintln!("\n╔═══════════════════════════════════════════════════════╗");
+            eprintln!("║  TEST FAILURES: {} out of {} tests failed           ║", 
+                     self.failed, self.passed + self.failed);
+            eprintln!("╚═══════════════════════════════════════════════════════╝\n");
+            
+            for (idx, (desc, input, msg)) in self.failures.iter().enumerate() {
+                eprintln!("────────────────────────────────────────────────────────");
+                eprintln!("Failure #{}: {}", idx + 1, desc);
+                eprintln!("  Input: '{}'", input);
+                eprintln!("\nDetails:");
+                for line in msg.lines() {
+                    eprintln!("  {}", line);
+                }
+                eprintln!();
             }
+            eprintln!("════════════════════════════════════════════════════════\n");
+            
             panic!(
-                "{} out of {} tests failed",
+                "{} out of {} tests failed (see details above)",
                 self.failed,
                 self.passed + self.failed
             );

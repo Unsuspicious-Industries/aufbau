@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, List, Optional, Tuple, Dict, Any
 
-from .grammars import GRAMMARS, get_grammar
+from .grammars import GRAMMARS, get_grammar, get_grammar_info
 
 
 class Mode(Enum):
@@ -79,74 +79,6 @@ class EnvironmentResult:
     
     def __str__(self) -> str:
         return "".join(str(b) for b in self.blocks)
-
-
-# Grammar descriptions for procedural prompt generation
-GRAMMAR_INFO: Dict[str, Dict[str, Any]] = {
-    "xtlc": {
-        "name": "Extended Typed Lambda Calculus",
-        "short": "typed lambda calculus",
-        "description": "Simply typed lambda calculus with type inference",
-        "syntax_hints": [
-            "λx:T.e - lambda abstraction (function taking x of type T)",
-            "{x:T} - declare variable x of type T in scope",
-            "(f e) - function application",
-            "Types: base types (Int, Bool) or function types (Int->Bool)",
-        ],
-        "examples": [
-            ("identity", "λx:Int.x"),
-            ("const K", "λx:Int.λy:Bool.x"),
-            ("apply", "λf:(Int->Bool).λx:Int.(f x)"),
-        ],
-    },
-    "clike": {
-        "name": "C-like Language",
-        "short": "typed C-like code",
-        "description": "Typed imperative language with C-like syntax",
-        "syntax_hints": [
-            "int/float/bool/char - primitive types",
-            "type var = expr; - variable declaration",
-            "var = expr; - assignment",
-            "if (cond) { ... } - conditional",
-            "while (cond) { ... } - loop",
-            "return expr; - return statement",
-        ],
-        "examples": [
-            ("add", "int a = 5; int b = a + 1;"),
-            ("condition", "bool x = 5 < 10;"),
-        ],
-    },
-    "typed_arithmetic": {
-        "name": "Typed Arithmetic",
-        "short": "typed arithmetic expressions",
-        "description": "Arithmetic with Int, Float, Bool types",
-        "syntax_hints": [
-            "Int literals: 0, 1, 42",
-            "Float literals: 1.0, 3.14",
-            "Operators: + - * / < > == !=",
-            "let x : T = e in body",
-        ],
-        "examples": [
-            ("add", "1 + 2"),
-            ("compare", "1 < 2"),
-            ("let", "let x : Int = 5 in x + 1"),
-        ],
-    },
-}
-
-
-def get_grammar_info(grammar_name: str) -> Dict[str, Any]:
-    """Get info about a grammar, with fallback for unknown grammars."""
-    if grammar_name in GRAMMAR_INFO:
-        return GRAMMAR_INFO[grammar_name]
-    # Fallback for unknown grammars
-    return {
-        "name": grammar_name,
-        "short": f"{grammar_name} expressions",
-        "description": f"Grammar: {grammar_name}",
-        "syntax_hints": [],
-        "examples": [],
-    }
 
 
 def build_system_prompt(

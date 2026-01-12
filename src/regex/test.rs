@@ -1,5 +1,7 @@
 //! Comprehensive tests for the regex module.
 
+use crate::set_debug_level;
+
 use super::*;
 
 // ===== Construction =====
@@ -157,8 +159,10 @@ fn deriv_concat() {
 
 #[test]
 fn deriv_star() {
+    set_debug_level(crate::DebugLevel::Trace);
     let r = Regex::star(Regex::Char('a'));
-    let d = r.deriv('a').simplify();
+    let d = r.derivative("a").simplify();
+    println!("{}", d);
     assert!(d.is_nullable()); // can match more 'a's or stop
 }
 
@@ -189,7 +193,7 @@ fn prefix_match_no_match() {
 fn prefix_match_valid_prefix() {
     let r = Regex::literal("abc");
     match r.prefix_match("ab") {
-        PrefixStatus::Prefix(_) => {},
+        PrefixStatus::Prefix(_) => {}
         _ => panic!("expected Prefix"),
     }
 }
@@ -198,7 +202,7 @@ fn prefix_match_valid_prefix() {
 fn prefix_match_complete() {
     let r = Regex::Char('a');
     match r.prefix_match("a") {
-        PrefixStatus::Complete | PrefixStatus::Extensible(_) => {},
+        PrefixStatus::Complete | PrefixStatus::Extensible(_) => {}
         s => panic!("expected Complete/Extensible, got {:?}", s),
     }
 }
@@ -207,7 +211,7 @@ fn prefix_match_complete() {
 fn prefix_match_extensible() {
     let r = Regex::star(Regex::Char('a'));
     match r.prefix_match("aa") {
-        PrefixStatus::Extensible(_) => {},
+        PrefixStatus::Extensible(_) => {}
         s => panic!("expected Extensible, got {:?}", s),
     }
 }
@@ -227,9 +231,7 @@ fn product_basic() {
 
 #[test]
 fn product_traced_tracks_indices() {
-    let choices = vec![
-        vec![Regex::Char('a'), Regex::Char('b')],
-    ];
+    let choices = vec![vec![Regex::Char('a'), Regex::Char('b')]];
     let result = Regex::product_traced(choices);
     assert_eq!(result.len(), 2);
     assert_eq!(result[0].0, vec![0]);
@@ -364,13 +366,67 @@ fn complex_pattern() {
     assert!(r.matches("abc123def456"));
 }
 
-// ===== Cache =====
 #[test]
-fn cache_works() {
-    // Call valids to populate cache, then check stats
-    let r = Regex::new("[a-c]").unwrap();
-    let v1 = r.valids(1);
-    let v2 = r.valids(1); // should hit cache
-    assert_eq!(v1, v2);
-}
+fn test_match_len() {
+    // Test basic character matching
+    let r = Regex::Char('a');
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("b"), None);
+    assert_eq!(r.match_len("aa"), Some(1));
 
+    // Test epsilon (empty match)
+    let r = Regex::Epsilon;
+    assert_eq!(r.match_len(""), Some(0));
+    assert_eq!(r.match_len("a"), Some(0));
+
+    // Test empty regex (never matches)
+    let r = Regex::Empty;
+    assert_eq!(r.match_len(""), None);
+    assert_eq!(r.match_len("a"), None);
+
+    // Test literal strings
+    let r = Regex::literal("abc");
+    assert_eq!(r.match_len("abc"), Some(3));
+    assert_eq!(r.match_len("ab"), None);
+    assert_eq!(r.match_len("abcd"), Some(3));
+    assert_eq!(r.match_len("xyz"), None);
+
+    // Test concatenation
+    let r = Regex::cat(Regex::Char('a'), Regex::Char('b'));
+    assert_eq!(r.match_len("ab"), Some(2));
+    assert_eq!(r.match_len("a"), None);
+    assert_eq!(r.match_len("abc"), Some(2));
+
+    // Test union (OR)
+    let r = Regex::or(Regex::Char('a'), Regex::Char('b'));
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("b"), Some(1));
+    assert_eq!(r.match_len("c"), None);
+
+    // Test Kleene star (zero or more)
+    let r = Regex::star(Regex::Char('a'));
+    assert_eq!(r.match_len(""), Some(0));
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("aaa"), Some(3));
+    assert_eq!(r.match_len("aaab"), Some(3));
+
+    // Test plus (one or more)
+    let r = Regex::plus(Regex::Char('a'));
+    assert_eq!(r.match_len(""), None);
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("aaa"), Some(3));
+    assert_eq!(r.match_len("aaab"), Some(3));
+
+    // Test optional (zero or one)
+    let r = Regex::opt(Regex::Char('a'));
+    assert_eq!(r.match_len(""), Some(0));
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("aa"), Some(1));
+
+    // Test ranges
+    let r = Regex::Range('a', 'z');
+    assert_eq!(r.match_len("a"), Some(1));
+    assert_eq!(r.match_len("m"), Some(1));
+    assert_eq!(r.match_len("z"), Some(1));
+    assert_eq!(r.match_len("0"), None);
+}

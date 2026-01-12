@@ -3,7 +3,7 @@ pub mod save;
 pub mod tokenizer;
 pub mod utils;
 
-use crate::logic::binding::{self, BindingMap, GrammarPath, PathStep};
+use crate::logic::binding::{self, BindingMap};
 pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
 
 #[cfg(test)]
@@ -11,6 +11,7 @@ mod tests;
 
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::HashMap;
+use std::ffi::os_str::Display;
 use std::hash::{Hash, Hasher};
 
 // ANCHOR: Symbol
@@ -146,6 +147,20 @@ pub struct Production {
     pub rhs: Vec<Symbol>,
 }
 
+impl std::fmt::Display for Production {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let symbols: Vec<String> = self
+            .rhs
+            .iter()
+            .map(|s| match s {
+                Symbol::Nonterminal { name, .. } => name.clone(),
+                Symbol::Terminal { regex, .. } => format!("/{}/", regex.to_pattern()),
+            })
+            .collect();
+        write!(f, "{}", symbols.join(" "))
+    }
+}
+
 use crate::debug_trace;
 use crate::logic::typing::TypingRule;
 
@@ -163,10 +178,12 @@ pub struct Grammar {
     tokenizer: Option<Tokenizer>,
 }
 
+// Note: Typing rules are intentionally excluded from equality comparison
+// for performance reasons. This may need revision if type-aware comparison
+// becomes necessary.
 impl PartialEq for Grammar {
     fn eq(&self, other: &Self) -> bool {
         self.productions == other.productions
-            && self.typing_rules == other.typing_rules
             && self.special_tokens == other.special_tokens
             && self.delimiters == other.delimiters
             && self.start == other.start
@@ -193,6 +210,13 @@ impl Grammar {
         Self::default()
     }
 
+    /// Create a grammar with the given productions
+    pub fn new_with_productions(productions: HashMap<String, Vec<Production>>) -> Self {
+        let mut grammar = Self::default();
+        grammar.productions = productions;
+        grammar
+    }
+
     /// Rebuild the binding map from the current productions and typing rules
     pub fn rebuild_bindings(&mut self) {
         self.binding_map = binding::build_binding_map(self);
@@ -209,6 +233,11 @@ impl Grammar {
     /// Add a typing rule to the grammar.
     pub fn add_typing_rule(&mut self, rule: TypingRule) {
         self.typing_rules.insert(rule.name.clone(), rule);
+    }
+
+    /// Add a production rule to the grammar.
+    pub fn add_production(&mut self, nt: String, prod: Production) {
+        self.productions.entry(nt.clone()).or_default().push(prod);
     }
 
     /// Set the start nonterminal.
