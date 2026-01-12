@@ -5,7 +5,7 @@ Main tests + submodules
 
 mod contradiction;
 mod lc;
-mod repro;
+mod redeclaration;
 
 use super::*;
 use crate::logic::grammar::Grammar;
@@ -13,13 +13,7 @@ use crate::logic::partial::parse::Parser;
 
 #[test]
 fn test_debug_quoted_type_parsing() {
-    use crate::logic::typing::syntax::TypeSyntaxConfig;
-
     let test_cases = vec!["'int'", "'void'", "'string'"];
-
-    let cfg = TypeSyntaxConfig::default();
-    println!("Config negation operators: {:?}", cfg.negation);
-    println!();
 
     for case in test_cases {
         println!("Testing: '{}'", case);
@@ -27,12 +21,6 @@ fn test_debug_quoted_type_parsing() {
         println!("  Starts with ': {}", case.starts_with('\''));
         println!("  Ends with ': {}", case.ends_with('\''));
         println!("  Length > 2: {}", case.len() > 2);
-
-        for op in &cfg.negation {
-            if case.contains(op) {
-                println!("negation operator: '{}'", op);
-            }
-        }
 
         if case.starts_with('\'') && case.ends_with('\'') && case.len() > 2 {
             let raw_type = &case[1..case.len() - 1];
@@ -156,35 +144,6 @@ fn stlc_app_rule_parse_and_inspect() {
     assert!(pretty.contains("Γ ⊢ f : τ₁ → τ₂"));
     assert!(pretty.contains("Γ ⊢ e : τ₁"));
     assert!(pretty.contains("[app]"));
-}
-
-#[test]
-fn test_tuple_meta_types() {
-    let tuple1 = Type::parse("(A...)").expect("parse (A...)");
-    assert_eq!(tuple1, Type::Tuple("A".to_string()));
-    assert_eq!(format!("{}", tuple1), "(A...)");
-
-    let tuple2 = Type::parse("(tuple_id...)").expect("parse (tuple_id...)");
-    assert_eq!(tuple2, Type::Tuple("tuple_id".to_string()));
-    assert_eq!(format!("{}", tuple2), "(tuple_id...)");
-
-    let tuple3 = Type::parse("(τ₁...)").expect("parse (τ₁...)");
-    assert_eq!(tuple3, Type::Tuple("τ₁".to_string()));
-    assert_eq!(format!("{}", tuple3), "(τ₁...)");
-
-    let arrow_in_parens = Type::parse("(Int -> Bool)").expect("parse (Int -> Bool)");
-    assert_eq!(
-        arrow_in_parens,
-        Type::Arrow(
-            Box::new(Type::Atom("Int".to_string())),
-            Box::new(Type::Atom("Bool".to_string()))
-        )
-    );
-    assert_eq!(format!("{}", arrow_in_parens), "Int → Bool");
-
-    let atom_in_parens = Type::parse("(Int)").expect("parse (Int)");
-    assert_eq!(atom_in_parens, Type::Atom("Int".to_string()));
-    assert_eq!(format!("{}", atom_in_parens), "Int");
 }
 
 #[test]

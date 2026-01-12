@@ -1,5 +1,3 @@
-use regex_syntax::hir::print;
-
 use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::eval::check_tree;
@@ -19,7 +17,7 @@ fn test_identity() {
     let ast = p
         .partial(
             r#"
-            λf : A -> B -> C. (λg : A -> B. (λx : A. (f (g x))))
+            λf : A -> B -> C. (λg : A -> B. (λx : A. f g x))
 
     "#,
         )

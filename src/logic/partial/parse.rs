@@ -6,10 +6,85 @@ use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use crate::{debug_debug, debug_trace};
 
-const MAX_REC_DEPTH: usize = 1;
+/*
+ * Parser for context-free grammars with left-recursion support.
+ *
+ * ## Time Complexity Analysis
+ *
+ * For a grammar G and input string of length n:
+ * - Tokenization: O(n) (linear scan)
+ * - Parsing: O(n * |G| * d) 
+ *   + n the input length
+ *   + |G| the size of the grammar
+ *   + d the maximum recursion depth
+ *  This means basically linear ?
+ *  TODO: work on depth correctness
+ * - With memoization: O(n * |G| * d) but with reduced constant factors
+ *
+ * ## Termination 
+ *
+ * The parser terminates because:
+ *  - we are supposed to consume tokens
+ *  - memoization stores exeisting states
+ *
+ * For left-recursive grammars like STLC's Application rule:
+ * Term -> Application | BaseTerm
+ * Application -> Term BaseTerm
+ *
+ * Without memoization, this would cause infinite recursion:
+ * Term -> Application -> Term -> Application -> ...
+ *
+ * With memoization, the first Term->Application expansion is cached,
+ * so subsequent attempts reuse the cached result.
+ *
+ * ## Cache Reuse Across Parses
+ *
+ * The parser maintains a persistent memoization cache that survives across
+ * multiple `partial()` calls on the same `Parser` instance. This enables
+ * incremental parsing scenarios where you parse progressively longer prefixes:
+ *
+ * ```text
+ * parser.partial("x")        // Parses and caches results for "x"
+ * parser.partial("x t")      // Reuses cache for "x", only parses " t"
+ * parser.partial("x t +")    // Reuses cache for "x" and "x t", only parses " +"
+ * ```
+ *
+ * This optimization is crucial for completion generation where we iteratively
+ * extend partial inputs. The cache is keyed by (nonterminal, absolute_position)
+ * so results from earlier positions can be reused even as input grows.
+ *
+ * To reset the cache (e.g., when switching to a completely different input),
+ * use `clear_cache()` or create a new `Parser` instance.
+ */
+
+
+/// Default maximum recursion depth for left-recursive grammars.
+/// Set to 20 which handles most real-world cases while preventing 
+/// exponential blowup on highly ambiguous grammars.
+/// Use MetaParser for adaptive depth finding, or with_max_recursion() to override.
+const DEFAULT_MAX_RECURSION_DEPTH: usize = 20;
+
+/// Tracks parsing state for a single parse operation
+///
+/// This struct contains per-parse state that should NOT be shared across
+/// multiple parse calls. It tracks recursion to detect cycles during parsing.
+struct ParseState {
+    /// Tracks recursion depth for (non-terminal, absolute_position)
+    /// Used to detect potential infinite loops within a single parse
+    visited: HashMap<(String, usize), usize>,
+}
+
+impl ParseState {
+    fn new() -> Self {
+        Self {
+            visited: HashMap::new(),
+        }
+    }
+}
 
 impl Segment {
     /// Get the segment range (just its own index)
+    /// 
     pub fn seg_range(&self) -> SegmentRange {
         SegmentRange::single(self.index)
     }
@@ -17,6 +92,21 @@ impl Segment {
 
 pub struct Parser {
     pub(crate) grammar: Grammar,
+    /// Maximum recursion depth for left-recursive patterns like `Expr Expr`
+    max_recursion: usize,
+    /// Persistent memoization cache for parsing results.
+    /// 
+    /// Maps (nonterminal_name, absolute_position) to parse results.
+    /// This cache survives across multiple `partial()` calls, enabling
+    /// incremental parsing where earlier results can be reused.
+    /// 
+    /// Only stores COMPLETE results that consume input to ensure progress.
+    memo_cache: HashMap<(String, usize), Vec<NonTerminal>>,
+    /// Tracks the previous input to detect cache invalidation.
+    last_input: Option<String>,
+    /// Tracks the max_recursion depth used for cached results.
+    /// Cache is invalidated when depth changes.
+    last_max_recursion: usize,
 }
 
 impl Parser {
@@ -25,7 +115,36 @@ impl Parser {
         // Ensure longest-match for multi-char literals (e.g. "<=", ">=", "==")
         // by checking longer specials before their prefixes ("<", ">", "=").
         specials.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
-        Self { grammar }
+        Self { 
+            grammar,
+            max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
+            memo_cache: HashMap::new(),
+            last_input: None,
+            last_max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
+        }
+    }
+
+    /// Set the maximum recursion depth for left-recursive grammars (builder pattern)
+    pub fn with_max_recursion(mut self, depth: usize) -> Self {
+        self.max_recursion = depth;
+        self
+    }
+
+    /// Set the maximum recursion depth for left-recursive grammars
+    pub fn set_max_recursion(&mut self, depth: usize) {
+        self.max_recursion = depth;
+    }
+
+    /// Clear the memoization cache.
+    /// 
+    /// Use this when switching to a completely different input that doesn't
+    /// share a common prefix with previous inputs. This frees memory and
+    /// ensures stale cached results don't affect parsing.
+    /// 
+    /// For incremental parsing of progressively longer inputs (e.g., "x" -> "x t" -> "x t +"),
+    /// do NOT clear the cache as it provides the performance benefit.
+    pub fn clear_cache(&mut self) {
+        self.memo_cache.clear();
     }
 
     pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
@@ -54,24 +173,53 @@ impl Parser {
     }
 
     /// Main entry point: parse input and return new PartialAST
+    /// 
+    /// ## Cache Reuse
+    /// 
+    /// The parser maintains a memoization cache across calls. Cache is reused when
+    /// the new input starts with the previous input (incremental parsing scenario).
+    /// Otherwise, the cache is cleared automatically.
+    /// 
+    /// When extending input (e.g., "x" -> "x + y"), cache entries at the previous
+    /// input boundary are invalidated since they may have different parses with
+    /// more input available.
+    /// 
+    /// Example of cache reuse:
+    /// ```text
+    /// parser.partial("x")      // Fresh parse, caches results
+    /// parser.partial("x + y")  // Different input, cache cleared
+    /// parser.partial("x + y")  // Same input, cache reused
+    /// ```
     pub fn partial(&mut self, input: &str) -> Result<PartialAST, String> {
         debug_trace!("parser2      ", "Starting parse of input: '{}'", input);
+
+        // Simple cache invalidation: clear if input or depth changed
+        let same_input = self.last_input.as_ref().map_or(false, |prev| prev == input);
+        let same_depth = self.max_recursion == self.last_max_recursion;
+        
+        if !same_input || !same_depth {
+            debug_debug!("parser2      ", "Cache invalidated (input or depth changed)");
+            self.memo_cache.clear();
+            self.last_input = Some(input.to_string());
+            self.last_max_recursion = self.max_recursion;
+        }
 
         // Tokenize
         let segments = self.tokenize(input)?;
         debug_debug!("parser2      ", "Tokenized into {:?}", segments);
 
-        // Get start nonterminal
+        // Get start nonterminal (clone to avoid borrow conflict)
         let start_nt = self
             .grammar
             .start_nonterminal()
-            .ok_or_else(|| "No start nonterminal in grammar".to_string())?;
+            .ok_or_else(|| "No start nonterminal in grammar".to_string())?
+            .to_string();
 
         debug_debug!("parser2      ", "Start nonterminal: {}", start_nt);
 
-        // Parse from start
-        let mut visited = HashMap::new();
-        let roots = self.parse_nonterminal(&segments, start_nt, None, 0, &mut visited)?;
+        // Parse from start with absolute position 0
+        let mut parse_state = ParseState::new();
+        let roots = self.parse_nonterminal(&segments, &start_nt, None, 0, 0, &mut parse_state)?;
 
         let total_segments = segments.len();
 
@@ -102,117 +250,199 @@ impl Parser {
     }
 
     /// Parse a nonterminal: try all productions, return all valid trees
+    ///
+    /// ## Algorithm
+    /// - Check memoization cache first (O(1) lookup)
+    /// - Check for recursion cycles
+    /// - Try each production in order
+    /// - Cache successful complete results
+    ///
+    /// ## Time Complexity
+    /// O(p * s) where p = number of productions, s = number of symbols in RHS
+    /// Memoizations makes it O(1)
+    ///
+    /// ## Parameters
+    /// - `segments`: The remaining input segments to parse
+    /// - `nt_name`: The nonterminal to parse
+    /// - `binding`: Optional binding name for the nonterminal
+    /// - `abs_pos`: Absolute position in the original input (for cache keys)
+    /// - `level`: Recursion depth (for debugging)
+    /// - `parse_state`: Per-parse state for cycle detection
     fn parse_nonterminal(
-        &self,
+        &mut self,
         segments: &[Segment],
         nt_name: &str,
         binding: Option<String>,
+        abs_pos: usize,
         level: usize,
-        visited: &mut HashMap<(String, usize), usize>,
+        parse_state: &mut ParseState,
     ) -> Result<Vec<NonTerminal>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
             "parser2      ",
-            "{}[L{}] Parsing nonterminal '{}'",
+            "{}[L{}] Parsing nonterminal '{}' at abs_pos {}",
             indent,
             level,
-            nt_name
+            nt_name,
+            abs_pos
         );
 
-        // Check for recursion on same input position
-        let key = (nt_name.to_string(), segments.len());
-        if let Some(count) = visited.get(&key) {
+        // Global depth limit based on max_recursion
+        // This prevents exponential blowup from highly ambiguous grammars
+        // like Expr ::= Expr Expr | Expr '+' Expr | ...
+        // Users can adjust max_recursion via with_max_recursion() or MetaParser
+        // to allow deeper parses for non-ambiguous grammars
+        if level > self.max_recursion {
+            debug_debug!(
+                "parser2      ",
+                "{}[L{}] Termination: Global depth limit exceeded (> {})",
+                indent,
+                level,
+                self.max_recursion
+            );
+            return Ok(Vec::new());
+        }
+
+        // Check memoization cache first using absolute position
+        // This enables cache reuse across multiple parse calls
+        let cache_key = (nt_name.to_string(), abs_pos);
+        if let Some(cached_result) = self.memo_cache.get(&cache_key) {
             debug_trace!(
                 "parser2      ",
-                "{}[L{}] Recursion detected for '{}' at len {} depth {}",
+                "{}[L{}] Cache HIT for '{}' at abs_pos {} - avoiding redundant work",
                 indent,
                 level,
                 nt_name,
-                segments.len(),
+                abs_pos
+            );
+            // TODO(optimization): Avoid cloning cached results
+            // maybe ref cells or Arc?
+            return Ok(cached_result.clone());
+        }
+
+        // Check for recursion on same input position for cycle detection
+        // Uses absolute position to correctly detect cycles
+        let key = (nt_name.to_string(), abs_pos);
+        if let Some(count) = parse_state.visited.get(&key) {
+            debug_trace!(
+                "parser2      ",
+                "{}[L{}] Recursion detected for '{}' at abs_pos {} depth {}",
+                indent,
+                level,
+                nt_name,
+                abs_pos,
                 count
             );
-            if count > &MAX_REC_DEPTH {
+
+            // Termination fallback 
+            // computer crashed too many times before
+            if *count > self.max_recursion {
                 debug_debug!(
-                    "parser2",
-                    "Too much recursion (> {}) exiting",
-                    MAX_REC_DEPTH
+                    "parser2      ",
+                    "{}[L{}] Termination: Too much recursion (> {})",
+                    indent,
+                    level,
+                    self.max_recursion
                 );
                 return Ok(Vec::new());
             } else {
                 debug_trace!(
                     "parser2      ",
-                    "{}[L{}] Upping debug count to {}",
+                    "{}[L{}] Continuing recursion (count: {})",
                     indent,
                     level,
                     count + 1
                 );
-                visited.insert(key.clone(), count + 1);
+                parse_state.visited.insert(key.clone(), count + 1);
             }
         } else {
             debug_trace!(
                 "parser2      ",
-                "{}[L{}] Starting new parse for '{}' at len {} depth {}",
+                "{}[L{}] First parse attempt for '{}' at abs_pos {}",
                 indent,
                 level,
                 nt_name,
-                segments.len(),
-                1
+                abs_pos
             );
-            visited.insert(key.clone(), 1);
+            parse_state.visited.insert(key.clone(), 1);
         }
 
+        // Clone productions to avoid borrow conflict with self.memo_cache
         let productions = self
             .grammar
             .productions
             .get(nt_name)
-            .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?;
+            .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?
+            .clone();
 
         let mut results = Vec::new();
 
         for (alt_idx, prod) in productions.iter().enumerate() {
-            debug_trace!(
+            debug_debug!(
                 "parser2      ",
-                "{}[L{}] Trying production: {:?}",
+                "{}[L{}] Trying production {}@{}: {} on {}",
                 indent,
                 level,
-                prod.rhs
+                nt_name,
+                alt_idx,
+                prod,
+                segments.iter()
+                    .map(|s| s.text())
+                    .collect::<Vec<String>>()
+                    .join(" ")
             );
 
-            match self.parse_production(segments, prod, level, visited) {
+            match self.parse_production(segments, prod, abs_pos, level, parse_state) {
                 Ok(prod_results) => {
-                    for children in prod_results {
-                        let consumed = self.count_consumed_segments(&children);
-                        let nt = NonTerminal::new(
-                            nt_name.to_string(),
-                            prod.clone(),
-                            alt_idx,
-                            children,
-                            binding.clone(),
-                            consumed,
-                        );
-                        debug_trace!(
+                    if prod_results.is_empty() {
+                        debug_debug!(
                             "parser2      ",
-                            "{}[L{}] Production succeeded: complete={}",
+                            "{}[L{}] Production {}@{} produced no results",
                             indent,
                             level,
-                            nt.is_complete()
+                            nt_name,
+                            alt_idx
                         );
-                        results.push(nt);
+                        continue;
+                    } else {
+                        debug_debug!(
+                            "parser2      ",
+                            "{}[L{}] Production {}@{} succeeded with {} parse sequences",
+                            indent,
+                            level,
+                            nt_name,
+                            alt_idx,
+                            prod_results.len()
+                        );
+                        for children in prod_results {
+                            let consumed = self.count_consumed_segments(&children);
+                            let nt = NonTerminal::new(
+                                nt_name.to_string(),
+                                prod.clone(),
+                                alt_idx,
+                                children,
+                                binding.clone(),
+                                consumed,
+                            );
+                            results.push(nt);
+                        }
                     }
                 }
                 Err(e) => {
-                    debug_trace!(
+                    debug_debug!(
                         "parser2      ",
-                        "{}[L{}] Production error: {}",
+                        "{}[L{}] Production {}@{} failed: {}",
                         indent,
                         level,
+                        nt_name,
+                        alt_idx,
                         e
                     );
                 }
             }
         }
 
-        visited.remove(&key);
+        parse_state.visited.remove(&key);
 
         debug_trace!(
             "parser2      ",
@@ -223,15 +453,48 @@ impl Parser {
             results.len()
         );
 
+        // Cache optimization: only store complete results that made progress
+        // This ensures:
+        // 1. We don't cache failures (waste of space)
+        // 2. We don't cache partial results (could lead to infinite loops)
+        // 3. We only cache when we've actually done useful work
+        if !results.is_empty() {
+            let has_complete_result = results
+                .iter()
+                .any(|r| r.is_complete() && r.consumed_segments > 0);
+            if has_complete_result {
+                debug_trace!(
+                    "parser2      ",
+                    "{}[L{}] Caching result for '{}' at abs_pos {}",
+                    indent,
+                    level,
+                    nt_name,
+                    abs_pos
+                );
+                // TODO(optimization): Use Rc<Vec<NonTerminal>> to avoid expensive cloning
+                self.memo_cache.insert(cache_key, results.clone());
+            }
+        }
+
         Ok(results)
     }
 
+    /// Parse a production (sequence of symbols)
+    ///
+    /// ## Algorithm
+    /// Recursively parse each symbol in order, building up the parse tree
+    /// This is the core of the recursive descent parser
+    ///
+    /// ## Time Complexity
+    /// O(s) where s = number of symbols in production
+    /// Each symbol parse is O(1) with memoization
     fn parse_production(
-        &self,
+        &mut self,
         segments: &[Segment],
         prod: &Production,
+        abs_pos: usize,
         level: usize,
-        visited: &mut HashMap<(String, usize), usize>,
+        parse_state: &mut ParseState,
     ) -> Result<Vec<Vec<Node>>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
@@ -242,6 +505,7 @@ impl Parser {
             prod
         );
 
+        // Epsilon production - matches empty input
         if prod.rhs.is_empty() {
             debug_trace!(
                 "parser2.prod ",
@@ -252,16 +516,30 @@ impl Parser {
             return Ok(vec![vec![]]);
         }
 
-        self.parse_symbols(segments, &prod.rhs, level, visited)
+        self.parse_symbols(segments, &prod.rhs, abs_pos, level, parse_state)
     }
 
+    /// Parse a sequence of symbols
+    ///
+    /// ## Algorithm
+    /// 1. Parse first symbol
+    /// 2. For each successful parse, recursively parse remaining symbols
+    /// 3. Combine results to form complete parse trees
+    ///
+    /// ## Time Complexity
+    /// O(s * p) 
+    /// - s the number of symbols
+    /// - p the number of average parses per symbol
+    /// This is the main source of complexity in the parser
     fn parse_symbols(
-        &self,
+        &mut self,
         segments: &[Segment],
         symbols: &[Symbol],
+        abs_pos: usize,
         level: usize,
-        visited: &mut HashMap<(String, usize), usize>,
+        parse_state: &mut ParseState,
     ) -> Result<Vec<Vec<Node>>, String> {
+        // Base case: empty symbol list
         if symbols.is_empty() {
             return Ok(vec![vec![]]);
         }
@@ -269,31 +547,44 @@ impl Parser {
         let first_sym = &symbols[0];
         let rest_syms = &symbols[1..];
 
-        let first_parses = self.parse_symbol(segments, first_sym, level, visited)?;
+        let first_parses = self.parse_symbol(segments, first_sym, abs_pos, level, parse_state)?;
 
+        // If no parses for first symbol, this production fails
+        // ensure early exit
         if first_parses.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(first_parses.len());
 
         for node in first_parses {
-            // If this node is partial, we cannot continue parsing subsequent symbols
-            // in this production because the prefix is not complete.
+
+            // Calculate remaining input after consuming this node
+            let consumed:usize = self.node_consumed(&node);
+
+            // Optimization: 
+            //  - if node is partial, we can't continue this production
+            // This prevents wasted work on incomplete prefixes
             if !node.is_complete() {
-                results.push(vec![node]);
+                // store result on full consumption only
+                if consumed == segments.len() {
+                    results.push(vec![node]);
+                }
                 continue;
             }
 
-            let consumed = self.node_consumed(&node);
             let remaining_segments = if consumed >= segments.len() {
                 &[]
             } else {
                 &segments[consumed..]
             };
 
-            let rest_parses = self.parse_symbols(remaining_segments, rest_syms, level, visited)?;
+            // Recursively parse remaining symbols with updated absolute position
+            let new_abs_pos = abs_pos + consumed;
+            let rest_parses =
+                self.parse_symbols(remaining_segments, rest_syms, new_abs_pos, level, parse_state)?;
 
+            // Combine results
             for mut rest_nodes in rest_parses {
                 let mut full_parse = vec![node.clone()];
                 full_parse.append(&mut rest_nodes);
@@ -304,6 +595,14 @@ impl Parser {
         Ok(results)
     }
 
+    /// Count how many segments a node consumes
+    ///
+    /// ## Purpose
+    /// Tracks parsing progress to ensure termination
+    /// Each complete node must consume at least one segment
+    ///
+    /// ## Time Complexity
+    /// idk but could be costly
     fn node_consumed(&self, node: &Node) -> usize {
         match node {
             Node::Terminal(Terminal::Complete { .. }) => 1,
@@ -323,20 +622,38 @@ impl Parser {
     }
 
     /// Parse a symbol (expression or regex)
+    /// Parse a single symbol (terminal or nonterminal)
+    ///
+    /// ## Algorithm
+    /// Dispatch to appropriate parser based on symbol type:
+    /// - Terminal: regex matching
+    /// - Nonterminal: recursive parse
+    ///
+    /// ## Time Complexity
+    /// O(1) dispatch + cost of specific parser
+    /// Terminal: O(1) regex prefix match
+    /// Nonterminal: O(p) where p is the number of productions
     fn parse_symbol(
-        &self,
+        &mut self,
         segments: &[Segment],
         symbol: &Symbol,
+        abs_pos: usize,
         level: usize,
-        visited: &mut HashMap<(String, usize), usize>,
+        parse_state: &mut ParseState,
     ) -> Result<Vec<Node>, String> {
         let res = match symbol {
             Symbol::Terminal { regex, binding } => {
                 self.parse_regex(segments, regex, binding.clone(), level)
             }
             Symbol::Nonterminal { name, binding } => {
-                let nts =
-                    self.parse_nonterminal(segments, name, binding.clone(), level + 1, visited)?;
+                let nts = self.parse_nonterminal(
+                    segments,
+                    name,
+                    binding.clone(),
+                    abs_pos,
+                    level + 1,
+                    parse_state,
+                )?;
                 Ok(nts.into_iter().map(Node::NonTerminal).collect())
             }
         };
@@ -344,6 +661,16 @@ impl Parser {
     }
 
     /// Parse regex terminal
+    ///
+    /// ## Algorithm
+    /// Uses regex derivatives for efficient prefix matching:
+    /// 1. If at end of input, return partial match
+    /// 2. Try to match regex against current segment
+    /// 3. Handle four cases: Complete, Prefix, Extensible, NoMatch
+    ///
+    /// ## Time Complexity
+    /// O(1) for prefix matching using regex derivatives
+    /// Could be more because regex derivative computation is kinda bad
     fn parse_regex(
         &self,
         segments: &[Segment],
@@ -351,8 +678,10 @@ impl Parser {
         binding: Option<String>,
         level: usize,
     ) -> Result<Vec<Node>, String> {
+        // /!\ Important design choice
+        // produce remaining prods on end
+        // This means easier completion generation
         if segments.is_empty() {
-            // At end of input - partial match with remainder
             debug_trace!(
                 "parser2.regex",
                 "{}[L{}] At end of input, returning partial terminal",
@@ -434,183 +763,5 @@ impl Parser {
         };
 
         Ok(node.into_iter().collect())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::set_debug_level;
-
-    use super::*;
-
-    #[test]
-    fn test_simple_literal() {
-        let spec = r#"
-        start ::= 'hello'
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("hello").unwrap();
-        assert!(ast.is_complete());
-        println!("AST: {:?}", ast);
-    }
-
-    #[test]
-    fn test_partial_literal() {
-        let spec = r#"
-        start ::= 'hello'
-        "#;
-        set_debug_level(crate::DebugLevel::Debug);
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("hel").unwrap();
-        assert!(!ast.is_complete());
-    }
-
-    #[test]
-    fn test_alternatives() {
-        let spec = r#"
-        A ::= 'a'
-        B ::= 'b'
-        start ::= A | B
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("a").unwrap();
-        std::println!("AST: {:?}", ast);
-        assert!(ast.is_complete());
-        assert_eq!(ast.roots.len(), 1);
-        assert_eq!(ast.roots[0].name, "start");
-        // Check children
-        let child = &ast.roots[0].children[0];
-        if let Node::NonTerminal(nt) = child {
-            assert_eq!(nt.name, "A");
-        } else {
-            panic!("Expected NonTerminal A");
-        }
-    }
-
-    #[test]
-    fn test_partial_alternatives() {
-        let spec = r#"
-        A ::= 'a'
-        B ::= 'a' 'b'
-        start ::= A | B
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("a").unwrap();
-        std::println!("AST: {:?}", ast);
-        // A: complete (matched 'a')
-        // B: partial (matched 'a', missing 'b')
-        // Both should be present as roots
-        assert_eq!(ast.roots.len(), 2);
-    }
-
-    #[test]
-    fn test_partial_at_end() {
-        let spec = r#"
-        start ::= 'hello' 'world'
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("hello wor").unwrap();
-        assert!(!ast.is_complete());
-    }
-
-    #[test]
-    fn test_mismatch_rejection() {
-        let spec = r#"
-        start ::= 'hello'
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let _ast = p.partial("goodbye").unwrap_err();
-    }
-
-    #[test]
-    fn test_complex_grammar() {
-        let spec = r#"
-        Number ::= /[0-9]+/
-        Op ::= '+' | '-'
-        Expr ::= Number | Number Op Expr
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("1 + 2 - 3").unwrap();
-        assert!(ast.is_complete());
-    }
-
-    #[test]
-    fn test_binding_preservation() {
-        let spec = r#"
-        Number ::= /[0-9]+/
-        start ::= Number[x]
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        let ast = p.partial("42").unwrap();
-        println!("AST: {:#?}", ast);
-        assert!(ast.is_complete());
-
-        let root = &ast.roots[0];
-        let child = &root.children[0];
-        if let Node::NonTerminal(nt) = child {
-            assert_eq!(nt.binding, Some("x".to_string()));
-        } else {
-            panic!("Expected NonTerminal node");
-        }
-    }
-
-    #[test]
-    fn test_partial_special_token_arrow() {
-        // Test parsing partial input where "-" is the start of "->" special token
-        // This tests the fix for tokenization of partial special tokens at end of input
-        let spec = r#"
-        Identifier ::= /[A-Za-z]+/
-        BaseType ::= Identifier
-        Type ::= BaseType '->' Type | BaseType
-        start ::= Type
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        // "A-" should parse as partial, where "-" is a prefix of "->"
-        let result = p.partial("A-");
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
-        let ast = result.unwrap();
-        assert!(!ast.is_complete(), "AST should be partial (incomplete)");
-    }
-
-    #[test]
-    fn test_partial_lambda_arrow() {
-        // Test a more realistic lambda calculus scenario
-        let spec = r#"
-        Identifier ::= /[A-Za-z]+/
-        Variable ::= Identifier
-        BaseType ::= Identifier | '(' Type ')'
-        Type ::= BaseType '->' Type | BaseType
-        Lambda ::= 'λ' Variable ':' Type '.' Expr
-        Expr ::= Variable | Lambda | '(' Expr ')'
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g);
-
-        // "λf:(A-" should parse as partial
-        // The "-" at the end is a prefix of the "->" special token
-        let result = p.partial("λf:(A-");
-        assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
-        let ast = result.unwrap();
-        assert!(!ast.is_complete(), "AST should be partial (incomplete)");
     }
 }

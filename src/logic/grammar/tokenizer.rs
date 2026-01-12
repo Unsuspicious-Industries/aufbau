@@ -7,6 +7,9 @@
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 
 /// Default delimiters for tokenization (whitespace).
+/// !JANKY! This causes completions problems,
+/// and adds harcoded constraints that should ideally
+/// be dealt with at the grammar level instead.
 pub const DEFAULT_DELIMITERS: &[char] = &[' ', '\n', '\t'];
 
 /// A tokenized segment of input with text and position information.
@@ -23,6 +26,7 @@ pub struct Segment {
     pub index: usize,
     /// If true, this segment is a prefix of one or more special tokens
     /// (occurs at end of input when we have incomplete special tokens like "-" for "->")
+    /// Also not very elegant
     pub is_partial_special: bool,
 }
 
@@ -336,4 +340,3 @@ mod tests {
         assert!(segments[4].is_partial_special);
     }
 }
-

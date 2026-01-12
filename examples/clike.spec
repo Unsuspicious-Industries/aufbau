@@ -140,10 +140,5 @@ x ∈ Γ
 ---------------- (assignstmt)
 'void'
 
-// function: check return type matches
-// Note: s is the statement, ret is the return statement node
-// We use simpler typing for now
-Γ ⊢ ret_val : ret_ty
------------------------ (funcdef)
-(in_tys...) -> ret_ty
+
 

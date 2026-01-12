@@ -69,7 +69,7 @@ impl ConstrainedGenerator {
                 let has_well_typed = ast.roots.iter().any(|root| {
                     match check_tree_with_context(root, &self.grammar, &ctx) {
                         TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                        TreeStatus::Malformed => false,
+                        TreeStatus::Malformed | TreeStatus::TooDeep => false,
                     }
                 });
 
@@ -96,7 +96,7 @@ impl ConstrainedGenerator {
                 let has_well_typed = ast.roots.iter().any(|root| {
                     match check_tree_with_context(root, &self.grammar, &ctx) {
                         TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                        TreeStatus::Malformed => false,
+                        TreeStatus::Malformed | TreeStatus::TooDeep => false,
                     }
                 });
 
@@ -116,7 +116,7 @@ impl ConstrainedGenerator {
 
     fn is_complete(&mut self) -> PyResult<bool> {
         match self.parser.partial(&self.current_text) {
-            Ok(ast) => Ok(ast.complete()),
+            Ok(ast) => Ok(ast.complete().is_some()),
             Err(_) => Ok(false),
         }
     }
@@ -168,7 +168,7 @@ impl ConstrainedGenerator {
                 let has_well_typed = ast.roots.iter().any(|root| {
                     match check_tree_with_context(root, &self.grammar, &ctx) {
                         TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                        TreeStatus::Malformed => false,
+                        TreeStatus::Malformed | TreeStatus::TooDeep => false,
                     }
                 });
                 Ok(has_well_typed)
@@ -187,7 +187,7 @@ impl ConstrainedGenerator {
                     Ok(ast) => ast.roots.iter().any(|root| {
                         match check_tree_with_context(root, &self.grammar, &ctx) {
                             TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                            TreeStatus::Malformed => false,
+                            TreeStatus::Malformed | TreeStatus::TooDeep => false,
                         }
                     }),
                     Err(_) => false,
@@ -209,7 +209,7 @@ impl ConstrainedGenerator {
                         let is_valid = ast.roots.iter().any(|root| {
                             match check_tree_with_context(root, &self.grammar, &ctx) {
                                 TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                                TreeStatus::Malformed => false,
+                                TreeStatus::Malformed | TreeStatus::TooDeep => false,
                             }
                         });
                         if is_valid { Some(i) } else { None }
@@ -246,7 +246,7 @@ impl ConstrainedGenerator {
                 let count = ast.roots.iter().filter(|root| {
                     match check_tree_with_context(root, &self.grammar, &ctx) {
                         TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                        TreeStatus::Malformed => false,
+                        TreeStatus::Malformed | TreeStatus::TooDeep => false,
                     }
                 }).count();
                 Ok(count)
@@ -256,16 +256,12 @@ impl ConstrainedGenerator {
     }
 
     fn to_sexpr(&mut self) -> PyResult<String> {
-        let ast = self
-            .parser
-            .parse(&self.current_text)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Parse error: {}", e)))?;
-        
-        let ctx = Context::new();
         let partial = self
             .parser
             .partial(&self.current_text)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Parse error: {}", e)))?;
+        
+        let ctx = Context::new();
         
         let has_valid = partial.roots.iter().any(|root| {
             root.is_complete() && matches!(
@@ -281,20 +277,16 @@ impl ConstrainedGenerator {
             )));
         }
         
-        Ok(ast.pretty())
+        Ok(partial.serialize())
     }
 
     fn to_sexpr_compact(&mut self) -> PyResult<String> {
-        let ast = self
-            .parser
-            .parse(&self.current_text)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Parse error: {}", e)))?;
-        
-        let ctx = Context::new();
         let partial = self
             .parser
             .partial(&self.current_text)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Parse error: {}", e)))?;
+        
+        let ctx = Context::new();
         
         let has_valid = partial.roots.iter().any(|root| {
             root.is_complete() && matches!(
@@ -310,7 +302,7 @@ impl ConstrainedGenerator {
             )));
         }
         
-        Ok(ast.serialize())
+        Ok(partial.serialize())
     }
 
 }
@@ -389,7 +381,7 @@ impl ConstrainedLogitsProcessor {
 fn regex_matches(pattern: &str, text: &str) -> PyResult<bool> {
     let regex = DerivativeRegex::from_str(pattern)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid regex: {}", e)))?;
-    Ok(regex.match_full(text))
+    Ok(regex.matches(text))
 }
 
 #[pyfunction]

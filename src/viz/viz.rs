@@ -440,8 +440,8 @@ pub fn handle_list_specs(_request: &Request) -> Response {
     })
 }
 
-fn typed_node_to_response(node: &crate::logic::partial::TypedNode) -> TypedNodeResponse {
-    use crate::logic::partial::TypedNode as TN;
+fn typed_node_to_response(node: &crate::logic::typing::tree::TypedNode) -> TypedNodeResponse {
+    use crate::logic::typing::tree::TypedNode as TN;
     match node {
         TN::Term { val, ty } => TypedNodeResponse::Term {
             val: val.clone(),

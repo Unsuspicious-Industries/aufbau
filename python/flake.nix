@@ -31,8 +31,8 @@
         # Python with pre-built packages (no compilation)
         python = pkgs.python312;
         
-        # Core Python packages from nixpkgs (pre-built, no compile time)
-        pythonPackages = with python.pkgs; [
+        # Python environment with all dependencies
+        pythonEnv = python.withPackages (ps: with ps; [
           # Build tools
           pip
           setuptools
@@ -56,7 +56,7 @@
           tqdm
           pyyaml
           regex
-        ];
+        ]);
 
       in
       {
@@ -67,9 +67,8 @@
             pkgs.cargo
             pkgs.rustc
             
-            # Python and packages
-            python
-            pythonPackages
+            # Python with all packages
+            pythonEnv
             
             # Maturin for building the extension
             pkgs.maturin
@@ -83,24 +82,25 @@
           ];
 
           shellHook = ''
-            # Create and activate virtual environment if not exists
-            if [ ! -d .venv ]; then
-              echo "Creating virtual environment..."
-              ${python}/bin/python -m venv .venv
-              source .venv/bin/activate
-              
-              echo "Installing dependencies (CPU-only, no CUDA)..."
-              pip install --quiet --upgrade pip
-              
-              # Install CPU-only PyTorch (pre-built wheels, no compile)
-              pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-              
-              # Install other deps
-              pip install --quiet transformers tokenizers huggingface-hub safetensors ipykernel
-              pip install --quiet numpy pytest tqdm
-            else
-              source .venv/bin/activate
-            fi
+            # Set library path for linking
+            export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
+            
+            # Point maturin to the right Python interpreter  
+            export VIRTUAL_ENV="${pythonEnv}"
+            export PYO3_PYTHON="${pythonEnv}/bin/python"
+            
+            # Tell cargo this is NOT a cross-compile
+            export CARGO_BUILD_TARGET="x86_64-unknown-linux-gnu"
+            export CARGO_TARGET_DIR="$PWD/target"
+            
+            # Unset cross-compilation variables that confuse maturin/pyo3
+            unset CC_FOR_TARGET
+            unset CXX_FOR_TARGET
+            unset AR_FOR_TARGET
+            unset NIX_CC_FOR_TARGET
+            unset NIX_BINTOOLS_FOR_TARGET
+            unset NIX_LDFLAGS_FOR_TARGET
+            unset NIX_CFLAGS_COMPILE_FOR_TARGET
             
             echo "╔══════════════════════════════════════════════════════════════╗"
             echo "║                     PROPOSITION 7                            ║"
@@ -113,23 +113,8 @@
             echo ""
             echo "Quick start:"
             echo "  maturin develop --skip-install  # Build extension in-place"
-            echo "  python examples/demo.py         # Run demo"
+            echo "  python examples/gpt2.py         # Run demo"
             echo ""
-            
-            # Alias for convenience (maturin needs explicit target in nix)
-            alias maturin-dev='maturin develop --skip-install --target x86_64-unknown-linux-gnu'
-            
-            # Set library path for linking
-            export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:$LD_LIBRARY_PATH"
-            
-            # Unset cross-compilation variables that confuse maturin/pyo3
-            unset CC_FOR_TARGET
-            unset CXX_FOR_TARGET
-            unset AR_FOR_TARGET
-            unset NIX_CC_FOR_TARGET
-            unset NIX_BINTOOLS_FOR_TARGET
-            unset NIX_LDFLAGS_FOR_TARGET
-            unset NIX_CFLAGS_COMPILE_FOR_TARGET
           '';
 
           # Prevent Nix from trying to build CUDA packages

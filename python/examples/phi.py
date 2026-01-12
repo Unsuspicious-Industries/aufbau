@@ -4,7 +4,7 @@ Phi-3.5-mini demo: ReasoningEnvironment with CoT + Grammar-constrained output.
 
 Demonstrates the new ReasoningEnvironment that allows the model to:
 1. Think freely in <think>...</think> blocks (unconstrained CoT)
-2. Produce typed output in <xtlc>...</xtlc> blocks (grammar-constrained)
+2. Produce typed output in <stlc>...</stlc> blocks (grammar-constrained)
 
 Uses Microsoft's Phi-3.5-mini-instruct.
 https://huggingface.co/microsoft/Phi-3.5-mini-instruct
@@ -159,7 +159,7 @@ def main():
     print_header("P7 ReasoningEnvironment Demo with Phi-3.5-mini", "#", 80)
     
     model_name = "microsoft/Phi-3.5-mini-instruct"
-    grammar_name = "xtlc"
+    grammar_name = "stlc"
     
     print(f"\nLoading {model_name}...")
     print(f"Grammar: {grammar_name}")
@@ -192,7 +192,7 @@ def main():
     
     # Run main demo
     print_header("ReasoningEnvironment Demo", "#")
-    print("CoT reasoning with <think> blocks, typed output with <xtlc> blocks\n")
+    print("CoT reasoning with </think>...<think> blocks, typed output with <clike> blocks\n")
     
     results = run_environment_demo(env)
     
@@ -223,7 +223,7 @@ def main():
   This combines the flexibility of Chain-of-Thought reasoning with the
   guarantees of grammar-constrained generation.
   
-  Tags are grammar-specific: <xtlc>, <clike>, etc. - not a generic <formal>.
+  Tags are grammar-specific: <clike>, <typed_arithmetic>, etc. - not a generic <formal>.
 """)
 
 

@@ -7,6 +7,9 @@
 //! - Deeply nested structures
 //! - Grammars with complex typing rules
 
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use super::*;
 
 // ============================================================================
@@ -106,7 +109,7 @@ fn check_right_recursive_completable() {
 
     let grammar = load_inline_grammar(INFINITE_RIGHT_RECURSIVE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -118,7 +121,7 @@ fn check_right_recursive_fail() {
 
     let grammar = load_inline_grammar(INFINITE_RIGHT_RECURSIVE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -138,7 +141,7 @@ fn check_epsilon_completable() {
 
     let grammar = load_inline_grammar(EPSILON_HEAVY);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -150,7 +153,7 @@ fn check_epsilon_fail() {
 
     let grammar = load_inline_grammar(EPSILON_HEAVY);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -170,7 +173,7 @@ fn check_deep_nesting_completable() {
 
     let grammar = load_inline_grammar(DEEP_NESTING);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -183,7 +186,7 @@ fn check_deep_nesting_fail() {
 
     let grammar = load_inline_grammar(DEEP_NESTING);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -203,7 +206,7 @@ fn check_cyclic_completable() {
 
     let grammar = load_inline_grammar(CYCLIC_TERMINABLE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -216,7 +219,7 @@ fn check_cyclic_fail() {
 
     let grammar = load_inline_grammar(CYCLIC_TERMINABLE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -234,7 +237,7 @@ fn check_long_production_completable() {
 
     let grammar = load_inline_grammar(LONG_PRODUCTION);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -246,7 +249,7 @@ fn check_long_production_fail() {
 
     let grammar = load_inline_grammar(LONG_PRODUCTION);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -263,18 +266,16 @@ fn check_ambiguous_completable() {
 
     let grammar = load_inline_grammar(HIGHLY_AMBIGUOUS);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
 fn check_ambiguous_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("invalid", "z", true),
-    ];
+    let cases = vec![TypedCompletionTestCase::new("invalid", "z", true)];
 
     let grammar = load_inline_grammar(HIGHLY_AMBIGUOUS);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -295,7 +296,7 @@ fn check_typed_simple_completable() {
 
     let grammar = load_inline_grammar(TYPED_SIMPLE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -308,7 +309,7 @@ fn check_typed_simple_fail() {
 
     let grammar = load_inline_grammar(TYPED_SIMPLE);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 // ============================================================================
@@ -319,13 +320,19 @@ fn check_typed_simple_fail() {
 fn check_context_extending_completable() {
     let cases = vec![
         TypedCompletionTestCase::new("let x in x", "let x : int in x", false).with_depth(5),
-        TypedCompletionTestCase::new("nested let", "let x : int in let y : bool in x", false).with_depth(8),
-        TypedCompletionTestCase::new("nested let inner", "let x : int in let y : bool in y", false).with_depth(8),
+        TypedCompletionTestCase::new("nested let", "let x : int in let y : bool in x", false)
+            .with_depth(8),
+        TypedCompletionTestCase::new(
+            "nested let inner",
+            "let x : int in let y : bool in y",
+            false,
+        )
+        .with_depth(8),
     ];
 
     let grammar = load_inline_grammar(CONTEXT_EXTENDING);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }
 
 #[test]
@@ -339,5 +346,5 @@ fn check_context_extending_fail() {
 
     let grammar = load_inline_grammar(CONTEXT_EXTENDING);
     let res = run_test_batch(&grammar, &cases);
-    assert!(res.passed == cases.len(), "{} out of {} tests passed", res.passed, cases.len());
+    res.assert_all_passed();
 }

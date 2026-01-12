@@ -16,7 +16,7 @@ from proposition_7.proposition_7 import (
 )
 
 from .sampler import CompletionEngine, TypedSampler
-from .grammars import GRAMMARS, list_grammars, get_grammar
+from .grammars import GRAMMARS, list_grammars, get_grammar, get_grammar_info
 from .inference import generate, until_complete, GenerationResult
 from .llm import ConstrainedModel
 from .environment import (
@@ -28,8 +28,6 @@ from .environment import (
     Mode,
     create_environment,
     build_system_prompt,
-    get_grammar_info,
-    GRAMMAR_INFO,
 )
 
 __all__ = [
@@ -56,7 +54,6 @@ __all__ = [
     "create_environment",
     "build_system_prompt",
     "get_grammar_info",
-    "GRAMMAR_INFO",
     # grammars
     "GRAMMARS",
     "list_grammars",

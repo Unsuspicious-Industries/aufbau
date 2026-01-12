@@ -69,11 +69,7 @@ impl Grammar {
                                 rule: rule_name.clone(),
                                 rhs: alt_symbols,
                             };
-                            grammar
-                                .productions
-                                .entry(name.clone())
-                                .or_default()
-                                .push(production);
+                            grammar.add_production(name.clone(), production);
                         }
                     } else {
                         i += 1;

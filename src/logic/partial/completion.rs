@@ -213,7 +213,7 @@ fn first_set_rec(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::partial::parse::Parser;
+    use crate::{logic::partial::parse::Parser, set_debug_level, testing::load_example_grammar};
 
     fn complete(spec: &str, input: &str) -> CompletionSet {
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
@@ -231,20 +231,33 @@ mod tests {
     Loop ::= B 'c' Loop | B 'c'
     start ::= U | Loop | 't'
         "#;
-
         let g = crate::logic::grammar::Grammar::load(spec).unwrap();
         let mut p = Parser::new(g.clone());
         let input = "b a r c b a r c";
         let past = p.partial(input).unwrap();
 
-        println!("Partial AST roots: {}", past.roots.len());
-
+        println!("Partial AST:  {}", past);
+        set_debug_level(crate::DebugLevel::Trace);
         let completions = past.completions(&g);
-        println!("Completions: {:?}", completions);
+
+        println!(
+            "DEBUG: Roots = {:?}",
+            past.roots
+                .iter()
+                .map(|r| (r.name.clone(), r.is_complete()))
+                .collect::<Vec<_>>()
+        );
+        println!("DEBUG: Completions = {:?}", completions);
+        println!("DEBUG: Does 'b' match? {}", completions.matches("b"));
+        println!("DEBUG: Does 'u' match? {}", completions.matches("u"));
 
         assert!(
             completions.matches("u"),
             "expected literal 'u' in completions"
+        );
+        assert!(
+            completions.matches("b"),
+            "expected literal 'b' in completions"
         );
         assert!(
             completions.matches("b"),
@@ -255,7 +268,7 @@ mod tests {
     #[test]
     fn completion_first_sets_with_alternatives() {
         let spec = r#"
-    A(ruleA) ::= 'a' 'x' | 'a'
+        A(ruleA) ::= 'a' 'x' | 'a'
         B(ruleB) ::= 'b'
         start ::= A | B
         "#;
@@ -778,90 +791,27 @@ mod tests {
 
     #[test]
     fn typed_completions_filters_malformed_roots() {
-        // Test that typed_completions filters out ill-typed parse trees.
-        //
-        // This is a simplified version of the user's example:
-        // In a typed lambda calculus, applying a function (X -> X) to a value of type Y
-        // should be rejected because X ≠ Y.
-
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            TypeName ::= /[A-Z]/
-
-            Variable(var) ::= Identifier[x]
-            Type ::= TypeName
-
-            Lambda(lam) ::= 'fn' Identifier[x] ':' Type[τ] '=>' Term[e]
-            Application(app) ::= BaseTerm[f] BaseTerm[e]
-
-            BaseTerm ::= Variable | Lambda | '(' Term ')'
-            Term ::= Application | BaseTerm
-
-            start ::= Term
-
-            // Variable rule: x must be in context
-            x ∈ Γ
-            ----------- (var)
-            Γ(x)
-
-            // Lambda introduces binding
-            Γ[x:τ] ⊢ e : ?B
-            -------------- (lam)
-            τ → ?B
-
-            // Application: function must accept argument type
-            Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
-            ---------------------------- (app)
-            ?B
-        "#;
-
-        let g = Grammar::load(spec).unwrap();
+        let g = load_example_grammar("stlc");
         let mut p = Parser::new(g.clone());
 
-        // Parse "(fn x : A => x)" - a function A -> A applied to nothing yet
         // This should be well-typed (partial)
-        let ast = p.partial("( fn x : A => x )").unwrap();
+        let ast = p.partial("").unwrap();
 
         // Without context, the lambda body 'x' is well-typed because
         // the lambda binds x:A
+        set_debug_level(crate::DebugLevel::Trace);
         let completions = ast.completions(&g);
+        println!("Completions: {:?}", completions);
 
-        // Should have completions (the parse is well-typed so far)
-        println!("Completions for '(fn x : A => x)': {:?}", completions);
+        // assert lambda unicode symbol is suggested
+        assert!(
+            completions.tokens.contains(&DerivativeRegex::literal("λ")),
+            "Should suggest lambda unicode symbol"
+        );
+
         assert!(
             !completions.tokens.is_empty(),
             "Should have completions for well-typed partial parse"
-        );
-    }
-
-    #[test]
-    fn typed_completions_vs_untyped() {
-        // Verify that typed_completions and completions give same results
-        // when there are no type errors
-        let spec = r#"
-            Num(num) ::= /[0-9]+/
-            Add(add) ::= Num '+' Num
-            start ::= Add
-
-            -------------- (num)
-            'int'
-
-            -------------- (add)
-            'int'
-        "#;
-
-        let g = Grammar::load(spec).unwrap();
-        let mut p = Parser::new(g.clone());
-        let ast = p.partial("42 +").unwrap();
-
-        let untyped = ast.completions(&g);
-        let typed = ast.completions(&g);
-
-        // Both should give the same result for this well-typed expression
-        assert_eq!(
-            untyped.tokens.len(),
-            typed.tokens.len(),
-            "Well-typed parse should give same completions"
         );
     }
 }

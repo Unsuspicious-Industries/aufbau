@@ -6,8 +6,8 @@ use crate::logic::typing::eval::check_tree;
 use crate::logic::typing::core::TreeStatus;
 
 fn load_grammar() -> Grammar {
-    let spec = include_str!("../../../../examples/xtlc.spec");
-    Grammar::load(spec).expect("Failed to load XTLC grammar")
+    let spec = include_str!("../../../../examples/stlc.spec");
+    Grammar::load(spec).expect("Failed to load STLC grammar")
 }
 
 #[test]

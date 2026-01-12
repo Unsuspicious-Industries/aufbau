@@ -1,6 +1,6 @@
 // Completability Validation Tests
 //
-// Implements the formal framework for completability as defined in docs/challenges.md.
+// Implements a formal framework for completability as defined in docs/challenges.md.
 //
 // A string s is completable in L if there exists s' such that ss' in L.
 // We use a partial parser and typing core to check for completability.
@@ -12,7 +12,9 @@ use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
 use crate::logic::partial::{Node, NonTerminal, Terminal};
 use crate::logic::typing::Context;
+use crate::logic::{BeamConfig, BeamResult, beam_complete};
 use crate::regex::Regex as DerivativeRegex;
+use rayon::prelude::*;
 use std::collections::{HashSet, VecDeque};
 
 /// Extract all identifier tokens from the AST by traversing terminal nodes
@@ -112,12 +114,14 @@ pub struct PrefixSoundnessResult {
     pub prefix_details: Vec<(String, bool)>,
     /// The complete input string that was checked
     pub complete_string: Option<String>,
+    /// Sample of visited states during failed completion
+    pub failing_prefix_visited_states: Option<Vec<String>>,
 }
 
 /// Check sound completion for a given string
 // Check for all the possible prefixes of the string
 // if they are completable
-// Simple implementation
+// Parallelized implementation using rayon (toggle with PARALLELIZE=1)
 pub fn sound_complete(
     grammar: &Grammar,
     input: &str,
@@ -126,44 +130,102 @@ pub fn sound_complete(
     max_states: Option<usize>,
 ) -> PrefixSoundnessResult {
     let chars: Vec<char> = input.chars().collect();
-    let mut prefix_details = Vec::new();
-    let mut failing_prefix = None;
-
+    
     // handle completion without context
     let ctx = match opt_ctx {
         Some(c) => c,
         None => Context::new(),
     };
 
-    let mut complete_string = String::new();
+    // Check if parallelization is enabled via env var (default: false)
+    let use_parallel = std::env::var("PARALLELIZE").is_ok_and(|v| v == "1");
 
+    // Collect prefixes to check (keep order stable)
+    let mut prefixes: Vec<(usize, String)> = Vec::with_capacity(chars.len() + 1);
     for len in 0..=chars.len() {
         let prefix: String = chars[..len].iter().collect();
-
         // Skip whitespace-only prefixes after the first
         if len > 0 && prefix.trim().is_empty() {
             continue;
         }
+        prefixes.push((len, prefix));
+    }
 
-        let result = complete(
-            grammar,
-            &prefix,
-            max_depth + (chars.len() - len),
-            Some(ctx.clone()),
-            max_states,
-        );
-        let is_completable = matches!(result, CompletionResult::Success { .. });
-        if is_completable {
-            complete_string = match result {
-                CompletionResult::Success { complete_input, .. } => complete_input,
-                _ => complete_string,
-            };
-        }
+    // Compute whether each prefix is completable.
+    // Keep this light: don't store full CompletionResult for every prefix.
+    let flags: Vec<bool> = if use_parallel {
+        prefixes
+            .par_iter()
+            .map(|(len, prefix)| {
+                let result = complete(
+                    grammar,
+                    prefix,
+                    max_depth + (chars.len() - *len),
+                    Some(ctx.clone()),
+                    max_states,
+                );
+                matches!(result, CompletionResult::Success { .. })
+            })
+            .collect()
+    } else {
+        prefixes
+            .iter()
+            .map(|(len, prefix)| {
+                let result = complete(
+                    grammar,
+                    prefix,
+                    max_depth + (chars.len() - *len),
+                    Some(ctx.clone()),
+                    max_states,
+                );
+                matches!(result, CompletionResult::Success { .. })
+            })
+            .collect()
+    };
 
+    // Process results sequentially to find first failure and extract complete_string
+    let mut prefix_details = Vec::new();
+    let mut failing_prefix = None;
+    let mut failing_prefix_visited_states = None;
+    let mut complete_string = String::new();
+
+    for ((len, prefix), is_completable) in prefixes.into_iter().zip(flags.into_iter()) {
         prefix_details.push((prefix.clone(), is_completable));
 
+        // Track a representative completed string (best-effort).
+        // We only compute it once (last successful prefix wins).
+        if is_completable {
+            if let CompletionResult::Success { complete_input, .. } = complete(
+                grammar,
+                &prefix,
+                max_depth + (chars.len() - len),
+                Some(ctx.clone()),
+                max_states,
+            ) {
+                complete_string = complete_input;
+            }
+        }
+
+        // Record first failing prefix and gather detailed failure info once.
         if !is_completable && failing_prefix.is_none() {
-            failing_prefix = Some(prefix);
+            failing_prefix = Some(prefix.clone());
+
+            let result = complete(
+                grammar,
+                &prefix,
+                max_depth + (chars.len() - len),
+                Some(ctx.clone()),
+                max_states,
+            );
+
+            match result {
+                CompletionResult::Failure { ref visited_states, .. } => {
+                    if !visited_states.is_empty() {
+                        failing_prefix_visited_states = Some(visited_states.clone());
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -177,6 +239,59 @@ pub fn sound_complete(
         } else {
             Some(complete_string)
         },
+        failing_prefix_visited_states,
+    }
+}
+
+/// Complete with typing context using beam search (faster than BFS)
+pub fn beam_complete_with_context(
+    grammar: &Grammar,
+    input: &str,
+    max_depth: usize,
+    opt_ctx: Option<Context>,
+    max_states: Option<usize>,
+    beam_width: usize,
+) -> CompletionResult {
+    let ctx = match opt_ctx {
+        Some(c) => c,
+        None => Context::new(),
+    };
+
+    // Use beam search with given configuration
+    let beam_config = BeamConfig {
+        beam_width,
+        max_depth,
+        max_states,
+        ..Default::default()
+    };
+
+    match beam_complete(grammar, input, &beam_config, &ctx) {
+        BeamResult::Success {
+            complete_input,
+            ast,
+            completion_path,
+            score: _,
+            depth,
+        } => CompletionResult::Success {
+            complete_input,
+            ast,
+            completion_path,
+            depth,
+        },
+        BeamResult::Exhausted {
+            max_depth: _,
+            states_explored,
+            best_state: _,
+        } => CompletionResult::Failure {
+            max_depth_reached: max_depth,
+            states_explored,
+            visited_states: vec![],
+        },
+        BeamResult::StateOverflow {
+            limit,
+            states_explored: _,
+        } => CompletionResult::StateOverflow(limit),
+        BeamResult::Invalid { message } => CompletionResult::Invalid(message),
     }
 }
 
@@ -204,7 +319,11 @@ pub fn complete(
     let base_tree = match parser.partial_typed(input) {
         Ok(ast) => ast,
         Err(e) => {
-            return CompletionResult::Invalid(format!("Input is not even partially valid: {}", e));
+            let error_msg = format!(
+                "Input is not even partially valid: {}\n  Input: '{}'\n  Error: {}",
+                e, input, e
+            );
+            return CompletionResult::Invalid(error_msg);
         }
     };
 
@@ -296,17 +415,23 @@ pub fn complete(
 }
 
 fn try_extend(tree: &PartialAST, grammar: &Grammar, token: String) -> Result<PartialAST, String> {
-    // add a space as delimiter
-    // TODO improve this weird behavior
-    let new_input = format!("{} {}", tree.input(), token);
+    // Try appending the token directly first
+    let new_input = format!("{}{}", tree.input(), token);
 
     let mut parser = Parser::new(grammar.clone());
     match parser.partial_typed(&new_input) {
         Ok(new_tree) => Ok(new_tree),
-        Err(e) => Err(format!(
-            "Failed to extend tree with token {:?}: {}",
-            token, e
-        )),
+        Err(e) => {
+            // If direct append fails, try with a space delimiter
+            let new_input_with_space = format!("{} {}", tree.input(), token);
+            match parser.partial_typed(&new_input_with_space) {
+                Ok(new_tree) => Ok(new_tree),
+                Err(e2) => Err(format!(
+                    "Failed to extend tree with token {:?}: {} (with space: {})",
+                    token, e, e2
+                )),
+            }
+        }
     }
 }
 

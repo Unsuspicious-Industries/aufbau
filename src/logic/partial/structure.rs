@@ -2,6 +2,8 @@ use crate::logic::grammar::Production;
 use crate::logic::segment::SegmentRange;
 use crate::regex::Regex as DerivativeRegex;
 
+use crate::*;
+
 /// Top-level partial AST result
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PartialAST {
@@ -83,6 +85,12 @@ impl Terminal {
             Terminal::Partial { value, .. } => value.len(),
         }
     }
+    pub fn value(&self) -> &str {
+        match self {
+            Terminal::Complete { value, .. } => value,
+            Terminal::Partial { value, .. } => value,
+        }
+    }
 }
 
 impl NonTerminal {
@@ -105,14 +113,35 @@ impl NonTerminal {
     }
 
     pub fn is_complete(&self) -> bool {
+        // Empty productions (epsilon) are complete by definition
+        if self.production.rhs.is_empty() {
+            return true;
+        }
+
+        // Must have exactly as many children as the RHS expects
         if self.children.len() != self.production.rhs.len() {
             return false;
         }
+
+        // All children must themselves be complete terminals or non-terminals.
+        // (Checking only the last child is unsound: earlier children could still be partial.)
         self.children.iter().all(|child| match child {
             Node::NonTerminal(nt) => nt.is_complete(),
             Node::Terminal(Terminal::Complete { .. }) => true,
             Node::Terminal(Terminal::Partial { .. }) => false,
         })
+    }
+
+    // max parsed len
+    // idx of the partial node
+    pub fn frontier(&self) -> Option<usize> {
+        if self.is_complete() {
+            None
+        } else {
+            // simple but should work
+            // Assuming parser correctness
+            Some(self.children.len())
+        }
     }
 
     pub fn size(&self) -> usize {
@@ -124,6 +153,8 @@ impl NonTerminal {
     }
 
     /// Get the segment range covered by this nonterminal.
+    /// Ugly code
+    /// Might need to be replaced or optimized
     pub fn complete_len(
         &self,
         segments: &[crate::logic::grammar::Segment],
@@ -164,6 +195,95 @@ impl NonTerminal {
             _ => None,
         }
     }
+
+    pub fn is_frontier(&self, index: usize) -> bool {
+        debug_trace!(
+            "partial",
+            "checking frontier for index {} with len {}",
+            index,
+            self.children.len()
+        );
+        if !(index == self.children.len() - 1) {
+            return false;
+        }
+        match self.children.get(index) {
+            Some(child) => match child {
+                Node::Terminal(_) => true,
+                Node::NonTerminal(nt) => {
+                    if nt.children.len() == 0 {
+                        return true;
+                    } else if nt.children.len() == 1 {
+                        return nt.is_frontier(0);
+                    } else {
+                        return false; // Not sure of this one
+                    }
+                }
+            },
+            None => false,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Result<Option<&Node>, String> {
+        if index >= self.production.rhs.len() {
+            return Err("Index out of bounds".to_string());
+        }
+        Ok(self.children.get(index))
+    }
+
+    pub fn get_path(&self, path: &[usize]) -> Option<Node> {
+        if path.is_empty() {
+            return Some(Node::NonTerminal(self.clone()));
+        }
+        self.children
+            .get(path[0])
+            .and_then(|child| child.get_path(&path[1..]))
+    }
+
+    pub fn get_path_as_nt(&self, path: &[usize]) -> Option<&NonTerminal> {
+        if path.is_empty() {
+            return Some(self);
+        }
+        self.children
+            .get(path[0])
+            .and_then(|child| child.get_path_as_nt(&path[1..]))
+    }
+
+    pub fn is_path_nt(&self, path: &[usize]) -> bool {
+        self.get_path_as_nt(path).is_some()
+    }
+
+    pub fn path_exists(&self, path: &[usize]) -> bool {
+        if path.is_empty() {
+            return true;
+        }
+        self.children
+            .get(path[0])
+            .and_then(|child| Some(child.path_exists(&path[1..])))
+            .unwrap_or(false)
+    }
+
+    pub fn text(&self) -> Option<String> {
+        // Beware this returns some String
+        // Only if all strings are some
+        // weird rustycity
+        self.children.iter().map(|child| child.text()).collect()
+    }
+
+    pub fn node_text_path(&self, path: &[usize]) -> Option<String> {
+        if path.is_empty() {
+            return self.text();
+        }
+        self.children.get(path[0]).and_then(|child| match child {
+            Node::NonTerminal(nt) => nt.node_text_path(&path[1..]),
+            Node::Terminal(t) => {
+                if path.len() == 1 {
+                    Some(t.value().to_string())
+                } else {
+                    None
+                }
+            }
+        })
+    }
 }
 
 impl PartialOrd for NonTerminal {
@@ -198,6 +318,42 @@ impl Node {
             Node::NonTerminal(nt) => nt.size(),
             Node::Terminal(Terminal::Complete { .. }) => 1,
             Node::Terminal(Terminal::Partial { .. }) => 1,
+        }
+    }
+
+    pub fn get_path(&self, path: &[usize]) -> Option<Node> {
+        if path.is_empty() {
+            return Some(self.clone());
+        }
+
+        match self {
+            Node::NonTerminal(nt) => nt.get_path(path),
+            Node::Terminal(_) => None,
+        }
+    }
+
+    pub fn get_path_as_nt(&self, path: &[usize]) -> Option<&NonTerminal> {
+        match self {
+            Node::NonTerminal(nt) => nt.get_path_as_nt(path),
+            Node::Terminal(_) => None,
+        }
+    }
+
+    pub fn path_exists(&self, path: &[usize]) -> bool {
+        if path.is_empty() {
+            return true;
+        }
+        match self {
+            Node::NonTerminal(nt) => nt.path_exists(path),
+            Node::Terminal(_) => false,
+        }
+    }
+
+    pub fn text(&self) -> Option<String> {
+        match self {
+            Node::NonTerminal(nt) => nt.text(),
+            Node::Terminal(Terminal::Complete { value, .. }) => Some(value.clone()),
+            Node::Terminal(Terminal::Partial { value, .. }) => Some(value.clone()),
         }
     }
 }

@@ -32,15 +32,15 @@ def main():
             logits = outputs.logits[0, -1, :].tolist()
         return logits
     
-    print("Creating sampler with XTLC grammar...")
+    print("Creating sampler with stlc grammar...")
     sampler = p7.TypedSampler(
-        grammar=p7.GRAMMARS["clike"],
+        grammar=p7.GRAMMARS["stlc"]["spec"],
         vocab=vocab,
         logit_fn=get_logits
     )
     
-    prompt = "Write a c function that does basic addition:"
-    initial_code = "int add"
+    prompt = "Complete this simply typed lambda calculus expression the shortest way:\n"
+    initial_code = "λf:(A->B).λx:A."
     
     print(f"\nPrompt: '{prompt}'")
     print(f"Initial: '{initial_code}'")
@@ -53,7 +53,7 @@ def main():
     unconstrained_text = sampler.current_text()
     
     print("\n--- Generating (constrainted to well-typed) ---")
-    max_tokens = 20
+    max_tokens = 15
     pre_top_k = 100
     greedy_k = 1
     

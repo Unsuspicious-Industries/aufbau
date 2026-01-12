@@ -1,164 +1,101 @@
 """Built-in grammars with typing rules (context-dependant generation)."""
 
-from typing import Dict, List
+from typing import Any, Dict, List
+from pathlib import Path
 
-GRAMMARS: Dict[str, str] = {
+# Helper function to load grammar specs from examples directory
+def _load_spec(name: str) -> str:
+    """Load a grammar spec from the examples directory."""
+    # Find the examples directory relative to the package root
+    package_dir = Path(__file__).parent.parent
+    spec_path = package_dir.parent / "examples" / f"{name}.spec"
     
-    # Simply Typed Lambda Calculus
-    "xtlc": """
-    Identifier ::= /[A-Za-z_][A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]*/
-    Variable(var) ::= Identifier[x]
-    TypeName ::= Identifier
-    BaseType ::= TypeName | '(' Type ')'
-    Type ::= BaseType[τ₁] '->' Type[τ₂] | BaseType[τ]
-
-    Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
-    Let(let) ::= '{' Identifier[x] ':' Type[τ] '}'
-
-    BaseTerm ::= Variable | Lambda | '(' Term ')' 
-    Application(app) ::= BaseTerm[f] BaseTerm[e]
-
-    Term ::=  Application[e] | BaseTerm[e] 
-    Expr ::= Term | Let
-
-    Program ::= Expr ProgramTail
-    ProgramTail ::= ε | Expr ProgramTail
-
-    x ∈ Γ
-    ----------- (var)
-    Γ(x)
-
-    Γ[x:τ] ⊢ e : ?B
-    --------------------------- (lambda)
-    τ → ?B
-
-    Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
-    -------------------------------- (app)
-    ?B
-
-    -------------------------------- (let)
-    Γ -> Γ[x:τ] ⊢ τ
-    """,
+    if not spec_path.exists():
+        raise FileNotFoundError(f"Grammar spec not found: {spec_path}")
     
-    # C-like with type checking
-    "clike": """
-        Identifier ::= /[a-zA-Z_][a-zA-Z0-9_]*/
-        Number(int_lit) ::= /[0-9]+/
-        String ::= '"' /[^"]*/ '"'
-        
-        Variable(var) ::= Identifier[x]
-        
-        PrimitiveType ::= 'int' | 'float' | 'char' | 'bool' | 'void'
-        Type ::= PrimitiveType | '(' Type ')'
-        
-        Literal ::= Number | String | 'true' | 'false'
-        ArOp ::= '+' | '-' | '*' | '/'
-        BoolOp ::= '==' | '!=' | '<' | '>'
-        
-        Primary ::= Literal | Variable | '(' Expr ')'
-        ArOpExpr(ar_op) ::= Primary[left] ArOp[op] Expr[right]
-        BoolOpExpr(bool_op) ::= Primary[left] BoolOp[op] Expr[right]
-        Expr ::= ArOpExpr | BoolOpExpr | Primary
-        
-        VarDecl(vardecl) ::= Type[type] Variable[var] '=' Expr[init] ';'
-        Assignment(assign) ::= Variable[target] '=' Expr[value] ';'
-        IfStmt(if_stmt) ::= 'if' '(' Expr[cond] ')' '{' Stmt '}' 
-        WhileStmt(while_stmt) ::= 'while' '(' Expr[cond] ')' '{' Stmt '}'
-        ReturnStmt(return_stmt) ::= 'return' Expr[ret] ';'
-        
-        Stmt ::= VarDecl | Assignment | IfStmt | WhileStmt | ReturnStmt
-        start ::= Stmt
-        
-        -------------- (int_lit)
-        'int'
-        
-        x ∈ Γ
-        ----------- (var)
-        Γ(x)
-        
-        Γ ⊢ left : ?T, Γ ⊢ right : ?T
-        ----------- (ar_op)
-        ?T
-        
-        Γ ⊢ left : ?T, Γ ⊢ right : ?T
-        ----------- (bool_op)
-        'bool'
-        
-        Γ ⊢ init : type
-        ------------------- (vardecl)
-        Γ -> Γ[var:type] ⊢ 'void'
-        
-        Γ ⊢ target : ?T, Γ ⊢ value : ?T
-        ---------------- (assign)
-        'void'
-        
-        Γ ⊢ cond : 'bool'
-        ---------------- (if_stmt)
-        'void'
-        
-        Γ ⊢ cond : 'bool'
-        ---------------- (while_stmt)
-        'void'
-        
-        Γ ⊢ ret : ?T
-        -------------- (return_stmt)
-        'void'
-    """,
-    
-    # Typed arithmatic
-    "typed_arithmetic": """
-        IntLit(int_lit) ::= /[0-9]+/
-        FloatLit(float_lit) ::= /[0-9]+\\.[0-9]+/
-        
-        Variable(var) ::= /[a-z][a-z0-9]*/[x]
-        
-        ArithOp ::= '+' | '-' | '*' | '/'
-        CompOp ::= '<' | '>' | '==' | '!='
-        
-        Atom ::= IntLit | FloatLit | Variable | '(' Expr ')'
-        ArithExpr(arith) ::= Atom[left] ArithOp[op] Atom[right]
-        CompExpr(comp) ::= Atom[left] CompOp[op] Atom[right]
-        
-        Expr ::= ArithExpr | CompExpr | Atom
-        
-        LetExpr(let_expr) ::= 'let' Variable[x] ':' Type[τ] '=' Expr[e] 'in' Expr[body]
-        
-        Type ::= 'Int' | 'Float' | 'Bool'
-        
-        Program ::= Expr | LetExpr
-        start ::= Program
-        
-        -------------- (int_lit)
-        'Int'
-        
-        -------------- (float_lit)
-        'Float'
-        
-        x ∈ Γ
-        ----------- (var)
-        Γ(x)
-        
-        Γ ⊢ left : ?T, Γ ⊢ right : ?T
-        ----------- (arith)
-        ?T
-        
-        Γ ⊢ left : ?T, Γ ⊢ right : ?T
-        ----------- (comp)
-        'Bool'
-        
-        Γ ⊢ e : τ, Γ[x:τ] ⊢ body : ?R
-        --------------------------- (let_expr)
-        ?R
-    """,
+    return spec_path.read_text()
+
+# Unified grammar information: spec content + metadata for prompts
+GRAMMARS: Dict[str, Dict[str, Any]] = {
+    "stlc": {
+        "spec": _load_spec("stlc"),
+        "name": "Simply Typed Lambda Calculus",
+        "short": "typed lambda calculus",
+        "description": "Simply typed lambda calculus with type inference",
+        "syntax_hints": [
+            "λx:T.e - lambda abstraction (function taking x of type T)",
+            "{x:T} - declare variable x of type T in scope",
+            "(f e) - function application",
+            "Types: base types (Int, Bool) or function types (Int->Bool)",
+        ],
+        "examples": [
+            ("identity", "λx:Int.x"),
+            ("const K", "λx:Int.λy:Bool.x"),
+            ("apply", "λf:(Int->Bool).λx:Int.(f x)"),
+        ],
+    },
+    "imp": {
+        "spec": _load_spec("imp"),
+        "name": "IMP",
+        "short": "imperative programs",
+        "description": "Simple imperative programming language",
+        "syntax_hints": [
+            "x := e - assignment",
+            "skip - no-op",
+            "s1; s2 - sequence",
+            "if b then s1 else s2 - conditional",
+            "while b do s - loop",
+        ],
+        "examples": [
+            ("assignment", "x := 5"),
+            ("sequence", "x := 1; y := 2"),
+            ("loop", "while x < 10 do x := x + 1"),
+        ],
+    },
+    "clike": {
+        "spec": _load_spec("clike"),
+        "name": "C-like",
+        "short": "C-like code",
+        "description": "C-like programming language with types",
+        "syntax_hints": [
+            "int x; - variable declaration",
+            "x = e; - assignment",
+            "if (cond) { ... } else { ... } - conditional",
+            "while (cond) { ... } - loop",
+            "return e; - return statement",
+        ],
+        "examples": [
+            ("declaration", "int x;"),
+            ("assignment", "x = 42;"),
+            ("function", "int add(int a, int b) { return a + b; }"),
+        ],
+    },
 }
 
 
 def list_grammars() -> List[str]:
+    """List all available grammar names."""
     return list(GRAMMARS.keys())
 
 
 def get_grammar(name: str) -> str:
+    """Get the spec content for a grammar."""
     if name not in GRAMMARS:
         available = ", ".join(GRAMMARS.keys())
         raise ValueError(f"Unknown grammar '{name}'. Available: {available}")
-    return GRAMMARS[name]
+    return GRAMMARS[name]["spec"]
+
+
+def get_grammar_info(grammar_name: str) -> Dict[str, Any]:
+    """Get info about a grammar, with fallback for unknown grammars."""
+    if grammar_name in GRAMMARS:
+        return GRAMMARS[grammar_name]
+    # Fallback for unknown grammars
+    return {
+        "spec": "",
+        "name": grammar_name,
+        "short": f"{grammar_name} expressions",
+        "description": f"Grammar: {grammar_name}",
+        "syntax_hints": [],
+        "examples": [],
+    }

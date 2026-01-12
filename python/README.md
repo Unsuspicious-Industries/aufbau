@@ -101,15 +101,13 @@ All built-in grammars include **typing rules** - this is what distinguishes P7 f
 import p7_constrained as p7
 
 # List available typed grammars
-print(p7.list_grammars())  # ['stlc', 'xtlc', 'clike', 'typed_arithmetic']
+print(p7.list_grammars())  # ['clike', 'typed_arithmetic']
 
 # Use a typed grammar
-gen = p7.Generator("gpt2", grammar=p7.GRAMMARS["stlc"])
-result = gen("λ")  # Generates well-typed lambda terms!
+gen = p7.Generator("gpt2", grammar=p7.GRAMMARS["clike"])
+result = gen("int ")  # Generates well-typed C-like code!
 
 # Available grammars:
-# - stlc: Simply Typed Lambda Calculus
-# - xtlc: Extended STLC with let bindings  
 # - clike: C-like language with type checking
 # - typed_arithmetic: Arithmetic with Int/Float types
 ```

@@ -2,13 +2,13 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
-use super::structure::{Node, NonTerminal, PartialAST, Terminal};
-use crate::debug_trace;
 use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
 use crate::logic::typing::Type;
-use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::eval::check_tree_with_context;
+use crate::logic::typing::core::{Context, TreePath, TreeRef, TreeStatus};
+use crate::logic::typing::eval::{check_node, check_tree_with_context};
+use std::collections::HashMap;
 
 // ============================================================================
 // Types
@@ -35,7 +35,7 @@ pub struct TypedAST {
 }
 
 // ============================================================================
-// TypedNode
+// TypedNode - Efficient construction using type cache
 // ============================================================================
 
 impl TypedNode {
@@ -52,8 +52,13 @@ impl TypedNode {
         }
     }
 
-    /// Build typed node from partial node, using eval::check_tree for types
-    fn from_node(node: &Node, g: &Grammar, ctx: &Context) -> Option<Self> {
+    /// Build typed node from partial node using pre-computed type cache
+    fn from_node_with_cache(
+        root: &NonTerminal,
+        path: &TreePath,
+        node: &Node,
+        type_cache: &HashMap<TreePath, Type>,
+    ) -> Option<Self> {
         match node {
             Node::Terminal(t) => {
                 let val = match t {
@@ -61,30 +66,38 @@ impl TypedNode {
                         value.clone()
                     }
                 };
-                Some(Self::Term {
-                    val,
-                    ty: Type::Universe,
-                })
+                // For terminals, use cached type if available, otherwise Any
+                let ty = type_cache.get(path).cloned().unwrap_or(Type::Any);
+                Some(Self::Term { val, ty })
             }
-            Node::NonTerminal(nt) => Self::from_nt(nt, g, ctx),
+            Node::NonTerminal(nt) => Self::from_nt_with_cache(root, path, nt, type_cache),
         }
     }
 
-    fn from_nt(nt: &NonTerminal, g: &Grammar, ctx: &Context) -> Option<Self> {
-        let status = check_tree_with_context(nt, g, ctx);
-        if matches!(status, TreeStatus::Malformed) {
-            return None;
-        } else if matches!(status, TreeStatus::TooDeep) {
-            debug_trace!("typing", "Recursion error in checking {}", nt.name);
-            return None;
+    fn from_nt_with_cache(
+        root: &NonTerminal,
+        path: &TreePath,
+        nt: &NonTerminal,
+        type_cache: &HashMap<TreePath, Type>,
+    ) -> Option<Self> {
+        // Get type from cache - if not found, use Any as fallback
+        let ty = type_cache.get(path).cloned().unwrap_or(Type::Any);
+
+        // Build children by traversing non-terminal children and looking up their types
+        let mut children = Vec::new();
+        for (i, child) in nt.children.iter().enumerate() {
+            if matches!(child, Node::NonTerminal(_)) {
+                let mut child_path = path.clone();
+                child_path.push(i);
+
+                if let Some(child_node) =
+                    Self::from_node_with_cache(root, &child_path, child, type_cache)
+                {
+                    children.push(child_node);
+                }
+            }
         }
-        let ty = status.ty().cloned().unwrap_or(Type::Universe);
-        let children = nt
-            .children
-            .iter()
-            .filter(|c| matches!(c, Node::NonTerminal(_)))
-            .filter_map(|c| Self::from_node(c, g, ctx))
-            .collect();
+
         // Use the original AST's completeness
         let complete = nt.is_complete();
         Some(Self::Expr {
@@ -123,11 +136,11 @@ impl TypedAST {
 }
 
 // ============================================================================
-// PartialAST → TypedAST (composition)
+// PartialAST → TypedAST (composition) - Efficient version
 // ============================================================================
 
 impl PartialAST {
-    /// Type-check and transform to TypedAST, filtering malformed trees
+    /// Type-check and transform to TypedAST using efficient type cache
     pub fn typed(&self, g: &Grammar) -> Result<TypedAST, String> {
         self.typed_ctx(g, &Context::new())
     }
@@ -136,8 +149,23 @@ impl PartialAST {
         let roots: Vec<_> = self
             .roots
             .iter()
-            .filter_map(|r| TypedNode::from_nt(r, g, ctx))
+            .filter_map(|r| {
+                // First check the tree and build type cache
+                let mut type_cache = HashMap::new();
+                let tref = TreeRef::new(r, vec![]);
+                let status = check_node(&tref, g, ctx, 0, &mut type_cache);
+
+                // Only proceed if tree is well-typed
+                if matches!(status, TreeStatus::Malformed | TreeStatus::TooDeep) {
+                    None
+                } else {
+                    // Build typed node using the cache
+
+                    TypedNode::from_nt_with_cache(r, &vec![], r, &type_cache)
+                }
+            })
             .collect();
+
         if roots.is_empty() {
             Err("No well-typed trees".into())
         } else {
@@ -183,8 +211,17 @@ impl PartialAST {
 }
 
 impl NonTerminal {
+    /// Efficient typed tree construction using type cache
     pub fn typed(&self, g: &Grammar) -> Option<TypedNode> {
-        TypedNode::from_nt(self, g, &Context::new())
+        let mut type_cache = HashMap::new();
+        let tref = TreeRef::new(self, vec![]);
+        let status = check_node(&tref, g, &Context::new(), 0, &mut type_cache);
+
+        if matches!(status, TreeStatus::Malformed | TreeStatus::TooDeep) {
+            None
+        } else {
+            TypedNode::from_nt_with_cache(self, &vec![], self, &type_cache)
+        }
     }
 }
 
@@ -195,11 +232,58 @@ impl Parser {
     }
 }
 
+// ============================================================================
+// TypedAST Display (IDE-style type annotations)
+// ============================================================================
+
+use std::fmt;
+use std::fmt::Display;
+
+impl TypedNode {
+    fn fmt_tree(&self, f: &mut fmt::Formatter<'_>, prefix: &str, is_last: bool) -> fmt::Result {
+        use crate::logic::typing::Type;
+        let branch = if is_last { "└─ " } else { "├─ " };
+        let ty_str = match self.ty() {
+            Type::Any => String::new(),
+            t => format!(" : {}", t),
+        };
+        match self {
+            Self::Term { val, .. } => writeln!(f, "{}{}{}{}", prefix, branch, val, ty_str),
+            Self::Expr { name, children, .. } => {
+                writeln!(f, "{}{}{}{}", prefix, branch, name, ty_str)?;
+                let child_prefix = format!("{}{}", prefix, if is_last { "   " } else { "│  " });
+                for (i, child) in children.iter().enumerate() {
+                    child.fmt_tree(f, &child_prefix, i == children.len() - 1)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl Display for TypedNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.fmt_tree(f, "", true)
+    }
+}
+
+impl Display for TypedAST {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Input: \"{}\"", self.input)?;
+        for (i, root) in self.roots.iter().enumerate() {
+            writeln!(f, "\nTree {}:", i)?;
+            write!(f, "{}", root)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::logic::grammar::Grammar;
     use crate::logic::partial::parse::Parser;
+    use crate::set_debug_level;
 
     fn parse(spec: &str, input: &str) -> (PartialAST, Grammar) {
         let g = Grammar::load(spec).unwrap();
@@ -213,19 +297,35 @@ mod tests {
 
     #[test]
     fn test_typed_basic() {
-        let spec = "Num(n) ::= /[0-9]+/\nstart ::= Num\n-------------- (n)\n'int'";
+        let spec = "
+Num(n) ::= /[0-9]+/
+start ::= Num
+
+-------------- (n)
+'int'
+";
         let (ast, g) = parse(spec, "42");
         let typed = ast.typed(&g).unwrap();
         assert!(!typed.is_empty());
         assert!(typed.first().is_some());
+        println!("typed: {}", typed);
     }
 
     #[test]
     fn test_typed_complete_composition() {
-        let spec = "Var(v) ::= /[a-z]+/\nstart ::= Var\nx ∈ Γ\n-------------- (v)\nΓ(x)";
+        let spec = "
+            Var(v) ::= /[a-z]+/[x]
+            start ::= Var
+
+            x ∈ Γ
+            -------------- (v)
+            Γ(x)
+            ";
         let (ast, g) = parse(spec, "x");
-        let ctx = Context::new().extend("x".into(), Type::Atom("Int".into()));
+        let ctx = Context::new().extend("x".into(), Type::Raw("Int".into())).unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
+        let typed = ast.typed_complete_ctx(&g, &ctx).unwrap();
+        println!("typed: {}", typed);
     }
 
     #[test]
@@ -241,12 +341,21 @@ mod tests {
 
     #[test]
     fn test_variable_requires_context() {
+        set_debug_level(crate::DebugLevel::Trace);
         // Variable rule requires x ∈ Γ - should fail without context
-        let spec = "Var(v) ::= /[a-z]+/\nstart ::= Var\nx ∈ Γ\n-------------- (v)\nΓ(x)";
+        let spec = "
+            Var(v) ::= /[a-z]+/[e]
+            start ::= Var
+
+            e ∈ Γ
+            -------------- (v)
+            Γ(e)";
         let (ast, g) = parse(spec, "x");
         // typed_complete with context should work
-        let ctx = Context::new().extend("x".into(), Type::Atom("Int".into()));
+        let ctx = Context::new().extend("x".into(), Type::Atom("Int".into())).unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
+        let typed = ast.typed_complete_ctx(&g, &ctx).unwrap();
+        println!("typed: {}", typed);
     }
 
     #[test]
@@ -331,7 +440,7 @@ mod tests {
 
         // Variable with context should work
         let ast = p.partial("y").unwrap();
-        let ctx = Context::new().extend("y".into(), Type::Atom("Int".into()));
+        let ctx = Context::new().extend("y".into(), Type::Atom("Int".into())).unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
         println!(
             "Typed AST with context: {}",

@@ -125,7 +125,7 @@ conclusion
 | Extension | `Γ[x:τ] ⊢ e : σ` | Check `e : σ` with `x:τ` added to `Γ` |
 
 **Premise extensions are local**: `Γ[x:τ]` in a premise only affects that premise's scope.
-
+**Context Obstruction**: Only one occurence of each variable is allowed in context. If you try to add `x:τ` when `x` is already in `Γ`, it results in an error.
 ```
 Γ[x:τ₁] ⊢ e : τ₂      // x:τ₁ visible only when checking e
 ----------------------- (abs)
@@ -180,7 +180,6 @@ Rules with empty premises:
 | Type | Syntax | Description |
 |------|--------|-------------|
 | Function | `τ₁ → τ₂` or `τ₁ -> τ₂` | Function type (right-associative) |
-| Tuple | `(τ...)` | Tuple meta-type |
 | Negation | `¬τ` or `!τ` | Complement type |
 | Context Call | `Γ(x)` | Type lookup |
 
