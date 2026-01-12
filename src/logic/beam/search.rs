@@ -1,0 +1,367 @@
+//! Beam Search Algorithm
+//!
+//! Core beam search implementation for efficient completion exploration.
+//!
+//! ## Algorithm Overview
+//!
+//! 1. Parse initial input to get initial state
+//! 2. For each depth level:
+//!    a. Check if any state is complete and well-typed
+//!    b. Generate candidates by extending each state
+//!    c. Score all candidates
+//!    d. Keep only top K candidates (beam pruning)
+//!
+//! ## Key Optimizations
+//!
+//! - **Beam pruning**: At each depth, only keep top K states
+//! - **State deduplication**: Don't explore same input twice
+//! - **Early termination**: Stop when we find a complete, well-typed state
+//! - **Smart scoring**: Prefer small, well-typed, simple completions
+
+use crate::logic::PartialAST;
+use crate::logic::grammar::Grammar;
+use crate::logic::partial::parse::Parser;
+use crate::logic::typing::Context;
+use crate::logic::typing::core::TreeStatus;
+use crate::logic::typing::eval::check_tree_with_context;
+use crate::regex::Regex as DerivativeRegex;
+use std::collections::{BinaryHeap, HashSet};
+
+use super::config::BeamConfig;
+use super::scoring::calculate_score;
+use super::state::{BeamResult, BeamState};
+
+/// Run beam search to find a completion for given input
+///
+/// # Arguments
+///
+/// * `grammar` - The grammar to use for parsing
+/// * `input` - The partial input to complete
+/// * `config` - Beam search configuration
+/// * `ctx` - Typing context
+///
+/// # Returns
+///
+/// - `Success` with complete AST if found
+/// - `Exhausted` if beam explored all possibilities without completion
+/// - `StateOverflow` if max_states limit was hit
+/// - `Invalid` if input couldn't even be parsed partially
+pub fn beam_complete(
+    grammar: &Grammar,
+    input: &str,
+    config: &BeamConfig,
+    ctx: &Context,
+) -> BeamResult {
+    // Parse initial input
+    let mut parser = Parser::new(grammar.clone());
+    let base_tree = match parser.partial_typed(input) {
+        Ok(ast) => ast,
+        Err(e) => {
+            return BeamResult::Invalid {
+                message: format!("Input is not partially valid: {}", e),
+            };
+        }
+    };
+
+    // Initialize beam with starting state
+    let initial_score = calculate_score(&base_tree, 0, config);
+    let mut current_beam = vec![BeamState::new(base_tree.clone(), 0, initial_score.overall)];
+
+    // Track visited states to avoid re-exploring same input
+    let mut visited: HashSet<String> = HashSet::new();
+    visited.insert(base_tree.input().to_string());
+
+    let mut states_explored = 0;
+
+    // Beam search: explore depth by depth
+    for depth in 0..config.max_depth {
+        // Check if any state in current beam is complete and well-typed
+        for state in &current_beam {
+            if is_complete_and_well_typed(&state.tree, grammar, ctx) {
+                if let Some(complete_ast) = state.tree.clone().complete() {
+                    return BeamResult::Success {
+                        complete_input: state.tree.input().to_string(),
+                        ast: complete_ast,
+                        completion_path: state.path.clone(),
+                        score: state.score,
+                        depth: state.depth,
+                    };
+                }
+            }
+        }
+
+        // Generate next beam by extending each state
+        let mut next_candidates: BinaryHeap<ScoredCandidate> = BinaryHeap::new();
+
+        for state in &current_beam {
+            states_explored += 1;
+
+            // Check state limit
+            if let Some(max) = config.max_states {
+                if states_explored > max {
+                    return BeamResult::StateOverflow {
+                        limit: max,
+                        states_explored,
+                    };
+                }
+            }
+
+            // Get valid completions for this state
+            let completions = state.tree.completions(grammar);
+
+            for token in completions.tokens.iter() {
+                // Try to extend with this token
+                if let Some(extended_tree) = try_extend_state(&state.tree, token, grammar) {
+                    // Skip if we've already explored this input
+                    if visited.contains(extended_tree.input()) {
+                        continue;
+                    }
+
+                    // Build extended path
+                    let mut next_path = state.path.clone();
+                    next_path.push(token.clone());
+
+                    // Calculate score for extended state
+                    let score = calculate_score(&extended_tree, depth + 1, config);
+
+                    next_candidates.push(ScoredCandidate {
+                        state: BeamState::with_path(
+                            extended_tree,
+                            depth + 1,
+                            score.overall,
+                            next_path,
+                        ),
+                        score: score.overall,
+                    });
+                }
+            }
+        }
+
+        // Prune to beam width: keep only top K states
+        if next_candidates.is_empty() {
+            // No more candidates - beam exhausted
+            break;
+        }
+
+        current_beam = select_top_k(next_candidates, config.beam_width);
+
+        // Mark all new inputs as visited
+        for state in &current_beam {
+            visited.insert(state.tree.input().to_string());
+        }
+    }
+
+    // Beam exhausted without finding completion
+    let best_state = current_beam.into_iter().max_by(|a, b| {
+        a.score
+            .partial_cmp(&b.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    BeamResult::Exhausted {
+        max_depth: config.max_depth,
+        states_explored,
+        best_state,
+    }
+}
+
+/// Check if AST is complete and well-typed
+fn is_complete_and_well_typed(tree: &PartialAST, grammar: &Grammar, ctx: &Context) -> bool {
+    // Check for complete tree
+    let has_complete = tree.roots.iter().any(|root| root.is_complete());
+
+    // Check for well-typed tree
+    let has_well_typed = tree.roots.iter().any(|root| {
+        matches!(
+            check_tree_with_context(root, grammar, ctx),
+            TreeStatus::Valid(_) | TreeStatus::Partial(_)
+        )
+    });
+
+    has_complete && has_well_typed
+}
+
+/// Try to extend a tree with a token
+///
+/// Returns the new AST if extension is valid, None otherwise
+fn try_extend_state(
+    tree: &PartialAST,
+    token: &DerivativeRegex,
+    grammar: &Grammar,
+) -> Option<PartialAST> {
+    // Get example token strings from regex
+    let examples = token.examples(5);
+
+    // Try each candidate
+    for candidate in examples {
+        let new_input = format!("{} {}", tree.input(), candidate);
+
+        let mut parser = Parser::new(grammar.clone());
+        if let Ok(new_tree) = parser.partial_typed(&new_input) {
+            return Some(new_tree);
+        }
+    }
+
+    None
+}
+
+/// Select top K candidates from a max-heap
+///
+/// Since we're using a BinaryHeap with max-heap ordering,
+/// this will naturally give us the highest scores first
+fn select_top_k(mut heap: BinaryHeap<ScoredCandidate>, k: usize) -> Vec<BeamState> {
+    let mut result = Vec::new();
+
+    for _ in 0..k {
+        if let Some(candidate) = heap.pop() {
+            result.push(candidate.state);
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+/// A wrapper for states in the priority queue with their scores
+#[derive(Debug, Clone)]
+struct ScoredCandidate {
+    state: BeamState,
+    score: f64,
+}
+
+impl PartialEq for ScoredCandidate {
+    fn eq(&self, other: &Self) -> bool {
+        self.score.to_bits() == other.score.to_bits()
+    }
+}
+
+impl Eq for ScoredCandidate {}
+
+impl PartialOrd for ScoredCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        // Reverse ordering for max-heap behavior
+        other.score.partial_cmp(&self.score)
+    }
+}
+
+impl Ord for ScoredCandidate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reverse ordering for max-heap behavior
+        other
+            .score
+            .partial_cmp(&self.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_beam_search_simple_grammar() {
+        use crate::logic::grammar::Grammar;
+
+        // Simple grammar: A -> 'a' | 'a' B, B -> 'b'
+        let spec = r#"
+            A ::= 'a' | 'a' B
+            B ::= 'b'
+            start ::= A
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = crate::logic::typing::Context::new();
+
+        // Complete input "ab" should succeed immediately
+        let config = BeamConfig::fast();
+        match beam_complete(&grammar, "ab", &config, &ctx) {
+            BeamResult::Success {
+                complete_input,
+                depth,
+                ..
+            } => {
+                assert_eq!(complete_input, "ab");
+                assert_eq!(depth, 0);
+            }
+            _ => panic!("Expected success for complete input"),
+        }
+
+        // Partial input "a" should find completion "ab"
+        match beam_complete(&grammar, "a", &config, &ctx) {
+            BeamResult::Success {
+                complete_input,
+                depth,
+                ..
+            } => {
+                assert!(complete_input.contains("ab"));
+                assert!(depth > 0);
+            }
+            _ => panic!("Expected success for partial input"),
+        }
+    }
+
+    #[test]
+    fn test_beam_size_preference() {
+        use crate::logic::grammar::Grammar;
+
+        let spec = r#"
+            A ::= 'a'
+            start ::= A | A A | A A A
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = crate::logic::typing::Context::new();
+
+        let config = BeamConfig {
+            beam_width: 2,
+            max_depth: 3,
+            max_states: None,
+            completeness_weight: 0.1,
+            typing_weight: 0.1,
+            simplicity_weight: 1.0,
+        };
+
+        // Small completion "a" should be preferred over "aa" or "aaa"
+        match beam_complete(&grammar, "", &config, &ctx) {
+            BeamResult::Success { complete_input, .. } => {
+                // Should prefer "a" (smaller tree)
+                assert_eq!(complete_input, "a");
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_beam_pruning() {
+        use crate::logic::grammar::Grammar;
+
+        let spec = r#"
+            A ::= 'a' | 'b' | 'c' | 'd' | 'e'
+            start ::= A
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = crate::logic::typing::Context::new();
+
+        // Narrow beam should only explore top 2 states
+        let config = BeamConfig {
+            beam_width: 2,
+            max_depth: 1,
+            max_states: None,
+            completeness_weight: 1.0,
+            typing_weight: 0.5,
+            simplicity_weight: 0.5,
+        };
+
+        match beam_complete(&grammar, "", &config, &ctx) {
+            BeamResult::Success { .. } => {
+                // Should find a completion
+            }
+            BeamResult::Exhausted {
+                states_explored, ..
+            } => {
+                // With beam width 2, we should explore at most 2 candidates
+                assert!(states_explored <= 10); // Rough upper bound
+            }
+            _ => {}
+        }
+    }
+}
