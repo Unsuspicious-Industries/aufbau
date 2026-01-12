@@ -22,6 +22,7 @@ pub mod config;
 pub mod scoring;
 pub mod search;
 pub mod state;
+pub mod test;
 
 pub use config::BeamConfig;
 pub use search::beam_complete;

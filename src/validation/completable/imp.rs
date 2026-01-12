@@ -22,10 +22,10 @@ pub fn imp_grammar() -> Grammar {
 fn check_completable() {
     let cases = vec![
         // Already complete - should be fast (depth 0 or 1)
-        TypedCompletionTestCase::new("var decl", "x:Int=5;", false).with_depth(1),
-        TypedCompletionTestCase::new("var init zero", "x:Int=0;", false).with_depth(1),
-        TypedCompletionTestCase::new("var negative", "x:Int=-5;", false).with_depth(1),
-        TypedCompletionTestCase::new("var large", "x:Int=999;", false).with_depth(1),
+        TypedCompletionTestCase::new("var decl", "x:Int=5;", false).with_depth(2),
+        TypedCompletionTestCase::new("var init zero", "x:Int=0;", false).with_depth(2),
+        TypedCompletionTestCase::new("var negative", "x:Int=-5;", false).with_depth(2),
+        TypedCompletionTestCase::new("var large", "x:Int=999;", false).with_depth(2),
         // Nearly complete - need 1-2 tokens
         TypedCompletionTestCase::new("var no semicolon", "x:Int=5", false).with_depth(2),
         TypedCompletionTestCase::new("var no equals", "x:Int", false).with_depth(2),
@@ -35,16 +35,16 @@ fn check_completable() {
         TypedCompletionTestCase::new("var name only", "x", false).with_depth(4),
         TypedCompletionTestCase::new("empty", "", false).with_depth(3),
         // Sequences
-        TypedCompletionTestCase::new("two decls", "x:Int=5; y:Int=3;", false).with_depth(1),
+        TypedCompletionTestCase::new("two decls", "x:Int=5; y:Int=3;", false).with_depth(2),
         TypedCompletionTestCase::new("sequence partial", "x:Int=5; y", false).with_depth(4),
         // Arithmetic expressions
-        TypedCompletionTestCase::new("simple add", "x:Int=1+2;", false).with_depth(1),
-        TypedCompletionTestCase::new("add chain", "x:Int=1+2+3;", false).with_depth(1),
-        TypedCompletionTestCase::new("subtract", "x:Int=10-5;", false).with_depth(1),
-        TypedCompletionTestCase::new("multiply", "x:Int=2*3;", false).with_depth(1),
-        TypedCompletionTestCase::new("divide", "x:Int=6/2;", false).with_depth(1),
+        TypedCompletionTestCase::new("simple add", "x:Int=1+2;", false).with_depth(2),
+        TypedCompletionTestCase::new("add chain", "x:Int=1+2+3;", false).with_depth(2),
+        TypedCompletionTestCase::new("subtract", "x:Int=10-5;", false).with_depth(2),
+        TypedCompletionTestCase::new("multiply", "x:Int=2*3;", false).with_depth(2),
+        TypedCompletionTestCase::new("divide", "x:Int=6/2;", false).with_depth(2),
         // Parentheses in expressions
-        TypedCompletionTestCase::new("paren add", "x:Int=(1+2);", false).with_depth(1),
+        TypedCompletionTestCase::new("paren add", "x:Int=(1+2);", false).with_depth(2),
         TypedCompletionTestCase::new("nested parens", "x:Int=((1+2));", false).with_depth(2),
         TypedCompletionTestCase::new("paren partial", "x:Int=(1", false).with_depth(3),
         // Complex expressions

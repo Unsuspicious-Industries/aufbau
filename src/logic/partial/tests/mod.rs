@@ -6,6 +6,8 @@ mod parser;
 mod serialization;
 #[cfg(test)]
 mod stlc;
+#[cfg(test)]
+mod completions;
 
 pub use crate::logic::partial::Parser as Parser;
 pub use crate::logic::partial::meta::MetaParser as MetaParser;
