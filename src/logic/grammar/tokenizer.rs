@@ -1,10 +1,10 @@
 //! Tokenizer for grammar-based parsing.
 //!
-//! This module provides the `Tokenizer` struct which holds precomputed regexes
+//! This module provides the `Tokenizer` struct which holds precomputed tables
 //! for special tokens and delimiters, and the `Segment` type representing
 //! tokenized pieces of input.
 
-use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
+use std::collections::HashSet;
 
 /// Default delimiters for tokenization (whitespace).
 /// !JANKY! This causes completions problems,
@@ -75,9 +75,15 @@ impl Segment {
         }
     }
 
-    /// Get the text as a UTF-8 string
+    /// Get the text as a borrowed UTF-8 string.
+    pub fn as_str(&self) -> &str {
+        // Segments are always built from slices of the original UTF-8 input.
+        std::str::from_utf8(&self.bytes).expect("segment bytes must be valid UTF-8")
+    }
+
+    /// Get the text as an owned UTF-8 string
     pub fn text(&self) -> String {
-        String::from_utf8_lossy(&self.bytes).into_owned()
+        self.as_str().to_owned()
     }
 
     /// Get the raw bytes
@@ -102,14 +108,14 @@ impl std::fmt::Display for Segment {
     }
 }
 
-/// Tokenizer with precomputed regexes for efficient tokenization.
+/// Tokenizer with precomputed tables for efficient tokenization.
 ///
-/// Created from special tokens and delimiters, holds the compiled regex forms
-/// for fast matching during tokenization.
+/// Created from special tokens and delimiters, holds sorted literal specials
+/// and delimiter lookup tables for fast matching during tokenization.
 #[derive(Debug, Clone)]
 pub struct Tokenizer {
-    special_tokens: Vec<DerivativeRegex>,
-    delimiters: Vec<DerivativeRegex>,
+    special_tokens: Vec<String>,
+    delimiters: HashSet<char>,
 }
 
 impl Tokenizer {
@@ -118,64 +124,36 @@ impl Tokenizer {
     pub fn new(mut special_tokens: Vec<String>, delimiters: Vec<char>) -> Self {
         // Sort by length descending for longest-match priority
         special_tokens.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        special_tokens.dedup();
 
         Self {
-            special_tokens: special_tokens
-                .into_iter()
-                .map(|s| DerivativeRegex::literal(&s))
-                .collect(),
-            delimiters: delimiters.into_iter().map(DerivativeRegex::Char).collect(),
+            special_tokens,
+            delimiters: delimiters.into_iter().collect(),
         }
     }
 
     /// Check if a character is a delimiter
     fn is_delimiter(&self, c: char) -> bool {
-        let s = c.to_string();
-        self.delimiters.iter().any(|d| d.matches(&s))
-    }
-
-    /// Find the length of the longest prefix of `text` that `regex` accepts.
-    fn match_len(regex: &DerivativeRegex, text: &str) -> Option<usize> {
-        let mut r = regex.clone();
-        let mut last_match = if r.is_nullable() { Some(0) } else { None };
-
-        for (i, c) in text.char_indices() {
-            r = r.deriv(c).simplify();
-            if r.is_empty() {
-                break;
-            }
-            if r.is_nullable() {
-                last_match = Some(i + c.len_utf8());
-            }
-        }
-
-        last_match
+        self.delimiters.contains(&c)
     }
 
     /// Try to match a special token at the start of `text`.
     /// Returns the length of the longest complete match, or None.
     fn match_special(&self, text: &str) -> Option<usize> {
-        let mut best_len: Option<usize> = None;
-
-        for regex in &self.special_tokens {
-            if let Some(len) = Self::match_len(regex, text) {
-                if len > 0 && best_len.map_or(true, |b| len > b) {
-                    best_len = Some(len);
+        // Tokens are sorted by descending length, so the first match is the longest.
+        for token in &self.special_tokens {
+            if !token.is_empty() && text.starts_with(token) {
+                return Some(token.len());
                 }
-            }
         }
-
-        best_len
+        None
     }
 
     /// Check if `text` is a prefix of any special token (but not a complete match).
     fn prefix_special(&self, text: &str) -> bool {
-        for regex in &self.special_tokens {
-            if let PrefixStatus::Prefix(_) = regex.prefix_match(text) {
-                return true;
-            }
-        }
-        false
+        self.special_tokens
+            .iter()
+            .any(|token| token.len() > text.len() && token.starts_with(text))
     }
 
     /// Tokenize the input string into segments with byte-based spans.
@@ -223,6 +201,7 @@ impl Tokenizer {
             // Otherwise, accumulate a normal token
             let start_pos = byte_pos;
             let mut token_end = byte_pos;
+            let mut prev_char: Option<char> = None;
 
             for (i, c) in remaining.char_indices() {
                 let abs_pos = byte_pos + i;
@@ -236,11 +215,22 @@ impl Tokenizer {
                     break;
                 }
 
+                // Only break for a prefix-special if there is a character class
+                // transition from the previous character to the current one.
+                // This prevents "Int" from being split as ["In", "t"(partial)]
+                // when "t" is a prefix of keyword "then"/"true", while still
+                // allowing "foo-" to split as ["foo", "-"(partial)] when "-"
+                // is a prefix of "->".
                 if i > 0 && self.prefix_special(substr) {
-                    break;
+                    let prev_is_word = prev_char.map_or(false, |p| p.is_alphanumeric() || p == '_');
+                    let curr_is_word = c.is_alphanumeric() || c == '_';
+                    if !(prev_is_word && curr_is_word) {
+                        break;
+                    }
                 }
 
                 token_end = abs_pos + c.len_utf8();
+                prev_char = Some(c);
             }
 
             if token_end > start_pos {
@@ -338,5 +328,424 @@ mod tests {
         let tokens: Vec<_> = segments.iter().map(|s| s.text()).collect();
         assert_eq!(tokens, vec!["λ", "f", ":", "A", "-"]);
         assert!(segments[4].is_partial_special);
+    }
+
+    // ================================================================
+    // Regression tests for the word-boundary fix in the accumulation
+    // loop. The old code broke tokens like "Int" when a trailing
+    // alphanumeric character happened to prefix a keyword (e.g. "t"
+    // prefixes "true"/"then").
+    // ================================================================
+
+    /// Helper: build a tokenizer with the same specials as the fun grammar.
+    fn fun_tokenizer() -> Tokenizer {
+        let special_tokens = vec![
+            "->".into(),
+            "λ".into(),
+            ":".into(),
+            ".".into(),
+            "=".into(),
+            "let".into(),
+            "in".into(),
+            "if".into(),
+            "then".into(),
+            "else".into(),
+            "true".into(),
+            "false".into(),
+            "(".into(),
+            ")".into(),
+        ];
+        Tokenizer::new(special_tokens, vec![' ', '\n', '\t'])
+    }
+
+    /// Collect (text, is_partial) pairs for compact assertions.
+    fn tok(tokenizer: &Tokenizer, input: &str) -> Vec<(String, bool)> {
+        tokenizer
+            .tokenize(input)
+            .unwrap()
+            .iter()
+            .map(|s| (s.text(), s.is_partial_special))
+            .collect()
+    }
+
+    // --- TypeName tokens that previously broke ---
+
+    #[test]
+    fn fun_typename_int_standalone() {
+        let t = fun_tokenizer();
+        // "Int" at end of input — 't' prefixes "true"/"then" but must NOT split
+        assert_eq!(tok(&t, "Int"), vec![("Int".into(), false)]);
+    }
+
+    #[test]
+    fn fun_typename_bool_standalone() {
+        let t = fun_tokenizer();
+        // "Bool" — no trailing char prefixes a keyword, but verify anyway
+        assert_eq!(tok(&t, "Bool"), vec![("Bool".into(), false)]);
+    }
+
+    #[test]
+    fn fun_typename_int_in_lambda() {
+        let t = fun_tokenizer();
+        // The original failing case: λx:Int
+        let result = tok(&t, "λx:Int");
+        assert_eq!(
+            result,
+            vec![
+                ("λ".into(), false),
+                ("x".into(), false),
+                (":".into(), false),
+                ("Int".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_typename_int_before_dot() {
+        let t = fun_tokenizer();
+        // "Int." — '.' is a special token, so accumulation should stop before it
+        let result = tok(&t, "λx:Int.x");
+        assert_eq!(
+            result,
+            vec![
+                ("λ".into(), false),
+                ("x".into(), false),
+                (":".into(), false),
+                ("Int".into(), false),
+                (".".into(), false),
+                ("x".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_typename_int_before_arrow() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "Int->Bool");
+        assert_eq!(
+            result,
+            vec![
+                ("Int".into(), false),
+                ("->".into(), false),
+                ("Bool".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_typename_int_before_space() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "Int Bool");
+        assert_eq!(result, vec![("Int".into(), false), ("Bool".into(), false),]);
+    }
+
+    // --- Names whose suffixes overlap with keyword prefixes ---
+
+    #[test]
+    fn fun_typename_ending_in_t() {
+        let t = fun_tokenizer();
+        // Various names ending in 't' (prefix of "then"/"true")
+        // These should NOT be split by the prefix_special check.
+        // Note: "Elet" WILL be split as ["E", "let"] because `let` is a
+        // complete keyword match inside the accumulation — that's the
+        // match_special check, not the prefix_special bug.
+        for name in &["Int", "Nat", "Set", "Abst"] {
+            let result = tok(&t, name);
+            assert_eq!(
+                result,
+                vec![(name.to_string(), false)],
+                "TypeName '{}' should tokenize as a single token",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fun_typename_ending_in_e() {
+        let t = fun_tokenizer();
+        // 'e' prefixes "else"
+        for name in &["Type", "Name", "Base"] {
+            let result = tok(&t, name);
+            assert_eq!(
+                result,
+                vec![(name.to_string(), false)],
+                "TypeName '{}' should tokenize as a single token",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fun_typename_ending_in_f() {
+        let t = fun_tokenizer();
+        // 'f' prefixes "false"
+        for name in &["Ref", "Def"] {
+            let result = tok(&t, name);
+            assert_eq!(
+                result,
+                vec![(name.to_string(), false)],
+                "TypeName '{}' should tokenize as a single token",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fun_typename_ending_in_i() {
+        let t = fun_tokenizer();
+        // 'i' prefixes "if"/"in"
+        for name in &["Fi", "Pi"] {
+            let result = tok(&t, name);
+            assert_eq!(
+                result,
+                vec![(name.to_string(), false)],
+                "TypeName '{}' should tokenize as a single token",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fun_identifier_ending_in_keyword_prefix() {
+        let t = fun_tokenizer();
+        // Lowercase identifiers — note that some contain complete keywords:
+        // "int" → ["in", "t"(partial)] because "in" is a keyword matched greedily
+        // "iff" → ["if", "f"(partial)] because "if" is a keyword
+        // These are NOT the prefix_special bug — they're match_special doing its job.
+        // Only identifiers where no keyword is an exact prefix should stay whole.
+        for name in &["nat", "set", "ref", "pi"] {
+            let result = tok(&t, name);
+            assert_eq!(
+                result,
+                vec![(name.to_string(), false)],
+                "identifier '{}' should tokenize as a single token",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn fun_identifier_containing_keyword() {
+        let t = fun_tokenizer();
+        // "int" starts with keyword "in" → splits as ["in", "t"(partial)]
+        let result = tok(&t, "int");
+        assert_eq!(
+            result,
+            vec![
+                ("in".into(), false),
+                ("t".into(), true), // 't' prefixes "then"/"true"
+            ]
+        );
+        // "iff" starts with keyword "if" → splits as ["if", "f"(partial)]
+        let result = tok(&t, "iff");
+        assert_eq!(
+            result,
+            vec![
+                ("if".into(), false),
+                ("f".into(), true), // 'f' prefixes "false"
+            ]
+        );
+    }
+
+    // --- Keyword specials still work correctly ---
+
+    #[test]
+    fn fun_keywords_match_exactly() {
+        let t = fun_tokenizer();
+        for kw in &["let", "in", "if", "then", "else", "true", "false"] {
+            let result = tok(&t, kw);
+            assert_eq!(
+                result,
+                vec![(kw.to_string(), false)],
+                "keyword '{}' should tokenize as a single special token",
+                kw
+            );
+        }
+    }
+
+    #[test]
+    fn fun_keyword_followed_by_space_and_identifier() {
+        let t = fun_tokenizer();
+        assert_eq!(
+            tok(&t, "let x"),
+            vec![("let".into(), false), ("x".into(), false),]
+        );
+        assert_eq!(
+            tok(&t, "if true then 1 else 2"),
+            vec![
+                ("if".into(), false),
+                ("true".into(), false),
+                ("then".into(), false),
+                ("1".into(), false),
+                ("else".into(), false),
+                ("2".into(), false),
+            ]
+        );
+    }
+
+    // --- Partial specials still detected correctly ---
+
+    #[test]
+    fn fun_partial_arrow_after_typename() {
+        let t = fun_tokenizer();
+        // "Int-" — '-' is a prefix of '->', must split off as partial
+        let result = tok(&t, "Int-");
+        assert_eq!(
+            result,
+            vec![
+                ("Int".into(), false),
+                ("-".into(), true), // partial special
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_partial_arrow_after_identifier() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "foo-");
+        assert_eq!(result, vec![("foo".into(), false), ("-".into(), true),]);
+    }
+
+    #[test]
+    fn fun_partial_keyword_at_end() {
+        let t = fun_tokenizer();
+        // "le" at end of input is a prefix of "let"
+        let result = tok(&t, "le");
+        assert_eq!(result, vec![("le".into(), true)]);
+        // "tru" is a prefix of "true"
+        let result = tok(&t, "tru");
+        assert_eq!(result, vec![("tru".into(), true)]);
+        // "th" is a prefix of "then"
+        let result = tok(&t, "th");
+        assert_eq!(result, vec![("th".into(), true)]);
+    }
+
+    // --- Full lambda/let/if expressions ---
+
+    #[test]
+    fn fun_full_lambda_expression() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "λf:Int->Bool.f");
+        // Note: trailing "f" at end of input is partial_special because
+        // "f" is a prefix of "false". This is correct tokenizer behavior.
+        assert_eq!(
+            result,
+            vec![
+                ("λ".into(), false),
+                ("f".into(), false), // not partial here: followed by ":"
+                (":".into(), false),
+                ("Int".into(), false),
+                ("->".into(), false),
+                ("Bool".into(), false),
+                (".".into(), false),
+                ("f".into(), true), // partial: "f" prefixes "false" at end of input
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_full_let_expression() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "let x:Int=42 in x");
+        assert_eq!(
+            result,
+            vec![
+                ("let".into(), false),
+                ("x".into(), false),
+                (":".into(), false),
+                ("Int".into(), false),
+                ("=".into(), false),
+                ("42".into(), false),
+                ("in".into(), false),
+                ("x".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_full_if_expression() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "if true then 1 else 2");
+        assert_eq!(
+            result,
+            vec![
+                ("if".into(), false),
+                ("true".into(), false),
+                ("then".into(), false),
+                ("1".into(), false),
+                ("else".into(), false),
+                ("2".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_nested_lambda_with_arrow_types() {
+        let t = fun_tokenizer();
+        let result = tok(&t, "λf:(Int->Int).λx:Int.f x");
+        assert_eq!(
+            result,
+            vec![
+                ("λ".into(), false),
+                ("f".into(), false),
+                (":".into(), false),
+                ("(".into(), false),
+                ("Int".into(), false),
+                ("->".into(), false),
+                ("Int".into(), false),
+                (")".into(), false),
+                (".".into(), false),
+                ("λ".into(), false),
+                ("x".into(), false),
+                (":".into(), false),
+                ("Int".into(), false),
+                (".".into(), false),
+                ("f".into(), false),
+                ("x".into(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn fun_partial_lambda_prefix_int() {
+        let t = fun_tokenizer();
+        // "λx:Int" at end of input — Int must stay whole, no partial
+        let result = tok(&t, "λx:Int");
+        assert_eq!(
+            result,
+            vec![
+                ("λ".into(), false),
+                ("x".into(), false),
+                (":".into(), false),
+                ("Int".into(), false),
+            ]
+        );
+        // None of them should be partial specials
+        let tokenizer_result = t.tokenize("λx:Int").unwrap();
+        assert!(tokenizer_result.iter().all(|s| !s.is_partial_special));
+    }
+
+    // --- Edge: identifier that looks like a keyword prefix ---
+
+    #[test]
+    fn fun_identifier_is_keyword_prefix() {
+        let t = fun_tokenizer();
+        // "le" is a prefix of "let" — at end of input it's partial_special
+        // But "le x" — "le" followed by space is still partial_special
+        // because the outer loop catches it before accumulation
+        let result = tok(&t, "le");
+        assert_eq!(result[0].0, "le");
+        assert!(result[0].1); // partial special
+    }
+
+    // --- Edge: numbers that end in keyword-prefix chars ---
+
+    #[test]
+    fn fun_number_token_not_split() {
+        let t = fun_tokenizer();
+        // Digits shouldn't be split even if they happen to end in keyword-prefix chars
+        // (unlikely with digits, but verify the general mechanism)
+        assert_eq!(tok(&t, "42"), vec![("42".into(), false)]);
+        assert_eq!(tok(&t, "100"), vec![("100".into(), false)]);
     }
 }

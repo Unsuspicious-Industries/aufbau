@@ -4,6 +4,7 @@ pub mod arithmetic;
 
 pub mod weird;
 pub mod stlc;
+pub mod fun;
 
 pub mod imp;
 

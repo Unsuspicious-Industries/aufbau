@@ -349,6 +349,7 @@ impl Parser {
         // Uses absolute position to correctly detect cycles
         let key = (nt_name.to_string(), abs_pos);
         if let Some(count) = parse_state.visited.get(&key) {
+            let local_limit = self.max_recursion.min(segments.len().saturating_add(2));
             debug_trace!(
                 "parser2      ",
                 "{}[L{}] Recursion detected for '{}' at abs_pos {} depth {}",
@@ -361,14 +362,16 @@ impl Parser {
 
             // Termination fallback 
             // computer crashed too many times before
-            if *count > self.max_recursion {
+            if *count >= local_limit {
                 debug_debug!(
                     "parser2      ",
-                    "{}[L{}] Termination: Too much recursion (> {})",
+                    "{}[L{}] Termination: Too much recursion (>= {}, remaining segments: {})",
                     indent,
                     level,
-                    self.max_recursion
+                    local_limit,
+                    segments.len()
                 );
+                parse_state.hit_depth_limit = true;
                 return Ok(Vec::new());
             } else {
                 debug_trace!(
@@ -580,7 +583,13 @@ impl Parser {
         let first_sym = &symbols[0];
         let rest_syms = &symbols[1..];
 
-        let first_parses = self.parse_symbol(segments, first_sym, abs_pos, level, parse_state)?;
+        let first_parses = self.parse_symbol(
+            segments,
+            first_sym,
+            abs_pos,
+            level,
+            parse_state,
+        )?;
 
         // If no parses for first symbol, this production fails
         // ensure early exit
@@ -589,6 +598,7 @@ impl Parser {
         }
 
         let mut results = Vec::with_capacity(first_parses.len());
+        let mut rest_cache: HashMap<usize, Vec<Vec<Node>>> = HashMap::new();
 
         for node in first_parses {
 
@@ -614,8 +624,19 @@ impl Parser {
 
             // Recursively parse remaining symbols with updated absolute position
             let new_abs_pos = abs_pos + consumed;
-            let rest_parses =
-                self.parse_symbols(remaining_segments, rest_syms, new_abs_pos, level, parse_state)?;
+            let rest_parses = if let Some(cached) = rest_cache.get(&consumed) {
+                cached.clone()
+            } else {
+                let parsed = self.parse_symbols(
+                    remaining_segments,
+                    rest_syms,
+                    new_abs_pos,
+                    level,
+                    parse_state,
+                )?;
+                rest_cache.insert(consumed, parsed.clone());
+                parsed
+            };
 
             // Combine results
             for mut rest_nodes in rest_parses {
@@ -730,6 +751,7 @@ impl Parser {
         }
 
         let seg = &segments[0];
+        let seg_text = seg.as_str();
         let indent = "  ".repeat(level);
         debug_trace!(
             "parser2.regex",
@@ -737,20 +759,20 @@ impl Parser {
             indent,
             level,
             re.to_pattern(),
-            seg.text()
+            seg_text
         );
 
-        let node = match re.prefix_match(&seg.text()) {
+        let node = match re.prefix_match(seg_text) {
             PrefixStatus::Complete => {
                 debug_trace!(
                     "parser2.regex",
                     "{}[L{}] Regex FULL match for segment '{}'",
                     indent,
                     level,
-                    seg.text()
+                    seg_text
                 );
                 Some(Node::Terminal(Terminal::Complete {
-                    value: seg.text().to_string(),
+                    value: seg_text.to_string(),
                     binding: binding.clone(),
                     extension: None,
                 }))
@@ -761,10 +783,10 @@ impl Parser {
                     "{}[L{}] Regex PARTIAL match for segment '{}'",
                     indent,
                     level,
-                    seg.text()
+                    seg_text
                 );
                 Some(Node::Terminal(Terminal::Partial {
-                    value: seg.text().to_string(),
+                    value: seg_text.to_string(),
                     binding: binding.clone(),
                     remainder: Some(derivative.clone()),
                 }))
@@ -775,10 +797,10 @@ impl Parser {
                     "{}[L{}] Regex EXTENSIBLE match for segment '{}'",
                     indent,
                     level,
-                    seg.text()
+                    seg_text
                 );
                 Some(Node::Terminal(Terminal::Complete {
-                    value: seg.text().to_string(),
+                    value: seg_text.to_string(),
                     binding: binding.clone(),
                     extension: Some(derivative.clone()),
                 }))
@@ -789,7 +811,7 @@ impl Parser {
                     "{}[L{}] Regex NO match for segment '{}'",
                     indent,
                     level,
-                    seg.text()
+                    seg_text
                 );
                 None
             }

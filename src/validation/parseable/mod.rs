@@ -18,6 +18,7 @@
 //! These tests run in O(n²) time for an input of length n (checking all prefixes),
 //! but each prefix check is just a single parse - no BFS exploration.
 
+pub mod fun;
 pub mod imp;
 pub mod stlc;
 // pub mod clike;
@@ -163,19 +164,33 @@ pub fn check_all_prefixes_parseable(
         }
     }
 
-    // Check if the full input can be parsed
+    // Check the full input. For typed checks, require at least one complete
+    // well-typed tree (not just partial typed branches).
     let mut parser = Parser::new(grammar.clone());
-    let result = if check_typing {
-        parser.partial_typed(input)
-    } else {
-        parser.partial(input)
-    };
-
-    if let Err(e) = result {
+    if check_typing {
+        match parser.partial(input) {
+            Ok(ast) => {
+                if let Err(e) = ast.typed_complete(grammar) {
+                    return ParseResult::Fail {
+                        failing_prefix: input.to_string(),
+                        error: format!("Expected complete well-typed tree, got: {}", e),
+                        prefix_index: input.chars().count(),
+                    };
+                }
+            }
+            Err(e) => {
+                return ParseResult::Fail {
+                    failing_prefix: input.to_string(),
+                    error: e,
+                    prefix_index: input.chars().count(),
+                };
+            }
+        }
+    } else if let Err(e) = parser.partial(input) {
         return ParseResult::Fail {
             failing_prefix: input.to_string(),
             error: e,
-            prefix_index: input.len(),
+            prefix_index: input.chars().count(),
         };
     }
 
@@ -190,22 +205,42 @@ pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> 
     let start = Instant::now();
     let mut parser = Parser::new(grammar.clone());
 
-    let result = if check_typing {
-        parser.partial_typed(input)
+    if check_typing {
+        // For type errors, syntax may still parse. We only fail this check if a
+        // complete well-typed tree exists.
+        match parser.partial(input) {
+            Ok(ast) => {
+                if ast.typed_complete(grammar).is_ok() {
+                    ParseResult::Fail {
+                        failing_prefix: input.to_string(),
+                        error: "Expected type failure but found a complete well-typed tree"
+                            .to_string(),
+                        prefix_index: input.chars().count(),
+                    }
+                } else {
+                    ParseResult::Pass {
+                        duration: start.elapsed(),
+                        prefix_count: 1,
+                    }
+                }
+            }
+            Err(_) => ParseResult::Pass {
+                duration: start.elapsed(),
+                prefix_count: 1,
+            },
+        }
     } else {
-        parser.partial(input)
-    };
-
-    match result {
-        Ok(_) => ParseResult::Fail {
-            failing_prefix: input.to_string(),
-            error: "Expected parse/type failure but succeeded".to_string(),
-            prefix_index: input.chars().count(),
-        },
-        Err(_) => ParseResult::Pass {
-            duration: start.elapsed(),
-            prefix_count: 1,
-        },
+        match parser.partial(input) {
+            Ok(t) => ParseResult::Fail {
+                failing_prefix: input.to_string(),
+                error: format!("Expected parse/type failure but succeeded with {}", t).to_string(),
+                prefix_index: input.chars().count(),
+            },
+            Err(_) => ParseResult::Pass {
+                duration: start.elapsed(),
+                prefix_count: 1,
+            },
+        }
     }
 }
 

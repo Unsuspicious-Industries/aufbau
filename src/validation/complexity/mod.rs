@@ -5,6 +5,7 @@
 
 pub mod stlc;
 pub mod basic;
+pub mod fun;
 
 use std::time::Duration;
 
