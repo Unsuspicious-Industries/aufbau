@@ -2,6 +2,9 @@
 target
 python/target
 
+CONTEXT_DUMP.md
+CONTEXT.md 
+
 # Virtual environments
 python/.venv
 .venv
