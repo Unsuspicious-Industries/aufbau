@@ -203,7 +203,7 @@ fn collect_paths(
         match symbol {
             Symbol::Terminal { binding, .. } => {
                 if let Some(binding_name) = binding {
-                    path.push(PathStep::new(child_idx, None));
+                    path.push(PathStep::new(child_idx, Some(current_alt)));
                     binding_map.insert(rule_name, binding_name, path.clone());
                     path.pop();
                 }
@@ -211,7 +211,7 @@ fn collect_paths(
             Symbol::Nonterminal { name, binding } => {
                 // Binding attached directly to the child non-terminal.
                 if let Some(binding_name) = binding {
-                    path.push(PathStep::new(child_idx, None));
+                    path.push(PathStep::new(child_idx, Some(current_alt)));
                     binding_map.insert(rule_name, binding_name, path.clone());
                     path.pop();
                 }
@@ -224,7 +224,9 @@ fn collect_paths(
                             continue;
                         }
 
-                        path.push(PathStep::new(child_idx, Some(child_alt)));
+                        // PathStep stores the current node's alternative index.
+                        // We are still at `current_nt` here.
+                        path.push(PathStep::new(child_idx, Some(current_alt)));
                         collect_paths(
                             grammar,
                             name,

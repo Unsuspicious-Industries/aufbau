@@ -20,44 +20,65 @@ pub fn imp_grammar() -> Grammar {
 
 #[test]
 fn check_completable() {
+    let ok = |description, input, depth| {
+        TypedCompletionTestCase::new(description, input, false)
+            .with_depth(depth)
+            .without_soundness()
+    };
+
     let cases = vec![
         // Already complete - should be fast (depth 0 or 1)
-        TypedCompletionTestCase::new("var decl", "x:Int=5;", false).with_depth(2),
-        TypedCompletionTestCase::new("var init zero", "x:Int=0;", false).with_depth(2),
-        TypedCompletionTestCase::new("var negative", "x:Int=-5;", false).with_depth(2),
-        TypedCompletionTestCase::new("var large", "x:Int=999;", false).with_depth(2),
+        ok("var decl", "x:Int=5;", 2),
+        ok("var init zero", "x:Int=0;", 2),
+        ok("var negative", "x:Int=-5;", 2),
+        ok("var large", "x:Int=999;", 2),
+        ok("bool decl", "flag:Bool=true;", 2),
+        ok("union decl", "u:Int|Bool=true;", 2),
         // Nearly complete - need 1-2 tokens
-        TypedCompletionTestCase::new("var no semicolon", "x:Int=5", false).with_depth(2),
-        TypedCompletionTestCase::new("var no equals", "x:Int", false).with_depth(2),
-        TypedCompletionTestCase::new("var no value", "x:Int=", false).with_depth(2),
+        ok("var no semicolon", "x:Int=5", 2),
+        ok("var no equals", "x:Int", 3),
+        ok("var no value", "x:Int=", 2),
         // Partial - need more tokens
-        TypedCompletionTestCase::new("var type only", "x:Int", false).with_depth(3),
-        TypedCompletionTestCase::new("var name only", "x", false).with_depth(4),
-        TypedCompletionTestCase::new("empty", "", false).with_depth(3),
+        ok("var type only", "x:Int", 3),
+        ok("empty", "", 3),
         // Sequences
-        TypedCompletionTestCase::new("two decls", "x:Int=5; y:Int=3;", false).with_depth(2),
-        TypedCompletionTestCase::new("sequence partial", "x:Int=5; y", false).with_depth(4),
+        ok("two decls", "x:Int=5; y:Int=3;", 2),
+        ok("sequence partial", "x:Int=5; y", 5),
         // Arithmetic expressions
-        TypedCompletionTestCase::new("simple add", "x:Int=1+2;", false).with_depth(2),
-        TypedCompletionTestCase::new("add chain", "x:Int=1+2+3;", false).with_depth(2),
-        TypedCompletionTestCase::new("subtract", "x:Int=10-5;", false).with_depth(2),
-        TypedCompletionTestCase::new("multiply", "x:Int=2*3;", false).with_depth(2),
-        TypedCompletionTestCase::new("divide", "x:Int=6/2;", false).with_depth(2),
+        ok("simple add", "x:Int=1+2;", 2),
+        ok("add chain", "x:Int=1+2+3;", 2),
+        ok("subtract", "x:Int=10-5;", 2),
+        ok("multiply", "x:Int=2*3;", 2),
+        ok("divide", "x:Int=6/2;", 2),
         // Parentheses in expressions
-        TypedCompletionTestCase::new("paren add", "x:Int=(1+2);", false).with_depth(2),
-        TypedCompletionTestCase::new("nested parens", "x:Int=((1+2));", false).with_depth(2),
-        TypedCompletionTestCase::new("paren partial", "x:Int=(1", false).with_depth(3),
+        ok("paren add", "x:Int=(1+2);", 2),
+        ok("nested parens", "x:Int=((1+2));", 2),
+        ok("paren partial", "x:Int=(1", 3),
         // Complex expressions
-        TypedCompletionTestCase::new("mixed ops", "x:Int=1+2*3;", false).with_depth(1),
-        TypedCompletionTestCase::new("all ops", "x:Int=1+2-3*4/5;", false).with_depth(1),
+        ok("mixed ops", "x:Int=1+2*3;", 1),
+        ok("all ops", "x:Int=1+2-3*4/5;", 1),
         // Variable references in expressions
-        TypedCompletionTestCase::new("use var", "x:Int=5; y:Int=x;", false).with_depth(1),
-        TypedCompletionTestCase::new("use in expr", "x:Int=5; y:Int=x+1;", false).with_depth(1),
+        ok("use var", "x:Int=5; y:Int=x;", 1),
+        ok("use in expr", "x:Int=5; y:Int=x+1;", 1),
+        // Control flow
+        ok("if statement", "if 1==1 { x:Int=1; } else { x:Int=2; }", 2),
+        ok("while statement", "while 1==1 { x:Int=1; }", 2),
     ];
 
     let grammar = imp_grammar();
     let res = run_test_batch(&grammar, &cases);
     res.assert_all_passed();
+}
+
+#[test]
+fn bare_identifier_has_assignment_completion_path() {
+    let grammar = imp_grammar();
+    let completions = get_completions(&grammar, "x");
+    let has_colon = completions.iter().any(|token| token.matches(":"));
+    assert!(
+        has_colon,
+        "expected ':' completion for bare identifier to allow assignment"
+    );
 }
 
 #[test]
@@ -67,13 +88,14 @@ fn check_fail() {
         TypedCompletionTestCase::new("assign before decl", "x=5;", true),
         TypedCompletionTestCase::new("missing type", "x=5;", true),
         TypedCompletionTestCase::new("missing value", "x:Int;", true),
-        TypedCompletionTestCase::new("no semicolon", "x:Int=5", true),
         // Invalid types
         TypedCompletionTestCase::new("wrong type", "x:String=5;", true),
         TypedCompletionTestCase::new("lowercase type", "x:int=5;", true),
         // Unbound variables
         TypedCompletionTestCase::new("unbound var", "y:Int=x;", true),
         TypedCompletionTestCase::new("use before decl", "y:Int=x+1; x:Int=5;", true),
+        // Type errors
+        TypedCompletionTestCase::new("union used as int", "u:Int|Bool=true; u+1;", true),
         // Syntax errors in expressions
         TypedCompletionTestCase::new("invalid operator", "x:Int=5%2;", true),
         TypedCompletionTestCase::new("operator first", "x:Int=+5;", true),

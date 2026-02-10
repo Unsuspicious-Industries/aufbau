@@ -67,7 +67,7 @@ fn valid_expressions_stlc() {
         // === Complex nested cases ===
         ParseTestCase::valid("nested lambda with app", "λx:A.λy:B.f x y"),
         // === Parenthesized applications ===
-        // non typed 
+        // non typed
         ParseTestCase::structural("paren app", "(f x)"),
         ParseTestCase::structural("paren double app", "((f x) y)"),
         ParseTestCase::structural("paren nested app", "x t y u r"),
@@ -100,12 +100,9 @@ fn invalid_expressions_stlc() {
         ParseTestCase::invalid("arrow no lhs", "λf:->B.f"),
         // === Invalid parentheses ===
         ParseTestCase::invalid("empty paren", "()"),
-        ParseTestCase::invalid("paren no content", "( )"), 
-
+        ParseTestCase::invalid("paren no content", "( )"),
         ParseTestCase::type_error("unbound variable", "x"),
         ParseTestCase::type_error("unbound in app", "f x"),
-        
-
     ];
 
     println!("\n=== STLC Invalid Expressions ({} cases) ===", cases.len());

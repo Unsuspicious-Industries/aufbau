@@ -58,7 +58,10 @@ fn generate_weird_random_fun(n: usize) -> String {
             1 => out = format!("{} {}", out, atoms[rng.gen_range(0..atoms.len())]),
             2 => out = format!("let x{}: Int = 1; {}", i % 4, out),
             3 => out = format!("(x: Int) => {}", out),
-            4 => out.push_str(&format!(" {}", odd_tails[rng.gen_range(0..odd_tails.len())])),
+            4 => out.push_str(&format!(
+                " {}",
+                odd_tails[rng.gen_range(0..odd_tails.len())]
+            )),
             _ => out = format!("{} {}", atoms[rng.gen_range(0..atoms.len())], out),
         }
     }
@@ -120,7 +123,10 @@ fn fun_parenthesized_literal_complexity() {
         "Fun parenthesized-literal parsing should remain below ~O(n^5), got O(n^{:.2})",
         k
     );
-    assert!(k > 0.01, "Complexity exponent should be > 0 for non-trivial inputs");
+    assert!(
+        k > 0.01,
+        "Complexity exponent should be > 0 for non-trivial inputs"
+    );
 }
 
 #[test]
@@ -153,8 +159,8 @@ fn fun_weird_random_complexity() {
         &grammar,
         generate_weird_random_fun,
         "Fun Weird Random",
-        4,
         8,
+        16,
     );
 
     let k = determine_complexity_exponent(&data);

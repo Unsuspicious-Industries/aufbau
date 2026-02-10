@@ -27,6 +27,10 @@ impl fmt::Display for Type {
             Type::Meta(s) => write!(f, "?{}", s),
             Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
+            Type::Union(items) => {
+                let rendered: Vec<String> = items.iter().map(|t| format!("{}", t)).collect();
+                write!(f, "{}", rendered.join(" | "))
+            }
             Type::Not(t) => write!(f, "¬{}", t),
             Type::ContextCall(ctx, var) => write!(f, "{}({})", ctx, var),
             Type::Any => write!(f, "⊤"),
@@ -73,10 +77,7 @@ impl Type {
 
         // Empty input → partial Any with empty input string
         if trimmed.is_empty() {
-            return Ok(Type::Partial(
-                Box::new(Type::Any),
-                type_str.to_string(),
-            ));
+            return Ok(Type::Partial(Box::new(Type::Any), type_str.to_string()));
         }
 
         // Try full parse first
@@ -97,26 +98,24 @@ impl Type {
     /// Check if a successfully parsed type represents an incomplete expression
     fn is_incomplete(ty: &Type, input: &str) -> bool {
         // Case 1: Input ends with arrow operator and rightmost type is Any
-        let ends_with_arrow = ARROW_TOKENS.iter().any(|&arrow| {
-            input.trim_end().ends_with(arrow)
-        });
-        
+        let ends_with_arrow = ARROW_TOKENS
+            .iter()
+            .any(|&arrow| input.trim_end().ends_with(arrow));
+
         if ends_with_arrow && Self::has_rightmost_any(ty) {
             return true;
         }
-        
+
         // Case 2: Input is just a negation operator (like "¬")
-        let is_just_negation = NEGATION_TOKENS.iter().any(|&neg| {
-            input.trim() == neg
-        });
-        
+        let is_just_negation = NEGATION_TOKENS.iter().any(|&neg| input.trim() == neg);
+
         if is_just_negation && matches!(ty, Type::Not(_)) {
             return true;
         }
-        
+
         false
     }
-    
+
     /// Check if the rightmost type in an arrow chain is Any
     fn has_rightmost_any(ty: &Type) -> bool {
         match ty {
@@ -275,9 +274,20 @@ impl Type {
             return Ok(Type::None);
         }
 
-        if s.starts_with('\'') && s.ends_with('\'') && s.len() > 2 {
+        if is_single_quoted_raw_literal(s) {
             let raw_type = &s[1..s.len() - 1]; // Remove quotes
             return Ok(Type::Raw(raw_type.to_string()));
+        }
+
+        // Union types have lower precedence than arrows:
+        // A -> B | C == (A -> B) | C
+        if let Some(parts) = split_top_level_union(s) {
+            let members: Result<Vec<Type>, String> = parts
+                .into_iter()
+                .map(|part| Self::parse_impl(part.trim(), raw_mode))
+                .collect();
+            let members = members?;
+            return Ok(Type::Union(flatten_unions(members)));
         }
 
         // Parentheses: only peel a wrapping pair if it encloses the *entire* expression.
@@ -368,7 +378,7 @@ impl Type {
                 return Ok(Type::Atom(s.to_string()));
             }
         }
-        
+
         // Strict parse failed - try partial parse as fallback
         Self::analyze_partial(s, type_str)
     }
@@ -418,6 +428,58 @@ fn find_first_outside_parens(s: &str, tokens: &[&str]) -> Option<(usize, usize)>
         }
     }
     None
+}
+
+fn is_single_quoted_raw_literal(s: &str) -> bool {
+    if s.len() <= 2 || !s.starts_with('\'') || !s.ends_with('\'') {
+        return false;
+    }
+    !s[1..s.len() - 1].contains('\'')
+}
+
+fn split_top_level_union(s: &str) -> Option<Vec<&str>> {
+    let mut depth = 0isize;
+    let mut starts = vec![0usize];
+    let mut found = false;
+
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' if depth > 0 => depth -= 1,
+            '|' if depth == 0 => {
+                found = true;
+                starts.push(i + 1);
+            }
+            _ => {}
+        }
+    }
+
+    if !found {
+        return None;
+    }
+
+    let mut parts = Vec::with_capacity(starts.len());
+    for idx in 0..starts.len() {
+        let start = starts[idx];
+        let end = if idx + 1 < starts.len() {
+            starts[idx + 1] - 1
+        } else {
+            s.len()
+        };
+        parts.push(&s[start..end]);
+    }
+    Some(parts)
+}
+
+fn flatten_unions(members: Vec<Type>) -> Vec<Type> {
+    let mut flat = Vec::new();
+    for t in members {
+        match t {
+            Type::Union(nested) => flat.extend(nested),
+            other => flat.push(other),
+        }
+    }
+    flat
 }
 
 #[cfg(test)]
@@ -474,6 +536,32 @@ mod tests {
                 //assert!(equal(**domain, Type::Atom("A".into()), Context::new()));
             }
             _ => panic!("Expected arrow type"),
+        }
+    }
+
+    #[test]
+    fn union_type_parses() {
+        let t = Type::parse("Int | Bool").unwrap();
+        match t {
+            Type::Union(parts) => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(parts[0], Type::Atom(_)));
+                assert!(matches!(parts[1], Type::Atom(_)));
+            }
+            other => panic!("Expected union type, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn union_arrow_precedence() {
+        let t = Type::parse("A -> B | C").unwrap();
+        match t {
+            Type::Union(parts) => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(parts[0], Type::Arrow(_, _)));
+                assert!(matches!(parts[1], Type::Atom(_)));
+            }
+            other => panic!("Expected top-level union, got {:?}", other),
         }
     }
 }

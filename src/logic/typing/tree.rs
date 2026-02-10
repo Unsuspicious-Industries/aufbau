@@ -2,12 +2,12 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
-use crate::logic::{Parser, debug};
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreePath, TreeRef, TreeStatus};
 use crate::logic::typing::eval::{check_node, check_tree_with_context};
+use crate::logic::typing::Type;
+use crate::logic::{debug, Parser};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -197,7 +197,7 @@ impl PartialAST {
         let roots: Vec<_> = self
             .roots
             .iter()
-            .filter(|r| match check_tree_with_context(r, g, &Context::new()){
+            .filter(|r| match check_tree_with_context(r, g, &Context::new()) {
                 TreeStatus::Malformed => false,
                 TreeStatus::TooDeep => false,
                 _ => {
@@ -330,7 +330,9 @@ start ::= Num
             Γ(x)
             ";
         let (ast, g) = parse(spec, "x");
-        let ctx = Context::new().extend("x".into(), Type::Raw("Int".into())).unwrap();
+        let ctx = Context::new()
+            .extend("x".into(), Type::Raw("Int".into()))
+            .unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
         let typed = ast.typed_complete_ctx(&g, &ctx).unwrap();
         println!("typed: {}", typed);
@@ -360,7 +362,9 @@ start ::= Num
             Γ(e)";
         let (ast, g) = parse(spec, "x");
         // typed_complete with context should work
-        let ctx = Context::new().extend("x".into(), Type::Atom("Int".into())).unwrap();
+        let ctx = Context::new()
+            .extend("x".into(), Type::Atom("Int".into()))
+            .unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
         let typed = ast.typed_complete_ctx(&g, &ctx).unwrap();
         println!("typed: {}", typed);
@@ -449,7 +453,9 @@ start ::= Num
         set_debug_level(crate::DebugLevel::Trace);
         // Variable with context should work
         let ast = p.partial("y").unwrap();
-        let ctx = Context::new().extend("y".into(), Type::Raw("Int".into())).unwrap();
+        let ctx = Context::new()
+            .extend("y".into(), Type::Raw("Int".into()))
+            .unwrap();
         assert!(ast.typed_complete_ctx(&g, &ctx).is_ok());
         println!(
             "Typed AST with context: {}",

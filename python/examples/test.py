@@ -1,42 +1,44 @@
+#!/usr/bin/env python3
+"""CompletionEngine smoke checks for built-in fun/imp constrained decoding."""
+
 import proposition_7 as p7
 
-engine = p7.CompletionEngine(p7.GRAMMARS["xtlc"])
 
-examples = [
-    "λa:X.λb:Y.((λx:X.x)",
+CASES = {
+    "fun": [
+        "(x: Int) => x +",
+        "let x: Int = 1; x +",
+        "let f: Float = 1.0; f +.",
+    ],
+    "imp": [
+        "x: Int = 1; if x < 5 { y: Int = x + 1; } else { y: Int =",
+        "counter: Int = 0; while counter < 3 { counter +",
+        "flag: Int|Bool = true; if flag == true { z: Int = 1; } else { z: Int =",
+    ],
+}
 
-    "λa:X.λb:Y.((λx:X.x)a",
-    "λa:X.λb:Y.((λx:X.x)b",
-    
-    "λf:X->X. λx:X. f (f",
 
-    "λd:X.λg:(X->X).g",
-
-
-    # ill-typed
-    "λx:X. x x",              
-    "λf:(X->Y). f f",         
-]
-
-examples = [
-    "λx: X. λy: (X->X)->Y. y"
-]
-
-for expr in examples:
-    engine.reset()
-    print("---")
-    print(expr)
+def run_case(grammar_name: str, seed: str) -> None:
+    engine = p7.CompletionEngine(p7.get_grammar(grammar_name))
+    print(f"[{grammar_name}] {seed}")
     try:
-        # Thee "feed" does the actual type checking
-        # If you feed an ill-typed expression, it raises TypeError
-        engine.feed(expr)
-        # The produced set of completions is not perfectly well typed
-        # It doesnt scan ahead to filter only well typed contituations
-        # in only check is the trees are well typed so far,
-        # And can be continued in a well typed manner.
-        # Thi means it can produce BAD completions
+        engine.feed(seed)
         completions = engine.debug_completions()
-        print("Examples:", completions['examples'])
-        print("Set:", completions['patterns'])
-    except TypeError as te:
-        print(f"{te}")
+        sample = completions.get("examples", [])[:10]
+        patterns = completions.get("patterns", [])[:5]
+        print(f"  completion examples: {sample}")
+        print(f"  regex patterns:      {patterns}")
+    except TypeError as err:
+        print(f"  type error: {err}")
+    print()
+
+
+def main() -> None:
+    for grammar_name, seeds in CASES.items():
+        print(f"=== {grammar_name.upper()} ===")
+        for seed in seeds:
+            run_case(grammar_name, seed)
+
+
+if __name__ == "__main__":
+    main()

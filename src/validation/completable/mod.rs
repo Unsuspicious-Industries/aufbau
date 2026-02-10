@@ -69,6 +69,8 @@ pub struct TypedCompletionTestCase {
     pub max_depth: usize,
     /// Initial typing context (variable bindings)
     pub context: Vec<(&'static str, &'static str)>,
+    /// Whether to require all prefixes to be completable (soundness).
+    pub require_prefix_soundness: bool,
 }
 
 impl TypedCompletionTestCase {
@@ -79,6 +81,7 @@ impl TypedCompletionTestCase {
             xfail,
             max_depth: 10,
             context: vec![],
+            require_prefix_soundness: true,
         }
     }
     pub fn with_depth(mut self, depth: usize) -> Self {
@@ -88,6 +91,11 @@ impl TypedCompletionTestCase {
 
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {
         self.context = ctx;
+        self
+    }
+
+    pub fn without_soundness(mut self) -> Self {
+        self.require_prefix_soundness = false;
         self
     }
 }
@@ -107,50 +115,93 @@ pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (Tes
     let result = match case.xfail {
         // Expecting success
         false  => {
-            let (result, elapsed) = timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-            
-            if elapsed.as_secs() >= 2 {
-                eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
-            }
-            
-            if result.is_sound {
-                // Expected success
-                TestResult::Pass(result.complete_string)
-            } else {
-                // Unexpectedly failed - provide detailed error information
-                let mut error_msg = format!("Expected success but got unsound completion\n");
-                error_msg.push_str(&format!("  Input: '{}'\n", case.input));
-                error_msg.push_str(&format!("  Prefixes checked: {}\n", result.prefixes_checked));
-                
-                if let Some(ref failing) = result.failing_prefix {
-                    error_msg.push_str(&format!("  ❌ First failing prefix: '{}'\n", failing));
+            if case.require_prefix_soundness {
+                let (result, elapsed) =
+                    timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
+
+                if elapsed.as_secs() >= 2 {
+                    eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
                 }
-                
-                // Show sample of visited states if available
-                if let Some(ref visited) = result.failing_prefix_visited_states {
-                    if !visited.is_empty() {
-                        error_msg.push_str(&format!("  � Sample visited states ({} total):\n", visited.len()));
-                        for (i, state) in visited.iter().take(10).enumerate() {
-                            error_msg.push_str(&format!("    {}: '{}'\n", i + 1, state));
-                        }
-                        if visited.len() > 10 {
-                            error_msg.push_str(&format!("    ... and {} more\n", visited.len() - 10));
+
+                if result.is_sound {
+                    // Expected success
+                    TestResult::Pass(result.complete_string)
+                } else {
+                    // Unexpectedly failed - provide detailed error information
+                    let mut error_msg = format!("Expected success but got unsound completion\n");
+                    error_msg.push_str(&format!("  Input: '{}'\n", case.input));
+                    error_msg.push_str(&format!("  Prefixes checked: {}\n", result.prefixes_checked));
+
+                    if let Some(ref failing) = result.failing_prefix {
+                        error_msg.push_str(&format!("  ❌ First failing prefix: '{}'\n", failing));
+                    }
+
+                    // Show sample of visited states if available
+                    if let Some(ref visited) = result.failing_prefix_visited_states {
+                        if !visited.is_empty() {
+                            error_msg.push_str(&format!(
+                                "  � Sample visited states ({} total):\n",
+                                visited.len()
+                            ));
+                            for (i, state) in visited.iter().take(10).enumerate() {
+                                error_msg.push_str(&format!("    {}: '{}'\n", i + 1, state));
+                            }
+                            if visited.len() > 10 {
+                                error_msg.push_str(&format!(
+                                    "    ... and {} more\n",
+                                    visited.len() - 10
+                                ));
+                            }
                         }
                     }
+
+                    // Show detailed prefix results
+                    error_msg.push_str("  Prefix completion results:\n");
+                    for (prefix, success) in &result.prefix_details {
+                        let status = if *success { "✓" } else { "✗" };
+                        error_msg.push_str(&format!("    {} '{}'\n", status, prefix));
+                    }
+
+                    if let Some(ref complete) = result.complete_string {
+                        error_msg.push_str(&format!("  Completed to: '{}'\n", complete));
+                    }
+
+                    TestResult::Fail(error_msg)
                 }
-                
-                // Show detailed prefix results
-                error_msg.push_str("  Prefix completion results:\n");
-                for (prefix, success) in &result.prefix_details {
-                    let status = if *success { "✓" } else { "✗" };
-                    error_msg.push_str(&format!("    {} '{}'\n", status, prefix));
+            } else {
+                let (result, elapsed) =
+                    timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
+
+                if elapsed.as_secs() >= 2 {
+                    eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
                 }
-                
-                if let Some(ref complete) = result.complete_string {
-                    error_msg.push_str(&format!("  Completed to: '{}'\n", complete));
+
+                match result {
+                    CompletionResult::Success { complete_input, .. } => {
+                        TestResult::Pass(Some(complete_input))
+                    }
+                    CompletionResult::Failure {
+                        max_depth_reached,
+                        states_explored,
+                        ..
+                    } => TestResult::Fail(format!(
+                        "Expected success but completion failed\n  Input: '{}'\n  Explored states: {}\n  Max depth reached: {}",
+                        case.input, states_explored, max_depth_reached
+                    )),
+                    CompletionResult::Invalid(msg)
+                    | CompletionResult::Error(msg) => TestResult::Fail(format!(
+                        "Expected success but got invalid/error\n  Input: '{}'\n  {}",
+                        case.input, msg
+                    )),
+                    CompletionResult::Inconsistency(msg) => TestResult::Fail(format!(
+                        "Expected success but got inconsistency\n  Input: '{}'\n  {}",
+                        case.input, msg
+                    )),
+                    CompletionResult::StateOverflow(limit) => TestResult::Fail(format!(
+                        "Expected success but state overflowed\n  Input: '{}'\n  Limit: {}",
+                        case.input, limit
+                    )),
                 }
-                
-                TestResult::Fail(error_msg)
             }
         }
         // Expecting failure

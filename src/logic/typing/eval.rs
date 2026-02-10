@@ -2,12 +2,11 @@
 //!
 //! Clean API: `check_tree` evaluates ONE tree, returning its status.
 //! Forest filtering is done at a higher level by the caller.
-use serde::de;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{NonTerminal, Terminal};
 use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::ops::{equal, subtype};
+use crate::logic::typing::ops::{Unifier, UnifyResult, equal, subtype};
 use crate::logic::typing::rule::{ConclusionKind, TypeOperation};
 use crate::logic::typing::{Conclusion, Premise, Type, TypeSetting, TypingJudgment, TypingRule};
 use crate::{debug_error, debug_trace};
@@ -237,14 +236,45 @@ fn drill_only_child_with_context(
         }
     }
 
-    debug_trace!(
-        "eval",
-        "Multiple NT children (2+) without typing rule - returning Any : {:?}",
-        tref.get_nt()
-    );
-    // Multiple NT children (2+) without a typing rule
-    // Return Any because a tree with no rule can be anything (no constraint)
-    (TreeStatus::Valid(Type::Any), None)
+    // Multiple NT children (2+) without a typing rule.
+    // Evaluate siblings left-to-right and thread context updates so list-like
+    // productions can model statement-level context effects.
+    let mut sibling_ctx = ctx.clone();
+    let mut sibling_ctx_changed = false;
+    let mut any_partial = false;
+
+    for idx in nt_indices {
+        let child_tref = tref.get(idx);
+        let (child_status, child_ctx) =
+            check_node_with_context_output(&child_tref, grammar, &sibling_ctx, depth + 1, type_cache);
+
+        match child_status {
+            TreeStatus::Valid(_) => {}
+            TreeStatus::Partial(_) => any_partial = true,
+            TreeStatus::Malformed => return (TreeStatus::Malformed, None),
+            TreeStatus::TooDeep => return (TreeStatus::TooDeep, None),
+        }
+
+        if let Some(next_ctx) = child_ctx {
+            sibling_ctx = next_ctx;
+            sibling_ctx_changed = true;
+        }
+    }
+
+    let status = if any_partial {
+        TreeStatus::Partial(Type::Any)
+    } else {
+        TreeStatus::Valid(Type::Any)
+    };
+
+    // Cache the computed type for this wrapper.
+    type_cache.insert(tref.path_vec(), Type::Any);
+
+    if sibling_ctx_changed {
+        (status, Some(sibling_ctx))
+    } else {
+        (status, None)
+    }
 }
 // ============================================================================
 // Rule Application
@@ -295,28 +325,80 @@ fn apply_rule_with_context_output(
 
     debug_trace!("typing", "got bindings: {:#?}", bound);
 
-    // map for pattern matching meta variables
-    // ?A -> ?B
-    let mut map: HashMap<String, Type> = HashMap::new();
+    // Unifier for meta variable resolution across premises.
+    // Replaces the ad-hoc HashMap<String, Type> with proper unification.
+    let mut unifier = Unifier::new();
+    let mut any_partial = false;
+
+    // Context lanes let a rule express multiple sibling scopes.
+    // The primary lane is the one whose effects propagate upward by default.
+    let primary_ctx_name = if !rule.conclusion.context.input.is_empty() {
+        rule.conclusion.context.input.clone()
+    } else {
+        rule.premises
+            .iter()
+            .find_map(|p| p.setting.as_ref().map(|s| s.name.clone()))
+            .unwrap_or_else(|| "Γ".to_string())
+    };
+
+    let mut primary_ctx = ctx.clone();
+    let mut lane_ctxs: HashMap<String, Context> = HashMap::new();
+    lane_ctxs.insert(primary_ctx_name.clone(), primary_ctx.clone());
+    let mut primary_ctx_changed = false;
 
     for premise in &rule.premises {
+        let premise_input_ctx = match &premise.setting {
+            Some(setting) => lane_ctxs
+                .get(&setting.name)
+                .cloned()
+                .unwrap_or_else(|| primary_ctx.clone()),
+            None => primary_ctx.clone(),
+        };
+
         match check_premise(
-            tref, premise, &bound, grammar, ctx, depth, &mut map, type_cache,
+            tref,
+            premise,
+            &bound,
+            grammar,
+            &premise_input_ctx,
+            depth,
+            &mut unifier,
+            type_cache,
         ) {
-            PremiseResult::Ok => {}
+            PremiseResult::Ok(next_ctx) => {
+                if let Some(c) = next_ctx {
+                    if let Some(setting) = &premise.setting {
+                        lane_ctxs.insert(setting.name.clone(), c.clone());
+                        if setting.name == primary_ctx_name {
+                            primary_ctx = c;
+                            primary_ctx_changed = true;
+                        }
+                    } else {
+                        primary_ctx = c.clone();
+                        lane_ctxs.insert(primary_ctx_name.clone(), c);
+                        primary_ctx_changed = true;
+                    }
+                }
+            }
             PremiseResult::Fail => return (TreeStatus::Malformed, None),
             PremiseResult::Partial => {
-                // If any premise is partial, the entire rule application is partial
-                // We return Type::Any since we don't yet know what the final type will be
-                return (TreeStatus::Partial(Type::Any), None);
+                // Don't short-circuit: keep checking remaining premises.
+                // A later premise may definitively Fail, making the tree Malformed.
+                any_partial = true;
             }
         }
-        debug_trace!("typing", "Map after premise : {:?}", map);
+        debug_trace!("typing", "Unifier after premise : {:?}", unifier);
     }
 
-    let status = eval_conclusion(tref, &rule.conclusion, &bound, ctx, &mut map);
+    // If any premise was partial (but none failed), the rule is partial.
+    if any_partial {
+        return (TreeStatus::Partial(Type::Any), None);
+    }
 
-    debug_trace!("typing", "Map after conclusion : {:?}", map);
+    let map = unifier.as_map();
+    let status = eval_conclusion(tref, &rule.conclusion, &bound, &primary_ctx, map);
+
+    debug_trace!("typing", "Unifier after conclusion : {:?}", unifier);
     debug_trace!("typing", "Status after conclusion : {:?}", status);
 
     // Cache the computed type (both valid and partial)
@@ -328,7 +410,13 @@ fn apply_rule_with_context_output(
     }
 
     // Check for context transform in conclusion (e.g., Γ -> Γ[x:τ])
-    let new_ctx = extract_context_transform(tref, &rule.conclusion, &bound, ctx, &mut map);
+    let map = unifier.as_map();
+    let mut new_ctx = extract_context_transform(tref, &rule.conclusion, &bound, &primary_ctx, map);
+    // If the rule did not define an explicit context transform, pass through
+    // primary-lane effects so surrounding siblings/parents can observe updates.
+    if new_ctx.is_none() && primary_ctx_changed {
+        new_ctx = Some(primary_ctx.clone());
+    }
 
     (status, new_ctx)
 }
@@ -375,7 +463,7 @@ fn extract_context_transform(
 // ============================================================================
 
 enum PremiseResult {
-    Ok,
+    Ok(Option<Context>),
     Fail,
     Partial,
 }
@@ -387,7 +475,7 @@ fn check_premise(
     grammar: &Grammar,
     base_ctx: &Context,
     depth: usize,
-    map: &mut HashMap<String, Type>,
+    unifier: &mut Unifier,
     type_cache: &mut HashMap<TreePath, Type>,
 ) -> PremiseResult {
     let name = tref.name().unwrap_or("?");
@@ -396,7 +484,7 @@ fn check_premise(
     // Build extended context from setting
     let ctx = match &premise.setting {
         Some(setting) => {
-            match build_ctx_extension(tref, setting, bound, base_ctx, None) {
+            match build_ctx_extension(tref, setting, bound, base_ctx, Some(unifier.as_map())) {
                 ContextExtensionResult::Ok(c) => c,
                 ContextExtensionResult::Partial => {
                     debug_trace!("typing", "Failed to build context (partial)");
@@ -422,17 +510,22 @@ fn check_premise(
             );
 
             // Get the path to the bound variable and construct full path
+            let mut propagated_ctx: Option<Context> = None;
             let var_ty = match bound.get(term_var) {
                 Binding::Full(p) => {
                     // getting a **real type** here
-                    match check_node(
+                    let (child_status, child_ctx) = check_node_with_context_output(
                         &tref.get_path(p.clone()),
                         grammar,
                         &ctx,
                         depth + 1,
                         type_cache,
-                    ) {
-                        TreeStatus::Valid(t) =>{
+                    );
+                    if let Some(next_ctx) = child_ctx {
+                        propagated_ctx = Some(next_ctx);
+                    }
+                    match child_status {
+                        TreeStatus::Valid(t) => {
                             debug_trace!(
                                 "typing",
                                 "Full binding for {} at path {:?} has type {}",
@@ -442,45 +535,80 @@ fn check_premise(
                             );
                             t
                         }
-                        TreeStatus::Partial(_) =>  return PremiseResult::Partial,
+                        TreeStatus::Partial(_) => return PremiseResult::Partial,
 
                         TreeStatus::Malformed | TreeStatus::TooDeep => return PremiseResult::Fail,
                     }
                 }
                 Binding::Partial(p) => {
-                    debug_trace!(
-                        "typing",
-                        "Partial binding for {} at path {:?}",
-                        term_var,
-                        p
-                    );
-                    Type::PathOf(Box::new(Type::Any), p.clone())
+                    debug_trace!("typing", "Partial binding for {} at path {:?}", term_var, p);
+                    // Even though the binding is partial (extensible), the child node
+                    // may already exist and be type-checkable. If it's Malformed,
+                    // the tree can never be completed to a well-typed tree.
+                    let child_ref = tref.get_path(p.clone());
+                    if child_ref.exists() {
+                        let (child_status, child_ctx) = check_node_with_context_output(
+                            &child_ref,
+                            grammar,
+                            &ctx,
+                            depth + 1,
+                            type_cache,
+                        );
+                        if let Some(next_ctx) = child_ctx {
+                            propagated_ctx = Some(next_ctx);
+                        }
+                        match child_status {
+                            TreeStatus::Malformed | TreeStatus::TooDeep => {
+                                return PremiseResult::Fail;
+                            }
+                            TreeStatus::Valid(t) => t,
+                            TreeStatus::Partial(t) => t,
+                        }
+                    } else {
+                        Type::PathOf(Box::new(Type::Any), p.clone())
+                    }
                 }
                 Binding::None => return PremiseResult::Fail,
             };
 
             debug_trace!("typing", "Got variable type : {}", var_ty);
-            debug_trace!("typing", "Map before check : {:?}", map);
+            debug_trace!("typing", "Unifier before check : {:?}", unifier);
+
+            // Resolve the expected type: first resolve bindings (Atom → Raw),
+            // then use the unifier for meta variables.
             let right_ty = match has_meta(&expected_ty) {
-                true => match solve_meta(&expected_ty, map) {
+                true => match unifier.apply(&expected_ty) {
                     Ok(t) => match solve_binding(tref, &t, bound) {
                         Ok(ty) => ty,
                         Err(_) => return PremiseResult::Fail,
                     },
                     Err(_) => {
+                        // Meta variables not yet bound — use unification to learn them.
+                        // First, resolve any grammar bindings in the expected type.
+                        let expected_resolved = match solve_binding(tref, expected_ty, bound) {
+                            Ok(ty) => ty,
+                            // If binding resolution fails (Atom not in bound), keep original
+                            Err(_) => expected_ty.clone(),
+                        };
                         debug_trace!(
                             "typing",
-                            "Extending map with {:?} = {:?}",
-                            expected_ty,
+                            "Unifying expected {:?} with actual {:?}",
+                            expected_resolved,
                             var_ty
                         );
-                        match set_meta(&expected_ty, &var_ty, map) {
-                            Ok(_) => {
-                                debug_trace!("typing", "Extended meta map to {:?}", map);
-                                var_ty.clone() // allow pass
+                        match unifier.unify(&expected_resolved, &var_ty) {
+                            UnifyResult::Ok => {
+                                debug_trace!("typing", "Unification succeeded: {:?}", unifier);
+                                // After unification, var_ty is accepted — return Ok
+                                return PremiseResult::Ok(propagated_ctx);
                             }
-                            Err(e) => {
-                                debug_trace!("typing", "Failed to extend meta map: {}", e);
+                            UnifyResult::Indeterminate => {
+                                debug_trace!("typing", "Unification indeterminate (partial)");
+                                // Can't determine yet — treat as partial (loose constraint)
+                                return PremiseResult::Partial;
+                            }
+                            UnifyResult::Fail(e) => {
+                                debug_trace!("typing", "Unification failed: {}", e);
                                 return PremiseResult::Fail;
                             }
                         }
@@ -499,15 +627,14 @@ fn check_premise(
                 right_ty
             );
 
-            // If the expected type does not contain a meta variable,
-            // we can simply check if the variable's type matches it.
-            // Equality is partial; context lookups are resolved here.
+            // Both sides are now fully resolved (no meta variables).
+            // Use structural equality with context call resolution.
             let var_ty_r = resolve_ctx_calls(&var_ty, &ctx);
             let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
             match equal(&var_ty_r, &right_ty_r) {
                 Some(true) => {
                     debug_trace!("premise", "Equal types");
-                    PremiseResult::Ok
+                    PremiseResult::Ok(propagated_ctx)
                 }
                 Some(false) => {
                     debug_trace!("premise", "Unequal types");
@@ -534,7 +661,7 @@ fn check_premise(
                     debug_trace!("eval", "Got full {} for context lookup", name_value);
                     if ctx.lookup(&name_value).is_some() {
                         debug_trace!("eval", "Context lookup succeeded for {}", name_value);
-                        PremiseResult::Ok
+                        PremiseResult::Ok(None)
                     } else {
                         debug_trace!("eval", "Context lookup failed for {}", name_value);
                         PremiseResult::Fail
@@ -566,21 +693,33 @@ fn check_premise(
         }
 
         Some(TypingJudgment::Operation { left, op, right }) => {
-            let left_ty = match solve_meta(left, map) {
+            let left_applied = match unifier.apply(left) {
                 Ok(ty) => ty,
                 Err(_) => return PremiseResult::Fail,
             };
-            let right_ty = match solve_meta(right, map) {
+            let right_applied = match unifier.apply(right) {
                 Ok(ty) => ty,
                 Err(_) => return PremiseResult::Fail,
             };
+
+            // Operations may refer to bound grammar variables (e.g. τ in ?A ⊆ τ).
+            // Resolve those bindings before comparing/subtyping.
+            let left_ty = match solve_binding(tref, &left_applied, bound) {
+                Ok(ty) => ty,
+                Err(_) => left_applied,
+            };
+            let right_ty = match solve_binding(tref, &right_applied, bound) {
+                Ok(ty) => ty,
+                Err(_) => right_applied,
+            };
+
             match op {
                 TypeOperation::Equality => {
                     // Types must unify (be structurally equal or unifiable via meta vars)
                     let left_ty_r = resolve_ctx_calls(&left_ty, &ctx);
                     let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
                     match equal(&left_ty_r, &right_ty_r) {
-                        Some(true) => PremiseResult::Ok,
+                        Some(true) => PremiseResult::Ok(None),
                         Some(false) => PremiseResult::Fail,
                         None => PremiseResult::Partial,
                     }
@@ -588,8 +727,12 @@ fn check_premise(
                 TypeOperation::Inclusion => {
                     // τ₁ ⊆ τ₂ means τ₁ is a subtype of τ₂
                     // For now: structural equality or left is None or right is Any
-                    if subtype(&left_ty, &right_ty) {
-                        PremiseResult::Ok
+                    let left_ty_r = resolve_ctx_calls(&left_ty, &ctx);
+                    let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
+                    if is_indeterminate_subtyping_check(&left_ty_r, &right_ty_r) {
+                        PremiseResult::Partial
+                    } else if subtype(&left_ty_r, &right_ty_r) {
+                        PremiseResult::Ok(None)
                     } else {
                         PremiseResult::Fail
                     }
@@ -597,7 +740,13 @@ fn check_premise(
             }
         }
 
-        None => PremiseResult::Ok, // Setting-only premise
+        None => {
+            if premise.setting.is_some() {
+                PremiseResult::Ok(Some(ctx))
+            } else {
+                PremiseResult::Ok(None)
+            }
+        } // Setting-only premise
     }
 }
 
@@ -607,8 +756,8 @@ enum ContextExtensionResult {
     Failed,  // Context extension failed (e.g., duplicate variable)
 }
 
-// this is recusrively extending context
-// this means only nodes below are affected, not parralels.
+// Build a premise-local context by extending the selected input context lane.
+// Upward/sibling propagation is handled by apply_rule_with_context_output.
 fn build_ctx_extension(
     tref: &TreeRef,
     setting: &TypeSetting,
@@ -735,24 +884,31 @@ fn eval_conclusion(
             }
         }
         ConclusionKind::ContextLookup(_, var_name) => {
-            debug_trace!("typing_conclusion", "Looking up variable {:?} in context", var_name);
-             if let Some(path) = bound.get_full(var_name) {
-                    let name = match tref.node_text_path(path) {
-                        Some(n) => n,
-                        None => return TreeStatus::Partial(Type::Path(path.clone())),
-                    };
-                    debug_trace!("typing_conclusion", "Resolved variable name to {} in context", name);
-                    match ctx.lookup(&name) {
-                        Some(t) => TreeStatus::Valid(t.clone()),
-                        None => return TreeStatus::Partial(Type::None), // should check that
-                    }
+            debug_trace!(
+                "typing_conclusion",
+                "Looking up variable {:?} in context",
+                var_name
+            );
+            if let Some(path) = bound.get_full(var_name) {
+                let name = match tref.node_text_path(path) {
+                    Some(n) => n,
+                    None => return TreeStatus::Partial(Type::Path(path.clone())),
+                };
+                debug_trace!(
+                    "typing_conclusion",
+                    "Resolved variable name to {} in context",
+                    name
+                );
+                match ctx.lookup(&name) {
+                    Some(t) => TreeStatus::Valid(t.clone()),
+                    None => return TreeStatus::Malformed, // variable fully resolved but not in Γ → type error
                 }
-            else {
+            } else {
                 if let Some(path) = bound.get_partial(var_name) {
                     match tref.node_text_path(path) {
                         Some(val) => {
                             // Check for context entries matching this prefix
-                            if  let Some(t) = ctx.lookup(&val) {
+                            if let Some(t) = ctx.lookup(&val) {
                                 TreeStatus::Valid(t.clone())
                             } else if let Some(_starts_with) = ctx.lookup_starts_with(&val) {
                                 TreeStatus::Partial(Type::PathOf(Box::new(Type::Any), path.clone()))
@@ -776,48 +932,52 @@ fn eval_conclusion(
 
 // utils
 
+/// Occurs check for meta variables: does ?name appear in ty?
+/// Prevents construction of infinite types like ?A = Arrow(?A, ?B).
+fn occurs_meta(name: &str, ty: &Type) -> bool {
+    match ty {
+        Type::Meta(n) => n == name,
+        Type::Arrow(a, b) => occurs_meta(name, a) || occurs_meta(name, b),
+        Type::Union(parts) => parts.iter().any(|p| occurs_meta(name, p)),
+        Type::Not(a) => occurs_meta(name, a),
+        Type::Partial(t, _) | Type::PathOf(t, _) => occurs_meta(name, t),
+        _ => false,
+    }
+}
+
 fn has_meta(ty: &Type) -> bool {
     debug_trace!("eval", "Checking is {} has Meta", ty);
     match ty {
         Type::Meta(_) => true,
         Type::Arrow(a, b) => has_meta(a) || has_meta(b),
+        Type::Union(parts) => parts.iter().any(has_meta),
         Type::Not(a) => has_meta(a),
         _ => false,
     }
 }
 
-fn set_meta(base: &Type, setter: &Type, map: &mut HashMap<String, Type>) -> Result<(), String> {
-    // both meta and sertter should have the same structure
-    match (base, setter) {
-        (Type::Meta(name), s) => {
-            debug_trace!("set_meta", "Inserting ?{} := {}", name, setter);
-            map.insert(name.clone(), s.clone());
-            Ok(())
+fn has_unresolved_subtyping_hole(ty: &Type) -> bool {
+    match ty {
+        // In this engine Any commonly means "unknown yet" for partial trees.
+        // Treat it as indeterminate for strict inclusion checks.
+        Type::Any | Type::Meta(_) | Type::Path(_) | Type::ContextCall(_, _) => true,
+        Type::PathOf(inner, _) | Type::Partial(inner, _) | Type::Not(inner) => {
+            has_unresolved_subtyping_hole(inner)
         }
-        (Type::Arrow(a, b), Type::Arrow(a2, b2)) => {
-            set_meta(a, a2, map)?;
-            set_meta(b, b2, map)?;
-            Ok(())
+        Type::Arrow(a, b) => {
+            has_unresolved_subtyping_hole(a) || has_unresolved_subtyping_hole(b)
         }
-        (Type::Not(a), Type::Not(a2)) => {
-            set_meta(a, a2, map)?;
-            Ok(())
-        }
-        (_, Type::PathOf(t, _)) | (_, Type::Partial(t, _)) => set_meta(base, t, map),
-
-        // Anys
-        (Type::Arrow(t1, t2), Type::Any) => {
-            set_meta(t1, &Type::Any, map)?;
-            set_meta(t2, &Type::Any, map)?;
-            Ok(())
-        }
-        (Type::Not(t1), Type::Any) => {
-            set_meta(t1, &Type::Any, map)?;
-            Ok(())
-        }
-
-        _ => Err("Couldn't pattern match".to_string()),
+        Type::Union(parts) => parts.iter().any(has_unresolved_subtyping_hole),
+        Type::Atom(_) | Type::Raw(_) | Type::None => false,
     }
+}
+
+fn is_indeterminate_subtyping_check(left: &Type, right: &Type) -> bool {
+    // τ ⊆ ⊤ is always true, so this case is never indeterminate.
+    if matches!(right, Type::Any) {
+        return false;
+    }
+    has_unresolved_subtyping_hole(left) || has_unresolved_subtyping_hole(right)
 }
 
 fn solve_meta(ty: &Type, map: &HashMap<String, Type>) -> Result<Type, String> {
@@ -835,6 +995,13 @@ fn solve_meta(ty: &Type, map: &HashMap<String, Type>) -> Result<Type, String> {
             let a = solve_meta(a, map)?;
             let b = solve_meta(b, map)?;
             return Ok(Type::Arrow(Box::new(a), Box::new(b)));
+        }
+        Type::Union(parts) => {
+            let mut resolved = Vec::with_capacity(parts.len());
+            for p in parts {
+                resolved.push(solve_meta(p, map)?);
+            }
+            return Ok(Type::Union(resolved));
         }
         Type::Not(a) => {
             let a = solve_meta(a, map)?;
@@ -900,6 +1067,13 @@ fn solve_binding(tref: &TreeRef, ty: &Type, bound: &Bindings) -> Result<Type, St
             let b = solve_binding(tref, b, bound)?;
             return Ok(Type::Arrow(Box::new(a), Box::new(b)));
         }
+        Type::Union(parts) => {
+            let mut resolved = Vec::with_capacity(parts.len());
+            for p in parts {
+                resolved.push(solve_binding(tref, p, bound)?);
+            }
+            return Ok(Type::Union(resolved));
+        }
         Type::Not(a) => {
             let a = solve_binding(tref, a, bound)?;
             return Ok(Type::Not(Box::new(a)));
@@ -917,6 +1091,7 @@ fn resolve_ctx_calls(ty: &Type, ctx: &Context) -> Type {
             Box::new(resolve_ctx_calls(a, ctx)),
             Box::new(resolve_ctx_calls(b, ctx)),
         ),
+        Type::Union(parts) => Type::Union(parts.iter().map(|p| resolve_ctx_calls(p, ctx)).collect()),
         Type::Not(a) => Type::Not(Box::new(resolve_ctx_calls(a, ctx))),
         Type::Partial(t, s) => Type::Partial(Box::new(resolve_ctx_calls(t, ctx)), s.clone()),
         Type::PathOf(t, p) => Type::PathOf(Box::new(resolve_ctx_calls(t, ctx)), p.clone()),

@@ -313,10 +313,10 @@ pub fn complete(
     let mut visited = HashSet::new();
     let mut states_explored = 0;
 
-    // fist do a partial parse check. If it parses partially its completeable.
-    // if it fails to parse partially, its invalid input.
+    // First do a syntactic partial parse check.
+    // Typing is enforced when accepting a completed candidate.
     let mut parser = Parser::new(grammar.clone());
-    let base_tree = match parser.partial_typed(input) {
+    let base_tree = match parser.partial(input) {
         Ok(ast) => ast,
         Err(e) => {
             let error_msg = format!(
@@ -419,12 +419,12 @@ fn try_extend(tree: &PartialAST, grammar: &Grammar, token: String) -> Result<Par
     let new_input = format!("{}{}", tree.input(), token);
 
     let mut parser = Parser::new(grammar.clone());
-    match parser.partial_typed(&new_input) {
+    match parser.partial(&new_input) {
         Ok(new_tree) => Ok(new_tree),
         Err(e) => {
             // If direct append fails, try with a space delimiter
             let new_input_with_space = format!("{} {}", tree.input(), token);
-            match parser.partial_typed(&new_input_with_space) {
+            match parser.partial(&new_input_with_space) {
                 Ok(new_tree) => Ok(new_tree),
                 Err(e2) => Err(format!(
                     "Failed to extend tree with token {:?}: {} (with space: {})",

@@ -10,9 +10,6 @@ Uses Microsoft's Phi-3.5-mini-instruct.
 https://huggingface.co/microsoft/Phi-3.5-mini-instruct
 """
 
-import sys
-sys.path.insert(0, '/home/pkd/code/p7/python')
-
 import proposition_7 as p7
 
 
@@ -174,7 +171,7 @@ def main():
     # Load model
     model = p7.ConstrainedModel.from_pretrained(
         model_name,
-        grammar=p7.GRAMMARS[grammar_name],
+        grammar=p7.get_grammar(grammar_name),
         device_map="auto",
         torch_dtype="auto",
         trust_remote_code=True,
@@ -192,7 +189,7 @@ def main():
     
     # Run main demo
     print_header("ReasoningEnvironment Demo", "#")
-    print("CoT reasoning with </think>...<think> blocks, typed output with <clike> blocks\n")
+    print(f"CoT reasoning with <think> blocks, typed output with <{grammar_name}> blocks\n")
     
     results = run_environment_demo(env)
     
@@ -223,7 +220,7 @@ def main():
   This combines the flexibility of Chain-of-Thought reasoning with the
   guarantees of grammar-constrained generation.
   
-  Tags are grammar-specific: <clike>, <typed_arithmetic>, etc. - not a generic <formal>.
+  Tags are grammar-specific: <stlc>, <fun>, <imp>, etc. - not a generic <formal>.
 """)
 
 

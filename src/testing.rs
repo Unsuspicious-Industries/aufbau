@@ -5,22 +5,22 @@
 //! type checking assertions, and tree comparison utilities.
 //!
 //! # Equality Checking Strategy
-//! 
+//!
 //! ## Full Equality
 //!
 //! Since serializations are injective (one-to-one), we use hashes of serializations
 //! for efficient equality checking. This eliminates redundant tree traversal code.
-//! 
+//!
 //! ## Structural Equality
-//! 
-//! When we only want to check for equality of structure, 
+//!
+//! When we only want to check for equality of structure,
 //! and not take into account extra info like continuations/derivatives,
 //! we use the `serialize_structure` method to get a structure-only serialization
 //! and compare hashes of those.
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
-use crate::logic::partial::structure::{NonTerminal, Node, Terminal};
+use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
 use std::path::Path;
 
 // ============================================================================
@@ -64,6 +64,7 @@ pub mod grammars {
     static STLC: OnceLock<Grammar> = OnceLock::new();
     static CLIKE: OnceLock<Grammar> = OnceLock::new();
     static IMP: OnceLock<Grammar> = OnceLock::new();
+    static FUN: OnceLock<Grammar> = OnceLock::new();
 
     pub fn stlc() -> &'static Grammar {
         STLC.get_or_init(|| load_example_grammar("stlc"))
@@ -76,6 +77,10 @@ pub mod grammars {
     pub fn imp() -> &'static Grammar {
         IMP.get_or_init(|| load_example_grammar("imp"))
     }
+
+    pub fn fun() -> &'static Grammar {
+        FUN.get_or_init(|| load_example_grammar("fun"))
+    }
 }
 
 // ============================================================================
@@ -85,21 +90,32 @@ pub mod grammars {
 /// Assert that input parses successfully and produces a complete AST
 pub fn assert_parses(grammar: &Grammar, input: &str) {
     let mut p = Parser::new(grammar.clone());
-    let ast = p.parse(input)
+    let ast = p
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    assert!(ast.is_complete(), "AST should be complete for input: {}", input);
+    assert!(
+        ast.is_complete(),
+        "AST should be complete for input: {}",
+        input
+    );
 }
 
 /// Assert that input parses successfully and produces a complete AST with the given root name
 pub fn assert_parses_as(grammar: &Grammar, input: &str, expected_root: &str) {
     let mut p = Parser::new(grammar.clone());
-    let ast = p.parse(input)
+    let ast = p
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    assert!(ast.is_complete(), "AST should be complete for input: {}", input);
+    assert!(
+        ast.is_complete(),
+        "AST should be complete for input: {}",
+        input
+    );
     assert!(!ast.roots.is_empty(), "AST should have at least one root");
     assert_eq!(
         ast.roots[0].name, expected_root,
-        "Expected root '{}', got '{}'", expected_root, ast.roots[0].name
+        "Expected root '{}', got '{}'",
+        expected_root, ast.roots[0].name
     );
 }
 
@@ -107,7 +123,11 @@ pub fn assert_parses_as(grammar: &Grammar, input: &str, expected_root: &str) {
 pub fn assert_parse_fails(grammar: &Grammar, input: &str) {
     let mut p = Parser::new(grammar.clone());
     let result = p.parse(input);
-    assert!(result.is_err(), "Expected parsing to fail for input: {}", input);
+    assert!(
+        result.is_err(),
+        "Expected parsing to fail for input: {}",
+        input
+    );
 }
 
 /// Assert that parsing produces the expected serialized AST structure
@@ -116,17 +136,22 @@ pub fn assert_parse_fails(grammar: &Grammar, input: &str) {
 /// rather than comparing serialized strings.
 pub fn assert_parse_matches(grammar: &Grammar, input: &str, expected_serialized: &str) {
     let mut p = Parser::new(grammar.clone());
-    
-    let ast = p.parse(input)
+
+    let ast = p
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    
-    assert!(ast.is_complete(), "AST should be complete for input: {}", input);
+
+    assert!(
+        ast.is_complete(),
+        "AST should be complete for input: {}",
+        input
+    );
     assert!(!ast.roots.is_empty(), "AST should have at least one root");
-    
+
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
-    
+
     // Compare trees
     let actual = &ast.roots[0];
     assert_trees_equal(actual, &expected, input);
@@ -143,21 +168,20 @@ pub fn assert_complete_matches(grammar: &Grammar, input: &str, expected_serializ
 /// one tree matching the expected structure, but doesn't require the parse to be complete.
 pub fn assert_partial_matches(grammar: &Grammar, input: &str, expected_serialized: &str) {
     let mut p = Parser::new(grammar.clone());
-    
-    let ast = p.parse(input)
+
+    let ast = p
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    
+
     assert!(!ast.roots.is_empty(), "AST should have at least one root");
-    
+
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
-    
+
     // Find a matching tree in the roots
-    let found = ast.roots.iter().any(|root| {
-        trees_equal(root, &expected)
-    });
-    
+    let found = ast.roots.iter().any(|root| trees_equal(root, &expected));
+
     assert!(
         found,
         "No tree matching expected structure found in parse forest for input: '{}'",
@@ -174,7 +198,7 @@ pub fn assert_partial_matches(grammar: &Grammar, input: &str, expected_serialize
 fn compute_hash(serialized: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     serialized.hash(&mut hasher);
     hasher.finish()
@@ -251,14 +275,30 @@ pub fn trees_match(actual: &NonTerminal, expected: &NonTerminal) -> bool {
 fn nodes_match(actual: &Node, expected: &Node) -> bool {
     match (actual, expected) {
         (Node::NonTerminal(a), Node::NonTerminal(e)) => trees_match(a, e),
-        (Node::Terminal(Terminal::Complete { value: av, binding: ab, .. }),
-         Node::Terminal(Terminal::Complete { value: ev, binding: eb, .. })) => {
-            av == ev && ab == eb
-        }
-        (Node::Terminal(Terminal::Partial { value: av, binding: ab, .. }),
-         Node::Terminal(Terminal::Partial { value: ev, binding: eb, .. })) => {
-            av == ev && ab == eb
-        }
+        (
+            Node::Terminal(Terminal::Complete {
+                value: av,
+                binding: ab,
+                ..
+            }),
+            Node::Terminal(Terminal::Complete {
+                value: ev,
+                binding: eb,
+                ..
+            }),
+        ) => av == ev && ab == eb,
+        (
+            Node::Terminal(Terminal::Partial {
+                value: av,
+                binding: ab,
+                ..
+            }),
+            Node::Terminal(Terminal::Partial {
+                value: ev,
+                binding: eb,
+                ..
+            }),
+        ) => av == ev && ab == eb,
         _ => false,
     }
 }
@@ -289,44 +329,59 @@ fn assert_nodes_match(actual: &Node, expected: &Node, context: &str) {
 }
 
 /// Assert that parsing produces a tree that structurally matches (ignoring derivatives)
-pub fn assert_parse_structurally_matches(grammar: &Grammar, input: &str, expected_serialized: &str) {
+pub fn assert_parse_structurally_matches(
+    grammar: &Grammar,
+    input: &str,
+    expected_serialized: &str,
+) {
     let mut parser = Parser::new(grammar.clone());
-    let ast = parser.parse(input)
+    let ast = parser
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    
-    assert!(ast.is_complete(), "AST should be complete for input: {}", input);
+
+    assert!(
+        ast.is_complete(),
+        "AST should be complete for input: {}",
+        input
+    );
     assert!(!ast.roots.is_empty(), "AST should have at least one root");
-    
+
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
-    
+
     // Compare trees structurally (ignoring extensions/remainders)
     let actual = &ast.roots[0];
     assert_trees_match(actual, &expected, input);
 }
 
 /// Assert that parsing produces a partial tree with at least one root that structurally matches
-pub fn assert_partial_structurally_matches(grammar: &Grammar, input: &str, expected_serialized: &str) {
+pub fn assert_partial_structurally_matches(
+    grammar: &Grammar,
+    input: &str,
+    expected_serialized: &str,
+) {
     let mut parser = Parser::new(grammar.clone());
-    let ast = parser.parse(input)
+    let ast = parser
+        .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
-    
+
     assert!(!ast.roots.is_empty(), "AST should have at least one root");
-    
+
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
-    
+
     // Check if any root structurally matches
     let found_match = ast.roots.iter().any(|root| trees_match(root, &expected));
-    
+
     assert!(
         found_match,
         "No root in AST matches expected tree for input '{}'\nExpected:\n{}\nActual roots:\n{}",
         input,
         expected.serialize(),
-        ast.roots.iter()
+        ast.roots
+            .iter()
             .enumerate()
             .map(|(i, r)| format!("Root {}:\n{}", i, r.serialize()))
             .collect::<Vec<_>>()
@@ -340,10 +395,14 @@ pub fn assert_partial_structurally_matches(grammar: &Grammar, input: &str, expec
 
 /// Count the total number of nodes in a tree
 pub fn count_nodes(root: &NonTerminal) -> usize {
-    1 + root.children.iter().map(|child| match child {
-        Node::NonTerminal(nt) => count_nodes(nt),
-        Node::Terminal(_) => 1,
-    }).sum::<usize>()
+    1 + root
+        .children
+        .iter()
+        .map(|child| match child {
+            Node::NonTerminal(nt) => count_nodes(nt),
+            Node::Terminal(_) => 1,
+        })
+        .sum::<usize>()
 }
 
 /// Get all terminal values in the tree (in order)
@@ -374,12 +433,16 @@ fn collect_bindings_rec(nt: &NonTerminal, bindings: &mut Vec<(String, String)>) 
     if let Some(ref binding) = nt.binding {
         bindings.push((nt.name.clone(), binding.clone()));
     }
-    
+
     for child in &nt.children {
         match child {
             Node::NonTerminal(nt) => collect_bindings_rec(nt, bindings),
-            Node::Terminal(Terminal::Complete { binding: Some(b), .. }) |
-            Node::Terminal(Terminal::Partial { binding: Some(b), .. }) => {
+            Node::Terminal(Terminal::Complete {
+                binding: Some(b), ..
+            })
+            | Node::Terminal(Terminal::Partial {
+                binding: Some(b), ..
+            }) => {
                 bindings.push(("Terminal".to_string(), b.clone()));
             }
             _ => {}
@@ -394,12 +457,11 @@ fn collect_bindings_rec(nt: &NonTerminal, bindings: &mut Vec<(String, String)>) 
 /// Parse input with a grammar and panic with a nice error message on failure
 #[macro_export]
 macro_rules! parse {
-    ($grammar:expr, $input:expr) => {
-        {
-            let mut p = $crate::logic::partial::parse::Parser::new(($grammar).clone());
-            p.parse($input).unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", $input, e))
-        }
-    };
+    ($grammar:expr, $input:expr) => {{
+        let mut p = $crate::logic::partial::parse::Parser::new(($grammar).clone());
+        p.parse($input)
+            .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", $input, e))
+    }};
 }
 
 /// Assert that two values are equal with a custom message

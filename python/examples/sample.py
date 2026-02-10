@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """TypedSampler example with randomized char-level sampling."""
 
-import sys
-sys.path.insert(0, '/home/pkd/code/p7/python')
+import argparse
 
 import random
 import time
@@ -10,12 +9,20 @@ import proposition_7 as p7
 
 VOCAB = list(
     "abcdefghijklmnopqrstuvwxyz"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "0123456789"
-    " "
-    "λ→"
+    " \n"
+    "λ"
     "->"
     ".:;,(){}[]"
+    "+-*/=<>!|"
 )
+
+PRESETS = {
+    "stlc": "λf:(Int->Bool).λx:Int.",
+    "fun": "let x: Int = 1; x +",
+    "imp": "x: Int = 1; if x < 3 { y: Int = x +",
+}
 
 class Timer:
     def __init__(self):
@@ -86,21 +93,37 @@ def sample_token(logits: list[float], temperature: float = 1.0) -> int:
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--grammar",
+        choices=p7.list_grammars(),
+        default="fun",
+        help="Built-in grammar to sample with",
+    )
+    parser.add_argument(
+        "--initial",
+        default=None,
+        help="Initial prefix to feed before generation",
+    )
+    args = parser.parse_args()
+
     timer = Timer()
-    
+
     print("=" * 60)
     print("TypedSampler: Constrainted Character-Level Generation")
     print("=" * 60)
     print(f"\nVocab size: {len(VOCAB)} chars")
-    
+
+    initial = args.initial if args.initial is not None else PRESETS[args.grammar]
+    print(f"Grammar: {args.grammar}")
+
     with timer("init"):
         sampler = p7.TypedSampler(
-            grammar=p7.GRAMMARS["xtlc"],
+            grammar=p7.get_grammar(args.grammar),
             vocab=VOCAB,
-            logit_fn=random_logits
+            logit_fn=random_logits,
         )
-    
-    initial = "{x:T}"
+
     print(f"\n--- Starting with: '{initial}' ---")
     with timer("feed_initial"):
         sampler.feed(initial)

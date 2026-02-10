@@ -90,7 +90,7 @@ def build_system_prompt(
     Procedurally generate a system prompt for the given grammar.
     
     Args:
-        grammar_name: Name of the grammar (e.g., "xtlc", "clike")
+        grammar_name: Name of the grammar (e.g., "stlc", "fun", "imp")
         task_description: Optional task-specific description
         include_examples: Whether to include syntax examples
         
@@ -132,13 +132,13 @@ class ReasoningEnvironment:
     """
     Environment that allows LLMs to reason with CoT then produce typed output.
     
-    Grammar-independent: uses grammar name for tags (e.g., <xtlc>, <clike>).
+    Grammar-independent: uses grammar name for tags (e.g., <stlc>, <fun>).
     
     Usage:
         from proposition_7 import ConstrainedModel, GRAMMARS
         
-        model = ConstrainedModel.from_pretrained("...", grammar=GRAMMARS["xtlc"])
-        env = ReasoningEnvironment(model, grammar_name="xtlc")
+        model = ConstrainedModel.from_pretrained("...", grammar=get_grammar("stlc"))
+        env = ReasoningEnvironment(model, grammar_name="stlc")
         
         result = env.generate(
             prompt="Create a function that takes an Int and returns it",

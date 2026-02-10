@@ -2,8 +2,8 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
+use crate::logic::typing::Type;
 
 // =============================================================================
 // Terminal Gathering from AST
@@ -174,6 +174,11 @@ fn collect_symbols_from_type(ty: &Type, out: &mut Vec<String>) {
             collect_symbols_from_type(l, out);
             collect_symbols_from_type(r, out);
         }
+        Type::Union(parts) => {
+            for p in parts {
+                collect_symbols_from_type(p, out);
+            }
+        }
         Type::Not(t) => collect_symbols_from_type(t, out),
         Type::ContextCall(ctx, var) => {
             out.push(ctx.clone());
@@ -192,6 +197,11 @@ fn collect_raws_from_type(ty: &Type, out: &mut Vec<String>) {
         Type::Arrow(l, r) => {
             collect_raws_from_type(l, out);
             collect_raws_from_type(r, out);
+        }
+        Type::Union(parts) => {
+            for p in parts {
+                collect_raws_from_type(p, out);
+            }
         }
         Type::Not(t) => collect_raws_from_type(t, out),
         Type::Partial(t, _) => collect_raws_from_type(t, out),

@@ -1,6 +1,6 @@
-use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::eval::check_tree;
+use crate::logic::Parser;
 use crate::set_debug_level;
 use crate::validation::completable::load_example_grammar;
 

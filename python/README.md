@@ -98,18 +98,25 @@ result = gen.generate(
 All built-in grammars include **typing rules** - this is what distinguishes P7 from CFG-only approaches.
 
 ```python
-import p7_constrained as p7
+import proposition_7 as p7
 
 # List available typed grammars
-print(p7.list_grammars())  # ['clike', 'typed_arithmetic']
+print(p7.list_grammars())  # ['stlc', 'imp', 'fun']
 
-# Use a typed grammar
-gen = p7.Generator("gpt2", grammar=p7.GRAMMARS["clike"])
-result = gen("int ")  # Generates well-typed C-like code!
+# FUN: expression-level constrained generation
+fun_engine = p7.CompletionEngine(p7.get_grammar("fun"))
+fun_engine.feed("let x: Int = 1; x +")
+print(fun_engine.debug_completions()["examples"][:5])
+
+# IMP: statement/program constrained generation
+imp_engine = p7.CompletionEngine(p7.get_grammar("imp"))
+imp_engine.feed("x: Int = 1; if x < 5 { y: Int = x + 1; } else { y: Int =")
+print(imp_engine.debug_completions()["examples"][:5])
 
 # Available grammars:
-# - clike: C-like language with type checking
-# - typed_arithmetic: Arithmetic with Int/Float types
+# - stlc: simply typed lambda calculus
+# - fun: typed functional language (let/lambda/application)
+# - imp: typed imperative language (assign/if/while)
 ```
 
 ### Low-level API

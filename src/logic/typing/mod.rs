@@ -13,7 +13,7 @@ pub use tree::*;
 
 pub use core::{Context, TreeRef};
 pub use eval::evaluate_typing;
-pub use ops::{equal, subtype};
+pub use ops::{equal, subtype, Unifier, UnifyResult};
 pub use symbols::{gather_raw_types, gather_terminal_nodes, gather_terminals, gather_type_symbols};
 ///---------------
 /// Type Representation
@@ -29,6 +29,8 @@ pub enum Type {
     Raw(String),
     // Function types (τ₁ → τ₂)
     Arrow(Box<Type>, Box<Type>),
+    // Union types (τ₁ | τ₂ | ...)
+    Union(Vec<Type>),
     // Negation type (¬τ) - "anything that is not τ"
     Not(Box<Type>),
     // Context call (Γ(x)) - lookup the type of variable x in context Γ
@@ -42,10 +44,10 @@ pub enum Type {
     Partial(Box<Type>, String),
 
     // "Fake" type for binding resolution
-    Path(TreePath),   // Absolute path to a binding location
+    Path(TreePath), // Absolute path to a binding location
     // path of the node at this location
-    // type is a pattern 
-    PathOf(Box<Type>,TreePath), 
+    // type is a pattern
+    PathOf(Box<Type>, TreePath),
 }
 
 // Re-export frequently used items for external users of the module.

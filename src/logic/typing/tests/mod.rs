@@ -4,6 +4,7 @@ Main tests + submodules
 */
 
 mod contradiction;
+mod fun;
 mod imp;
 mod lc;
 mod redeclaration;

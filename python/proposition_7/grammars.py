@@ -1,73 +1,75 @@
-"""Built-in grammars with typing rules (context-dependant generation)."""
+"""Built-in grammars with typing rules (context-dependent generation)."""
 
-from typing import Any, Dict, List
 from pathlib import Path
+from typing import Any, Dict, List
 
-# Helper function to load grammar specs from examples directory
+
 def _load_spec(name: str) -> str:
-    """Load a grammar spec from the examples directory."""
-    # Find the examples directory relative to the package root
-    package_dir = Path(__file__).parent.parent
-    spec_path = package_dir.parent / "examples" / f"{name}.spec"
-    
+    """Load a grammar spec from the repository examples directory."""
+    repo_root = Path(__file__).resolve().parents[2]
+    spec_path = repo_root / "examples" / f"{name}.spec"
+
     if not spec_path.exists():
         raise FileNotFoundError(f"Grammar spec not found: {spec_path}")
-    
-    return spec_path.read_text()
 
-# Unified grammar information: spec content + metadata for prompts
+    return spec_path.read_text(encoding="utf-8")
+
+
+# Unified grammar information: spec content + metadata for prompt construction.
 GRAMMARS: Dict[str, Dict[str, Any]] = {
     "stlc": {
         "spec": _load_spec("stlc"),
         "name": "Simply Typed Lambda Calculus",
-        "short": "typed lambda calculus",
-        "description": "Simply typed lambda calculus with type inference",
+        "short": "typed lambda calculus terms",
+        "description": "Simply typed lambda calculus with explicit type annotations",
         "syntax_hints": [
-            "λx:T.e - lambda abstraction (function taking x of type T)",
-            "{x:T} - declare variable x of type T in scope",
-            "(f e) - function application",
-            "Types: base types (Int, Bool) or function types (Int->Bool)",
+            "λx:T.e - lambda abstraction",
+            "(f x) - function application",
+            "Types use -> and are right-associative: Int->Bool->Int",
+            "Parenthesize function arguments and nested types when needed",
         ],
         "examples": [
             ("identity", "λx:Int.x"),
-            ("const K", "λx:Int.λy:Bool.x"),
+            ("const", "λx:Int.λy:Bool.x"),
             ("apply", "λf:(Int->Bool).λx:Int.(f x)"),
         ],
     },
     "imp": {
         "spec": _load_spec("imp"),
         "name": "IMP",
-        "short": "imperative programs",
-        "description": "Simple imperative programming language",
+        "short": "typed imperative programs",
+        "description": "Typed imperative language with assignments, conditionals, and loops",
         "syntax_hints": [
-            "x := e - assignment",
-            "skip - no-op",
-            "s1; s2 - sequence",
-            "if b then s1 else s2 - conditional",
-            "while b do s - loop",
+            "Assignment: x: Type = value;",
+            "Arithmetic values: x + y, x - 1, a * b",
+            "Conditionals: if cond { ... } else { ... }",
+            "Loops: while cond { ... }",
+            "Type unions are allowed: Int|Bool",
         ],
         "examples": [
-            ("assignment", "x := 5"),
-            ("sequence", "x := 1; y := 2"),
-            ("loop", "while x < 10 do x := x + 1"),
+            ("assignment", "x: Int = 5;"),
+            ("sequence", "x: Int = 1; y: Int = x + 2;"),
+            ("if_else", "x: Int = 1; if x < 5 { y: Int = x + 1; } else { y: Int = 0; }"),
+            ("while", "counter: Int = 0; while counter < 3 { counter + 1; }"),
         ],
     },
-    "clike": {
-        "spec": _load_spec("clike"),
-        "name": "C-like",
-        "short": "C-like code",
-        "description": "C-like programming language with types",
+    "fun": {
+        "spec": _load_spec("fun"),
+        "name": "Fun",
+        "short": "typed functional expressions",
+        "description": "ML-style functional language with let bindings and typed lambdas",
         "syntax_hints": [
-            "int x; - variable declaration",
-            "x = e; - assignment",
-            "if (cond) { ... } else { ... } - conditional",
-            "while (cond) { ... } - loop",
-            "return e; - return statement",
+            "Lambda: (x: Type) => expr",
+            "Let binding: let x: Type = value; body",
+            "Function application: f(arg)",
+            "Int ops: + - * /, Float ops: +. -. *. /.",
+            "Literals include Int, Float, and Bool",
         ],
         "examples": [
-            ("declaration", "int x;"),
-            ("assignment", "x = 42;"),
-            ("function", "int add(int a, int b) { return a + b; }"),
+            ("identity", "(x: Int) => x"),
+            ("let_int", "let x: Int = 1; x + 2"),
+            ("apply_lambda", "((x: Int) => x + 1)(41)"),
+            ("float_math", "let f: Float = 1.5; f +. 2.0"),
         ],
     },
 }

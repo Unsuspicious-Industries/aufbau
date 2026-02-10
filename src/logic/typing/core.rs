@@ -1,8 +1,8 @@
 //! Core typing types - Context and TreeStatus
 
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::rule::TypeOperation;
+use crate::logic::typing::Type;
 use std::collections::HashMap;
 
 // =============================================================================
@@ -35,7 +35,6 @@ impl Context {
 
     /// Γ[x:τ] - functional extension (immutable)
     pub fn extend(&self, x: String, ty: Type) -> Result<Self, String> {
-
         // check for coonflicts
         if self.bindings.contains_key(&x) {
             return Err(format!("Context already contains binding for '{}'", x));
@@ -45,8 +44,14 @@ impl Context {
         new.bindings.insert(x, ty);
         Ok(new)
     }
-    pub fn extend_unresolved(&self, path: TreePath, ty: Type) -> Result<Self, String> {
 
+    /// Γ[x:τ] - extension with shadowing allowed (immutable)
+    pub fn shadow(&self, x: String, ty: Type) -> Self {
+        let mut new = self.clone();
+        new.bindings.insert(x, ty);
+        new
+    }
+    pub fn extend_unresolved(&self, path: TreePath, ty: Type) -> Result<Self, String> {
         // check for conflicts same path => overwrite (i think)
         // !JANKY!
         if self.unresolved_bindings.contains_key(&path) {
