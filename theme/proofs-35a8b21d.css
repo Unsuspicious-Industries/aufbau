@@ -1,0 +1,248 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MATHEMATICAL THEOREM ENVIRONMENTS
+   Refined design - Subtle colors, clean lines, modern typography
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Base theorem box styling */
+.theorem,
+.definition,
+.lemma,
+.proof,
+.example,
+.remark,
+.assumption {
+    position: relative;
+    margin: 2em 0;
+    padding: 1.2em 1.5em 1.2em 1.5em;
+    background: #fafafa;
+    border-left: 4px solid #000000;
+    overflow: visible;
+}
+
+/* Dark theme support */
+.navy .theorem,
+.navy .definition,
+.navy .lemma,
+.navy .proof,
+.navy .example,
+.navy .remark,
+.navy .assumption,
+.coal .theorem,
+.coal .definition,
+.coal .lemma,
+.coal .proof,
+.coal .example,
+.coal .remark,
+.coal .assumption,
+.ayu .theorem,
+.ayu .definition,
+.ayu .lemma,
+.ayu .proof,
+.ayu .example,
+.ayu .remark,
+.ayu .assumption {
+    background: #1f1f1f;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TITLE BADGES - Clean label style
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.theorem-title,
+.definition-title,
+.lemma-title,
+.proof-title,
+.example-title,
+.remark-title,
+.assumption-title {
+    position: absolute;
+    top: -0.7em;
+    left: 1.2em;
+    padding: 0.3em 0.9em;
+    font-weight: 600;
+    font-size: 0.8em;
+    letter-spacing: 0.05em;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THEOREM - Soft blue, primary results
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.theorem {
+    border-left-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.theorem-title {
+    background: #3b82f6;
+    color: #ffffff;
+}
+
+.navy .theorem,
+.coal .theorem,
+.ayu .theorem {
+    border-left-color: #60a5fa;
+    background: #1e3a5f;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DEFINITION - Soft green, foundational
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.definition {
+    border-left-color: #10b981;
+    background-color: #ffffff;
+}
+
+.definition-title {
+    background: #10b981;
+    color: #ffffff;
+}
+
+.navy .definition,
+.coal .definition,
+.ayu .definition {
+    border-left-color: #34d399;
+    background: #1e3d32;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LEMMA - Neutral gray, supporting
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.lemma {
+    border-left-color: #6b7280;
+    background: #f9fafb;
+}
+
+.lemma-title {
+    background: #6b7280;
+    color: #ffffff;
+}
+
+.navy .lemma,
+.coal .lemma,
+.ayu .lemma {
+    border-left-color: #9ca3af;
+    background: #262626;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PROOF - Minimal dashed border
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.proof {
+    border: 2px dashed #0f1927;
+    background: #fafafa;
+}
+
+.proof-title {
+    background: #0f1927;
+    color: #f9fafb;
+    font-style: italic;
+}
+
+/* QED symbol */
+.proof::after {
+    content: "∎";
+    position: absolute;
+    bottom: 0.3em;
+    right: 0.5em;
+    font-size: 1.5em;
+    color: #0f1927;
+}
+
+.navy .proof::after,
+.coal .proof::after,
+.ayu .proof::after {
+    color: #9ca3af;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EXAMPLE - Soft red background with left bar only
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.example {
+    border: none;
+    border-left: 4px solid #ef4444;
+    background: #fef2f2;
+}
+
+.example-title {
+    background: #ef4444;
+    color: #ffffff;
+}
+
+.navy .example,
+.coal .example,
+.ayu .example {
+    border-left-color: #f87171;
+    background: #3d1f1f;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   REMARK - Soft purple, secondary info
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.remark {
+    border: 2px dashed #8b5cf6;
+    border-left: 2px dashed #8b5cf6;
+}
+
+.remark-title {
+    background: #8b5cf6;
+    color: #ffffff;
+}
+
+.navy .remark,
+.coal .remark,
+.ayu .remark {
+    border-left-color: #a78bfa;
+    background: #2d1f3d;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ASSUMPTION - Orange, important conditions
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.assumption {
+    border: 1px solid #fb923c;
+    border-left: 4px solid #f97316;
+    background: #fff7ed;
+}
+
+.assumption-title {
+    background: #f97316;
+    color: #ffffff;
+}
+
+.navy .assumption,
+.coal .assumption,
+.ayu .assumption {
+    border-color: #fb923c;
+    border-left-color: #fb923c;
+    background: #3d2a1f;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TYPOGRAPHY
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.theorem p:first-of-type,
+.definition p:first-of-type,
+.lemma p:first-of-type,
+.example p:first-of-type,
+.assumption p:first-of-type,
+.remark p:first-of-type {
+    margin-top: 0.5em;
+}
+
+.theorem p:last-of-type,
+.definition p:last-of-type,
+.lemma p:last-of-type,
+.example p:last-of-type,
+.assumption p:last-of-type,
+.proof p:last-of-type,
+.remark p:last-of-type {
+    margin-bottom: 0;
+}
