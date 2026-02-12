@@ -73,13 +73,21 @@ pub fn beam_complete(
         // Check if any state in current beam is complete and well-typed
         for state in &current_beam {
             if let Some(complete_ast) = find_valid_completion(&state.tree, grammar, ctx) {
-                return BeamResult::Success {
-                    complete_input: state.tree.input().to_string(),
-                    ast: complete_ast,
-                    completion_path: state.path.clone(),
-                    score: state.score,
-                    depth: state.depth,
-                };
+                // Reconstruct text from the completed AST; fail explicitly if reconstruction is not possible.
+                match complete_ast.text() {
+                    Some(reconstructed) => {
+                        return BeamResult::Success {
+                            complete_input: reconstructed,
+                            ast: complete_ast,
+                            completion_path: state.path.clone(),
+                            score: state.score,
+                            depth: state.depth,
+                        };
+                    }
+                    None => {
+                        return BeamResult::Invalid { message: format!("Failed to reconstruct input from completed AST for prefix='{}'", state.tree.input()) };
+                    }
+                }
             }
         }
 
@@ -151,13 +159,20 @@ pub fn beam_complete(
     // Check one last time after the final depth
     for state in &current_beam {
         if let Some(complete_ast) = find_valid_completion(&state.tree, grammar, ctx) {
-            return BeamResult::Success {
-                complete_input: state.tree.input().to_string(),
-                ast: complete_ast,
-                completion_path: state.path.clone(),
-                score: state.score,
-                depth: state.depth,
-            };
+            match complete_ast.text() {
+                Some(reconstructed) => {
+                    return BeamResult::Success {
+                        complete_input: reconstructed,
+                        ast: complete_ast,
+                        completion_path: state.path.clone(),
+                        score: state.score,
+                        depth: state.depth,
+                    };
+                }
+                None => {
+                    return BeamResult::Invalid { message: format!("Failed to reconstruct input from completed AST for prefix='{}'", state.tree.input()) };
+                }
+            }
         }
     }
 

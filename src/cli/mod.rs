@@ -1,5 +1,6 @@
 pub mod logic;
 pub mod validate;
+pub mod examine;
 
 use clap::{ArgAction, Parser, Subcommand};
 use p7::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
@@ -34,6 +35,8 @@ pub enum Commands {
     Logic(self::logic::LogicCmd),
     /// Run validation test suites with progress and report
     Validate(self::validate::ValidateCmd),
+    /// Quick helper to examine completability for an input or test-case
+    Examine(self::examine::ExamineCmd),
 }
 
 pub fn run() {
@@ -66,5 +69,6 @@ pub fn run() {
     match &cli.command {
         Commands::Logic(_) => self::logic::dispatch(&cli),
         Commands::Validate(args) => self::validate::run(args),
+        Commands::Examine(args) => self::examine::run(args),
     }
 }

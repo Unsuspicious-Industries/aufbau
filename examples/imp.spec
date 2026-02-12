@@ -1,96 +1,123 @@
-// ===================== Core Tokens =====================
-Identifier ::= /[a-z][a-z0-9_]*/
-TypeName ::= /[A-Z][a-z]*/
+// Imp — an imperative language with modern syntax
+// Statements for control flow, expressions for computation
 
-// ===================== Types (with unions) =====================
+// ===================== Identifiers =====================
+Identifier ::= /[a-z][a-z0-9_]*/
+TypeName ::= 'Int' | 'Bool' 
+
+// ===================== Types =====================
 BaseType ::= TypeName | '(' Type ')'
 UnionType ::= BaseType '|' Type
 Type ::= BaseType | UnionType
 
 // ===================== Literals =====================
-Integer(int) ::= /[0-9]+/[n]
-Boolean(bool) ::= 'true' | 'false'
-Number(int_num) ::= Integer
-Number(neg_int) ::= '-' Integer[n]
+Integer(int_lit) ::= /[0-9]+/
+Boolean(bool_lit) ::= 'true' | 'false'
 
 // ===================== Expressions =====================
+// Expressions compute values, no side effects
+
 Variable(var) ::= Identifier[x]
-Atom ::= Number | Boolean | Variable | '(' Value ')'
 
-ArithOp ::= '+' | '-' | '*' | '/'
-CmpOp ::= '==' | '!=' | '<' | '<=' | '>' | '>='
+// Atomic expressions
+AtomicExpr ::= Variable | Integer | Boolean | '(' Expression ')'
 
-Value(value_atom) ::= Atom[v]
-Value(value_bin) ::= Atom[lhs] ArithOp[op] Value[rhs]
-Condition(cond) ::= Value[lhs] CmpOp[op] Value[rhs]
+// Binary operations - no left recursion!
+// We build up precedence by having expression reference the next level
+BinaryOp(bin_op) ::= AtomicExpr[lhs] BinOperator[op] AtomicExpr[rhs]
+
+BinOperator ::= '+' | '-' | '*' | '/' | '==' | '!=' | '<' | '<=' | '>' | '>='
+
+// Top level expression
+Expression ::= BinaryOp | AtomicExpr
 
 // ===================== Statements =====================
-Assignment(assign) ::= Identifier[x] ':' Type[τ] '=' Value[v] ';'
-Operation(op) ::= Value[lhs] ArithOp[op] Value[rhs] ';'
-If(if) ::= 'if' Condition[c] '{' Program[t] '}' 'else' '{' Program[e] '}'
-While(while) ::= 'while' Condition[c] '{' Program[body] '}'
+// Statements perform actions, modify state
 
-Statement(stmt) ::= Assignment[stmt] | Operation[stmt] | If[stmt] | While[stmt]
-Program(prog_cons) ::= Statement[a] Program[b]
-Program(prog_one) ::= Statement[a]
-Program(prog_empty) ::= ε
+// Variable declaration: let x: Int = 5;
+Declaration(decl) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';'
+
+// Assignment (to existing variable): x:Int = 10;
+Assignment(assign) ::= Identifier[name] ':' Type[τ] '=' Expression[value] ';'
+
+// If statement with optional else
+IfStmt(if) ::= 'if' '(' Expression[cond] ')' Block[then_block]
+IfElseStmt(if_else) ::= 'if' '(' Expression[cond] ')' Block[then_block] 'else' Block[else_block]
+
+// While loop
+WhileStmt(while) ::= 'while' '(' Expression[cond] ')' Block[body]
+
+// Block: { statements }
+Block(block) ::= '{' Statements[stmts] '}'
+
+// Statement list
+Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
+
+Statements::= Statement[head] Statements[tail] | ε
+ 
+
+// Top-level program is a block
+Program(program) ::= Block[main]
 
 // ===================== Typing Rules =====================
+
+// ---------- Expressions (produce values) ----------
+
+// Variable lookup
 x ∈ Γ
 ----------- (var)
 Γ(x)
 
------------ (int)
+// Integer literal
+----------- (int_lit)
 'Int'
 
------------ (bool)
+// Boolean literal
+----------- (bool_lit)
 'Bool'
 
------------ (int_num)
-'Int'
-
------------ (neg_int)
-'Int'
-
-Γ ⊢ v : ?T
----------- (value_atom)
-?T
-
+// Binary operation
 Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
--------------------------------- (value_bin)
+------------------------------------------------- (bin_op)
 'Int'
 
-Γ ⊢ v : ?A, ?A ⊆ τ
-------------------------- (assign)
-Γ → Γ[x:τ] ⊢ ∅
-
-Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
-------------------------------- (op)
-'Int'
-
-Γ ⊢ lhs : ?A, Γ ⊢ rhs : ?A
--------------------------- (cond)
+Γ ⊢ lhs : ?T, Γ ⊢ rhs : ?T
+--------------------------------------------------- (bin_op)
 'Bool'
 
-Γ ⊢ c : 'Bool', Γt ⊢ t : ?T, Γe ⊢ e : ?T
--------------------------------------- (if)
+// ---------- Statements (produce void type ∅) ----------
+
+// Declaration: extend context, check value type
+Γ ⊢ value : τ
+----------------------- (decl)
+Γ → Γ[name:τ] ⊢ ∅
+
+// Assignment: variable must exist and types must match
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------ (assign)
+∅
+
+// If statement: condition is Bool, body produces ?T
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T
+--------------------------------------- (if)
 ?T
 
-Γ ⊢ c : 'Bool', Γbody ⊢ body : ?B
------------------------------ (while)
-∅
+// If-else: both branches produce same type
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
+------------------------------------------------------------ (if_else)
+?T
 
-Γ ⊢ a : ?A, Γ ⊢ b : ?B
----------------------- (prog_cons)
-?B
+// While: condition is Bool, body produces ?T
+Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
+-------------------------------- (while)
+?T
 
-Γ ⊢ stmt : ?S
-------------- (stmt)
-?S
+// Block: statements produce ?T
+Γ ⊢ stmts : ?T
+-------------- (block)
+?T
 
-Γ ⊢ a : ?A
----------- (prog_one)
-?A
-
------------ (prog_empty)
-∅
+// Program
+Γ ⊢ main : ?T
+-------------- (program)
+?T

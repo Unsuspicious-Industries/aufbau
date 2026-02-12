@@ -30,66 +30,71 @@ use TypedCompletionTestCase as T;
 
 fn completable_cases() -> Vec<TypedCompletionTestCase> {
     vec![
-        // Already complete
-        T::ok("var decl", "x:Int=5;", 2),
-        T::ok("var init zero", "x:Int=0;", 2),
-        T::ok("var negative", "x:Int=-5;", 2),
-        T::ok("var large", "x:Int=999;", 2),
-        T::ok("bool decl", "flag:Bool=true;", 2),
-        T::ok("union decl", "u:Int|Bool=true;", 2),
+        // Already complete (wrapped as a top-level Block)
+        T::ok("var decl", "{ let x:Int=5; }", 2),
+        T::ok("var init zero", "{ let x:Int=0; }", 2),
+        T::ok("var negative", "{ let x:Int=-5; }", 2),
+        T::ok("var large", "{ let x:Int=999; }", 2),
+        T::ok("bool decl", "{ let flag:Bool=true; }", 2),
+        T::ok("union decl", "{ let u:Int|Bool=true; }", 2),
         // Nearly complete
-        T::ok("var no semicolon", "x:Int=5", 2),
-        T::ok("var no equals", "x:Int", 3),
-        T::ok("var no value", "x:Int=", 2),
+        T::ok("var no semicolon", "{ let x:Int=5", 2),
+        T::ok("var no equals", "{ let x:Int", 3),
+        T::ok("var no value", "{ let x:Int=", 2),
         // Partial
-        T::ok("var type only", "x:Int", 3),
+        T::ok("var type only", "{ let x:Int", 3),
         T::ok("empty", "", 3),
         // Sequences
-        T::ok("two decls", "x:Int=5; y:Int=3;", 2),
-        T::ok("sequence partial", "x:Int=5; y", 5),
+        T::ok("two decls", "{ let x:Int=5; let y:Int=3; }", 2),
+        T::ok("sequence partial", "{ let x:Int=5; y", 5),
         // Arithmetic expressions
-        T::ok("simple add", "x:Int=1+2;", 2),
-        T::ok("add chain", "x:Int=1+2+3;", 2),
-        T::ok("subtract", "x:Int=10-5;", 2),
-        T::ok("multiply", "x:Int=2*3;", 2),
-        T::ok("divide", "x:Int=6/2;", 2),
+        T::ok("simple add", "{ let x:Int=1+2; }", 2),
+        T::ok("add chain", "{ let x:Int=1+2+3; }", 2),
+        T::ok("subtract", "{ let x:Int=10-5; }", 2),
+        T::ok("multiply", "{ let x:Int=2*3; }", 2),
+        T::ok("divide", "{ let x:Int=6/2; }", 2),
         // Parentheses in expressions
-        T::ok("paren add", "x:Int=(1+2);", 2),
-        T::ok("nested parens", "x:Int=((1+2));", 2),
-        T::ok("paren partial", "x:Int=(1", 3),
+        T::ok("paren add", "{ let x:Int=(1+2); }", 2),
+        T::ok("nested parens", "{ let x:Int=((1+2)); }", 2),
+        T::ok("paren partial", "{ let x:Int=(1", 3),
         // Complex expressions
-        T::ok("mixed ops", "x:Int=1+2*3;", 1),
-        T::ok("all ops", "x:Int=1+2-3*4/5;", 1),
+        T::ok("mixed ops", "{ let x:Int=1+2*3; }", 1),
+        T::ok("all ops", "{ let x:Int=1+2-3*4/5; }", 1),
         // Variable references in expressions
-        T::ok("use var", "x:Int=5; y:Int=x;", 1),
-        T::ok("use in expr", "x:Int=5; y:Int=x+1;", 1),
+        T::ok("use var", "{ let x:Int=5; let y:Int=x; }", 1),
+        T::ok("use in expr", "{ let x:Int=5; let y:Int=x+1; }", 1),
         // Control flow
-        T::ok("if statement", "if 1==1 { x:Int=1; } else { x:Int=2; }", 2),
-        T::ok("while statement", "while 1==1 { x:Int=1; }", 2),
+        T::ok(
+            "if statement",
+            "{ if (1==1) { let x:Int=1; } else { let x:Int=2; } }",
+            2,
+        ),
+        T::ok("while statement", "{ while (1==1) { let x:Int=1; } }", 2),
     ]
 }
 
 fn fail_cases() -> Vec<TypedCompletionTestCase> {
     vec![
         // Syntax errors
-        T::fail("assign before decl", "x=5;"),
-        T::fail("missing type", "x=5;"),
-        T::fail("missing value", "x:Int;"),
+        T::fail("assign before decl", "{x=5;"),
+        T::fail("missing type for declaration", "{let x=5;"),
+        T::fail("missing value", "{let x:Int;"),
         // Invalid types
-        T::fail("wrong type", "x:String=5;"),
-        T::fail("lowercase type", "x:int=5;"),
+        T::fail("wrong type", "{let x:String=5;"),
+        T::fail("lowercase type", "{let x:int=5;"),
         // Unbound variables
-        T::fail("unbound var", "y:Int=x;"),
-        T::fail("use before decl", "y:Int=x+1; x:Int=5;"),
+        T::fail("unbound var", "{let y:Int=x;"),
+        T::fail("use before decl", "{let y:Int=x+1; let x:Int=5;"),
         // Type errors
-        T::fail("union used as int", "u:Int|Bool=true; u+1;"),
+        T::fail("union used as int", "{let u:Int|Bool=true; u+1;"),
         // Syntax errors in expressions
-        T::fail("invalid operator", "x:Int=5%2;"),
-        T::fail("operator first", "x:Int=+5;"),
-        T::fail("double operator", "x:Int=1++2;"),
+        T::fail("invalid operator", "{let x:Int=5%2;"),
+        T::fail("operator first", "{let x:Int=+5;"),
+        T::fail("double operator", "{let x:Int=1++2;"),
         // Mismatched parens
-        T::fail("extra close paren", "x:Int=(1+2));"),
-        T::fail("missing close paren", "x:Int=(1+2;"),
+        T::fail("extra close paren", "{let x:Int=(1+2));"),
+        T::fail("missing close paren", "{let x:Int=(1+2;"),
+        T::fail("missing open brace", "{let"),
         // Invalid syntax
         T::fail("close brace first", "}"),
         T::fail("random chars", "@#$;"),
@@ -107,15 +112,15 @@ fn check_completable() {
     res.assert_all_passed();
 }
 
-/// Standalone test: ensure bare identifier has ':' as a completion path
+/// Standalone test: ensure bare identifier has '=' as a completion path
 #[test]
 fn bare_identifier_has_assignment_completion_path() {
     let grammar = imp_grammar();
     let completions = get_completions(&grammar, "x");
-    let has_colon = completions.iter().any(|token| token.matches(":"));
+    let has_eq = completions.iter().any(|token| token.matches("="));
     assert!(
-        has_colon,
-        "expected ':' completion for bare identifier to allow assignment"
+        has_eq,
+        "expected '=' completion for bare identifier to allow assignment"
     );
 }
 

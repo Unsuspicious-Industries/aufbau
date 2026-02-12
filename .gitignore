@@ -1,6 +1,8 @@
 # Build artifacts
 target
 python/target
+validation
+examine*
 
 CONTEXT_DUMP.md
 CONTEXT.md 

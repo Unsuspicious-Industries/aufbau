@@ -25,13 +25,13 @@ use crate::logic::grammar::Grammar;
 use crate::logic::partial::{Parser, PartialAST};
 
 /// Default starting recursion depth - start low to handle ambiguous grammars
-const DEFAULT_START_DEPTH: usize = 1;
+const DEFAULT_START_DEPTH: usize = 5;
 
 /// Default maximum recursion depth to try before giving up
 const DEFAULT_MAX_DEPTH: usize = 100;
 
 /// Default increment for recursion depth
-const DEFAULT_DEPTH_INCREMENT: usize = 1;
+const DEFAULT_DEPTH_INCREMENT: usize = 2;
 
 /// MetaParser that automatically finds the right recursion depth
 pub struct MetaParser {

@@ -69,6 +69,58 @@ fn generate_weird_random_fun(n: usize) -> String {
     out
 }
 
+/// Generate operator-heavy chains: `1 + 2 - 3 * 4 / 5 + ...`.
+fn generate_operator_chain(n: usize) -> String {
+    if n == 0 { return "1".to_string(); }
+    let mut rng = StdRng::seed_from_u64(0xF00D_u64.wrapping_mul((n as u64) + 1));
+    let ops = ["+", "-", "*", "/"];
+    let mut out = "1".to_string();
+    for i in 1..=n {
+        let op = ops[rng.gen_range(0..ops.len())];
+        out = format!("{} {} {}", out, op, (i % 10).to_string());
+    }
+    out
+}
+
+/// Generate nested lambda and application chains: `(x => (y => (z => ...))) a b c`.
+fn generate_nested_lambda(n: usize) -> String {
+    let mut lam = String::new();
+    for i in 0..n {
+        lam.push_str(&format!("(x{}: Int) => ", i));
+    }
+    lam.push_str("1");
+    for i in 0..(n / 2) {
+        lam.push_str(&format!(" a{}", i));
+    }
+    lam
+}
+
+/// Generate a mixed, more-complex random FUN input combining many constructs.
+fn generate_complex_random_fun(n: usize) -> String {
+    let mut rng = StdRng::seed_from_u64(0xDEADBEEF_u64.wrapping_mul((n as u64) + 1));
+
+    // Start with a base expression
+    let mut out = match rng.gen_range(0..3) {
+        0 => generate_operator_chain(n / 2),
+        1 => generate_nested_lambda(n / 2),
+        _ => generate_weird_random_fun(n / 2),
+    };
+
+    // Splice in extra constructs to increase ambiguity and length
+    for i in 0..n {
+        match rng.gen_range(0..7) {
+            0 => out = format!("({})", out),
+            1 => out = format!("let x{}: Int = {}; {}", i, (i % 5) + 1, out),
+            2 => out = format!("{} + {}", out, (i % 10)),
+            3 => out = format!("(x: Int) => {}", out),
+            4 => out.push_str(&format!("; x{}", i % 6)),
+            5 => out = format!("if {} then {} else {}", (i % 2 == 0), out, "1"),
+            _ => out.push_str(" ;"),
+        }
+    }
+
+    out
+}
 fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
     // Keep a bounded recursion budget so complexity tests stay practical in CI.
     let mut parser = Parser::new(grammar.clone()).with_max_recursion(16);
@@ -114,6 +166,10 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
         (
             "Fun Weird Random".to_string(),
             run_complexity_test(&grammar, generate_weird_random_fun, "Fun Weird Random", 8, 16, jobs),
+        ),
+        (
+            "Fun Complex Random".to_string(),
+            run_complexity_test(&grammar, generate_complex_random_fun, "Fun Complex Random", 12, 32, jobs),
         ),
     ]
 }
@@ -190,6 +246,31 @@ fn fun_weird_random_complexity() {
     assert!(
         k < 6.0,
         "Fun weird-random parsing should stay below ~O(n^6), got O(n^{:.2})",
+        k
+    );
+}
+
+#[test]
+fn fun_complex_random_complexity() {
+    let grammar = fun_grammar();
+    let data = run_complexity_test(
+        &grammar,
+        generate_complex_random_fun,
+        "Fun Complex Random",
+        12,
+        32,
+        None,
+    );
+
+    let k = determine_complexity_exponent(&data);
+
+    println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Complex-random generator mixes operator chains, nested lambdas and lets.");
+
+    // Allow a higher ceiling because these inputs are intentionally adversarial.
+    assert!(
+        k < 8.0,
+        "Fun complex-random parsing should stay below ~O(n^8), got O(n^{:.2})",
         k
     );
 }

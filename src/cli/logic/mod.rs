@@ -40,6 +40,18 @@ pub struct VizArgs {
     /// Optional port to bind the server
     #[arg(short = 'p', long = "port", default_value_t = 5173)]
     pub port: u16,
+
+    /// Optional grammar spec to use when loading a serialized AST file
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec: Option<PathBuf>,
+
+    /// Path to a serialized AST file (S-expression `.ast`) to preload into the viz UI
+    #[arg(long = "ast", value_name = "FILE")]
+    pub ast: Option<PathBuf>,
+
+    /// Optional string representing the original input for the serialized AST (defaults to empty)
+    #[arg(long = "ast-input", value_name = "TEXT", default_value = "")]
+    pub ast_input: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -125,8 +137,38 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     let bind = format!("127.0.0.1:{}", args.port);
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
-    p7::viz::serve(&bind);
+
+    // If user provided an AST file, read it and provide as preload to the server.
+    if let Some(ast_path) = &args.ast {
+        let spec_text = match &args.spec {
+            Some(p) => match fs::read_to_string(p) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("error: failed to read spec '{}': {}", p.display(), e);
+                    std::process::exit(2);
+                }
+            },
+            None => {
+                eprintln!("error: --spec is required when using --ast");
+                std::process::exit(2);
+            }
+        };
+
+        let ast_text = match fs::read_to_string(ast_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("error: failed to read ast file '{}': {}", ast_path.display(), e);
+                std::process::exit(2);
+            }
+        };
+
+        p7::viz::serve_with_preload(&bind, Some((spec_text, ast_text, args.ast_input.clone())));
+        return;
+    }
+
+    p7::viz::serve_with_preload(&bind, None);
 }
+
 
 fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
     let _ = debug_level; // wired globally above
