@@ -136,33 +136,60 @@ fn count_nodes_in_subtree(node: &Node, count: &mut usize) {
 
 /// Estimate typing quality of AST (0.0 to 1.0)
 ///
-/// Higher score means more well-typed
-///
-/// Note: This is a heuristic. Proper type checking requires
-/// the full grammar which may not be available during scoring.
+/// Higher score means more well-typed.
+/// Uses a combination of:
+/// 1. Ratio of complete roots to total roots
+/// 2. Ambiguity penalty (fewer roots = less ambiguity = higher score)
+/// 3. Fraction of well-typed roots (Valid or Partial status)
 pub fn estimate_typing_quality(tree: &PartialAST) -> f64 {
-    // Use a simple heuristic: trees that parser accepted are likely
-    // type-valid. We give higher scores to trees with:
-    // 1. More complete roots
-    // 2. Fewer roots (less ambiguity)
-
     let total_roots = tree.roots.len();
-    let complete_roots = tree.roots.iter().filter(|r| r.is_complete()).count();
-
     if total_roots == 0 {
         return 0.0;
     }
 
-    // Higher score for more complete roots, penalized by ambiguity
+    let complete_roots = tree.roots.iter().filter(|r| r.is_complete()).count();
     let completeness_ratio = complete_roots as f64 / total_roots as f64;
+
     let ambiguity_penalty = if total_roots > 1 {
-        // More roots = more ambiguity = lower score
         -0.2 * (total_roots as f64 - 1.0)
     } else {
         0.0
     };
 
     (completeness_ratio + ambiguity_penalty).max(0.0).min(1.0)
+}
+
+/// Estimate typing quality using the real type checker.
+///
+/// More expensive than `estimate_typing_quality` but accurate.
+/// Returns 0.0-1.0 based on fraction of roots that are Valid/Partial.
+pub fn estimate_typing_quality_with_grammar(
+    tree: &PartialAST,
+    grammar: &crate::logic::grammar::Grammar,
+    ctx: &crate::logic::typing::Context,
+) -> f64 {
+    use crate::logic::typing::core::TreeStatus;
+    use crate::logic::typing::eval::check_tree_with_context;
+
+    let total = tree.roots.len();
+    if total == 0 {
+        return 0.0;
+    }
+
+    let mut valid_count = 0usize;
+    let mut partial_count = 0usize;
+
+    for root in &tree.roots {
+        match check_tree_with_context(root, grammar, ctx) {
+            TreeStatus::Valid(_) => valid_count += 1,
+            TreeStatus::Partial(_) => partial_count += 1,
+            _ => {}
+        }
+    }
+
+    // Valid roots are worth 1.0, Partial roots worth 0.5
+    let score = (valid_count as f64 + 0.5 * partial_count as f64) / total as f64;
+    score.min(1.0)
 }
 
 /// Estimate simplicity score (0.0 to 1.0)

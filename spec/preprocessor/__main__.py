@@ -13,12 +13,24 @@ def process(content: str) -> str:
     return content
 
 def process_chapter(chapter):
-    """Recursively process a chapter and its sub-items."""
-    if 'Chapter' in chapter:
+    """Recursively process a chapter and its sub-items.
+
+    Handle both mdBook shapes: some versions wrap chapter data under a
+    `"Chapter"` key, others present the chapter dict directly.
+    """
+    # Normalize to the inner chapter dict
+    if isinstance(chapter, dict) and 'Chapter' in chapter:
         ch = chapter['Chapter']
-        ch['content'] = process(ch['content'])
-        for sub_item in ch.get('sub_items', []):
-            process_chapter(sub_item)
+    else:
+        ch = chapter
+
+    # If there's content, process it (be tolerant of missing fields)
+    if isinstance(ch, dict) and 'content' in ch and ch['content'] is not None:
+        ch['content'] = process(ch.get('content', ''))
+
+    # Recurse into any sub-items / children
+    for sub_item in ch.get('sub_items', []) if isinstance(ch, dict) else []:
+        process_chapter(sub_item)
 
 if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'supports':
@@ -28,8 +40,23 @@ if __name__ == '__main__':
     # Read the [context, book] JSON from stdin
     context, book = json.load(sys.stdin)
 
+    # mdBook's JSON shape has changed across versions; be defensive and accept
+    # multiple shapes. Prefer the usual `sections`, but fall back to other
+    # locations so the preprocessor won't crash on newer mdBook releases.
+    if isinstance(book, dict) and 'sections' in book:
+        sections = book['sections']
+    elif isinstance(book, dict) and 'book' in book and isinstance(book['book'], dict) and 'sections' in book['book']:
+        sections = book['book']['sections']
+    elif isinstance(book, dict) and 'items' in book:
+        sections = book['items']
+    else:
+        # Unexpected shape: log keys for debugging and return the book unchanged
+        print(f"preprocessor: unexpected book keys: {list(book.keys())}", file=sys.stderr)
+        json.dump(book, sys.stdout)
+        sys.exit(0)
+
     # Process each section in the book
-    for section in book['sections']:
+    for section in sections:
         process_chapter(section)
 
     # Output the modified book as JSON

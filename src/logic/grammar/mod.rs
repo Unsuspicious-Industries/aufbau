@@ -4,14 +4,13 @@ pub mod tokenizer;
 pub mod utils;
 
 use crate::logic::binding::{self, BindingMap};
-pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
+pub use tokenizer::{Segment, Tokenizer, DEFAULT_DELIMITERS};
 
 #[cfg(test)]
 mod tests;
 
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::HashMap;
-use std::ffi::os_str::Display;
 use std::hash::{Hash, Hasher};
 
 // ANCHOR: Symbol

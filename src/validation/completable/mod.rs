@@ -84,6 +84,33 @@ impl TypedCompletionTestCase {
             require_prefix_soundness: true,
         }
     }
+
+    /// Expect-pass helper: completable input, no prefix soundness check.
+    pub fn ok(desc: &'static str, input: &'static str, depth: usize) -> Self {
+        Self::new(desc, input, false)
+            .with_depth(depth)
+            .without_soundness()
+    }
+
+    /// Expect-pass with prefix soundness check.
+    pub fn sound(desc: &'static str, input: &'static str, depth: usize) -> Self {
+        Self::new(desc, input, false).with_depth(depth)
+    }
+
+    /// Expect-fail helper: syntax error, invalid input, etc.
+    pub fn fail(desc: &'static str, input: &'static str) -> Self {
+        Self::new(desc, input, true)
+    }
+
+    /// Expect-fail with an explicit typing context (for type-error tests).
+    pub fn typefail(
+        desc: &'static str,
+        input: &'static str,
+        ctx: Vec<(&'static str, &'static str)>,
+    ) -> Self {
+        Self::new(desc, input, true).with_context(ctx)
+    }
+
     pub fn with_depth(mut self, depth: usize) -> Self {
         self.max_depth = depth;
         self
@@ -100,10 +127,27 @@ impl TypedCompletionTestCase {
     }
 }
 
-/// Run a single typed completion test case, returning timing info
-pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestResult, Duration) {
+/// Metadata for a single test run useful to profiling and reporting
+#[derive(Debug, Clone)]
+pub struct TestRunMeta {
+    pub beam_fallback: Option<bool>,
+    pub states_explored: Option<usize>,
+    /// Per-prefix metadata collected during prefix soundness checks (if any)
+    pub prefix_meta: Option<Vec<crate::validation::completability::PrefixDetail>>,
+    /// Total number of prefixes checked (if available)
+    pub prefixes_checked: Option<usize>,
+    /// Sum of per-prefix times in microseconds (if available)
+    pub total_prefix_time_us: Option<u128>,
+}
+
+/// Run a single typed completion test case, returning timing info and metadata.
+/// All failure messages are structured as key=value lines for machine parsing.
+pub fn run_test_timed_meta(
+    grammar: &Grammar,
+    case: &TypedCompletionTestCase,
+) -> (TestResult, Duration, TestRunMeta) {
     let start = Instant::now();
-    
+
     // Build typing context
     let mut ctx = Context::new();
     for (var, ty_str) in &case.context {
@@ -112,144 +156,171 @@ pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (Tes
         }
     }
 
+    let mut meta = TestRunMeta {
+        beam_fallback: None,
+        states_explored: None,
+        prefix_meta: None,
+        prefixes_checked: None,
+        total_prefix_time_us: None,
+    };
+
     let result = match case.xfail {
-        // Expecting success
-        false  => {
+        // ── Expecting success ────────────────────────────────────────────
+        false => {
             if case.require_prefix_soundness {
                 let (result, elapsed) =
                     timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
+                eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
 
-                if elapsed.as_secs() >= 2 {
-                    eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
-                }
+                // Attach prefix-level metadata to the test run meta so CLI can emit structured JSON
+                let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
+
+                meta.prefix_meta = Some(result.prefix_meta.clone());
+                meta.prefixes_checked = Some(result.prefixes_checked);
+                meta.total_prefix_time_us = Some(total_prefix_time);
 
                 if result.is_sound {
-                    // Expected success
                     TestResult::Pass(result.complete_string)
                 } else {
-                    // Unexpectedly failed - provide detailed error information
-                    let mut error_msg = format!("Expected success but got unsound completion\n");
-                    error_msg.push_str(&format!("  Input: '{}'\n", case.input));
-                    error_msg.push_str(&format!("  Prefixes checked: {}\n", result.prefixes_checked));
+                    let mut m = String::new();
+                    m.push_str("kind=unsound_completion\n");
+                    m.push_str(&format!("input={}\n", case.input));
+                    m.push_str(&format!("prefixes_checked={}\n", result.prefixes_checked));
+                    m.push_str(&format!("prefix_total_time_us={}\n", total_prefix_time));
 
-                    if let Some(ref failing) = result.failing_prefix {
-                        error_msg.push_str(&format!("  ❌ First failing prefix: '{}'\n", failing));
+                    if let Some(ref fp) = result.failing_prefix {
+                        m.push_str(&format!("failing_prefix={}\n", fp));
+                    }
+                    if let Some(ref complete) = result.complete_string {
+                        m.push_str(&format!("completed_to={}\n", complete));
                     }
 
-                    // Show sample of visited states if available
+                    // Visited states at the failing prefix
                     if let Some(ref visited) = result.failing_prefix_visited_states {
-                        if !visited.is_empty() {
-                            error_msg.push_str(&format!(
-                                "  � Sample visited states ({} total):\n",
-                                visited.len()
-                            ));
-                            for (i, state) in visited.iter().take(10).enumerate() {
-                                error_msg.push_str(&format!("    {}: '{}'\n", i + 1, state));
-                            }
-                            if visited.len() > 10 {
-                                error_msg.push_str(&format!(
-                                    "    ... and {} more\n",
-                                    visited.len() - 10
-                                ));
+                        m.push_str(&format!("failing_visited_count={}\n", visited.len()));
+                        for (i, state) in visited.iter().enumerate() {
+                            m.push_str(&format!("failing_visited_{}={}\n", i, state));
+                        }
+                    }
+
+                    // Per-prefix breakdown: every prefix and its pass/fail status + rich meta
+                    m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
+                    for (i, pd) in result.prefix_meta.iter().enumerate() {
+                        m.push_str(&format!("prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?} beam_fallback={:?}\n", i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count, pd.beam_fallback));
+                        for (j, v) in pd.visited_sample.iter().enumerate() {
+                            m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
+                        }
+                        if let Some(vc) = pd.visited_count {
+                            if vc > pd.visited_sample.len() {
+                                m.push_str(&format!("prefix_{}_visited_truncated={}\n", i, vc - pd.visited_sample.len()));
                             }
                         }
                     }
 
-                    // Show detailed prefix results
-                    error_msg.push_str("  Prefix completion results:\n");
-                    for (prefix, success) in &result.prefix_details {
-                        let status = if *success { "✓" } else { "✗" };
-                        error_msg.push_str(&format!("    {} '{}'\n", status, prefix));
-                    }
-
-                    if let Some(ref complete) = result.complete_string {
-                        error_msg.push_str(&format!("  Completed to: '{}'\n", complete));
-                    }
-
-                    TestResult::Fail(error_msg)
+                    TestResult::Fail(m)
                 }
             } else {
                 let (result, elapsed) =
                     timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-
-                if elapsed.as_secs() >= 2 {
-                    eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
-                }
+                eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
 
                 match result {
-                    CompletionResult::Success { complete_input, .. } => {
+                    CompletionResult::Success { complete_input, beam_fallback, .. } => {
+                        meta.beam_fallback = Some(beam_fallback);
                         TestResult::Pass(Some(complete_input))
                     }
                     CompletionResult::Failure {
                         max_depth_reached,
                         states_explored,
-                        ..
-                    } => TestResult::Fail(format!(
-                        "Expected success but completion failed\n  Input: '{}'\n  Explored states: {}\n  Max depth reached: {}",
-                        case.input, states_explored, max_depth_reached
-                    )),
-                    CompletionResult::Invalid(msg)
-                    | CompletionResult::Error(msg) => TestResult::Fail(format!(
-                        "Expected success but got invalid/error\n  Input: '{}'\n  {}",
-                        case.input, msg
-                    )),
-                    CompletionResult::Inconsistency(msg) => TestResult::Fail(format!(
-                        "Expected success but got inconsistency\n  Input: '{}'\n  {}",
-                        case.input, msg
-                    )),
-                    CompletionResult::StateOverflow(limit) => TestResult::Fail(format!(
-                        "Expected success but state overflowed\n  Input: '{}'\n  Limit: {}",
-                        case.input, limit
-                    )),
+                        visited_states,
+                        beam_fallback,
+                    } => {
+                        meta.beam_fallback = Some(beam_fallback);
+                        meta.states_explored = Some(visited_states.len());
+
+                        let mut m = String::new();
+                        m.push_str("kind=completion_failed\n");
+                        m.push_str(&format!("input={}\n", case.input));
+                        m.push_str(&format!("states_explored={}\n", states_explored));
+                        m.push_str(&format!("beam_fallback={}\n", beam_fallback));
+                        m.push_str(&format!("max_depth_reached={}\n", max_depth_reached));
+                        m.push_str(&format!("visited_count={}\n", visited_states.len()));
+                        for (i, state) in visited_states.iter().take(20).enumerate() {
+                            m.push_str(&format!("visited_{}={}\n", i, state));
+                        }
+                        if visited_states.len() > 20 {
+                            m.push_str(&format!("visited_truncated={}\n", visited_states.len() - 20));
+                        }
+                        TestResult::Fail(m)
+                    }
+                    CompletionResult::Invalid(msg) => {
+                        let mut m = String::new();
+                        m.push_str("kind=invalid\n");
+                        m.push_str(&format!("input={}\n", case.input));
+                        m.push_str(&format!("reason={}\n", msg));
+                        TestResult::Fail(m)
+                    }
+                    CompletionResult::Error(msg) => {
+                        let mut m = String::new();
+                        m.push_str("kind=error\n");
+                        m.push_str(&format!("input={}\n", case.input));
+                        m.push_str(&format!("reason={}\n", msg));
+                        TestResult::Fail(m)
+                    }
+                    CompletionResult::Inconsistency(msg) => {
+                        let mut m = String::new();
+                        m.push_str("kind=inconsistency\n");
+                        m.push_str(&format!("input={}\n", case.input));
+                        m.push_str(&format!("reason={}\n", msg));
+                        TestResult::Fail(m)
+                    }
+                    CompletionResult::StateOverflow(limit) => {
+                        let mut m = String::new();
+                        m.push_str("kind=state_overflow\n");
+                        m.push_str(&format!("input={}\n", case.input));
+                        m.push_str(&format!("limit={}\n", limit));
+                        TestResult::Fail(m)
+                    }
                 }
             }
         }
-        // Expecting failure
+        // ── Expecting failure (xfail) ────────────────────────────────────
         true => {
-            let (result, elapsed) = timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-            
-            if elapsed.as_secs() >= 2 {
-                eprintln!("  ⏱️  '{}' completion took {:?}", case.input, elapsed);
-            }
-            
-            let is_completable = matches!(result, CompletionResult::Success { .. });
-            
-            if is_completable {
-                // Unexpectedly succeeded - provide details about what completed
-                let mut error_msg = format!("Expected failure but got successful completion\n");
-                error_msg.push_str(&format!("  Input: '{}'\n", case.input));
-                
-                if let CompletionResult::Success { complete_input, depth, completion_path, .. } = result {
-                    error_msg.push_str(&format!("  Completed to: '{}'\n", complete_input));
-                    error_msg.push_str(&format!("  Depth: {}\n", depth));
-                    error_msg.push_str(&format!("  Completion path: {} tokens\n", completion_path.len()));
+            let (result, elapsed) =
+                timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
+            eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
+
+            match result {
+                    CompletionResult::Success { complete_input, depth, completion_path, ast, beam_fallback } => {
+                    let mut m = String::new();
+                    m.push_str("kind=unexpected_success\n");
+                    m.push_str(&format!("input={}\n", case.input));
+                    m.push_str(&format!("completed_to={}\n", complete_input));
+                    m.push_str(&format!("beam_fallback={}\n", beam_fallback));
+                    m.push_str(&format!("depth={}\n", depth));
+                    m.push_str(&format!("path_len={}\n", completion_path.len()));
+                    for (i, tok) in completion_path.iter().take(30).enumerate() {
+                        m.push_str(&format!("path_{}={}\n", i, tok));
+                    }
+                    if completion_path.len() > 30 {
+                        m.push_str(&format!("path_truncated={}\n", completion_path.len() - 30));
+                    }
+                    m.push_str(&format!("ast_root={}\n", ast.name));
+                    m.push_str(&format!("ast_complete={}\n", ast.is_complete()));
+                    TestResult::Fail(m)
                 }
-                
-                TestResult::Fail(error_msg)
-            } else {
-                // Expected failure - log what kind of failure
-                match result {
-                    CompletionResult::Failure { max_depth_reached, states_explored, .. } => {
-                        eprintln!("  ✓ Failed as expected (explored {} states, max depth: {})", 
-                                  states_explored, max_depth_reached);
-                    }
-                    CompletionResult::Invalid(ref msg) => {
-                        eprintln!("  ✓ Invalid as expected: {}", msg);
-                    }
-                    CompletionResult::StateOverflow(limit) => {
-                        eprintln!("  ✓ State overflow as expected (limit: {})", limit);
-                    }
-                    CompletionResult::Error(ref msg) => {
-                        eprintln!("  ✓ Error as expected: {}", msg);
-                    }
-                    _ => {}
-                }
-                TestResult::Pass(None)
+                _ => TestResult::Pass(None),
             }
         }
     };
-    
-    (result, start.elapsed())
+
+    (result, start.elapsed(), meta)
+}
+
+/// Backwards-compatible wrapper that returns the original pair
+pub fn run_test_timed(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestResult, Duration) {
+    let (res, dur, _meta) = run_test_timed_meta(grammar, case);
+    (res, dur)
 }
 
 #[derive(Debug)]
@@ -264,61 +335,81 @@ impl TestResult {
     }
 }
 
-/// Run a batch of test cases and report results
+/// Run a batch of test cases and report results.
+///
+/// Output uses a normalised line format so external tools can parse it:
+///   BATCH_BEGIN count=N
+///   CASE idx=I desc="..." input="..." expect=PASS|FAIL depth=D
+///   CASE_PASS idx=I desc="..." time_ms=T completed="..."
+///   CASE_FAIL idx=I desc="..." time_ms=T error="first line"
+///   CASE_DETAIL ...continuation line...
+///   BATCH_END passed=P failed=F avg_ms=A total_ms=T
 pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> BatchResult {
     let mut passed = 0;
     let mut failed = 0;
     let mut failures = Vec::new();
     let mut total_time = Duration::new(0, 0);
 
-    eprintln!("\n═══════════════════════════════════════════════════════");
-    eprintln!("Running test batch: {} cases", cases.len());
-    eprintln!("═══════════════════════════════════════════════════════\n");
+    eprintln!("BATCH_BEGIN count={}", cases.len());
 
     for (idx, case) in cases.iter().enumerate() {
-        eprintln!("[{}/{}] Running test: {}", idx + 1, cases.len(), case.description);
-        eprintln!("  Input: '{}'", case.input);
-        eprintln!("  Expected: {}", if case.xfail { "FAIL" } else { "PASS" });
-        eprintln!("  Max depth: {}", case.max_depth);
-        if !case.context.is_empty() {
-            eprintln!("  Context: {:?}", case.context);
-        }
-        
+        let expect = if case.xfail { "FAIL" } else { "PASS" };
+        eprintln!(
+            "CASE idx={} desc=\"{}\" input=\"{}\" expect={} depth={}",
+            idx, case.description, case.input, expect, case.max_depth
+        );
+
         let (result, duration) = run_test_timed(grammar, case);
-        
+        let ms = duration.as_millis();
+
         match result {
             TestResult::Pass(completed) => {
-                eprintln!("  ✓ PASSED in {:?}", duration);
-                if let Some(ref complete) = completed {
-                    eprintln!("    Completed: '{}'", complete);
-                }
+                let comp = completed.as_deref().unwrap_or("");
+                eprintln!(
+                    "CASE_PASS idx={} desc=\"{}\" time_ms={} completed=\"{}\"",
+                    idx, case.description, ms, comp
+                );
                 passed += 1;
             }
             TestResult::Fail(msg) => {
-                eprintln!("  ✗ FAILED in {:?}", duration);
-                eprintln!("  Error details:");
-                for line in msg.lines() {
-                    eprintln!("    {}", line);
+                // First line of msg is always kind=... 
+                let kind = msg.lines().next().unwrap_or("kind=unknown");
+                eprintln!(
+                    "CASE_FAIL idx={} desc=\"{}\" input=\"{}\" time_ms={} {}",
+                    idx, case.description, case.input, ms, kind
+                );
+                // Every subsequent line tagged with case index for grouping
+                for line in msg.lines().skip(1) {
+                    if !line.trim().is_empty() {
+                        eprintln!("CASE_DETAIL idx={} {}", idx, line.trim());
+                    }
                 }
                 failed += 1;
                 failures.push((case.description, case.input, msg));
             }
         }
-        eprintln!();
         total_time += duration;
     }
 
-    eprintln!("═══════════════════════════════════════════════════════");
-    eprintln!("Batch results: {} passed, {} failed", passed, failed);
-    eprintln!("Average duration: {:?}", total_time / (cases.len() as u32));
-    eprintln!("Total duration: {:?}", total_time);
-    eprintln!("═══════════════════════════════════════════════════════\n");
+    let avg_ms = if cases.is_empty() {
+        0
+    } else {
+        (total_time / cases.len() as u32).as_millis()
+    };
+    eprintln!(
+        "BATCH_END passed={} failed={} avg_ms={} total_ms={}",
+        passed, failed, avg_ms, total_time.as_millis()
+    );
 
     BatchResult {
         passed,
         failed,
         failures,
-        avg_duration: total_time / (cases.len() as u32),
+        avg_duration: if cases.is_empty() {
+            Duration::new(0, 0)
+        } else {
+            total_time / cases.len() as u32
+        },
     }
 }
 
@@ -328,31 +419,27 @@ pub struct BatchResult {
     pub failed: usize,
     pub failures: Vec<(&'static str, &'static str, String)>,
     pub avg_duration: Duration,
-   
 }
 
 impl BatchResult {
     pub fn assert_all_passed(&self) {
         if self.failed > 0 {
-            eprintln!("\n╔═══════════════════════════════════════════════════════╗");
-            eprintln!("║  TEST FAILURES: {} out of {} tests failed           ║", 
-                     self.failed, self.passed + self.failed);
-            eprintln!("╚═══════════════════════════════════════════════════════╝\n");
-            
+            eprintln!(
+                "BATCH_FAILURES total={} out_of={}",
+                self.failed,
+                self.passed + self.failed
+            );
             for (idx, (desc, input, msg)) in self.failures.iter().enumerate() {
-                eprintln!("────────────────────────────────────────────────────────");
-                eprintln!("Failure #{}: {}", idx + 1, desc);
-                eprintln!("  Input: '{}'", input);
-                eprintln!("\nDetails:");
-                for line in msg.lines() {
-                    eprintln!("  {}", line);
+                let kind = msg.lines().next().unwrap_or("kind=unknown");
+                eprintln!("FAILURE idx={} desc=\"{}\" input=\"{}\" {}", idx, desc, input, kind);
+                for line in msg.lines().skip(1) {
+                    if !line.trim().is_empty() {
+                        eprintln!("FAILURE_DETAIL idx={} {}", idx, line.trim());
+                    }
                 }
-                eprintln!();
             }
-            eprintln!("════════════════════════════════════════════════════════\n");
-            
             panic!(
-                "{} out of {} tests failed (see details above)",
+                "{} out of {} tests failed (see CASE_FAIL / FAILURE lines above)",
                 self.failed,
                 self.passed + self.failed
             );

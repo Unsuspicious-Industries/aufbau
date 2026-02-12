@@ -1,0 +1,56 @@
+name: Validation Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validation:
+    name: Run Validation Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [arithmetic, stlc, fun, imp, weird, parseable]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build `p7` binary (release)
+        run: cargo build --bin p7 --release --verbose
+
+      - name: Run `p7 validate` for module
+        run: |
+          echo "Running validation for module: ${{ matrix.module }}"
+          if [ "${{ matrix.module }}" = "parseable" ]; then
+            ./target/release/p7 validate -m parseable
+          else
+            ./target/release/p7 validate --filter "${{ matrix.module }}"
+          fi
+
+      - name: Show generated reports
+        if: always()
+        run: |
+          echo "Reports for module: ${{ matrix.module }}"
+          ls -la validation/reports || true
+
+      - name: Upload validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports-${{ matrix.module }}
+          path: validation/reports/*.txt

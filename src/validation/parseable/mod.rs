@@ -21,10 +21,12 @@
 pub mod fun;
 pub mod imp;
 pub mod stlc;
+pub mod weird;
 // pub mod clike;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
+use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -132,6 +134,9 @@ impl ParseTestCase {
 }
 
 /// Check if all prefixes of an input can be partially parsed
+///
+/// Parallelized using Rayon by checking each prefix independently and then
+/// re-assembling results in order to preserve the original failure semantics.
 pub fn check_all_prefixes_parseable(
     grammar: &Grammar,
     input: &str,
@@ -140,22 +145,36 @@ pub fn check_all_prefixes_parseable(
     let start = Instant::now();
     let chars: Vec<char> = input.chars().collect();
 
-    for len in 0..=(chars.len() - 1) {
-        let prefix: String = chars[..len].iter().collect();
+    // Determine the range of prefix lengths to check (exclude full input here)
+    let max_prefix = if chars.is_empty() { 0 } else { chars.len() - 1 };
 
-        // Skip whitespace-only prefixes after the first
-        if len > 0 && prefix.trim().is_empty() {
-            continue;
-        }
+    // Collect prefixes to check, skipping whitespace-only prefixes after the first
+    let prefixes: Vec<(usize, String)> = (0..=max_prefix)
+        .map(|len| (len, chars[..len].iter().collect::<String>()))
+        .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+        .collect();
 
-        let mut parser = Parser::new(grammar.clone());
-        let result = if check_typing {
-            parser.partial_typed(&prefix)
-        } else {
-            parser.partial(&prefix)
-        };
+    // Check prefixes in parallel. Each item returns `Option<String>` where `Some(err)`
+    // indicates a parse error for that prefix, while `None` indicates success.
+    let results: Vec<Option<String>> = prefixes
+        .par_iter()
+        .map(|(_len, prefix)| {
+            let mut parser = Parser::new(grammar.clone());
+            let res = if check_typing {
+                parser.partial_typed(prefix)
+            } else {
+                parser.partial(prefix)
+            };
+            match res {
+                Ok(_) => None,
+                Err(e) => Some(e),
+            }
+        })
+        .collect();
 
-        if let Err(e) = result {
+    // Re-assemble results in original order and return the first failing prefix, if any
+    for ((len, prefix), opt_err) in prefixes.into_iter().zip(results.into_iter()) {
+        if let Some(e) = opt_err {
             return ParseResult::Fail {
                 failing_prefix: prefix,
                 error: e,
@@ -304,29 +323,50 @@ impl BatchResult {
 }
 
 /// Run a batch of parseability test cases
-pub fn run_parse_batch(grammar: &Grammar, cases: &[ParseTestCase]) -> BatchResult {
+pub fn run_parse_batch(grammar: &Grammar, cases: &[ParseTestCase]) -> (BatchResult, Vec<serde_json::Value>) {
     let start = Instant::now();
     let mut passed = 0;
     let mut failed = 0;
     let mut failures = Vec::new();
 
+    // Collect per-case JSON records so callers can consume profiling info
+    let mut case_records: Vec<serde_json::Value> = Vec::with_capacity(cases.len());
+
     for case in cases {
-        print!("  {} '{}' ... ", case.description, case.input);
+        let start = Instant::now();
         let result = run_parse_test(grammar, case);
+        let elapsed = start.elapsed();
+
+        // Emit a per-case JSON record for optional profiling (do not print it here)
+        {
+            use serde_json::json;
+            let (passed_flag, prefix_count, failing_prefix, error, prefix_index) = match &result {
+                ParseResult::Pass { prefix_count, .. } => (true, Some(*prefix_count as usize), None::<String>, None::<String>, None::<usize>),
+                ParseResult::Fail { failing_prefix, error, prefix_index } => (false, None, Some(failing_prefix.clone()), Some(error.clone()), Some(*prefix_index)),
+            };
+            let case_obj = json!({
+                "module": "parseable",
+                "desc": case.description,
+                "input": case.input,
+                "xfail": case.xfail,
+                "passed": passed_flag,
+                "time_ms": elapsed.as_millis(),
+                "time_us": elapsed.as_micros(),
+                "prefix_count": prefix_count,
+                "failing_prefix": failing_prefix,
+                "error": error,
+                "prefix_index": prefix_index,
+            });
+
+            // Keep the record for optional profile file generation (silent)
+            case_records.push(case_obj.clone());
+        }
 
         match &result {
-            ParseResult::Pass { duration, .. } => {
-                println!("✓ ({:?})", duration);
+            ParseResult::Pass { .. } => {
                 passed += 1;
             }
-            ParseResult::Fail {
-                failing_prefix,
-                error,
-                ..
-            } => {
-                println!("✗");
-                println!("    Failed at prefix: '{}'", failing_prefix);
-                println!("    Error: {}", error);
+            ParseResult::Fail { .. } => {
                 failures.push((case.description.to_string(), result));
                 failed += 1;
             }
@@ -340,13 +380,16 @@ pub fn run_parse_batch(grammar: &Grammar, cases: &[ParseTestCase]) -> BatchResul
         total_duration / cases.len() as u32
     };
 
-    BatchResult {
-        passed,
-        failed,
-        failures,
-        total_duration,
-        avg_duration,
-    }
+    (
+        BatchResult {
+            passed,
+            failed,
+            failures,
+            total_duration,
+            avg_duration,
+        },
+        case_records,
+    )
 }
 
 // ============================================================================

@@ -34,7 +34,7 @@ Repository = "https://github.com/Unsuspicious-Industries/p7"
 Documentation = "https://github.com/Unsuspicious-Industries/p7/tree/main/python"
 
 [project.optional-dependencies]
-transformers = ["transformers>=4.30.0", "torch>=2.0.0"]
+transformers = ["transformers>=4.30.0", "torch>=2.0.0","accelerate"]
 dev = ["pytest", "numpy"]
 
 [tool.maturin]

@@ -13,108 +13,112 @@ pub fn stlc_grammar() -> Grammar {
 }
 
 // ============================================================================
+// Suite Definitions (used by validate binary)
+// ============================================================================
+
+pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
+    let g = stlc_grammar();
+    vec![
+        ("stlc::completable", g.clone(), completable_cases()),
+        ("stlc::fail", g, fail_cases()),
+    ]
+}
+
+use TypedCompletionTestCase as T;
+
+fn completable_cases() -> Vec<TypedCompletionTestCase> {
+    vec![
+        // Complete lambda expressions
+        T::sound("identity", "λx:A.x", 1),
+        T::sound("nested lambdas", "λx:A.λy:B.x", 1),
+        T::sound("triple nested", "λx:A.λy:B.λz:C.x", 1),
+        T::sound("use inner var", "λx:A.λy:B.y", 1),
+        // Partial lambda expressions
+        T::sound("lambda prefix", "λ", 6),
+        T::sound("lambda with var", "λx", 5),
+        T::sound("lambda with colon", "λx:", 4),
+        T::sound("lambda with type", "λx:A", 3),
+        T::sound("lambda with dot", "λx:A.", 2),
+        // Function types
+        T::sound("function type annotation", "λf:A->B.f", 1),
+        T::sound("nested function type", "λf:(A->B)->C.f", 1),
+        T::sound("curried type", "λf:A->B->C.f", 1),
+        // Application expressions
+        T::sound("simple app", "λf:A->B.f x", 2),
+        T::sound("app in body", "λf:A->B.λx:A.f x", 2),
+        T::sound("partial app", "λf:A->B.f", 2),
+        // Parenthesized expressions
+        T::sound("paren var", "λx:A.(x)", 1),
+        T::sound("paren lambda", "(λx:A.x)", 1),
+        T::sound("nested parens", "((λx:A.x))", 1),
+        T::sound("open paren prefix", "(", 4),
+        T::sound("paren then lambda", "(λ", 4),
+        // Variables with context
+        T::sound("bound var in ctx", "x", 1)
+            .with_context(vec![("x", "A")]),
+        T::sound("multiple vars in ctx", "x", 1)
+            .with_context(vec![("x", "A"), ("y", "B")]),
+        T::sound("app with ctx", "f x", 1)
+            .with_context(vec![("f", "A->B"), ("x", "A")]),
+        // Complex type annotations
+        T::sound("paren type", "λx:(A).x", 1),
+        T::sound("complex arrow", "λf:((A->B)->C).f", 1),
+    ]
+}
+
+fn fail_cases() -> Vec<TypedCompletionTestCase> {
+    vec![
+        // Syntax errors - malformed lambda
+        T::fail("double colon", "λx::A"),
+        T::fail("missing var", "λ:A"),
+        T::fail("missing type", "λx:.x"),
+        T::fail("double dot", "λx:A..x"),
+        T::fail("double lambda", "λλx:A.x"),
+        T::fail("colon before lambda", ":λx:A.x"),
+        T::fail("dot before lambda", ".λx:A.x"),
+        // Syntax errors - malformed arrows
+        T::fail("arrow first", "->A"),
+        T::fail("double arrow", "λx:A-->B.x"),
+        T::fail("trailing arrow", "λx:A->.x"),
+        T::fail("arrow only type", "λx:->.x"),
+        // Syntax errors - parentheses
+        T::fail("close paren first", ")"),
+        T::fail("extra close paren", "(λx:A.x))"),
+        T::fail("mismatched parens", "(λx:A.x))"),
+        T::fail("close in type", "λx:).x"),
+        // Type errors - unbound variables
+        T::fail("unbound x", "x"),
+        T::fail("unbound in app", "f x"),
+        T::fail("unbound func", "f"),
+        T::fail("var outside scope", "λx:A.y"),
+        T::fail("shadowed var used outside", "λx:A.(λy:B.x) y"),
+        // Invalid characters
+        T::fail("at sign", "@"),
+        T::fail("hash", "#x"),
+        T::fail("dollar", "$x"),
+        T::fail("backslash", "\\x"),
+        T::fail("semicolon", "λx:A;x"),
+        // Empty/whitespace issues
+        T::fail("just colon", ":"),
+        T::fail("just dot", "."),
+        T::fail("just arrow", "->"),
+    ]
+}
+
+// ============================================================================
 // Batch Test Cases
 // ============================================================================
 
 #[test]
 fn check_completable() {
-    let cases = vec![
-        // ========== Complete lambda expressions ==========
-        TypedCompletionTestCase::new("identity", "λx:A.x", false).with_depth(1),
-        TypedCompletionTestCase::new("nested lambdas", "λx:A.λy:B.x", false).with_depth(1),
-        TypedCompletionTestCase::new("triple nested", "λx:A.λy:B.λz:C.x", false).with_depth(1),
-        TypedCompletionTestCase::new("use inner var", "λx:A.λy:B.y", false).with_depth(1),
-        
-        // ========== Partial lambda expressions ==========
-        TypedCompletionTestCase::new("lambda prefix", "λ", false).with_depth(4),
-        TypedCompletionTestCase::new("lambda with var", "λx", false).with_depth(3),
-        TypedCompletionTestCase::new("lambda with colon", "λx:", false).with_depth(3),
-        TypedCompletionTestCase::new("lambda with type", "λx:A", false).with_depth(2),
-        TypedCompletionTestCase::new("lambda with dot", "λx:A.", false).with_depth(2),
-        
-        // ========== Function types ==========
-        TypedCompletionTestCase::new("function type annotation", "λf:A->B.f", false).with_depth(1),
-        TypedCompletionTestCase::new("nested function type", "λf:(A->B)->C.f", false).with_depth(1),
-        TypedCompletionTestCase::new("curried type", "λf:A->B->C.f", false).with_depth(1),
-        
-        // ========== Application expressions ==========
-        TypedCompletionTestCase::new("simple app", "λf:A->B.f x", false).with_depth(2),
-        TypedCompletionTestCase::new("app in body", "λf:A->B.λx:A.f x", false).with_depth(2),
-        TypedCompletionTestCase::new("partial app", "λf:A->B.f", false).with_depth(2),
-        
-        // ========== Parenthesized expressions ==========
-        TypedCompletionTestCase::new("paren var", "λx:A.(x)", false).with_depth(1),
-        TypedCompletionTestCase::new("paren lambda", "(λx:A.x)", false).with_depth(1),
-        TypedCompletionTestCase::new("nested parens", "((λx:A.x))", false).with_depth(1),
-        TypedCompletionTestCase::new("open paren prefix", "(", false).with_depth(4),
-        TypedCompletionTestCase::new("paren then lambda", "(λ", false).with_depth(4),
-        
-        // ========== Variables with context ==========
-        TypedCompletionTestCase::new("bound var in ctx", "x", false)
-            .with_context(vec![("x", "A")])
-            .with_depth(1),
-        TypedCompletionTestCase::new("multiple vars in ctx", "x", false)
-            .with_context(vec![("x", "A"), ("y", "B")])
-            .with_depth(1),
-        TypedCompletionTestCase::new("app with ctx", "f x", false)
-            .with_context(vec![("f", "A->B"), ("x", "A")])
-            .with_depth(1),
-        
-        // ========== Complex type annotations ==========
-        TypedCompletionTestCase::new("paren type", "λx:(A).x", false).with_depth(1),
-        TypedCompletionTestCase::new("complex arrow", "λf:((A->B)->C).f", false).with_depth(1),
-    ];
-
     let grammar = stlc_grammar();
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &completable_cases());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_fail() {
-    let cases = vec![
-        // ========== Syntax errors - malformed lambda ==========
-        TypedCompletionTestCase::new("double colon", "λx::A", true),
-        TypedCompletionTestCase::new("missing var", "λ:A", true),
-        TypedCompletionTestCase::new("missing type", "λx:.x", true),
-        TypedCompletionTestCase::new("double dot", "λx:A..x", true),
-        TypedCompletionTestCase::new("double lambda", "λλx:A.x", true),
-        TypedCompletionTestCase::new("colon before lambda", ":λx:A.x", true),
-        TypedCompletionTestCase::new("dot before lambda", ".λx:A.x", true),
-        
-        // ========== Syntax errors - malformed arrows ==========
-        TypedCompletionTestCase::new("arrow first", "->A", true),
-        TypedCompletionTestCase::new("double arrow", "λx:A-->B.x", true),
-        TypedCompletionTestCase::new("trailing arrow", "λx:A->.x", true),
-        TypedCompletionTestCase::new("arrow only type", "λx:->.x", true),
-        
-        // ========== Syntax errors - parentheses ==========
-        TypedCompletionTestCase::new("close paren first", ")", true),
-        TypedCompletionTestCase::new("extra close paren", "(λx:A.x))", true),
-        TypedCompletionTestCase::new("mismatched parens", "(λx:A.x))", true),
-        TypedCompletionTestCase::new("close in type", "λx:).x", true),
-        
-        // ========== Type errors - unbound variables ==========
-        TypedCompletionTestCase::new("unbound x", "x", true),
-        TypedCompletionTestCase::new("unbound in app", "f x", true),
-        TypedCompletionTestCase::new("unbound func", "f", true),
-        TypedCompletionTestCase::new("var outside scope", "λx:A.y", true),
-        TypedCompletionTestCase::new("shadowed var used outside", "λx:A.(λy:B.x) y", true),
-        
-        // ========== Invalid characters ==========
-        TypedCompletionTestCase::new("at sign", "@", true),
-        TypedCompletionTestCase::new("hash", "#x", true),
-        TypedCompletionTestCase::new("dollar", "$x", true),
-        TypedCompletionTestCase::new("backslash", "\\x", true),
-        TypedCompletionTestCase::new("semicolon", "λx:A;x", true),
-        
-        // ========== Empty/whitespace issues ==========
-        TypedCompletionTestCase::new("just colon", ":", true),
-        TypedCompletionTestCase::new("just dot", ".", true),
-        TypedCompletionTestCase::new("just arrow", "->", true),
-    ];
-
     let grammar = stlc_grammar();
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &fail_cases());
     res.assert_all_passed();
 }

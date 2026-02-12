@@ -79,7 +79,7 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
 /// Set to 20 which handles most real-world cases while preventing 
 /// exponential blowup on highly ambiguous grammars.
 /// Use MetaParser for adaptive depth finding, or with_max_recursion() to override.
-const DEFAULT_MAX_RECURSION_DEPTH: usize = 20;
+const DEFAULT_MAX_RECURSION_DEPTH: usize = 5;
 
 /// Tracks parsing state for a single parse operation
 ///

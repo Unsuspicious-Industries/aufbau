@@ -83,23 +83,39 @@ fn run_complexity_test(
     name: &str,
     max_n: usize,
     tries: usize,
+    jobs: Option<usize>,
 ) -> Vec<ComplexityData> {
-    let mut results = Vec::new();
-
     println!("\n=== {} Complexity Test ===", name);
     println!("Testing input sizes from 1 to {}", max_n);
 
     assert!(tries >= max_n * 2);
 
-    for i in 0..=tries {
-        let n = (i % max_n) + 1;
-        let input = generator(n);
-        let time = measure_parse_time(grammar, &input);
-        println!("n={:2}: len={} -> {:?}", n, input.len(), time);
-        results.push(ComplexityData::new(n, time, input));
+    let results = super::run_complexity_experiment(grammar, generator, name, max_n, tries, jobs);
+
+    for r in &results {
+        println!("n={:2}: len={} -> {:?}", r.n, r.input.len(), r.time);
     }
 
     results
+}
+
+/// Export FUN experiments
+pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
+    let grammar = fun_grammar();
+    vec![
+        (
+            "Fun Parenthesized Literal".to_string(),
+            run_complexity_test(&grammar, generate_parenthesized_literal, "Fun Parenthesized Literal", 4, 8, jobs),
+        ),
+        (
+            "Fun Let Literal Chain".to_string(),
+            run_complexity_test(&grammar, generate_let_literal_chain, "Fun Let Literal Chain", 4, 8, jobs),
+        ),
+        (
+            "Fun Weird Random".to_string(),
+            run_complexity_test(&grammar, generate_weird_random_fun, "Fun Weird Random", 8, 16, jobs),
+        ),
+    ]
 }
 
 #[test]
@@ -111,6 +127,7 @@ fn fun_parenthesized_literal_complexity() {
         "Fun Parenthesized Literal",
         4,
         8,
+        None,
     );
 
     let k = determine_complexity_exponent(&data);
@@ -138,6 +155,7 @@ fn fun_let_literal_chain_complexity() {
         "Fun Let Literal Chain",
         4,
         8,
+        None,
     );
 
     let k = determine_complexity_exponent(&data);
@@ -161,6 +179,7 @@ fn fun_weird_random_complexity() {
         "Fun Weird Random",
         8,
         16,
+        None,
     );
 
     let k = determine_complexity_exponent(&data);

@@ -8,6 +8,52 @@ pub mod basic;
 pub mod fun;
 
 use std::time::Duration;
+use rayon::prelude::*;
+use crate::logic::grammar::Grammar;
+use std::time::Instant;
+
+/// Run a complexity experiment in parallel (optional jobs)
+pub fn run_complexity_experiment(
+    grammar: &Grammar,
+    generator: fn(usize) -> String,
+    name: &str,
+    max_n: usize,
+    tries: usize,
+    jobs: Option<usize>,
+) -> Vec<ComplexityData> {
+    assert!(tries >= 1 && max_n >= 1);
+
+    // Build the sequence of sizes to test
+    let indices: Vec<usize> = (0..=tries).map(|i| ((i + max_n / 2) % max_n) + 1).collect();
+
+    // Parallel map to measure each input
+    let measure = |n: usize| {
+        let input = generator(n);
+        let start = Instant::now();
+        // create a parser and measure
+        let mut parser = crate::logic::partial::parse::Parser::new(grammar.clone());
+        let _ = parser.partial(&input);
+        let duration = start.elapsed();
+        ComplexityData::new(n, duration, input)
+    };
+
+    let results: Vec<ComplexityData> = match jobs {
+        Some(n) if n > 0 => {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build()
+                .expect("failed to create thread pool");
+            let mut out = Vec::new();
+            pool.install(|| {
+                out = indices.par_iter().map(|&n| measure(n)).collect();
+            });
+            out
+        }
+        _ => indices.iter().map(|&n| measure(n)).collect(),
+    };
+
+    results
+}
 
 /// Data point for complexity analysis
 #[derive(Debug, Clone)]
@@ -56,5 +102,9 @@ fn determine_complexity_exponent(data: &[ComplexityData]) -> f64 {
     } else {
         panic!("Invalid complexity exponent");
     }
-    
+}
+
+/// Public wrapper to export complexity estimation to CLI
+pub fn estimate_complexity_exponent(data: &[ComplexityData]) -> f64 {
+    determine_complexity_exponent(data)
 }

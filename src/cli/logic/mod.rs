@@ -113,11 +113,11 @@ pub fn dispatch(cli: &crate::cli::Cli) {
         }
     }
 
-    match &cli.command {
-        crate::cli::Commands::Logic(cmd) => match &cmd.command {
+    if let crate::cli::Commands::Logic(cmd) = &cli.command {
+        match &cmd.command {
             LogicSubcommand::Viz(args) => run_viz(args, level),
             LogicSubcommand::Complete(args) => run_complete(args, cli.with_input, level),
-        },
+        }
     }
 }
 

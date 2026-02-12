@@ -83,33 +83,43 @@ fn run_complexity_test(
     name: &str,
     max_n: usize,
     tries: usize,
+    jobs: Option<usize>,
 ) -> Vec<ComplexityData> {
-    let mut results = Vec::new();
-
     println!("\n=== {} Complexity Test ===", name);
     println!("Testing input sizes from 1 to {}", max_n);
 
     // ensure tries >> n
     assert!(tries >= max_n * 5);
 
-    for i in 0..=tries {
-        // choose n with a modulo starting in the middle
-        let n = ((i + max_n / 2) % max_n) + 1;
+    let results = super::run_complexity_experiment(grammar, generator, name, max_n, tries, jobs);
 
-        let input = generator(n);
-        let time = measure_parse_time(grammar, &input);
-
-        println!("n={:2}: {} -> {:?}", n, input, time);
-        results.push(ComplexityData::new(n, time, input));
+    // Print compact summary
+    for r in &results {
+        println!("n={:2}: {} -> {:?}", r.n, r.input, r.time);
     }
 
     results
 }
 
+/// Export experiments for the basic complexity module
+pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
+    let grammar = basic_grammar();
+    let mut out = Vec::new();
+    out.push((
+        "Deep Nesting".to_string(),
+        run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 10, 100, jobs),
+    ));
+    out.push((
+        "Random String".to_string(),
+        run_complexity_test(&grammar, generate_random_string, "Random String", 100, 1000, jobs),
+    ));
+    out
+}
+
 #[test]
 fn basic_deep_nesting_complexity() {
     let grammar = basic_grammar();
-    let data = run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 10, 100);
+    let data = run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 10, 100, None);
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
@@ -132,7 +142,7 @@ fn basic_deep_nesting_complexity() {
 #[test]
 fn basic_random_string_complexity() {
     let grammar = basic_grammar();
-    let data = run_complexity_test(&grammar, generate_random_string, "Random String", 100, 1000);
+    let data = run_complexity_test(&grammar, generate_random_string, "Random String", 100, 1000, None);
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);

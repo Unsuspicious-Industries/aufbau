@@ -1025,17 +1025,36 @@ fn solve_binding(tref: &TreeRef, ty: &Type, bound: &Bindings) -> Result<Type, St
             if let Some(r) = bound.get_full(id) {
                 if let Some(tval) = tref.node_text_path(r) {
                     debug_trace!("typing", "Resolved type var {} to {}", id, tval);
-                    // Solving bindings gets us a raw type
-                    return Type::parse_raw(&tval).map_err(|e| {
-                        debug_error!(
-                            "typing",
-                            "Failed to parse raw type from binding id='{}' text='{}': {}",
-                            id,
-                            tval,
-                            e
-                        );
-                        e
-                    });
+                    // Solving bindings gets us a raw type. Try strict parse first,
+                    // but accept partial parses (useful for completable/partial inputs).
+                    match Type::parse_raw(&tval) {
+                        Ok(ty) => return Ok(ty),
+                        Err(e) => {
+                            debug_trace!(
+                                "typing",
+                                "parse_raw mismatch for binding id='{}' text='{}': {}. Falling back to partial parse",
+                                id,
+                                tval,
+                                e
+                            );
+                            match Type::parse_partial(&tval) {
+                                Ok(ty) => {
+                                    debug_trace!("typing", "Parsed partial raw type '{}' as {:?}", tval, ty);
+                                    return Ok(ty);
+                                }
+                                Err(e2) => {
+                                    debug_error!(
+                                        "typing",
+                                        "Failed to parse partial raw type from binding id='{}' text='{}': {}",
+                                        id,
+                                        tval,
+                                        e2
+                                    );
+                                    return Err(e2);
+                                }
+                            }
+                        }
+                    }
                 } else {
                     debug_error!("binding", "Bad path in binding: {}", id);
                     return Err(format!("Bad path in binding: {}", id));

@@ -35,10 +35,8 @@ fn stlc_grammar() -> Grammar {
     load_example_grammar("stlc")
 }
 
-#[test]
-fn valid_expressions_stlc() {
-    let grammar = stlc_grammar();
-    let cases = vec![
+pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
+    vec![
         // === Simple partial cases ===
         ParseTestCase::valid("empty lambda", "λ"),
         ParseTestCase::valid("lambda var", "λx"),
@@ -71,10 +69,44 @@ fn valid_expressions_stlc() {
         ParseTestCase::structural("paren app", "(f x)"),
         ParseTestCase::structural("paren double app", "((f x) y)"),
         ParseTestCase::structural("paren nested app", "x t y u r"),
-    ];
+    ]
+}
 
+pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
+    vec![
+        // === Invalid variable names ===
+        ParseTestCase::invalid("number only", "123"),
+        ParseTestCase::invalid("symbol only", "!@#"),
+        // === Invalid lambda syntax ===
+        ParseTestCase::invalid("lambda no var", "λ:"),
+        // === Invalid type syntax ===
+        ParseTestCase::invalid("arrow no rhs", "λf:A->.f"),
+        ParseTestCase::invalid("arrow no lhs", "λf:->B.f"),
+        // === Invalid parentheses ===
+        ParseTestCase::invalid("empty paren", "()"),
+        ParseTestCase::invalid("paren no content", "( )"),
+        ParseTestCase::type_error("unbound variable", "x"),
+        ParseTestCase::type_error("unbound in app", "f x"),
+    ]
+}
+
+pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
+    vec![
+        // === Test left-associative application parsing ===
+        ParseTestCase::valid("simple left app", "f x"),
+        ParseTestCase::valid("chained left app", "f x y"),
+        ParseTestCase::valid("long chain left app", "f x y z w v u"),
+        // === Test in lambda contexts ===
+        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y"),
+    ]
+}
+
+#[test]
+fn valid_expressions_stlc() {
+    let grammar = stlc_grammar();
+    let cases = valid_expressions_cases();
     println!("\n=== STLC Valid Expressions ({} cases) ===", cases.len());
-    let res = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",
@@ -89,24 +121,9 @@ fn valid_expressions_stlc() {
 #[test]
 fn invalid_expressions_stlc() {
     let grammar = stlc_grammar();
-    let cases = vec![
-        // === Invalid variable names ===
-        ParseTestCase::invalid("number only", "123"),
-        ParseTestCase::invalid("symbol only", "!@#"),
-        // === Invalid lambda syntax ===
-        ParseTestCase::invalid("lambda no var", "λ:"),
-        // === Invalid type syntax ===
-        ParseTestCase::invalid("arrow no rhs", "λf:A->.f"),
-        ParseTestCase::invalid("arrow no lhs", "λf:->B.f"),
-        // === Invalid parentheses ===
-        ParseTestCase::invalid("empty paren", "()"),
-        ParseTestCase::invalid("paren no content", "( )"),
-        ParseTestCase::type_error("unbound variable", "x"),
-        ParseTestCase::type_error("unbound in app", "f x"),
-    ];
-
+    let cases = invalid_expressions_cases();
     println!("\n=== STLC Invalid Expressions ({} cases) ===", cases.len());
-    let res = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",
@@ -117,21 +134,12 @@ fn invalid_expressions_stlc() {
 #[test]
 fn left_recursive_application_tests() {
     let grammar = stlc_grammar();
-    let cases = vec![
-        // === Test left-associative application parsing ===
-        ParseTestCase::valid("simple left app", "f x"),
-        ParseTestCase::valid("chained left app", "f x y"),
-        ParseTestCase::valid("long chain left app", "f x y z w v u"),
-        // === Test in lambda contexts ===
-        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y"),
-        // === Test with parentheses ===
-    ];
-
+    let cases = left_recursive_application_cases();
     println!(
         "\n=== STLC Left-Recursive Applications ({} cases) ===",
         cases.len()
     );
-    let res = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",

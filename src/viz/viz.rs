@@ -3,6 +3,7 @@ use crate::logic::partial::{Node, Terminal};
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::{check_tree, check_tree_with_context};
 use crate::{logic::Parser, logic::grammar::Grammar, set_debug_level};
+use regex_syntax::ast::print;
 use rouille::{Request, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -488,12 +489,14 @@ pub fn handle_parser_viz_request(request: &Request) -> Response {
         Err(e) => return Response::text(format!("spec error: {}", e)).with_status_code(400),
     };
     let mut parser = Parser::new(grammar.clone());
-    set_debug_level(crate::logic::debug::DebugLevel::None);
+    set_debug_level(crate::logic::debug::DebugLevel::Trace); 
 
+    println!("Received input: '{}'", input);
     let partial = match parser.partial(&input) {
         Ok(p) => p,
         Err(e) => return Response::text(format!("parse error: {}", e)).with_status_code(400),
     };
+    println!("Parsed input: '{}', partial roots: {}", input, partial.roots.len());
 
     let graph = build_graph(&partial, &grammar);
 

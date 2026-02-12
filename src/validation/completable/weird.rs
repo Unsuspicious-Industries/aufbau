@@ -11,6 +11,7 @@
 #![allow(unused_imports)]
 
 use super::*;
+use TypedCompletionTestCase as T;
 
 // ============================================================================
 // Pathological Grammars
@@ -93,258 +94,279 @@ const CONTEXT_EXTENDING: &str = r#"
 "#;
 
 // ============================================================================
-// Batch Test Cases - Right Recursive Grammar
+// Suite Definitions (used by validate binary)
+// ============================================================================
+
+pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
+    vec![
+        ("weird::right_recursive_ok", load_inline_grammar(INFINITE_RIGHT_RECURSIVE), right_recursive_ok()),
+        ("weird::right_recursive_fail", load_inline_grammar(INFINITE_RIGHT_RECURSIVE), right_recursive_fail()),
+        ("weird::epsilon_ok", load_inline_grammar(EPSILON_HEAVY), epsilon_ok()),
+        ("weird::epsilon_fail", load_inline_grammar(EPSILON_HEAVY), epsilon_fail()),
+        ("weird::deep_nesting_ok", load_inline_grammar(DEEP_NESTING), deep_nesting_ok()),
+        ("weird::deep_nesting_fail", load_inline_grammar(DEEP_NESTING), deep_nesting_fail()),
+        ("weird::cyclic_ok", load_inline_grammar(CYCLIC_TERMINABLE), cyclic_ok()),
+        ("weird::cyclic_fail", load_inline_grammar(CYCLIC_TERMINABLE), cyclic_fail()),
+        ("weird::long_production_ok", load_inline_grammar(LONG_PRODUCTION), long_production_ok()),
+        ("weird::long_production_fail", load_inline_grammar(LONG_PRODUCTION), long_production_fail()),
+        ("weird::ambiguous_ok", load_inline_grammar(HIGHLY_AMBIGUOUS), ambiguous_ok()),
+        ("weird::ambiguous_fail", load_inline_grammar(HIGHLY_AMBIGUOUS), ambiguous_fail()),
+        ("weird::typed_simple_ok", load_inline_grammar(TYPED_SIMPLE), typed_simple_ok()),
+        ("weird::typed_simple_fail", load_inline_grammar(TYPED_SIMPLE), typed_simple_fail()),
+        ("weird::context_extending_ok", load_inline_grammar(CONTEXT_EXTENDING), context_extending_ok()),
+        ("weird::context_extending_fail", load_inline_grammar(CONTEXT_EXTENDING), context_extending_fail()),
+    ]
+}
+
+// ============================================================================
+// Case Definitions
+// ============================================================================
+
+fn right_recursive_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("base case", "b", 1),
+        T::ok("one step", "a b", 2),
+        T::ok("chain", "a a b", 3),
+        T::ok("long chain", "a a a a b", 6),
+        T::ok("partial", "a", 3),
+        T::ok("partial chain", "a a", 4),
+    ]
+}
+
+fn right_recursive_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("invalid char", "c"),
+        T::fail("wrong order", "b a"),
+    ]
+}
+
+fn epsilon_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("empty", "", 1),
+        T::ok("a only", "a", 2),
+        T::ok("a b", "a b", 2),
+        T::ok("a b c", "a b c", 1),
+        T::ok("b only", "b", 2),
+        T::ok("c only", "c", 1),
+    ]
+}
+
+fn epsilon_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("invalid char", "x"),
+        T::fail("wrong order", "c b a"),
+    ]
+}
+
+fn deep_nesting_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("simple", "x", 1),
+        T::ok("one level", "(x)", 3),
+        T::ok("two levels", "((x))", 5),
+        T::ok("three levels", "(((x)))", 7),
+        T::ok("max levels", "(((((x)))))", 12),
+        T::ok("partial", "((", 8),
+    ]
+}
+
+fn deep_nesting_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("close first", ")"),
+        T::fail("invalid char", "y"),
+        T::fail("extra close", "x)"),
+    ]
+}
+
+fn cyclic_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("done", "done", 1),
+        T::ok("x stop", "x stop", 3),
+        T::ok("x y done", "x y done", 4),
+        T::ok("x y x stop", "x y x stop", 5),
+        T::ok("partial x", "x", 4),
+        T::ok("partial x y", "x y", 5),
+    ]
+}
+
+fn cyclic_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("y first", "y"),
+        T::fail("stop first", "stop"),
+        T::fail("invalid", "z"),
+    ]
+}
+
+fn long_production_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("complete", "a b c a b c a b c", 1),
+        T::ok("partial 1", "a", 10),
+        T::ok("partial 3", "a b c", 8),
+        T::ok("partial 6", "a b c a b c", 5),
+    ]
+}
+
+fn long_production_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("wrong start", "b"),
+        T::fail("invalid", "x"),
+    ]
+}
+
+fn ambiguous_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("x only", "x", 1),
+        T::ok("x y", "x y", 3),
+        T::ok("x y x", "x y x", 4),
+    ]
+}
+
+fn ambiguous_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("invalid", "z"),
+    ]
+}
+
+fn typed_simple_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("x in context", "x", 1).with_context(vec![("x", "int")]),
+        T::ok("foo in context", "foo", 1).with_context(vec![("foo", "bool")]),
+    ]
+}
+
+fn typed_simple_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("unbound x", "x"),
+        T::fail("unbound foo", "foo"),
+    ]
+}
+
+fn context_extending_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("let x in x", "let x : int in x", 5),
+        T::ok("nested let", "let x : int in let y : bool in x", 8),
+        T::ok("nested let inner", "let x : int in let y : bool in y", 8),
+    ]
+}
+
+fn context_extending_fail() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::fail("unbound x", "x"),
+        T::fail("wrong var", "let x : int in y"),
+    ]
+}
+
+// ============================================================================
+// Tests (delegates to shared case definitions)
 // ============================================================================
 
 #[test]
 fn check_right_recursive_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("base case", "b", false).with_depth(1),
-        TypedCompletionTestCase::new("one step", "a b", false).with_depth(2),
-        TypedCompletionTestCase::new("chain", "a a b", false).with_depth(3),
-        TypedCompletionTestCase::new("long chain", "a a a a b", false).with_depth(6),
-        TypedCompletionTestCase::new("partial", "a", false).with_depth(3),
-        TypedCompletionTestCase::new("partial chain", "a a", false).with_depth(4),
-    ];
-
     let grammar = load_inline_grammar(INFINITE_RIGHT_RECURSIVE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &right_recursive_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_right_recursive_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("invalid char", "c", true),
-        TypedCompletionTestCase::new("wrong order", "b a", true),
-    ];
-
     let grammar = load_inline_grammar(INFINITE_RIGHT_RECURSIVE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &right_recursive_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Epsilon Grammar
-// ============================================================================
-
 #[test]
 fn check_epsilon_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("empty", "", false).with_depth(1),
-        TypedCompletionTestCase::new("a only", "a", false).with_depth(2),
-        TypedCompletionTestCase::new("a b", "a b", false).with_depth(2),
-        TypedCompletionTestCase::new("a b c", "a b c", false).with_depth(1),
-        TypedCompletionTestCase::new("b only", "b", false).with_depth(2),
-        TypedCompletionTestCase::new("c only", "c", false).with_depth(1),
-    ];
-
     let grammar = load_inline_grammar(EPSILON_HEAVY);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &epsilon_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_epsilon_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("invalid char", "x", true),
-        TypedCompletionTestCase::new("wrong order", "c b a", true),
-    ];
-
     let grammar = load_inline_grammar(EPSILON_HEAVY);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &epsilon_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Deep Nesting Grammar
-// ============================================================================
-
 #[test]
 fn check_deep_nesting_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("simple", "x", false).with_depth(1),
-        TypedCompletionTestCase::new("one level", "(x)", false).with_depth(3),
-        TypedCompletionTestCase::new("two levels", "((x))", false).with_depth(5),
-        TypedCompletionTestCase::new("three levels", "(((x)))", false).with_depth(7),
-        TypedCompletionTestCase::new("max levels", "(((((x)))))", false).with_depth(12),
-        TypedCompletionTestCase::new("partial", "((", false).with_depth(8),
-    ];
-
     let grammar = load_inline_grammar(DEEP_NESTING);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &deep_nesting_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_deep_nesting_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("close first", ")", true),
-        TypedCompletionTestCase::new("invalid char", "y", true),
-        TypedCompletionTestCase::new("extra close", "x)", true),
-    ];
-
     let grammar = load_inline_grammar(DEEP_NESTING);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &deep_nesting_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Cyclic Grammar
-// ============================================================================
-
 #[test]
 fn check_cyclic_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("done", "done", false).with_depth(1),
-        TypedCompletionTestCase::new("x stop", "x stop", false).with_depth(3),
-        TypedCompletionTestCase::new("x y done", "x y done", false).with_depth(4),
-        TypedCompletionTestCase::new("x y x stop", "x y x stop", false).with_depth(5),
-        TypedCompletionTestCase::new("partial x", "x", false).with_depth(4),
-        TypedCompletionTestCase::new("partial x y", "x y", false).with_depth(5),
-    ];
-
     let grammar = load_inline_grammar(CYCLIC_TERMINABLE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &cyclic_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_cyclic_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("y first", "y", true),
-        TypedCompletionTestCase::new("stop first", "stop", true),
-        TypedCompletionTestCase::new("invalid", "z", true),
-    ];
-
     let grammar = load_inline_grammar(CYCLIC_TERMINABLE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &cyclic_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Long Production Grammar
-// ============================================================================
-
 #[test]
 fn check_long_production_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("complete", "a b c a b c a b c", false).with_depth(1),
-        TypedCompletionTestCase::new("partial 1", "a", false).with_depth(10),
-        TypedCompletionTestCase::new("partial 3", "a b c", false).with_depth(8),
-        TypedCompletionTestCase::new("partial 6", "a b c a b c", false).with_depth(5),
-    ];
-
     let grammar = load_inline_grammar(LONG_PRODUCTION);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &long_production_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_long_production_fail() {
-    let cases = vec![
-        TypedCompletionTestCase::new("wrong start", "b", true),
-        TypedCompletionTestCase::new("invalid", "x", true),
-    ];
-
     let grammar = load_inline_grammar(LONG_PRODUCTION);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &long_production_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Ambiguous Grammar
-// ============================================================================
-
 #[test]
 fn check_ambiguous_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("x only", "x", false).with_depth(1),
-        TypedCompletionTestCase::new("x y", "x y", false).with_depth(3),
-        TypedCompletionTestCase::new("x y x", "x y x", false).with_depth(4),
-    ];
-
     let grammar = load_inline_grammar(HIGHLY_AMBIGUOUS);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &ambiguous_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_ambiguous_fail() {
-    let cases = vec![TypedCompletionTestCase::new("invalid", "z", true)];
-
     let grammar = load_inline_grammar(HIGHLY_AMBIGUOUS);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &ambiguous_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Typed Simple Grammar
-// ============================================================================
-
 #[test]
 fn check_typed_simple_completable() {
-    let cases = vec![
-        // Variable in context should complete
-        TypedCompletionTestCase::new("x in context", "x", false)
-            .with_context(vec![("x", "int")])
-            .with_depth(1),
-        TypedCompletionTestCase::new("foo in context", "foo", false)
-            .with_context(vec![("foo", "bool")])
-            .with_depth(1),
-    ];
-
     let grammar = load_inline_grammar(TYPED_SIMPLE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &typed_simple_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_typed_simple_fail() {
-    let cases = vec![
-        // Unbound variables should fail
-        TypedCompletionTestCase::new("unbound x", "x", true),
-        TypedCompletionTestCase::new("unbound foo", "foo", true),
-    ];
-
     let grammar = load_inline_grammar(TYPED_SIMPLE);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &typed_simple_fail());
     res.assert_all_passed();
 }
 
-// ============================================================================
-// Batch Test Cases - Context Extending Grammar
-// ============================================================================
-
 #[test]
 fn check_context_extending_completable() {
-    let cases = vec![
-        TypedCompletionTestCase::new("let x in x", "let x : int in x", false).with_depth(5),
-        TypedCompletionTestCase::new("nested let", "let x : int in let y : bool in x", false)
-            .with_depth(8),
-        TypedCompletionTestCase::new(
-            "nested let inner",
-            "let x : int in let y : bool in y",
-            false,
-        )
-        .with_depth(8),
-    ];
-
     let grammar = load_inline_grammar(CONTEXT_EXTENDING);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &context_extending_ok());
     res.assert_all_passed();
 }
 
 #[test]
 fn check_context_extending_fail() {
-    let cases = vec![
-        // Unbound before let
-        TypedCompletionTestCase::new("unbound x", "x", true),
-        // Wrong variable in scope
-        TypedCompletionTestCase::new("wrong var", "let x : int in y", true),
-    ];
-
     let grammar = load_inline_grammar(CONTEXT_EXTENDING);
-    let res = run_test_batch(&grammar, &cases);
+    let res = run_test_batch(&grammar, &context_extending_fail());
     res.assert_all_passed();
 }

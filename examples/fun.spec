@@ -2,7 +2,7 @@
 // Type system has same power as STLC: no polymorphism, just monomorphic functions
 
 // ===================== Identifiers =====================
-Identifier ::= /[a-z][a-z0-9_]*/
+Identifier ::= /[a-z][a-z0-9]*/
 TypeName ::= /[A-Z][a-z0-9]*/
 
 // ===================== Type Annotations =====================
@@ -13,7 +13,7 @@ Type ::= BaseType | FunctionType
 // ===================== Literals =====================
 Integer(int) ::= /[0-9]+/
 Boolean(bool) ::= 'true' | 'false'
-Float(float) ::= /\d+\.\d+/
+Float(float) ::= /[0-9]+\.[0-9]+/
 
 
 // ===================== Operators =====================

@@ -6,6 +6,8 @@ use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use std::collections::HashSet;
 
+
+
 /// The result of computing valid next tokens for a partial parse.
 #[derive(Clone, Debug)]
 pub struct CompletionSet {
@@ -97,11 +99,15 @@ impl PartialAST {
             self.roots.len()
         );
 
-        // Collect completions from well-typed roots only
-        let mut tokens = Vec::new();
-        for root in well_typed_roots {
-            tokens.extend(root.collect_valid_tokens(grammar));
-        }
+        debug_trace!(
+            "partial.completion",
+            "  Collecting valid tokens from well-typed roots",
+        );
+
+        let tokens: Vec<_> = well_typed_roots
+            .iter()
+            .flat_map(|root| root.collect_valid_tokens(grammar))
+            .collect();
 
         CompletionSet::new(tokens).cleanup()
     }

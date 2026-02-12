@@ -4,7 +4,6 @@ pub use parse::*;
 pub mod meta;
 pub use meta::*;
 
-
 pub mod structure;
 pub use structure::{Node, NonTerminal, PartialAST, Terminal};
 
@@ -21,7 +20,6 @@ pub mod compact;
 pub use compact::CompactTree;
 
 pub mod display;
-
 
 #[test]
 fn test_debug() {
@@ -160,7 +158,6 @@ fn test_complete_len_nested() {
         );
     }
 }
-
 
 #[test]
 fn serialize_complex_stlc() {
