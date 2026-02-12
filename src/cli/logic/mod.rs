@@ -138,35 +138,7 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
 
-    // If user provided an AST file, read it and provide as preload to the server.
-    if let Some(ast_path) = &args.ast {
-        let spec_text = match &args.spec {
-            Some(p) => match fs::read_to_string(p) {
-                Ok(s) => s,
-                Err(e) => {
-                    eprintln!("error: failed to read spec '{}': {}", p.display(), e);
-                    std::process::exit(2);
-                }
-            },
-            None => {
-                eprintln!("error: --spec is required when using --ast");
-                std::process::exit(2);
-            }
-        };
-
-        let ast_text = match fs::read_to_string(ast_path) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("error: failed to read ast file '{}': {}", ast_path.display(), e);
-                std::process::exit(2);
-            }
-        };
-
-        p7::viz::serve_with_preload(&bind, Some((spec_text, ast_text, args.ast_input.clone())));
-        return;
-    }
-
-    p7::viz::serve_with_preload(&bind, None);
+    p7::viz::serve(&bind);
 }
 
 
