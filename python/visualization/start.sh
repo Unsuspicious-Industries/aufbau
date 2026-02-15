@@ -56,7 +56,12 @@ fi
 if [ ! -d "frontend/node_modules" ]; then
     echo -e "${YELLOW}Installing frontend dependencies...${NC}"
     cd frontend
-    npm install
+    if [ -f package-lock.json ]; then
+        npm ci --legacy-peer-deps || npm install --legacy-peer-deps
+    else
+        npm install --legacy-peer-deps
+        npm install --package-lock-only --legacy-peer-deps || true
+    fi
     cd ..
 fi
 
@@ -74,7 +79,7 @@ cleanup() {
     exit 0
 }
 
-trap cleanup SIGINT SIGTERM
+trap cleanup INT TERM
 
 # Start backend
 echo -e "${BLUE}Starting backend server on http://localhost:5001${NC}"
