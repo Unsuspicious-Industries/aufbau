@@ -47,11 +47,11 @@ fn serve_static_file(file: &str) -> Response {
 }
 
 fn serve_example_spec(file: &str) -> Response {
-    // Simple allowlist: `examples/*.spec` only.
+    // Simple allowlist: `examples/*.auf` only.
     if file.contains("/") || file.contains("..") {
         return Response::empty_404();
     }
-    if !file.ends_with(".spec") {
+    if !file.ends_with(".auf") {
         return Response::empty_404();
     }
 

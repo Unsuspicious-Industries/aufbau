@@ -22,7 +22,6 @@
 //! ```
 
 use crate::debug_info;
-use crate::logic::debug;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::{ParseError, Parser, PartialAST, PartialParseOutcome};
 use std::collections::HashMap;

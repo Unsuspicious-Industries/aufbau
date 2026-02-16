@@ -171,7 +171,7 @@ fn test_complete_len_nested() {
 
 #[test]
 fn serialize_complex_stlc() {
-    let spec = include_str!("../../../examples/stlc.spec");
+    let spec = include_str!("../../../examples/stlc.auf");
 
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     let mut p = crate::logic::partial::Parser::new(g.clone());

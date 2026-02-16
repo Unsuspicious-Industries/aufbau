@@ -8,8 +8,6 @@ pub mod weird;
 
 pub mod imp;
 
-use regex_syntax::ast::print;
-
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse_extended_input;
 use crate::logic::partial::MetaParser;
@@ -19,7 +17,6 @@ use crate::regex::Regex as DerivativeRegex;
 use crate::validation::completability::{
     complete, sound_complete, CompletionResult, PrefixSoundnessResult,
 };
-use std::f32::consts::E;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -598,7 +595,7 @@ pub fn load_example_grammar(name: &str) -> Grammar {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
         .join("examples")
-        .join(format!("{}.spec", name));
+        .join(format!("{}.auf", name));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     Grammar::load(&content).unwrap_or_else(|e| panic!("Failed to load {}: {}", name, e))

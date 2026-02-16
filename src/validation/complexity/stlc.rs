@@ -9,8 +9,8 @@ use std::time::Instant;
 fn stlc_grammar() -> Grammar {
     use std::path::Path;
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = Path::new(manifest_dir).join("examples").join("stlc.spec");
-    let content = std::fs::read_to_string(&path).expect("Failed to read stlc.spec");
+    let path = Path::new(manifest_dir).join("examples").join("stlc.auf");
+    let content = std::fs::read_to_string(&path).expect("Failed to read stlc.auf");
     Grammar::load(&content).expect("Failed to load STLC grammar")
 }
 

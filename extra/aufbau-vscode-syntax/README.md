@@ -1,6 +1,6 @@
-# P7 Grammar & Type Rules Syntax Extension
+# Aufbau Grammar & Type Rules Syntax Extension
 
-A Visual Studio Code extension that provides syntax highlighting for P7's EBNF-like grammar and typing rule specifications.
+A Visual Studio Code extension that provides syntax highlighting for Aufbau's EBNF-like grammar and typing rule specifications.
 
 ## Features
 
@@ -50,7 +50,7 @@ int → string → bool
 ## File Extensions
 
 The extension automatically activates for files with:
-- `.spec` extensions
+- `.auf` extensions
 - `.p7` extensions
 
 ## Installation
@@ -58,11 +58,11 @@ The extension automatically activates for files with:
 1. Open VS Code
 2. Go to Extensions (Ctrl+Shift+X)
 3. Install this extension
-4. Open any `.spec` or `.p7` file to see syntax highlighting
+4. Open any `.auf` or `.p7` file to see syntax highlighting
 
 ## Contributing
 
-This extension is part of the P7 project for building grammar/semantics/type rules independent AST and typing systems.
+This extension is part of the Aufbau project for building grammar/semantics/type rules independent AST and typing systems.
 
 ## License
 

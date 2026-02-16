@@ -1,9 +1,9 @@
 {
-  "name": "p7-syntax",
-  "displayName": "P7 Grammar & Type Rules Syntax",
-  "description": "Syntax highlighting for P7 EBNF-like grammar and typing rules",
+  "name": "aufbau-syntax",
+  "displayName": "Aufbau Grammar & Type Rules Syntax",
+  "description": "Syntax highlighting for Aufbau EBNF-like grammar and typing rules",
   "version": "0.1.0",
-  "publisher": "p7-project",
+  "publisher": "aufbau-project",
   "icon": "short.png",
   "engines": {
     "vscode": "^1.60.0"
@@ -35,7 +35,7 @@
           "p7-spec"
         ],
         "extensions": [
-          ".spec",
+          ".auf",
           ".p7"
         ],
         "configuration": "./language-configuration.json"

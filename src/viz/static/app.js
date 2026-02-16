@@ -71,7 +71,7 @@ async function loadSpecLibrary() {
     const data = await res.json();
     if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
     
-    const specs = data.specs || [];
+    const specs = data.aufs || [];
     if (specs.length === 0) {
       specLibrarySel.innerHTML = '<option value="">(no specs found)</option>';
       return;
@@ -82,7 +82,7 @@ async function loadSpecLibrary() {
     ).join('');
     
     // Auto-select first or clike if available
-    const prefer = specs.find(s => /clike\.spec$/i.test(s.path)) || specs[0];
+    const prefer = specs.find(s => /clike\.auf$/i.test(s.path)) || specs[0];
     selectedSpecPath = prefer.path;
     specLibrarySel.value = selectedSpecPath;
   } catch (e) {

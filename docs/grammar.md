@@ -312,7 +312,7 @@ OptA ::= A | ε
 
 ## 9. File Extension
 
-Grammar files use the `.spec` extension by convention.
+Grammar files use the `.auf` extension by convention.
 
 ---
 

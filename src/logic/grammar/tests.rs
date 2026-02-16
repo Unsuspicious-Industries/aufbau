@@ -69,7 +69,7 @@ fn steps(path: &binding::GrammarPath) -> Vec<(usize, Option<usize>)> {
 
 #[test]
 fn stlc_abs_binding_paths_match_spec() {
-    let spec = include_str!("../../../examples/stlc.spec");
+    let spec = include_str!("../../../examples/stlc.auf");
     let grammar = Grammar::load(spec).expect("load stlc");
 
     let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, Option<usize>)>>| {
@@ -99,7 +99,7 @@ fn stlc_abs_binding_paths_match_spec() {
     assert_path("e", "lambda", vec![vec![(5, None)]]);
     assert_path("τ", "lambda", vec![vec![(3, None)]]);
 
-    // Application rule binding paths (from examples/stlc.spec)
+    // Application rule binding paths (from examples/stlc.auf)
     // Application(app) ::= AtomicExpression[l] AtomicExpression[r]
     assert_path("l", "app", vec![vec![(0, None)]]);
     assert_path("r", "app", vec![vec![(1, None)]]);

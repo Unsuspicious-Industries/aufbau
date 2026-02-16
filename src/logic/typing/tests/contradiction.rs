@@ -7,7 +7,7 @@ use crate::logic::typing::eval::check_tree;
 use crate::set_debug_level;
 
 fn load_grammar() -> Grammar {
-    let spec = include_str!("../../../../examples/stlc.spec");
+    let spec = include_str!("../../../../examples/stlc.auf");
     Grammar::load(spec).expect("Failed to load STLC grammar")
 }
 

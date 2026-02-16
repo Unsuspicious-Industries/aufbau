@@ -59,10 +59,6 @@ impl SpanCache {
         }
     }
 
-    pub fn total_span_buckets(&self) -> u64 {
-        self.total_span_buckets
-    }
-
     pub fn mark_computed(&mut self, depth: usize, nt: &str, start: usize, max_len: usize) {
         let d = self.by_depth.entry(depth).or_default();
         let start_map = d.computed_max_len.entry(nt.to_string()).or_default();

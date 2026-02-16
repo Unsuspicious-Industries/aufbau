@@ -10,7 +10,7 @@
 
 use super::*;
 
-/// Load Fun grammar from examples/fun.spec
+/// Load Fun grammar from examples/fun.auf
 pub fn fun_grammar() -> Grammar {
     load_example_grammar("fun")
 }

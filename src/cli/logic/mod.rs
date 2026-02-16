@@ -2,8 +2,8 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
-use aufbau::logic::{Parser, grammar::Grammar};
+use aufbau::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
+use aufbau::logic::{grammar::Grammar, Parser};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {

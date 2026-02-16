@@ -424,7 +424,7 @@ pub fn load_example_grammar(name: &str) -> Grammar {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
         .join("examples")
-        .join(format!("{}.spec", name));
+        .join(format!("{}.auf", name));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     Grammar::load(&content).unwrap_or_else(|e| panic!("Failed to load {}: {}", name, e))

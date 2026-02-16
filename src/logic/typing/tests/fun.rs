@@ -7,7 +7,7 @@ use crate::logic::typing::eval::check_tree;
 use crate::{add_module_filter, set_debug_level};
 
 fn load_grammar() -> Grammar {
-    let spec = include_str!("../../../../examples/fun.spec");
+    let spec = include_str!("../../../../examples/fun.auf");
     Grammar::load(spec).expect("Failed to load Fun grammar")
 }
 

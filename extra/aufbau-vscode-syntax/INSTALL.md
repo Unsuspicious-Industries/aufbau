@@ -20,8 +20,8 @@ code --install-extension p7-syntax-0.1.0.vsix
 
 ### Testing the Extension
 
-1. Open the `example.spec` file to see syntax highlighting in action
-2. Create new `.spec` or `.p7` files to test with your own grammar
+1. Open the `example.auf` file to see syntax highlighting in action
+2. Create new `.auf` or `.p7` files to test with your own grammar
 3. The extension should automatically activate when opening files with these extensions
 
 ### Syntax Highlighting Features
@@ -34,7 +34,7 @@ code --install-extension p7-syntax-0.1.0.vsix
 
 ### File Extensions Supported
 
-- `.spec` - Primary file extension for P7 specifications
+- `.auf` - Primary file extension for P7 specifications
 - `.p7` - Alternative file extension
 
 ### Development

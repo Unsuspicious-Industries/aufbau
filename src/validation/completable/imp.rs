@@ -8,10 +8,8 @@
 //! - Variable scoping
 
 use super::*;
-use crate::logic::typing::core::Context;
-use crate::logic::typing::Type;
 
-/// Load IMP grammar from examples/imp.spec
+/// Load IMP grammar from examples/imp.auf
 pub fn imp_grammar() -> Grammar {
     load_example_grammar("imp")
 }

@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_compact_stlc_variable() {
-        let grammar_str = include_str!("../../../examples/stlc.spec");
+        let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
         let mut parser = Parser::new(grammar.clone());
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn test_compact_stlc_lambda() {
-        let grammar_str = include_str!("../../../examples/stlc.spec");
+        let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
         let mut parser = Parser::new(grammar.clone());
@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_compact_stlc_application() {
-        let grammar_str = include_str!("../../../examples/stlc.spec");
+        let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
         let mut parser = Parser::new(grammar.clone());

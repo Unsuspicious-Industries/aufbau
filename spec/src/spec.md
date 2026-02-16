@@ -232,10 +232,10 @@ Represents a function from type `τ` to type `?B`.
 ## Complete Example
 
 >E Simply-Typed Lambda Calculus
-A complete specification for STLC from [`examples/stlc.spec`](~/examples/stlc.spec):
+A complete specification for STLC from [`examples/stlc.auf`](~/examples/stlc.auf):
 
 ```spec
-{{#include ../../examples/stlc.spec}}
+{{#include ../../examples/stlc.auf}}
 ```
 <
 

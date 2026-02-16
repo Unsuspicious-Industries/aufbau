@@ -7,7 +7,7 @@
 
 use super::*;
 
-/// Load STLC grammar from examples/stlc.spec
+/// Load STLC grammar from examples/stlc.auf
 pub fn stlc_grammar() -> Grammar {
     load_example_grammar("stlc")
 }

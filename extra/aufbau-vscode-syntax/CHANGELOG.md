@@ -14,4 +14,4 @@
   - Type variables with Unicode subscripts
 - Context management highlighting
 - Comment support
-- Support for .spec and .p7 file extensions
+- Support for .auf and .p7 file extensions
