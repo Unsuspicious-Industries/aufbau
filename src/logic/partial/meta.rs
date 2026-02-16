@@ -21,8 +21,11 @@
 //! // Depth 3: Succeeds! Returns parse tree
 //! ```
 
+use crate::debug_info;
+use crate::logic::debug;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::{Parser, PartialAST};
+use crate::logic::partial::{ParseError, Parser, PartialAST, PartialParseOutcome};
+use std::collections::HashMap;
 
 /// Default starting recursion depth - start low to handle ambiguous grammars
 const DEFAULT_START_DEPTH: usize = 5;
@@ -30,8 +33,8 @@ const DEFAULT_START_DEPTH: usize = 5;
 /// Default maximum recursion depth to try before giving up
 const DEFAULT_MAX_DEPTH: usize = 100;
 
-/// Default increment for recursion depth
-const DEFAULT_DEPTH_INCREMENT: usize = 2;
+/// Default multiplicative factor for recursion depth growth (1.5x)
+const DEFAULT_DEPTH_FACTOR: f64 = 1.5;
 
 /// MetaParser that automatically finds the right recursion depth
 pub struct MetaParser {
@@ -40,8 +43,16 @@ pub struct MetaParser {
     start_depth: usize,
     /// Maximum depth before giving up
     max_depth: usize,
-    /// How much to increment depth each iteration
-    depth_increment: usize,
+    /// Multiplicative factor to grow depth each iteration (d <- ceil(d * factor))
+    depth_factor: f64,
+    /// Grammar start depth cache: for each grammar store the best (lowest)
+    /// start depth found so far. Helps avoid re-scanning small depths for
+    /// grammars that are known to require deeper recursion.
+    gscache: HashMap<Grammar, usize>,
+    /// Last input seen (for incremental parsing heuristics)
+    last_input: Option<String>,
+    /// Last successful depth (for incremental parsing heuristics)
+    last_success_depth: Option<usize>,
 }
 
 impl MetaParser {
@@ -51,7 +62,10 @@ impl MetaParser {
             parser: Parser::new(grammar),
             start_depth: DEFAULT_START_DEPTH,
             max_depth: DEFAULT_MAX_DEPTH,
-            depth_increment: DEFAULT_DEPTH_INCREMENT,
+            depth_factor: DEFAULT_DEPTH_FACTOR,
+            gscache: HashMap::new(),
+            last_input: None,
+            last_success_depth: None,
         }
     }
 
@@ -61,7 +75,10 @@ impl MetaParser {
             parser,
             start_depth: DEFAULT_START_DEPTH,
             max_depth: DEFAULT_MAX_DEPTH,
-            depth_increment: DEFAULT_DEPTH_INCREMENT,
+            depth_factor: DEFAULT_DEPTH_FACTOR,
+            gscache: HashMap::new(),
+            last_input: None,
+            last_success_depth: None,
         }
     }
 
@@ -77,82 +94,141 @@ impl MetaParser {
         self
     }
 
-    /// Set the depth increment
-    pub fn with_depth_increment(mut self, increment: usize) -> Self {
-        self.depth_increment = increment.max(1); // At least 1
+    /// Set the multiplicative depth growth factor (must be > 1.0). Defaults to 1.5.
+    /// Example: factor=1.5 will grow depths like 5 -> 8 -> 12 -> ... (ceil applied).
+    pub fn with_depth_factor(mut self, factor: f64) -> Self {
+        // Enforce a factor > 1.0 so depth makes progress; clamp conservatively.
+        self.depth_factor = factor.max(1.01);
         self
     }
-
-    /// Parse input, automatically finding the right recursion depth
-    ///
-    /// Returns the AST and the depth that succeeded
-    pub fn meta_parse(&mut self, input: &str) -> Result<(PartialAST, usize), String> {
-        let mut current_depth = self.start_depth;
-
-        while current_depth <= self.max_depth {
-            // Update parser's max recursion depth
-            self.parser.set_max_recursion(current_depth);
-
-            // Try parsing - cache from previous attempts is still valid!
-            match self.parser.parse(input) {
-                Ok(ast) => {
-                    return Ok((ast, current_depth));
-                }
-                Err(_) => {
-                    // Increase depth and try again
-                    // Cache is preserved, so we only explore new paths
-                    current_depth += self.depth_increment;
-                }
-            }
-        }
-
-        Err(format!(
-            "Failed to parse after trying depths {} to {}",
-            self.start_depth, self.max_depth
-        ))
-    }
-
     //parse but discard depth
     pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
-        let (ast, _depth) = self.meta_parse(input)?;
-        Ok(ast)
+        let (ast, _depth) = self.meta_partial(input)?;
+        Ok(PartialAST {
+            roots: ast.completes(),
+            input: ast.input,
+        })
     }
 
     /// Parse for partial results (may be incomplete)
     ///
+    /// Uses rich parse outcomes to intelligently determine when to stop:
+    /// - If parse fails due to grammar mismatch, stops immediately (won't improve with depth)
+    /// - If parse succeeds but was depth-limited, continues to higher depth
+    /// - If parse succeeds and wasn't depth-limited, returns results (won't improve with depth)
+    ///
     /// Returns the best partial AST found and the depth used
     pub fn meta_partial(&mut self, input: &str) -> Result<(PartialAST, usize), String> {
-        let mut current_depth = self.start_depth;
-        let mut best_result: Option<(PartialAST, usize)> = None;
+        // For incremental inputs, start from the last successful depth to avoid
+        // repeated ascent through low depths on every prefix extension.
+        // Otherwise fall back to grammar-level cache and configured start depth.
+        let incremental = self
+            .last_input
+            .as_ref()
+            .map_or(false, |prev| input.starts_with(prev));
+
+        let mut current_depth = if incremental {
+            self.last_success_depth
+                .unwrap_or(self.start_depth)
+                .max(self.start_depth)
+        } else {
+            match self.gscache.get(&self.parser.grammar) {
+                Some(&best) => best.max(self.start_depth),
+                None => self.start_depth,
+            }
+        };
+        debug_info!(
+            "meta",
+            "MetaParser: Starting meta_partial with initial depth {} (cached best for grammar: {})",
+            current_depth,
+            self.gscache.get(&self.parser.grammar).unwrap_or(&0)
+        );
 
         while current_depth <= self.max_depth {
             self.parser.set_max_recursion(current_depth);
 
             match self.parser.partial(input) {
-                Ok(ast) => {
-                    // Check if we have a complete parse
-                    if ast.roots.iter().any(|r| r.is_complete()) {
-                        return Ok((ast, current_depth));
-                    }
-
-                    // Keep track of best partial result
-                    // (could add heuristics here for "best" - most segments consumed, etc.)
-                    best_result = Some((ast, current_depth));
-                    current_depth += self.depth_increment;
+                PartialParseOutcome::Success { ast } => {
+                    // Update gscache with the (potentially) better depth
+                    let key = self.parser.grammar.clone();
+                    self.gscache
+                        .entry(key)
+                        .and_modify(|e| {
+                            if current_depth < *e {
+                                *e = current_depth
+                            }
+                        })
+                        .or_insert(current_depth);
+                    debug_info!(
+                        "meta",
+                        "MetaParser: Success at depth {} (cached best for grammar: {})",
+                        current_depth,
+                        self.gscache[&self.parser.grammar]
+                    );
+                    self.last_input = Some(input.to_string());
+                    self.last_success_depth = Some(current_depth);
+                    // return result
+                    return Ok((ast, current_depth));
                 }
-                Err(_) => {
-                    current_depth += self.depth_increment;
+                PartialParseOutcome::Failure(ParseError::DepthLimit) => {
+                    // Compute multiplicative growth (ceil), but ensure we always increase by at least 1
+                    let mut next_depth =
+                        ((current_depth as f64) * self.depth_factor).ceil() as usize;
+                    if next_depth <= current_depth {
+                        next_depth = current_depth + 1;
+                    }
+                    debug_info!(
+                        "meta",
+                        "MetaParser: Incrementing at depth {} -> {} (factor={})",
+                        current_depth,
+                        next_depth,
+                        self.depth_factor
+                    );
+                    current_depth = next_depth;
+                }
+                PartialParseOutcome::Failure(ParseError::NoValidParse) => {
+                    if incremental {
+                        let mut next_depth =
+                            ((current_depth as f64) * self.depth_factor).ceil() as usize;
+                        if next_depth <= current_depth {
+                            next_depth = current_depth + 1;
+                        }
+                        debug_info!(
+                            "meta",
+                            "MetaParser: No valid parse at depth {} (incremental) -> {}",
+                            current_depth,
+                            next_depth
+                        );
+                        current_depth = next_depth;
+                    } else {
+                        // Grammar mismatch - won't improve with higher depth
+                        // Stop immediately to avoid wasted work
+                        debug_info!(
+                            "meta",
+                            "MetaParser: No valid parse at depth {} - stopping search",
+                            current_depth
+                        );
+                        break;
+                    }
+                }
+                PartialParseOutcome::Failure(_) => {
+                    // Other errors (tokenization, no start symbol) - also won't improve
+                    debug_info!(
+                        "meta",
+                        "MetaParser: Parse error at depth {} - stopping search",
+                        current_depth
+                    );
+                    break;
                 }
             }
         }
 
-        // Return best partial result if we have one
-        best_result.ok_or_else(|| {
-            format!(
-                "No parse results after trying depths {} to {}",
-                self.start_depth, self.max_depth
-            )
-        })
+        self.last_input = Some(input.to_string());
+
+        Err(format!(
+            "No parse results after trying depths {} to {}",
+            self.start_depth, self.max_depth
+        ))
     }
 
     // partial but discard depth
@@ -164,6 +240,8 @@ impl MetaParser {
     /// Clear the parser's cache (useful when switching to completely different input)
     pub fn clear_cache(&mut self) {
         self.parser.clear_cache();
+        self.last_input = None;
+        self.last_success_depth = None;
     }
 
     /// Get a reference to the underlying parser
@@ -176,71 +254,3 @@ impl MetaParser {
         &mut self.parser
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::set_debug_level;
-
-    #[test]
-    fn test_meta_parser_simple() {
-        let spec = r#"
-        Expr ::= Expr '+' 'n' | 'n'
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut mp = MetaParser::new(g);
-
-        let (ast, depth) = mp.meta_parse("n + n + n").unwrap();
-        assert!(ast.is_complete());
-        println!("Parsed at depth {}", depth);
-    }
-
-    #[test]
-    fn test_meta_parser_deep_nesting() {
-        // Non-ambiguous deep nesting - just parentheses
-        let spec = r#"
-        Expr ::= '(' Expr ')' | 'f' Expr | 'x'
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut mp = MetaParser::new(g);
-
-        // This needs higher depth due to nesting
-        let (ast, depth) = mp.meta_parse("f ( f ( x ) )").unwrap();
-        assert!(ast.is_complete());
-        println!("Parsed 'f ( f ( x ) )' at depth {}", depth);
-    }
-
-    #[test]
-    fn test_meta_parser_highly_ambiguous() {
-        set_debug_level(crate::DebugLevel::None);
-        let spec = r#"
-        Expr ::= Expr Expr | Expr '+' Expr | '(' Expr ')' | 'x'
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut mp = MetaParser::new(g);
-
-        let (ast, depth) = mp.meta_parse("x + x + x").unwrap();
-        assert!(ast.is_complete());
-        println!("Parsed highly ambiguous at depth {}", depth);
-    }
-
-    #[test]
-    fn test_meta_parser_incremental_cache() {
-        // Test that cache is preserved across depth increments
-        let spec = r#"
-        Expr ::= '(' Expr ')' | 'x'
-        start ::= Expr
-        "#;
-        let g = Grammar::load(spec).unwrap();
-        let mut mp = MetaParser::new(g);
-
-        // Deeply nested parens - needs increasing depth
-        let (ast, depth) = mp.meta_parse("( ( ( x ) ) )").unwrap();
-        assert!(ast.is_complete());
-        println!("Parsed nested parens at depth {}", depth);
-    }
-}
-

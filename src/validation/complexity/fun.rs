@@ -71,7 +71,9 @@ fn generate_weird_random_fun(n: usize) -> String {
 
 /// Generate operator-heavy chains: `1 + 2 - 3 * 4 / 5 + ...`.
 fn generate_operator_chain(n: usize) -> String {
-    if n == 0 { return "1".to_string(); }
+    if n == 0 {
+        return "1".to_string();
+    }
     let mut rng = StdRng::seed_from_u64(0xF00D_u64.wrapping_mul((n as u64) + 1));
     let ops = ["+", "-", "*", "/"];
     let mut out = "1".to_string();
@@ -157,19 +159,47 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     vec![
         (
             "Fun Parenthesized Literal".to_string(),
-            run_complexity_test(&grammar, generate_parenthesized_literal, "Fun Parenthesized Literal", 4, 8, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_parenthesized_literal,
+                "Fun Parenthesized Literal",
+                4,
+                8,
+                jobs,
+            ),
         ),
         (
             "Fun Let Literal Chain".to_string(),
-            run_complexity_test(&grammar, generate_let_literal_chain, "Fun Let Literal Chain", 4, 8, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_let_literal_chain,
+                "Fun Let Literal Chain",
+                4,
+                8,
+                jobs,
+            ),
         ),
         (
             "Fun Weird Random".to_string(),
-            run_complexity_test(&grammar, generate_weird_random_fun, "Fun Weird Random", 8, 16, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_weird_random_fun,
+                "Fun Weird Random",
+                8,
+                16,
+                jobs,
+            ),
         ),
         (
             "Fun Complex Random".to_string(),
-            run_complexity_test(&grammar, generate_complex_random_fun, "Fun Complex Random", 12, 32, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_complex_random_fun,
+                "Fun Complex Random",
+                12,
+                32,
+                jobs,
+            ),
         ),
     ]
 }

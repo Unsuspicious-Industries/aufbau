@@ -2,8 +2,8 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
 use crate::logic::typing::Type;
+use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
 
 // =============================================================================
 // Terminal Gathering from AST
@@ -107,6 +107,10 @@ fn collect_symbols_from_rule(rule: &TypingRule, out: &mut Vec<String>) {
                     collect_symbols_from_type(right, out);
                 }
                 TypingJudgment::Membership(_, _) => {}
+                TypingJudgment::Check(_) => {
+                    // `check(e)` only asserts that `e` typechecks; it doesn't introduce
+                    // any new type symbols itself.
+                }
             }
         }
     }
@@ -145,6 +149,9 @@ fn collect_raws_from_rule(rule: &TypingRule, out: &mut Vec<String>) {
                     collect_raws_from_type(right, out);
                 }
                 TypingJudgment::Membership(_, _) => {}
+                TypingJudgment::Check(_) => {
+                    // `check(e)` doesn't include type literals by itself.
+                }
             }
         }
     }

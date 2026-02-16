@@ -1,7 +1,7 @@
 use super::super::completion::*;
-use crate::{logic::partial::parse::Parser, set_debug_level, testing::load_example_grammar};
 use crate::logic::grammar::Grammar;
 use crate::regex::Regex as DerivativeRegex;
+use crate::{logic::partial::parse::Parser, set_debug_level, testing::load_example_grammar};
 
 fn complete(spec: &str, input: &str) -> CompletionSet {
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();

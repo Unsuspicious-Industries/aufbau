@@ -8,6 +8,8 @@
 //! - Variable scoping
 
 use super::*;
+use crate::logic::typing::core::Context;
+use crate::logic::typing::Type;
 
 /// Load IMP grammar from examples/imp.spec
 pub fn imp_grammar() -> Grammar {
@@ -112,15 +114,53 @@ fn check_completable() {
     res.assert_all_passed();
 }
 
-/// Standalone test: ensure bare identifier has '=' as a completion path
+/// Standalone test: ensure identifier in block has '=' as a completion path
 #[test]
 fn bare_identifier_has_assignment_completion_path() {
     let grammar = imp_grammar();
-    let completions = get_completions(&grammar, "x");
-    let has_eq = completions.iter().any(|token| token.matches("="));
+    let completions = get_completions(&grammar, "{ x");
+
+    let mut ctx = Context::new();
+    ctx.add("x".to_string(), Type::Raw("Int".to_string()));
+
+    let has_eq = completions.iter().any(|token| {
+        token.matches("=")
+            && token
+                .example()
+                .map(|example| extend_input_checked(&grammar, "{ x", &example, &ctx).is_ok())
+                .unwrap_or(false)
+    });
     assert!(
         has_eq,
         "expected '=' completion for bare identifier to allow assignment"
+    );
+}
+
+#[test]
+fn identifier_in_block_has_assignment_completion_only() {
+    let grammar = imp_grammar();
+    let completions = get_completions(&grammar, "{a");
+
+    let mut ctx = Context::new();
+    ctx.add("a".to_string(), Type::Raw("Int".to_string()));
+
+    let has_eq = completions.iter().any(|token| {
+        token.matches("=")
+            && token
+                .example()
+                .map(|example| extend_input_checked(&grammar, "{a", &example, &ctx).is_ok())
+                .unwrap_or(false)
+    });
+    let has_let = completions.iter().any(|token| token.matches("let"));
+    let has_if = completions.iter().any(|token| token.matches("if"));
+    let has_while = completions.iter().any(|token| token.matches("while"));
+
+    assert!(has_eq, "expected '=' completion after identifier in block");
+    assert!(!has_let, "did not expect 'let' after identifier in block");
+    assert!(!has_if, "did not expect 'if' after identifier in block");
+    assert!(
+        !has_while,
+        "did not expect 'while' after identifier in block"
     );
 }
 

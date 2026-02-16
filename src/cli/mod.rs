@@ -1,12 +1,12 @@
+pub mod examine;
 pub mod logic;
 pub mod validate;
-pub mod examine;
 
 use clap::{ArgAction, Parser, Subcommand};
-use p7::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
+use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
 
 #[derive(Parser)]
-#[command(name = "p7", version, about = "p7 toolkit", long_about = None)]
+#[command(name = "aufbau", version, about = "aufbau toolkit", long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
     /// Increase verbosity (-v, -vv, -vvv)

@@ -107,11 +107,25 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     let mut out = Vec::new();
     out.push((
         "Deep Nesting".to_string(),
-        run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 10, 100, jobs),
+        run_complexity_test(
+            &grammar,
+            generate_deep_nesting,
+            "Deep Nesting",
+            10,
+            100,
+            jobs,
+        ),
     ));
     out.push((
         "Random String".to_string(),
-        run_complexity_test(&grammar, generate_random_string, "Random String", 100, 1000, jobs),
+        run_complexity_test(
+            &grammar,
+            generate_random_string,
+            "Random String",
+            100,
+            1000,
+            jobs,
+        ),
     ));
     out
 }
@@ -119,7 +133,14 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
 #[test]
 fn basic_deep_nesting_complexity() {
     let grammar = basic_grammar();
-    let data = run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 10, 100, None);
+    let data = run_complexity_test(
+        &grammar,
+        generate_deep_nesting,
+        "Deep Nesting",
+        10,
+        100,
+        None,
+    );
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
@@ -142,7 +163,14 @@ fn basic_deep_nesting_complexity() {
 #[test]
 fn basic_random_string_complexity() {
     let grammar = basic_grammar();
-    let data = run_complexity_test(&grammar, generate_random_string, "Random String", 100, 1000, None);
+    let data = run_complexity_test(
+        &grammar,
+        generate_random_string,
+        "Random String",
+        100,
+        1000,
+        None,
+    );
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);

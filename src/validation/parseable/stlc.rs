@@ -31,6 +31,7 @@ use super::*;
 /// The valid() method is used instead of valid() to avoid type checking
 /// overhead and focus on the core parsing performance.
 
+#[cfg(test)]
 fn stlc_grammar() -> Grammar {
     load_example_grammar("stlc")
 }

@@ -68,7 +68,12 @@ fn deep_invalid_cases() -> Vec<ParseTestCase> {
 
 /// Expose suites for each inline grammar so the validate runner can exercise
 /// each grammar independently.
-pub fn suites() -> Vec<(&'static str, Grammar, Vec<ParseTestCase>, Vec<ParseTestCase>)> {
+pub fn suites() -> Vec<(
+    &'static str,
+    Grammar,
+    Vec<ParseTestCase>,
+    Vec<ParseTestCase>,
+)> {
     vec![
         (
             "weird::right",
@@ -96,12 +101,29 @@ fn check_weird_parseable() {
     // Run each inline grammar's suite and ensure the parseable runner behaves as
     // expected (no failures in either valids or invalids).
     for (name, grammar, valids, invalids) in suites() {
-        println!("\n=== Weird suite: {} ({} valid + {} invalid) ===", name, valids.len(), invalids.len());
+        println!(
+            "\n=== Weird suite: {} ({} valid + {} invalid) ===",
+            name,
+            valids.len(),
+            invalids.len()
+        );
 
         let (res_v, _) = run_parse_batch(&grammar, &valids);
-        assert_eq!(res_v.failed, 0, "{} valid failures: {}", name, res_v.format_failures());
+        assert_eq!(
+            res_v.failed,
+            0,
+            "{} valid failures: {}",
+            name,
+            res_v.format_failures()
+        );
 
         let (res_i, _) = run_parse_batch(&grammar, &invalids);
-        assert_eq!(res_i.failed, 0, "{} invalid failures: {}", name, res_i.format_failures());
+        assert_eq!(
+            res_i.failed,
+            0,
+            "{} invalid failures: {}",
+            name,
+            res_i.format_failures()
+        );
     }
 }

@@ -129,8 +129,16 @@ fn application_cases() -> Vec<TypedCompletionTestCase> {
     vec![
         T::ok("apply id", "f(1)", 1).with_context(vec![("f", "Int -> Int")]),
         T::ok("apply bool fn", "f(true)", 1).with_context(vec![("f", "Bool -> Int")]),
-        T::ok("let fn then apply", "let f: Int -> Int = (x: Int) => x + 1; f(5)", 2),
-        T::ok("let fn apply result", "let f: Int -> Int = (x: Int) => x; f(42)", 2),
+        T::ok(
+            "let fn then apply",
+            "let f: Int -> Int = (x: Int) => x + 1; f(5)",
+            2,
+        ),
+        T::ok(
+            "let fn apply result",
+            "let f: Int -> Int = (x: Int) => x; f(42)",
+            2,
+        ),
         T::ok("apply var arg", "f(x)", 1).with_context(vec![("f", "Int -> Int"), ("x", "Int")]),
     ]
 }
@@ -152,8 +160,11 @@ fn variable_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("multi char var", "foo", 1).with_context(vec![("foo", "Bool")]),
         T::ok("var in expr", "x + y", 1).with_context(vec![("x", "Int"), ("y", "Int")]),
         T::ok("float vars", "a +. b", 1).with_context(vec![("a", "Float"), ("b", "Float")]),
-        T::ok("multiple ctx vars", "x", 1)
-            .with_context(vec![("x", "Int"), ("y", "Bool"), ("z", "Float")]),
+        T::ok("multiple ctx vars", "x", 1).with_context(vec![
+            ("x", "Int"),
+            ("y", "Bool"),
+            ("z", "Float"),
+        ]),
     ]
 }
 
@@ -206,8 +217,16 @@ fn fail_syntax_cases() -> Vec<TypedCompletionTestCase> {
 
 fn fail_app_type_cases() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::typefail("wrong arg type bool for int", "f(true)", vec![("f", "Int -> Int")]),
-        T::typefail("wrong arg type int for bool", "f(1)", vec![("f", "Bool -> Bool")]),
+        T::typefail(
+            "wrong arg type bool for int",
+            "f(true)",
+            vec![("f", "Int -> Int")],
+        ),
+        T::typefail(
+            "wrong arg type int for bool",
+            "f(1)",
+            vec![("f", "Bool -> Bool")],
+        ),
     ]
 }
 

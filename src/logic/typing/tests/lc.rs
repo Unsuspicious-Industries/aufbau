@@ -1,6 +1,6 @@
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::MetaParser;
 use crate::logic::typing::eval::check_tree;
-use crate::logic::Parser;
 use crate::set_debug_level;
 use crate::validation::completable::load_example_grammar;
 
@@ -12,7 +12,7 @@ fn lc() -> Grammar {
 fn test_identity() {
     // P => P
     let g = lc();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
     set_debug_level(crate::DebugLevel::Trace);
     let ast = p
         .partial(
@@ -22,6 +22,7 @@ fn test_identity() {
     "#,
         )
         .unwrap();
+    set_debug_level(crate::DebugLevel::Info);
     assert!(ast.is_complete(), "Identity should be provable");
     let complete = ast.completes();
     for c in complete {

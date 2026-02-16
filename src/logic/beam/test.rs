@@ -1,9 +1,6 @@
-use regex_syntax::ast::print;
-
-use super::*;
-
 #[test]
 fn test_beam_search_simple_grammar() {
+    use super::*;
     use crate::logic::grammar::Grammar;
 
     // Simple grammar: A -> 'a' | 'a' B, B -> 'b'
@@ -46,6 +43,7 @@ fn test_beam_search_simple_grammar() {
 
 #[test]
 fn test_beam_size_preference() {
+    use super::*;
     use crate::logic::grammar::Grammar;
 
     let spec = r#"
@@ -76,6 +74,7 @@ fn test_beam_size_preference() {
 
 #[test]
 fn test_beam_pruning() {
+    use super::*;
     use crate::logic::grammar::Grammar;
 
     let spec = r#"
@@ -108,4 +107,3 @@ fn test_beam_pruning() {
         _ => {}
     }
 }
-

@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(test)]
 fn imp_grammar() -> Grammar {
     load_example_grammar("imp")
 }
@@ -40,7 +41,10 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
             "if condition missing comparator",
             "{ if 1 { let x:Int=1; } else { let x:Int=2; } }",
         ),
-        ParseTestCase::type_error("while condition type mismatch", "{ while (1==true) { let x:Int=1; } }"),
+        ParseTestCase::type_error(
+            "while condition type mismatch",
+            "{ while (1==true) { let x:Int=1; } }",
+        ),
     ]
 }
 

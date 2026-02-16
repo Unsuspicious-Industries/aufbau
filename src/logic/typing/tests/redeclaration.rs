@@ -7,11 +7,11 @@ The type system enforces strong typing where:
 3. This is enforced during evaluation
 */
 
+use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
+use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree;
-use crate::logic::typing::Type;
-use crate::logic::Parser;
 use crate::validation::completable::load_example_grammar;
 
 fn stlc() -> Grammar {
@@ -88,7 +88,10 @@ fn test_nested_lambda_same_variable_rejected() {
                 return;
             }
             TreeStatus::Valid(_) | TreeStatus::Partial(_) => {
-                panic!("Expected Malformed status for nested lambda with duplicate variable name, got: {:?}", status);
+                panic!(
+                    "Expected Malformed status for nested lambda with duplicate variable name, got: {:?}",
+                    status
+                );
             }
             TreeStatus::TooDeep => {
                 panic!("Unexpected TooDeep status");
@@ -122,7 +125,9 @@ fn test_nested_lambda_different_variables_accepted() {
                 return;
             }
             TreeStatus::Malformed => {
-                panic!("Expected Valid/Partial status for nested lambda with different variable names, got Malformed");
+                panic!(
+                    "Expected Valid/Partial status for nested lambda with different variable names, got Malformed"
+                );
             }
             TreeStatus::TooDeep => {
                 panic!("Unexpected TooDeep status");
@@ -152,7 +157,10 @@ fn test_triple_nested_lambda_duplicate_rejected() {
                 return;
             }
             TreeStatus::Valid(_) | TreeStatus::Partial(_) => {
-                panic!("Expected Malformed status for triple nested lambda with duplicate 'x', got: {:?}", status);
+                panic!(
+                    "Expected Malformed status for triple nested lambda with duplicate 'x', got: {:?}",
+                    status
+                );
             }
             TreeStatus::TooDeep => {
                 panic!("Unexpected TooDeep status");
@@ -186,7 +194,9 @@ fn test_triple_nested_lambda_all_different_accepted() {
                 return;
             }
             TreeStatus::Malformed => {
-                panic!("Expected Valid/Partial status for triple nested lambda with all different variables, got Malformed");
+                panic!(
+                    "Expected Valid/Partial status for triple nested lambda with all different variables, got Malformed"
+                );
             }
             TreeStatus::TooDeep => {
                 panic!("Unexpected TooDeep status");
@@ -217,7 +227,10 @@ fn test_lambda_with_application_duplicate_rejected() {
                 return;
             }
             TreeStatus::Valid(_) | TreeStatus::Partial(_) => {
-                panic!("Expected Malformed status for lambda application with duplicate binding, got: {:?}", status);
+                panic!(
+                    "Expected Malformed status for lambda application with duplicate binding, got: {:?}",
+                    status
+                );
             }
             TreeStatus::TooDeep => {
                 panic!("Unexpected TooDeep status");
@@ -236,15 +249,18 @@ fn test_context_multiple_duplicates() {
         .expect("First binding should succeed");
 
     // Try multiple times with different types - all should fail
-    assert!(ctx
-        .extend("x".to_string(), Type::Raw("Bool".to_string()))
-        .is_err());
-    assert!(ctx
-        .extend("x".to_string(), Type::Raw("String".to_string()))
-        .is_err());
-    assert!(ctx
-        .extend("x".to_string(), Type::Atom("A".to_string()))
-        .is_err());
+    assert!(
+        ctx.extend("x".to_string(), Type::Raw("Bool".to_string()))
+            .is_err()
+    );
+    assert!(
+        ctx.extend("x".to_string(), Type::Raw("String".to_string()))
+            .is_err()
+    );
+    assert!(
+        ctx.extend("x".to_string(), Type::Atom("A".to_string()))
+            .is_err()
+    );
 
     // Original binding should still be intact
     match ctx.lookup("x") {

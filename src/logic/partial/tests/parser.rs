@@ -52,7 +52,7 @@ fn test_alternatives() {
     assert!(ast.is_complete());
     assert_eq!(ast.roots.len(), 1);
     assert_eq!(ast.roots[0].name, "start");
-    
+
     // Verify child structure
     let child = &ast.roots[0].children[0];
     if let Node::NonTerminal(nt) = child {

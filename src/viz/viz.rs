@@ -3,7 +3,6 @@ use crate::logic::partial::{Node, Terminal};
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::{check_tree, check_tree_with_context};
 use crate::{logic::Parser, logic::grammar::Grammar, set_debug_level};
-use regex_syntax::ast::print;
 use rouille::{Request, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -260,7 +259,7 @@ pub fn handle_analyze_request(request: &Request) -> Response {
     // Parse
     let t2 = Instant::now();
     let mut parser = Parser::new(grammar.clone());
-    let partial = match parser.partial(&body.input) {
+    let partial = match parser.partial(&body.input).into_result() {
         Ok(p) => p,
         Err(e) => {
             return Response::json(&AnalyzeResponse {
@@ -302,14 +301,8 @@ pub fn handle_analyze_request(request: &Request) -> Response {
 
     // Completions
     let t4 = Instant::now();
-    let symbols = extract_symbols_from_ast(&partial);
-    let completion_regexes = partial.completions(&grammar);
-    let all_completion_strings: Vec<String> = completion_regexes
-        .iter()
-        .filter_map(|regex| find_working_completion(&body.input, regex, &symbols, &grammar))
-        .collect();
-    let well_typed_completions =
-        filter_well_typed_completions(&body.input, &all_completion_strings, &grammar);
+    let (well_typed_completions, all_completion_strings) =
+        compute_completions_for_partial(&body.input, &partial, &grammar);
     let completions_ms = t4.elapsed().as_millis();
 
     // Typed AST + per-tree info
@@ -489,33 +482,24 @@ pub fn handle_parser_viz_request(request: &Request) -> Response {
         Err(e) => return Response::text(format!("spec error: {}", e)).with_status_code(400),
     };
     let mut parser = Parser::new(grammar.clone());
-    set_debug_level(crate::logic::debug::DebugLevel::Trace); 
+    set_debug_level(crate::logic::debug::DebugLevel::Trace);
 
     println!("Received input: '{}'", input);
-    let partial = match parser.partial(&input) {
+    let partial = match parser.partial(&input).into_result() {
         Ok(p) => p,
         Err(e) => return Response::text(format!("parse error: {}", e)).with_status_code(400),
     };
-    println!("Parsed input: '{}', partial roots: {}", input, partial.roots.len());
+    println!(
+        "Parsed input: '{}', partial roots: {}",
+        input,
+        partial.roots.len()
+    );
 
     let graph = build_graph(&partial, &grammar);
 
-    // Extract symbols from the AST (like extend_tree does)
-    let symbols = extract_symbols_from_ast(&partial);
-
-    // Get syntactic completions
-    let completions = partial.completions(&grammar);
-
-    // For each completion regex, find the first working example
-    // Priority: symbols that match the regex first, then generated examples
-    let all_completion_strings: Vec<String> = completions
-        .iter()
-        .filter_map(|regex| find_working_completion(&input, regex, &symbols, &grammar))
-        .collect();
-
-    // Filter completions to only those that lead to well-typed trees
-    let well_typed_completions =
-        filter_well_typed_completions(&input, &all_completion_strings, &grammar);
+    // Compute completions for this partial AST
+    let (well_typed_completions, all_completion_strings) =
+        compute_completions_for_partial(&input, &partial, &grammar);
 
     let response = ParseResponse {
         graph,
@@ -542,7 +526,7 @@ fn filter_well_typed_completions(
 
             // Parse the extended input
             let mut parser = Parser::new(grammar.clone());
-            match parser.partial(&extended) {
+            match parser.partial(&extended).into_result() {
                 Ok(partial) => {
                     // Check if any tree is well-typed
                     partial
@@ -596,6 +580,24 @@ fn collect_tokens_from_node(node: &Node, tokens: &mut Vec<String>, seen: &mut Ha
             }
         }
     }
+}
+
+/// Compute completions for a parsed `PartialAST`.
+///
+/// Returns (well_typed_completions, all_completion_strings).
+fn compute_completions_for_partial(
+    input: &str,
+    partial: &crate::logic::partial::PartialAST,
+    grammar: &Grammar,
+) -> (Vec<String>, Vec<String>) {
+    let symbols = extract_symbols_from_ast(partial);
+    let completion_regexes = partial.completions(grammar);
+    let all_completion_strings: Vec<String> = completion_regexes
+        .iter()
+        .filter_map(|regex| find_working_completion(input, regex, &symbols, grammar))
+        .collect();
+    let well_typed = filter_well_typed_completions(input, &all_completion_strings, grammar);
+    (well_typed, all_completion_strings)
 }
 
 /// Find the first working completion for a regex

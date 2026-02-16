@@ -163,7 +163,10 @@ pub fn check_all_prefixes_parseable(
             let res = if check_typing {
                 parser.partial_typed(prefix)
             } else {
-                parser.partial(prefix)
+                parser
+                    .partial(prefix)
+                    .into_result()
+                    .map_err(|e| e.to_string())
             };
             match res {
                 Ok(_) => None,
@@ -187,7 +190,7 @@ pub fn check_all_prefixes_parseable(
     // well-typed tree (not just partial typed branches).
     let mut parser = Parser::new(grammar.clone());
     if check_typing {
-        match parser.partial(input) {
+        match parser.partial(input).into_result() {
             Ok(ast) => {
                 if let Err(e) = ast.typed_complete(grammar) {
                     return ParseResult::Fail {
@@ -200,15 +203,15 @@ pub fn check_all_prefixes_parseable(
             Err(e) => {
                 return ParseResult::Fail {
                     failing_prefix: input.to_string(),
-                    error: e,
+                    error: e.to_string(),
                     prefix_index: input.chars().count(),
                 };
             }
         }
-    } else if let Err(e) = parser.partial(input) {
+    } else if let Err(e) = parser.partial(input).into_result() {
         return ParseResult::Fail {
             failing_prefix: input.to_string(),
-            error: e,
+            error: e.to_string(),
             prefix_index: input.chars().count(),
         };
     }
@@ -227,7 +230,7 @@ pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> 
     if check_typing {
         // For type errors, syntax may still parse. We only fail this check if a
         // complete well-typed tree exists.
-        match parser.partial(input) {
+        match parser.partial(input).into_result() {
             Ok(ast) => {
                 if ast.typed_complete(grammar).is_ok() {
                     ParseResult::Fail {
@@ -249,7 +252,7 @@ pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> 
             },
         }
     } else {
-        match parser.partial(input) {
+        match parser.partial(input).into_result() {
             Ok(t) => ParseResult::Fail {
                 failing_prefix: input.to_string(),
                 error: format!("Expected parse/type failure but succeeded with {}", t).to_string(),
@@ -323,7 +326,10 @@ impl BatchResult {
 }
 
 /// Run a batch of parseability test cases
-pub fn run_parse_batch(grammar: &Grammar, cases: &[ParseTestCase]) -> (BatchResult, Vec<serde_json::Value>) {
+pub fn run_parse_batch(
+    grammar: &Grammar,
+    cases: &[ParseTestCase],
+) -> (BatchResult, Vec<serde_json::Value>) {
     let start = Instant::now();
     let mut passed = 0;
     let mut failed = 0;
@@ -341,8 +347,24 @@ pub fn run_parse_batch(grammar: &Grammar, cases: &[ParseTestCase]) -> (BatchResu
         {
             use serde_json::json;
             let (passed_flag, prefix_count, failing_prefix, error, prefix_index) = match &result {
-                ParseResult::Pass { prefix_count, .. } => (true, Some(*prefix_count as usize), None::<String>, None::<String>, None::<usize>),
-                ParseResult::Fail { failing_prefix, error, prefix_index } => (false, None, Some(failing_prefix.clone()), Some(error.clone()), Some(*prefix_index)),
+                ParseResult::Pass { prefix_count, .. } => (
+                    true,
+                    Some(*prefix_count as usize),
+                    None::<String>,
+                    None::<String>,
+                    None::<usize>,
+                ),
+                ParseResult::Fail {
+                    failing_prefix,
+                    error,
+                    prefix_index,
+                } => (
+                    false,
+                    None,
+                    Some(failing_prefix.clone()),
+                    Some(error.clone()),
+                    Some(*prefix_index),
+                ),
             };
             let case_obj = json!({
                 "module": "parseable",

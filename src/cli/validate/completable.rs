@@ -1,11 +1,10 @@
-use clap::Args;
 use std::fs;
 use std::io::Write as _;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use aufbau::logic::grammar::Grammar;
+use aufbau::validation::completable::{self, TestResult, TypedCompletionTestCase};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use p7::logic::grammar::Grammar;
-use p7::validation::completable::{self, run_test_timed, TestResult, TypedCompletionTestCase};
 use rayon::prelude::*;
 
 use crate::cli::validate::ValidateCmd;
@@ -47,7 +46,7 @@ pub fn run(args: &ValidateCmd) {
     let total_cases: usize = suites.iter().map(|(_, _, c)| c.len()).sum();
     let total_suites = suites.len();
 
-    eprintln!("p7 validation runner - completable");
+    eprintln!("aufbau validation runner - completable");
     eprintln!("  suites: {}", total_suites);
     eprintln!("  cases:  {}", total_cases);
     if let Some(ref f) = args.filter {
@@ -92,7 +91,10 @@ pub fn run(args: &ValidateCmd) {
     // default global pool and emit a warning.
     if let Some(n) = args.jobs {
         if n > 0 {
-            if let Err(e) = rayon::ThreadPoolBuilder::new().num_threads(n).build_global() {
+            if let Err(e) = rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build_global()
+            {
                 eprintln!("Warning: failed to set global rayon thread pool: {}", e);
             }
         }
@@ -106,72 +108,96 @@ pub fn run(args: &ValidateCmd) {
         case_pb.set_prefix(suite_name.to_string());
 
         // Prepare indexed cases for deterministic ordering
-        let indexed_cases: Vec<(usize, &TypedCompletionTestCase)> = cases.iter().enumerate().collect();
+        let indexed_cases: Vec<(usize, &TypedCompletionTestCase)> =
+            cases.iter().enumerate().collect();
 
         // Run cases in parallel using Rayon global pool
-        let mut par_results: Vec<(usize, serde_json::Value, TestResult, Duration, p7::validation::completable::TestRunMeta)> =
-            indexed_cases
-                .par_iter()
-                .map(|(idx, case)| {
-                    let idx = *idx;
-                    let case = *case;
-                    let start_ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
-                    let (result, duration, meta) = completable::run_test_timed_meta(grammar, case);
+        let mut par_results: Vec<(
+            usize,
+            serde_json::Value,
+            TestResult,
+            Duration,
+            aufbau::validation::completable::TestRunMeta,
+        )> = indexed_cases
+            .par_iter()
+            .map(|(idx, case)| {
+                let idx = *idx;
+                let case = *case;
+                let start_ts = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros();
+                let (result, duration, meta) = completable::run_test_timed_meta(grammar, case);
 
-                    use serde_json::json;
-                    let prefix_meta_json = meta.prefix_meta.as_ref().map(|v| {
-                        v.iter()
-                            .map(|pd| {
-                                json!({
-                                    "prefix": pd.prefix,
-                                    "ok": pd.ok,
-                                    "time_us": pd.time_us,
-                                    "states_explored": pd.states_explored,
-                                    "visited_count": pd.visited_count,
-                                    "visited_sample": pd.visited_sample,
-                                    "beam_fallback": pd.beam_fallback,
-                                })
+                use serde_json::json;
+                let prefix_meta_json = meta.prefix_meta.as_ref().map(|v| {
+                    v.iter()
+                        .map(|pd| {
+                            json!({
+                                "prefix": pd.prefix,
+                                "ok": pd.ok,
+                                "time_us": pd.time_us,
+                                "states_explored": pd.states_explored,
+                                "visited_count": pd.visited_count,
+                                "visited_sample": pd.visited_sample,
                             })
-                            .collect::<Vec<_>>()
-                    });
+                        })
+                        .collect::<Vec<_>>()
+                });
 
-                    let is_pass = result.is_pass();
-                    let detail = match &result {
-                        TestResult::Pass(_) => String::new(),
-                        TestResult::Fail(msg) => msg.clone(),
-                    };
+                let is_pass = result.is_pass();
+                let detail = match &result {
+                    TestResult::Pass(_) => String::new(),
+                    TestResult::Fail(msg) => msg.clone(),
+                };
 
-                    let case_obj = json!({
-                        "suite": suite_name,
-                        "desc": case.description,
-                        "input": case.input,
-                        "expect": if case.xfail { "FAIL" } else { "PASS" },
-                        "passed": is_pass,
-                        "time_ms": duration.as_millis(),
-                        "time_us": duration.as_micros(),
-                        "beam_fallback": meta.beam_fallback,
-                        "states_explored": meta.states_explored,
-                        "prefixes_checked": meta.prefixes_checked,
-                        "prefix_total_time_us": meta.total_prefix_time_us,
-                        "detail": detail,
-                        "prefix_meta": prefix_meta_json,
-                        "timestamp_us": start_ts,
-                    });
+                let case_obj = json!({
+                    "suite": suite_name,
+                    "desc": case.description,
+                    "input": case.input,
+                    "expect": if case.xfail { "FAIL" } else { "PASS" },
+                    "passed": is_pass,
+                    "time_ms": duration.as_millis(),
+                    "time_us": duration.as_micros(),
+                    "beam_fallback": meta.beam_fallback,
+                    "states_explored": meta.states_explored,
+                    "prefixes_checked": meta.prefixes_checked,
+                    "prefix_total_time_us": meta.total_prefix_time_us,
+                    "detail": detail,
+                    "prefix_meta": prefix_meta_json,
+                    "timestamp_us": start_ts,
+                });
 
-                    (idx, case_obj, result, duration, meta)
-                })
-                .collect();
+                (idx, case_obj, result, duration, meta)
+            })
+            .collect();
 
         // Sort results by original index to restore input order
         par_results.sort_by_key(|(idx, _, _, _, _)| *idx);
 
         for (_idx, case_obj, result, duration, meta) in par_results {
-            let input = case_obj.get("input").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            let input = case_obj
+                .get("input")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
             case_pb.set_message(format!("\"{}\"", input));
 
-            let desc = case_obj.get("desc").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
-            let detail = case_obj.get("detail").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
-            let expect = case_obj.get("expect").and_then(serde_json::Value::as_str).unwrap_or("").to_string();
+            let desc = case_obj
+                .get("desc")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let detail = case_obj
+                .get("detail")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let expect = case_obj
+                .get("expect")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string();
 
             // Human readable output
             match &result {
@@ -254,14 +280,14 @@ pub fn run(args: &ValidateCmd) {
 
             // Compose profile objects
             let perf_obj = json!({
-                "generated_by": "p7 validate completable",
+                "generated_by": "aufbau validate completable",
                 "variant": "performance",
                 "timestamp": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
                 "summary": {"suites": total_suites, "cases": total_cases, "passed": passed, "failed": failed, "total_time_ms": total_duration.as_millis()},
                 "cases": perf_cases,
             });
             let fail_obj = json!({
-                "generated_by": "p7 validate completable",
+                "generated_by": "aufbau validate completable",
                 "variant": "failures",
                 "timestamp": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
                 "summary": {"suites": total_suites, "cases": total_cases, "passed": passed, "failed": failed, "total_time_ms": total_duration.as_millis()},
@@ -273,15 +299,24 @@ pub fn run(args: &ValidateCmd) {
             }
 
             let stem = profile_path.file_stem().unwrap().to_string_lossy();
-            let perf_path = profile_path.parent().unwrap_or(std::path::Path::new(".")).join(format!("{}-perf.json", stem));
-            let fail_path = profile_path.parent().unwrap_or(std::path::Path::new(".")).join(format!("{}-failures.json", stem));
+            let perf_path = profile_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join(format!("{}-perf.json", stem));
+            let fail_path = profile_path
+                .parent()
+                .unwrap_or(std::path::Path::new("."))
+                .join(format!("{}-failures.json", stem));
 
             let fperf = fs::File::create(&perf_path).expect("failed to create perf profile file");
-            serde_json::to_writer_pretty(fperf, &perf_obj).expect("failed to write perf profile JSON");
+            serde_json::to_writer_pretty(fperf, &perf_obj)
+                .expect("failed to write perf profile JSON");
             eprintln!("WROTE_PROFILE {}", perf_path.display());
 
-            let ffails = fs::File::create(&fail_path).expect("failed to create failures profile file");
-            serde_json::to_writer_pretty(ffails, &fail_obj).expect("failed to write failures profile JSON");
+            let ffails =
+                fs::File::create(&fail_path).expect("failed to create failures profile file");
+            serde_json::to_writer_pretty(ffails, &fail_obj)
+                .expect("failed to write failures profile JSON");
             eprintln!("WROTE_PROFILE {}", fail_path.display());
         } else {
             eprintln!("PROFILE flag provided but no cases recorded");
@@ -304,7 +339,11 @@ pub fn run(args: &ValidateCmd) {
     let mut f = fs::File::create(&report_path).expect("failed to create report file");
 
     // Header
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
     writeln!(f, "  VALIDATION REPORT").ok();
     writeln!(f, "  timestamp={}", timestamp).ok();
     if let Some(ref flt) = args.filter {
@@ -317,7 +356,11 @@ pub fn run(args: &ValidateCmd) {
     )
     .ok();
     writeln!(f, "  total_time_ms={}", total_duration.as_millis()).ok();
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
     writeln!(f).ok();
 
     if failed == 0 {
@@ -328,9 +371,17 @@ pub fn run(args: &ValidateCmd) {
     writeln!(f).ok();
 
     // Passing by suite
-    writeln!(f, "-------------------------------------------------------------------------------").ok();
+    writeln!(
+        f,
+        "-------------------------------------------------------------------------------"
+    )
+    .ok();
     writeln!(f, "  PASSING ({}/{})", passed, total_cases).ok();
-    writeln!(f, "-------------------------------------------------------------------------------").ok();
+    writeln!(
+        f,
+        "-------------------------------------------------------------------------------"
+    )
+    .ok();
 
     let mut current_suite = "";
     for r in &results {
@@ -346,7 +397,11 @@ pub fn run(args: &ValidateCmd) {
                 r.desc,
                 r.duration.as_millis(),
                 r.input,
-                if r.beam_fallback.unwrap_or(false) { " bf" } else { "" }
+                if r.beam_fallback.unwrap_or(false) {
+                    " bf"
+                } else {
+                    ""
+                }
             )
             .ok();
         }
@@ -354,9 +409,17 @@ pub fn run(args: &ValidateCmd) {
     writeln!(f).ok();
 
     // Failures — full detail
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
     writeln!(f, "  FAILURES ({}/{})", failed, total_cases).ok();
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
 
     if failed == 0 {
         writeln!(f, "  (none)").ok();
@@ -404,9 +467,17 @@ pub fn run(args: &ValidateCmd) {
     slow.sort_by(|a, b| b.duration.cmp(&a.duration));
 
     if !slow.is_empty() {
-        writeln!(f, "-------------------------------------------------------------------------------").ok();
+        writeln!(
+            f,
+            "-------------------------------------------------------------------------------"
+        )
+        .ok();
         writeln!(f, "  SLOW CASES (>= 1s): {}", slow.len()).ok();
-        writeln!(f, "-------------------------------------------------------------------------------").ok();
+        writeln!(
+            f,
+            "-------------------------------------------------------------------------------"
+        )
+        .ok();
         for r in &slow {
             writeln!(
                 f,
@@ -422,42 +493,79 @@ pub fn run(args: &ValidateCmd) {
     }
 
     // Per-suite summary
-    writeln!(f, "-------------------------------------------------------------------------------").ok();
+    writeln!(
+        f,
+        "-------------------------------------------------------------------------------"
+    )
+    .ok();
     writeln!(f, "  PER-SUITE SUMMARY").ok();
-    writeln!(f, "-------------------------------------------------------------------------------").ok();
+    writeln!(
+        f,
+        "-------------------------------------------------------------------------------"
+    )
+    .ok();
 
     for (suite_name, _, _) in &suites {
         let suite_results: Vec<&CaseResult> =
             results.iter().filter(|r| r.suite == *suite_name).collect();
         let sp = suite_results.iter().filter(|r| r.passed).count();
         let sf = suite_results.iter().filter(|r| !r.passed).count();
-        let s_bf = suite_results.iter().filter(|r| r.beam_fallback.unwrap_or(false)).count();
+        let s_bf = suite_results
+            .iter()
+            .filter(|r| r.beam_fallback.unwrap_or(false))
+            .count();
         let st: Duration = suite_results.iter().map(|r| r.duration).sum();
         let status = if sf == 0 { "ok" } else { "FAIL" };
         writeln!(
             f,
             "    {:4}  {:40} passed={} failed={} beam_fallbacks={} time={}ms",
-            status, suite_name, sp, sf, s_bf, st.as_millis()
+            status,
+            suite_name,
+            sp,
+            sf,
+            s_bf,
+            st.as_millis()
         )
         .ok();
     }
     writeln!(f).ok();
 
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
     writeln!(f, "  END OF REPORT").ok();
-    writeln!(f, "===============================================================================").ok();
+    writeln!(
+        f,
+        "==============================================================================="
+    )
+    .ok();
 
     drop(f);
 
     // Create separate reports: successes and failures for easier consumption
     let successes_path = reports_dir.join(format!("successes-{}.txt", timestamp));
     let mut sf = fs::File::create(&successes_path).expect("failed to create successes file");
-    writeln!(sf, "==============================================================================").ok();
+    writeln!(
+        sf,
+        "=============================================================================="
+    )
+    .ok();
     writeln!(sf, "  PASSING REPORT").ok();
     writeln!(sf, "  timestamp={}", timestamp).ok();
-    writeln!(sf, "  suites={} cases={} passed={} failed={}", total_suites, total_cases, passed, failed).ok();
+    writeln!(
+        sf,
+        "  suites={} cases={} passed={} failed={}",
+        total_suites, total_cases, passed, failed
+    )
+    .ok();
     writeln!(sf, "  total_time_ms={}", total_duration.as_millis()).ok();
-    writeln!(sf, "==============================================================================").ok();
+    writeln!(
+        sf,
+        "=============================================================================="
+    )
+    .ok();
     writeln!(sf).ok();
 
     let mut current_suite = "";
@@ -468,7 +576,19 @@ pub fn run(args: &ValidateCmd) {
                 writeln!(sf, "  [{}]", r.suite).ok();
                 current_suite = r.suite;
             }
-            writeln!(sf, "    ok  {:30} {:>8}ms  \"{}\"{}", r.desc, r.duration.as_millis(), r.input, if r.beam_fallback.unwrap_or(false) { " bf" } else { "" }).ok();
+            writeln!(
+                sf,
+                "    ok  {:30} {:>8}ms  \"{}\"{}",
+                r.desc,
+                r.duration.as_millis(),
+                r.input,
+                if r.beam_fallback.unwrap_or(false) {
+                    " bf"
+                } else {
+                    ""
+                }
+            )
+            .ok();
         }
     }
 
@@ -476,12 +596,25 @@ pub fn run(args: &ValidateCmd) {
 
     let failures_path = reports_dir.join(format!("failures-{}.txt", timestamp));
     let mut ff = fs::File::create(&failures_path).expect("failed to create failures file");
-    writeln!(ff, "==============================================================================").ok();
+    writeln!(
+        ff,
+        "=============================================================================="
+    )
+    .ok();
     writeln!(ff, "  FAILURES REPORT").ok();
     writeln!(ff, "  timestamp={}", timestamp).ok();
-    writeln!(ff, "  suites={} cases={} passed={} failed={}", total_suites, total_cases, passed, failed).ok();
+    writeln!(
+        ff,
+        "  suites={} cases={} passed={} failed={}",
+        total_suites, total_cases, passed, failed
+    )
+    .ok();
     writeln!(ff, "  total_time_ms={}", total_duration.as_millis()).ok();
-    writeln!(ff, "==============================================================================").ok();
+    writeln!(
+        ff,
+        "=============================================================================="
+    )
+    .ok();
     writeln!(ff).ok();
 
     if failed == 0 {
@@ -496,7 +629,14 @@ pub fn run(args: &ValidateCmd) {
                     current_suite = r.suite;
                 }
                 writeln!(ff).ok();
-                writeln!(ff, "    FAIL  {}  (expect={}, time={}ms)", r.desc, r.expect, r.duration.as_millis()).ok();
+                writeln!(
+                    ff,
+                    "    FAIL  {}  (expect={}, time={}ms)",
+                    r.desc,
+                    r.expect,
+                    r.duration.as_millis()
+                )
+                .ok();
                 writeln!(ff, "    input=\"{}\"", r.input).ok();
                 if let Some(bf) = r.beam_fallback {
                     writeln!(ff, "    beam_fallback={}", bf).ok();
@@ -519,7 +659,10 @@ pub fn run(args: &ValidateCmd) {
     // Terminal summary
     eprintln!();
     eprintln!("----------------------------------------------");
-    let total_bf = results.iter().filter(|r| r.beam_fallback.unwrap_or(false)).count();
+    let total_bf = results
+        .iter()
+        .filter(|r| r.beam_fallback.unwrap_or(false))
+        .count();
     if failed == 0 {
         eprintln!(
             "  ALL {} CASES PASSED  ({}ms)  beam_fallbacks={} ",
@@ -539,7 +682,13 @@ pub fn run(args: &ValidateCmd) {
         for r in &results {
             if !r.passed {
                 let kind = r.detail.lines().next().unwrap_or("");
-                eprintln!("  FAIL  {} / {}  {}  bf={}", r.suite, r.desc, kind, r.beam_fallback.unwrap_or(false));
+                eprintln!(
+                    "  FAIL  {} / {}  {}  bf={}",
+                    r.suite,
+                    r.desc,
+                    kind,
+                    r.beam_fallback.unwrap_or(false)
+                );
             }
         }
     }

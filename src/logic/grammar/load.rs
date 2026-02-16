@@ -1,5 +1,5 @@
 use super::utils::{
-    ParsedRhs, parse_inference_rule, parse_nonterminal, parse_production, parse_rhs,
+    parse_inference_rule, parse_nonterminal, parse_production, parse_rhs, ParsedRhs,
 };
 use crate::logic::grammar::{Grammar, Production, TypingRule};
 

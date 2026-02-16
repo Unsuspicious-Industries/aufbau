@@ -1,8 +1,8 @@
 use clap::Args;
 
 pub mod completable;
-pub mod parseable;
 pub mod complexity;
+pub mod parseable;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum ValidationModule {
@@ -35,7 +35,6 @@ pub struct ValidateCmd {
     #[arg(long = "jobs", short = 'j', value_name = "N")]
     pub jobs: Option<usize>,
 }
-
 
 pub fn run(args: &ValidateCmd) {
     match &args.module {

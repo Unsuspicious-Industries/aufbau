@@ -99,22 +99,86 @@ const CONTEXT_EXTENDING: &str = r#"
 
 pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
     vec![
-        ("weird::right_recursive_ok", load_inline_grammar(INFINITE_RIGHT_RECURSIVE), right_recursive_ok()),
-        ("weird::right_recursive_fail", load_inline_grammar(INFINITE_RIGHT_RECURSIVE), right_recursive_fail()),
-        ("weird::epsilon_ok", load_inline_grammar(EPSILON_HEAVY), epsilon_ok()),
-        ("weird::epsilon_fail", load_inline_grammar(EPSILON_HEAVY), epsilon_fail()),
-        ("weird::deep_nesting_ok", load_inline_grammar(DEEP_NESTING), deep_nesting_ok()),
-        ("weird::deep_nesting_fail", load_inline_grammar(DEEP_NESTING), deep_nesting_fail()),
-        ("weird::cyclic_ok", load_inline_grammar(CYCLIC_TERMINABLE), cyclic_ok()),
-        ("weird::cyclic_fail", load_inline_grammar(CYCLIC_TERMINABLE), cyclic_fail()),
-        ("weird::long_production_ok", load_inline_grammar(LONG_PRODUCTION), long_production_ok()),
-        ("weird::long_production_fail", load_inline_grammar(LONG_PRODUCTION), long_production_fail()),
-        ("weird::ambiguous_ok", load_inline_grammar(HIGHLY_AMBIGUOUS), ambiguous_ok()),
-        ("weird::ambiguous_fail", load_inline_grammar(HIGHLY_AMBIGUOUS), ambiguous_fail()),
-        ("weird::typed_simple_ok", load_inline_grammar(TYPED_SIMPLE), typed_simple_ok()),
-        ("weird::typed_simple_fail", load_inline_grammar(TYPED_SIMPLE), typed_simple_fail()),
-        ("weird::context_extending_ok", load_inline_grammar(CONTEXT_EXTENDING), context_extending_ok()),
-        ("weird::context_extending_fail", load_inline_grammar(CONTEXT_EXTENDING), context_extending_fail()),
+        (
+            "weird::right_recursive_ok",
+            load_inline_grammar(INFINITE_RIGHT_RECURSIVE),
+            right_recursive_ok(),
+        ),
+        (
+            "weird::right_recursive_fail",
+            load_inline_grammar(INFINITE_RIGHT_RECURSIVE),
+            right_recursive_fail(),
+        ),
+        (
+            "weird::epsilon_ok",
+            load_inline_grammar(EPSILON_HEAVY),
+            epsilon_ok(),
+        ),
+        (
+            "weird::epsilon_fail",
+            load_inline_grammar(EPSILON_HEAVY),
+            epsilon_fail(),
+        ),
+        (
+            "weird::deep_nesting_ok",
+            load_inline_grammar(DEEP_NESTING),
+            deep_nesting_ok(),
+        ),
+        (
+            "weird::deep_nesting_fail",
+            load_inline_grammar(DEEP_NESTING),
+            deep_nesting_fail(),
+        ),
+        (
+            "weird::cyclic_ok",
+            load_inline_grammar(CYCLIC_TERMINABLE),
+            cyclic_ok(),
+        ),
+        (
+            "weird::cyclic_fail",
+            load_inline_grammar(CYCLIC_TERMINABLE),
+            cyclic_fail(),
+        ),
+        (
+            "weird::long_production_ok",
+            load_inline_grammar(LONG_PRODUCTION),
+            long_production_ok(),
+        ),
+        (
+            "weird::long_production_fail",
+            load_inline_grammar(LONG_PRODUCTION),
+            long_production_fail(),
+        ),
+        (
+            "weird::ambiguous_ok",
+            load_inline_grammar(HIGHLY_AMBIGUOUS),
+            ambiguous_ok(),
+        ),
+        (
+            "weird::ambiguous_fail",
+            load_inline_grammar(HIGHLY_AMBIGUOUS),
+            ambiguous_fail(),
+        ),
+        (
+            "weird::typed_simple_ok",
+            load_inline_grammar(TYPED_SIMPLE),
+            typed_simple_ok(),
+        ),
+        (
+            "weird::typed_simple_fail",
+            load_inline_grammar(TYPED_SIMPLE),
+            typed_simple_fail(),
+        ),
+        (
+            "weird::context_extending_ok",
+            load_inline_grammar(CONTEXT_EXTENDING),
+            context_extending_ok(),
+        ),
+        (
+            "weird::context_extending_fail",
+            load_inline_grammar(CONTEXT_EXTENDING),
+            context_extending_fail(),
+        ),
     ]
 }
 
@@ -134,10 +198,7 @@ fn right_recursive_ok() -> Vec<TypedCompletionTestCase> {
 }
 
 fn right_recursive_fail() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("invalid char", "c"),
-        T::fail("wrong order", "b a"),
-    ]
+    vec![T::fail("invalid char", "c"), T::fail("wrong order", "b a")]
 }
 
 fn epsilon_ok() -> Vec<TypedCompletionTestCase> {
@@ -206,10 +267,7 @@ fn long_production_ok() -> Vec<TypedCompletionTestCase> {
 }
 
 fn long_production_fail() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("wrong start", "b"),
-        T::fail("invalid", "x"),
-    ]
+    vec![T::fail("wrong start", "b"), T::fail("invalid", "x")]
 }
 
 fn ambiguous_ok() -> Vec<TypedCompletionTestCase> {
@@ -221,9 +279,7 @@ fn ambiguous_ok() -> Vec<TypedCompletionTestCase> {
 }
 
 fn ambiguous_fail() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("invalid", "z"),
-    ]
+    vec![T::fail("invalid", "z")]
 }
 
 fn typed_simple_ok() -> Vec<TypedCompletionTestCase> {
@@ -234,10 +290,7 @@ fn typed_simple_ok() -> Vec<TypedCompletionTestCase> {
 }
 
 fn typed_simple_fail() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("unbound x", "x"),
-        T::fail("unbound foo", "foo"),
-    ]
+    vec![T::fail("unbound x", "x"), T::fail("unbound foo", "foo")]
 }
 
 fn context_extending_ok() -> Vec<TypedCompletionTestCase> {

@@ -19,13 +19,12 @@
 //! - **Type-aware extension**: Only accept extensions that remain well-typed
 //! - **Smart scoring**: Prefer small, well-typed, simple completions
 
-use crate::logic::PartialAST;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse::Parser;
-use crate::logic::partial::{Node, NonTerminal, Terminal};
-use crate::logic::typing::Context;
+use crate::logic::partial::{parse_extended_input, MetaParser, Node, NonTerminal, Terminal};
 use crate::logic::typing::core::TreeStatus;
 use crate::logic::typing::eval::check_tree_with_context;
+use crate::logic::typing::Context;
+use crate::logic::PartialAST;
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::{BinaryHeap, HashSet};
 
@@ -41,9 +40,9 @@ pub fn beam_complete(
     ctx: &Context,
 ) -> BeamResult {
     // Parse initial input
-    let mut parser = Parser::new(grammar.clone());
-    let base_tree = match parser.partial(input) {
-        Ok(ast) => ast,
+    let mut parser = MetaParser::new(grammar.clone());
+    let base_tree = match parser.meta_partial(input) {
+        Ok((ast, _depth)) => ast,
         Err(e) => {
             return BeamResult::Invalid {
                 message: format!("Input is not partially valid: {}", e),
@@ -58,7 +57,7 @@ pub fn beam_complete(
         };
     }
 
-    // Initialize beam with starting state
+    // Initialize beam with starting state (always start at depth 0)
     let initial_score = calculate_score(&base_tree, 0, config);
     let mut current_beam = vec![BeamState::new(base_tree.clone(), 0, initial_score.overall)];
 
@@ -68,7 +67,7 @@ pub fn beam_complete(
 
     let mut states_explored = 0;
 
-    // Beam search: explore depth by depth
+    // Beam search: explore depth by depth (start at depth 0)
     for depth in 0..config.max_depth {
         // Check if any state in current beam is complete and well-typed
         for state in &current_beam {
@@ -85,7 +84,12 @@ pub fn beam_complete(
                         };
                     }
                     None => {
-                        return BeamResult::Invalid { message: format!("Failed to reconstruct input from completed AST for prefix='{}'", state.tree.input()) };
+                        return BeamResult::Invalid {
+                            message: format!(
+                                "Failed to reconstruct input from completed AST for prefix='{}'",
+                                state.tree.input()
+                            ),
+                        };
                     }
                 }
             }
@@ -170,7 +174,12 @@ pub fn beam_complete(
                     };
                 }
                 None => {
-                    return BeamResult::Invalid { message: format!("Failed to reconstruct input from completed AST for prefix='{}'", state.tree.input()) };
+                    return BeamResult::Invalid {
+                        message: format!(
+                            "Failed to reconstruct input from completed AST for prefix='{}'",
+                            state.tree.input()
+                        ),
+                    };
                 }
             }
         }
@@ -211,14 +220,17 @@ fn find_valid_completion(
     ctx: &Context,
 ) -> Option<NonTerminal> {
     let start_nt = grammar.start_nonterminal();
-    ast.roots.iter().find(|root| {
-        root.is_complete()
-            && start_nt.map_or(true, |s| &root.name == s)
-            && matches!(
-                check_tree_with_context(root, grammar, ctx),
-                TreeStatus::Valid(_)
-            )
-    }).cloned()
+    ast.roots
+        .iter()
+        .find(|root| {
+            root.is_complete()
+                && start_nt.map_or(true, |s| &root.name == s)
+                && matches!(
+                    check_tree_with_context(root, grammar, ctx),
+                    TreeStatus::Valid(_)
+                )
+        })
+        .cloned()
 }
 
 /// Extract identifier tokens from the AST for candidate generation.
@@ -250,26 +262,6 @@ fn collect_tokens(node: &Node, tokens: &mut Vec<String>, seen: &mut HashSet<Stri
     }
 }
 
-/// Try appending a concrete token to the input, returning parsed tree if valid.
-fn try_extend(tree: &PartialAST, grammar: &Grammar, token: &str) -> Option<PartialAST> {
-    let input = tree.input();
-    let mut parser = Parser::new(grammar.clone());
-
-    // Try without space first
-    let direct = format!("{}{}", input, token);
-    if let Ok(t) = parser.partial(&direct) {
-        return Some(t);
-    }
-
-    // Try with space
-    let spaced = format!("{} {}", input, token);
-    if let Ok(t) = parser.partial(&spaced) {
-        return Some(t);
-    }
-
-    None
-}
-
 /// Extend tree with a token regex, choosing the first candidate that
 /// produces a well-typed partial tree.
 fn extend_tree_typed(
@@ -282,7 +274,7 @@ fn extend_tree_typed(
 ) -> Option<PartialAST> {
     // Phase 1: Try AST symbols that match the token regex
     for sym in symbols.iter().filter(|s| token.matches(s)) {
-        if let Some(ext) = try_extend(tree, grammar, sym) {
+        if let Ok((ext, _)) = parse_extended_input(grammar, tree.input(), sym) {
             if has_well_typed_root(&ext, grammar, ctx) {
                 return Some(ext);
             }
@@ -291,7 +283,7 @@ fn extend_tree_typed(
 
     // Phase 2: Try generated examples from the regex
     for candidate in token.examples(n_search) {
-        if let Some(ext) = try_extend(tree, grammar, &candidate) {
+        if let Ok((ext, _)) = parse_extended_input(grammar, tree.input(), &candidate) {
             if has_well_typed_root(&ext, grammar, ctx) {
                 return Some(ext);
             }

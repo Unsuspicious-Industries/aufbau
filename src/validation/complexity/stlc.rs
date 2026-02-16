@@ -27,7 +27,9 @@ fn generate_app_chain(n: usize) -> String {
     }
 
     // Cycle through a small set of natural variable names.
-    const NAMES: &[&str] = &["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "m", "n"];
+    const NAMES: &[&str] = &[
+        "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "m", "n",
+    ];
 
     let mut parts = Vec::with_capacity(n + 1);
     parts.push("apply".to_string());
@@ -122,11 +124,25 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     vec![
         (
             "STLC App Chain".to_string(),
-            run_complexity_test(&grammar, generate_app_chain, "STLC App Chain", 50, 500, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_app_chain,
+                "STLC App Chain",
+                50,
+                500,
+                jobs,
+            ),
         ),
         (
             "STLC Nested Lambda".to_string(),
-            run_complexity_test(&grammar, generate_nested_lambda_with_app, "STLC Nested Lambda", 20, 100, jobs),
+            run_complexity_test(
+                &grammar,
+                generate_nested_lambda_with_app,
+                "STLC Nested Lambda",
+                20,
+                100,
+                jobs,
+            ),
         ),
     ]
 }
@@ -134,7 +150,14 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
 #[test]
 fn stlc_app_chain_complexity() {
     let grammar = stlc_grammar();
-    let data = run_complexity_test(&grammar, generate_app_chain, "STLC App Chain", 50, 500, None);
+    let data = run_complexity_test(
+        &grammar,
+        generate_app_chain,
+        "STLC App Chain",
+        50,
+        500,
+        None,
+    );
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);

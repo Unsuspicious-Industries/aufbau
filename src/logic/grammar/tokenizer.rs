@@ -144,7 +144,7 @@ impl Tokenizer {
         for token in &self.special_tokens {
             if !token.is_empty() && text.starts_with(token) {
                 return Some(token.len());
-                }
+            }
         }
         None
     }

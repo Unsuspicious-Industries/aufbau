@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build and run the `p7 validate` runner per-module, mirroring the CI workflow.
+# Build and run the `aufbau validate` runner per-module, mirroring the CI workflow.
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
@@ -10,12 +10,12 @@ echo "Repository root: $repo_root"
 
 export CARGO_TERM_COLOR=always
 
-echo "Building p7 (release)..."
-cargo build --bin p7 --release --verbose
+echo "Building aufbau (release)..."
+cargo build --bin aufbau --release --verbose
 
-p7_bin="$repo_root/target/release/p7"
-if [ ! -x "$p7_bin" ]; then
-  echo "Error: built binary not found at $p7_bin" >&2
+aufbau_bin="$repo_root/target/release/aufbau"
+if [ ! -x "$aufbau_bin" ]; then
+  echo "Error: built binary not found at $aufbau_bin" >&2
   exit 2
 fi
 
@@ -53,14 +53,14 @@ for m in "${modules[@]}"; do
   echo "Running validation for module: $m"
   echo "========================================"
   if [ "$m" = "parseable" ]; then
-    if ! "$p7_bin" validate -m parseable; then
+    if ! "$aufbau_bin" validate -m parseable; then
       echo "Module $m: FAILED" >&2
       failures=$((failures + 1))
     else
       echo "Module $m: OK"
     fi
   else
-    if ! "$p7_bin" validate --filter "$m"; then
+    if ! "$aufbau_bin" validate --filter "$m"; then
       echo "Module $m: FAILED" >&2
       failures=$((failures + 1))
     else

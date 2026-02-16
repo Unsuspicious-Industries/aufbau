@@ -120,7 +120,8 @@ conclusion
 
 | Form | Syntax | Semantics |
 |------|--------|-----------|
-| Judgment | `Γ ⊢ e : τ` | Term `e` has type `τ` in context `Γ` |
+| Judgment (Inference) | `Γ ⊢ e : τ` | Infer that term `e` has type `τ` in context `Γ` |
+| Judgment (Checking) | `Γ ▷ e` | Check that term `e` is well-typed in context `Γ` |
 | Membership | `x ∈ Γ` | Variable `x` is bound in `Γ` |
 | Extension | `Γ[x:τ] ⊢ e : σ` | Check `e : σ` with `x:τ` added to `Γ` |
 
@@ -139,6 +140,7 @@ conclusion
 | Bare type | `τ` | Rule produces type `τ` |
 | Lookup | `Γ(x)` | Return type of `x` from context |
 | Transform | `Γ → Γ'[x:τ] ⊢ σ` | Extend parent context with `x:τ` |
+| Void | `▷` | Produce no type (checking mode) |
 
 **Conclusion extensions propagate upward**: The arrow `→` in conclusions modifies the context visible to *parent* nodes.
 

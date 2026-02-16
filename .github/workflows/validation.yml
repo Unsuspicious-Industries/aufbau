@@ -30,16 +30,16 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build `p7` binary (release)
-        run: cargo build --bin p7 --release --verbose
+      - name: Build `aufbau` binary (release)
+        run: cargo build --bin aufbau --release --verbose
 
-      - name: Run `p7 validate` for module
+      - name: Run `aufbau validate` for module
         run: |
           echo "Running validation for module: ${{ matrix.module }}"
           if [ "${{ matrix.module }}" = "parseable" ]; then
-            ./target/release/p7 validate -m parseable
+            ./target/release/aufbau validate -m parseable
           else
-            ./target/release/p7 validate --filter "${{ matrix.module }}"
+            ./target/release/aufbau validate --filter "${{ matrix.module }}"
           fi
 
       - name: Show generated reports

@@ -5,10 +5,10 @@ use std::fs;
 use std::io::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use p7::validation::complexity::{self, ComplexityData, estimate_complexity_exponent};
+use aufbau::validation::complexity::{self, estimate_complexity_exponent, ComplexityData};
 
 pub fn run(args: &ValidateCmd) {
-    eprintln!("p7 validation runner - complexity");
+    eprintln!("aufbau validation runner - complexity");
 
     let mut experiments: Vec<(&str, Vec<(String, Vec<ComplexityData>)>)> = Vec::new();
 
@@ -19,11 +19,19 @@ pub fn run(args: &ValidateCmd) {
     experiments.push(("stlc", complexity::stlc::experiments(None)));
 
     // Count total experiments
-    let total_exps: usize = experiments.iter().map(|(_, v)| v.len()).sum::<usize>();
+    let _total_exps: usize = experiments.iter().map(|(_, v)| v.len()).sum::<usize>();
 
     let mp = MultiProgress::new();
-    let suite_style = ProgressStyle::with_template("{prefix:.bold} [{bar:30.cyan/dim}] {pos}/{len} suites  {msg}").unwrap().progress_chars("=> ");
-    let exp_style = ProgressStyle::with_template("  {prefix:.dim} [{bar:30.green/dim}] {pos}/{len}  {elapsed_precise}  {msg}").unwrap().progress_chars("-> ");
+    let suite_style = ProgressStyle::with_template(
+        "{prefix:.bold} [{bar:30.cyan/dim}] {pos}/{len} suites  {msg}",
+    )
+    .unwrap()
+    .progress_chars("=> ");
+    let exp_style = ProgressStyle::with_template(
+        "  {prefix:.dim} [{bar:30.green/dim}] {pos}/{len}  {elapsed_precise}  {msg}",
+    )
+    .unwrap()
+    .progress_chars("-> ");
 
     let suite_pb = mp.add(ProgressBar::new(experiments.len() as u64));
     suite_pb.set_style(suite_style);
@@ -61,7 +69,13 @@ pub fn run(args: &ValidateCmd) {
             all_perf_records.push(perf_obj.clone());
 
             // Save human-readable summary for report
-            report_lines.push(format!("{}::{}  exponent={:.2}  samples={}", suite_name, exp_name, k, data_points.len()));
+            report_lines.push(format!(
+                "{}::{}  exponent={:.2}  samples={}",
+                suite_name,
+                exp_name,
+                k,
+                data_points.len()
+            ));
 
             exp_pb.inc(1);
         }
@@ -78,16 +92,28 @@ pub fn run(args: &ValidateCmd) {
             std::fs::create_dir_all(parent).ok();
         }
         let stem = profile_path.file_stem().unwrap().to_string_lossy();
-        let perf_path = profile_path.parent().unwrap_or(std::path::Path::new(".")).join(format!("{}-complexity-perf.json", stem));
+        let perf_path = profile_path
+            .parent()
+            .unwrap_or(std::path::Path::new("."))
+            .join(format!("{}-complexity-perf.json", stem));
         let fperf = fs::File::create(&perf_path).expect("failed to create perf profile file");
-        serde_json::to_writer_pretty(fperf, &json!({"generated_by": "p7 validate complexity", "cases": all_perf_records})).expect("failed to write perf profile JSON");
+        serde_json::to_writer_pretty(
+            fperf,
+            &json!({"generated_by": "aufbau validate complexity", "cases": all_perf_records}),
+        )
+        .expect("failed to write perf profile JSON");
         eprintln!("WROTE_PROFILE {}", perf_path.display());
     }
 
     // Write textual report
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let reports_dir = std::path::Path::new(manifest_dir).join("validation").join("reports");
+    let reports_dir = std::path::Path::new(manifest_dir)
+        .join("validation")
+        .join("reports");
     fs::create_dir_all(&reports_dir).expect("failed to create reports dir");
     let report_path = reports_dir.join(format!("complexity-{}.txt", timestamp));
     let mut f = fs::File::create(&report_path).expect("failed to create report file");

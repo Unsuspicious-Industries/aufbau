@@ -1,5 +1,12 @@
 pub mod parse;
-pub use parse::*;
+pub use parse::{ParseError, Parser, PartialParseOutcome};
+
+mod cache;
+
+pub(crate) use cache::SpanCache;
+
+pub mod monitor;
+pub use monitor::{CacheStatsSnapshot, CacheTimingSnapshot};
 
 pub mod meta;
 pub use meta::*;
@@ -9,6 +16,9 @@ pub use structure::{Node, NonTerminal, PartialAST, Terminal};
 
 pub mod completion;
 pub use completion::*;
+
+pub mod extend;
+pub use extend::*;
 
 #[cfg(test)]
 mod tests;

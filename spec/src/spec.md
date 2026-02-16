@@ -140,7 +140,8 @@ We have several (hardcoded) premise types that can express conditions that must 
 
 | Syntax | Meaning |
 |--------|---------|
-| `Γ ⊢ e : τ` | Term `e` has type `τ` in context `Γ` |
+| `Γ ⊢ e : τ` | Term `e` has type `τ` in context `Γ` (inference) |
+| `Γ ▷ e` | Check that term `e` is well-typed in context `Γ` (checking) |
 | `x ∈ Γ` | Variable `x` is bound in context `Γ` |
 | `τ₁ = τ₂` | Types must unify |
 | `τ₁ ⊆ τ₂` | Type `τ₁` is a subtype of `τ₂` |
@@ -149,8 +150,11 @@ We have several (hardcoded) premise types that can express conditions that must 
 
 >E Premise Examples
 ```spec
-// Check that f is a function and e matches its domain
+// Check that f is a function and e matches its domain (inference)
 Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
+
+// Check that e is well-typed (checking mode)
+Γ ▷ e
 
 // Variable must be in scope
 x ∈ Γ
@@ -170,6 +174,7 @@ Conclusions specify what the rule produces:
 | `τ` | Return type `τ` |
 | `Γ(x)` | Look up type of `x` in context and return it |
 | `Γ → Γ[x:τ] ⊢ τ` | Set type of `x` to `τ` in context and return `τ` |
+| `▷` | Return void (checking mode) |
 <
 
 ### Meta-Variables

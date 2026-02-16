@@ -6,7 +6,7 @@ Our module is structured as follows:
  - [`bind`](~/src/logic/binding/) where we implement the binding resolution logic
  - [`typing`](~/src/logic/typing/) where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It's mainly used a filtering mechanism for completability.
 
-We also have auxiliary utils such as the [`validation`](~/src/logic/validation/) module which check `p7` for correctness and the complex custom regex engine [`regex`](~/src/regex/) that is used for completeability over *two-level languages* (see here: [Completability and Regular Expressions](https://unsuspicious.org/blog/completing-regex/)).
+We also have auxiliary utils such as the [`validation`](~/src/logic/validation/) module which check `aufbau` for correctness and the complex custom regex engine [`regex`](~/src/regex/) that is used for completeability over *two-level languages* (see here: [Completability and Regular Expressions](https://unsuspicious.org/blog/completing-regex/)).
 
 
 # Proof and structured

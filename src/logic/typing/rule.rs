@@ -37,11 +37,15 @@ pub struct TypeSetting {
     pub name: String,
     /// Local extensions: [x:τ₁][y:τ₂]...
     pub extensions: Vec<TypeAscription>,
+    /// Disable upward context propagation from nested checks
+    pub no_propagate: bool,
 }
 
 /// A judgment that can appear in premises
 #[derive(Debug, Clone)]
 pub enum TypingJudgment {
+    /// pure check
+    Check(Term),
     /// Type ascription: e : τ
     Ascription(TypeAscription),
     /// Context membership: x ∈ Γ
@@ -126,7 +130,13 @@ impl TypingRule {
             }
             if let Some(judgment) = &premise.judgment {
                 match judgment {
-                    TypingJudgment::Ascription((term, _)) => {
+                    TypingJudgment::Check(term) => {
+                        bindings.insert(term.as_str());
+                    }
+                    TypingJudgment::Ascription((term, t)) => {
+                        if let Type::Raw(b) = t {
+                            bindings.insert(b.as_str());
+                        }
                         bindings.insert(term.as_str());
                     }
                     TypingJudgment::Membership(var, _) => {
@@ -279,9 +289,22 @@ impl RuleParser {
                 judgment: Some(TypingJudgment::Ascription(ascription)),
             }));
         }
-
-        // Operation: τ₁ = τ₂ or τ₁ ⊆ τ₂
-        if let Some((left, op, right)) = Self::try_parse_operation(s) {
+        // Check judgment: Γ ▷ e
+        else if let Some((setting_part, ascr_part)) = s.split_once('▷') {
+            let setting = Self::parse_setting(setting_part.trim())?;
+            if ascr_part.trim().is_empty() {
+                return Err(format!(
+                    "Invalid check premise: missing term after '▷' in '{}'",
+                    s
+                ));
+            }
+            return Ok(Some(Premise {
+                setting: Some(setting),
+                judgment: Some(TypingJudgment::Check(ascr_part.trim().to_string())),
+            }));
+        }
+        // Type operation: τ₁ = τ₂ or τ₁ ⊆ τ₂
+        else if let Some((left, op, right)) = Self::try_parse_operation(s) {
             return Ok(Some(Premise {
                 setting: None,
                 judgment: Some(TypingJudgment::Operation { left, op, right }),
@@ -299,10 +322,17 @@ impl RuleParser {
     /// Parse a type setting: Γ or Γ[x:τ₁][y:τ₂]
     pub fn parse_setting(s: &str) -> Result<TypeSetting, String> {
         let s = s.trim();
+        if s.starts_with('[') && s.ends_with(']') && s.len() >= 2 {
+            let inner = s[1..s.len() - 1].trim();
+            let mut setting = Self::parse_setting(inner)?;
+            setting.no_propagate = true;
+            return Ok(setting);
+        }
         if !s.contains('[') {
             return Ok(TypeSetting {
                 name: s.to_string(),
                 extensions: Vec::new(),
+                no_propagate: false,
             });
         }
 
@@ -321,7 +351,11 @@ impl RuleParser {
             extensions.push((var, ty));
         }
 
-        Ok(TypeSetting { name, extensions })
+        Ok(TypeSetting {
+            name,
+            extensions,
+            no_propagate: false,
+        })
     }
 
     /// Parse a type ascription: e : τ
@@ -439,15 +473,21 @@ impl fmt::Display for TypeOperation {
 
 impl fmt::Display for TypeSetting {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.extensions.is_empty() {
-            write!(f, "{}", self.name)
+        let base = if self.extensions.is_empty() {
+            self.name.clone()
         } else {
             let exts: Vec<String> = self
                 .extensions
                 .iter()
                 .map(|(t, ty)| format!("{}:{}", t, ty))
                 .collect();
-            write!(f, "{}[{}]", self.name, exts.join(", "))
+            format!("{}[{}]", self.name, exts.join(", "))
+        };
+
+        if self.no_propagate {
+            write!(f, "[{}]", base)
+        } else {
+            write!(f, "{}", base)
         }
     }
 }
@@ -455,6 +495,7 @@ impl fmt::Display for TypeSetting {
 impl fmt::Display for TypingJudgment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            TypingJudgment::Check(term) => write!(f, "check({})", term),
             TypingJudgment::Ascription((term, ty)) => write!(f, "{} : {}", term, ty),
             TypingJudgment::Membership(var, ctx) => write!(f, "{} ∈ {}", var, ctx),
             TypingJudgment::Operation { left, op, right } => {

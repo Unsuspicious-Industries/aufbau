@@ -79,13 +79,13 @@ impl Hash for Symbol {
 impl Symbol {
     pub fn new(value: String) -> Self {
         debug_trace!("grammar", "Creating symbol from value: {}", value);
-        if value.starts_with('\'') && value.ends_with('\'') {
+        if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
             let literal = value[1..value.len() - 1].to_string();
             Symbol::Terminal {
                 regex: DerivativeRegex::literal(&literal),
                 binding: None,
             }
-        } else if value.starts_with('"') && value.ends_with('"') {
+        } else if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
             let literal = value[1..value.len() - 1].to_string();
             Symbol::Terminal {
                 regex: DerivativeRegex::literal(&literal),
@@ -186,6 +186,27 @@ impl PartialEq for Grammar {
             && self.special_tokens == other.special_tokens
             && self.delimiters == other.delimiters
             && self.start == other.start
+    }
+}
+
+impl Eq for Grammar {}
+
+// Provide a stable, deterministic Hash implementation that mirrors the
+// fields considered by `PartialEq`. We iterate `productions` in sorted
+// order to ensure the hash is independent of HashMap iteration order.
+impl std::hash::Hash for Grammar {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let mut keys: Vec<&String> = self.productions.keys().collect();
+        keys.sort();
+        for k in keys {
+            k.hash(state);
+            if let Some(prods) = self.productions.get(k) {
+                prods.hash(state);
+            }
+        }
+        self.special_tokens.hash(state);
+        self.delimiters.hash(state);
+        self.start.hash(state);
     }
 }
 

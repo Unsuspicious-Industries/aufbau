@@ -2,12 +2,12 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
+use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
+use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreePath, TreeRef, TreeStatus};
 use crate::logic::typing::eval::{check_node, check_tree_with_context};
-use crate::logic::typing::Type;
-use crate::logic::{debug, Parser};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -234,7 +234,10 @@ impl NonTerminal {
 
 impl Parser {
     pub fn partial_typed(&mut self, input: &str) -> Result<PartialAST, String> {
-        let partial_ast = self.partial(input)?;
+        let partial_ast = self
+            .partial(input)
+            .into_result()
+            .map_err(|e| e.to_string())?;
         partial_ast.filter_typed(&self.grammar)
     }
 }

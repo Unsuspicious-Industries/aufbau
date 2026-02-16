@@ -3,14 +3,14 @@ set -euo pipefail
 
 usage() {
   cat <<EOF >&2
-Usage: $0 user@host:/path/to/p7 [-- <validate-args>]
+Usage: $0 user@host:/path/to/aufbau [-- <validate-args>]
 
 Examples:
   # sync and run default validate
-  $0 user@server:/home/me/p7
+  $0 user@server:/home/me/aufbau
 
   # sync and pass args to validate (e.g. -m parseable)
-  $0 user@server:/home/me/p7 -- -m parseable
+  $0 user@server:/home/me/aufbau -- -m parseable
 EOF
   exit 2
 }

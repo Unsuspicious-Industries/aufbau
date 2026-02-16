@@ -6,8 +6,6 @@ use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use std::collections::HashSet;
 
-
-
 /// The result of computing valid next tokens for a partial parse.
 #[derive(Clone, Debug)]
 pub struct CompletionSet {
@@ -41,9 +39,7 @@ impl CompletionSet {
     pub fn cleanup(&self) -> Self {
         // deduplicate and remove epslons
         let unique: HashSet<_> = self.tokens.clone().drain(..).collect();
-        let mut tokens: Vec<_> = unique.into_iter().filter(
-            |t| !t.is_nullable()
-        ).collect();
+        let tokens: Vec<_> = unique.into_iter().filter(|t| !t.is_nullable()).collect();
         Self { tokens }
     }
 }
@@ -67,35 +63,42 @@ impl PartialAST {
             ctx.bindings.len()
         );
 
-        // Filter roots to only well-typed ones
-        let well_typed_roots: Vec<_> = self
+        // Filter roots to only well-typed ones when they are complete.
+        // For partial roots, typing can legitimately fail due to unbound vars
+        // or missing context that will be provided by future tokens.
+        let roots_for_completion: Vec<_> = self
             .roots
             .iter()
-            .filter(|root| match check_tree_with_context(root, grammar, ctx) {
-                TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                TreeStatus::Malformed => {
-                    debug_trace!(
-                        "partial.completion",
-                        "  Filtering out malformed root: {}",
-                        root.name
-                    );
-                    false
+            .filter(|root| {
+                if !root.is_complete() {
+                    return true;
                 }
-                TreeStatus::TooDeep => {
-                    debug_trace!(
-                        "partial.completion",
-                        " Recursion error too deep: {}",
-                        root.name
-                    );
-                    false
+                match check_tree_with_context(root, grammar, ctx) {
+                    TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
+                    TreeStatus::Malformed => {
+                        debug_trace!(
+                            "partial.completion",
+                            "  Filtering out malformed root: {}",
+                            root.name
+                        );
+                        false
+                    }
+                    TreeStatus::TooDeep => {
+                        debug_trace!(
+                            "partial.completion",
+                            " Recursion error too deep: {}",
+                            root.name
+                        );
+                        false
+                    }
                 }
             })
             .collect();
 
         debug_trace!(
             "partial.completion",
-            "  Well-typed roots: {} / {}",
-            well_typed_roots.len(),
+            "  Roots for completion: {} / {}",
+            roots_for_completion.len(),
             self.roots.len()
         );
 
@@ -104,7 +107,7 @@ impl PartialAST {
             "  Collecting valid tokens from well-typed roots",
         );
 
-        let tokens: Vec<_> = well_typed_roots
+        let tokens: Vec<_> = roots_for_completion
             .iter()
             .flat_map(|root| root.collect_valid_tokens(grammar))
             .collect();
@@ -235,4 +238,3 @@ fn first_set_rec(
         }
     }
 }
-

@@ -1,6 +1,6 @@
+use super::Parser;
 use crate::logic::grammar::Grammar;
 use crate::testing::*;
-use super::Parser;
 
 /// The STLC grammar spec loaded from the examples directory
 fn stlc_grammar() -> &'static Grammar {
@@ -12,7 +12,6 @@ fn stlc_grammar() -> &'static Grammar {
 fn assert_stlc_parse_matches(input: &str, expected_serialized: &str) {
     assert_parse_structurally_matches(stlc_grammar(), input, expected_serialized);
 }
-
 
 #[test]
 fn test_stlc_simple_variable() {
@@ -37,7 +36,7 @@ fn test_stlc_simple_variable_with_serialization() {
   (AtomicExpression @0 #1
     (Variable @0 #1
       (Identifier @0 $x #1
-        (T "x")))))"#
+        (T "x")))))"#,
     );
 }
 
@@ -45,7 +44,7 @@ fn test_stlc_simple_variable_with_serialization() {
 fn test_stlc_simple_application_with_serialization() {
     assert_stlc_parse_matches(
         "f x",
-                r#"(Expression @1 #2
+        r#"(Expression @1 #2
     (Application @0 #2
     (AtomicExpression @0 #1
       (Variable @0 #1
@@ -55,7 +54,7 @@ fn test_stlc_simple_application_with_serialization() {
       (AtomicExpression @0 #1
         (Variable @0 #1
           (Identifier @0 $x #1
-                        (T "x"))))))"#
+                        (T "x"))))))"#,
     );
 }
 
@@ -64,7 +63,7 @@ fn test_stlc_identity_lambda_with_serialization() {
     // λx:A.x
     assert_stlc_parse_matches(
         "λx:A.x",
-                r#"(Expression @0 #6
+        r#"(Expression @0 #6
     (AtomicExpression @2 #6
         (Lambda @0 #6
             (T "λ")
@@ -86,10 +85,9 @@ fn test_stlc_identity_lambda_with_serialization() {
                     (Expression @1 $r #0
                         (Application @0 #0
                             (AtomicExpression @1 $l #0
-                                (T~ "")))))))))"#
+                                (T~ "")))))))))"#,
     );
 }
-
 
 #[test]
 fn test_stlc_parenthesized_variable() {
@@ -212,7 +210,9 @@ fn test_stlc_complex_nested_types() {
     assert!(ast.is_complete());
 
     // (A -> (B -> C)) -> (D -> E)
-    let ast = p.parse("λ x : ( A -> ( B -> C ) ) -> ( D -> E ) . x").unwrap();
+    let ast = p
+        .parse("λ x : ( A -> ( B -> C ) ) -> ( D -> E ) . x")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -380,7 +380,9 @@ fn test_stlc_flip() {
     let mut p = Parser::new(g);
 
     // Flip: λf.λx.λy.f y x
-    let ast = p.parse("λ f : A -> B -> C . λ x : A . λ y : B . f y x").unwrap();
+    let ast = p
+        .parse("λ f : A -> B -> C . λ x : A . λ y : B . f y x")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -390,7 +392,9 @@ fn test_stlc_compose() {
     let mut p = Parser::new(g);
 
     // Compose: λf.λg.λx.f (g x)
-    let ast = p.parse("λ f : B -> C . λ g : A -> B . λ x : A . f ( g x )").unwrap();
+    let ast = p
+        .parse("λ f : B -> C . λ g : A -> B . λ x : A . f ( g x )")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -400,7 +404,9 @@ fn test_stlc_s_combinator() {
     let mut p = Parser::new(g);
 
     // S combinator: λx.λy.λz.x z (y z)
-    let ast = p.parse("λ x : A -> B -> C . λ y : A -> B . λ z : A . x z ( y z )").unwrap();
+    let ast = p
+        .parse("λ x : A -> B -> C . λ y : A -> B . λ z : A . x z ( y z )")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -464,10 +470,12 @@ fn test_stlc_partial_nested_parens() {
 #[test]
 fn test_stlc_deep_nested_lambdas() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = crate::logic::partial::MetaParser::new(g);
 
-    // Very deep lambda nesting
-    let ast = p.parse("λ a : A . λ b : B . λ c : C . λ d : D . λ e : E . a").unwrap();
+    // Very deep lambda nesting - needs MetaParser for adaptive depth
+    let ast = p
+        .parse("λ a : A . λ b : B . λ c : C . λ d : D . λ e : E . a")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -477,16 +485,18 @@ fn test_stlc_deep_nested_types() {
     let mut p = Parser::new(g);
 
     // Deep type nesting
-    let ast = p.parse("λ x : ( ( ( A -> B ) -> C ) -> D ) -> E . x").unwrap();
+    let ast = p
+        .parse("λ x : ( ( ( A -> B ) -> C ) -> D ) -> E . x")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
 #[test]
 fn test_stlc_long_application_chain() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = crate::logic::partial::MetaParser::new(g);
 
-    // Long application chain - tests left recursion handling
+    // Long application chain - needs MetaParser for adaptive depth
     let ast = p.parse("f a b c d e f g h").unwrap();
     assert!(ast.is_complete());
 }
@@ -497,7 +507,9 @@ fn test_stlc_complex_mixed_expression() {
     let mut p = Parser::new(g);
 
     // Complex expression mixing all features
-    let ast = p.parse("( λ f : ( A -> B ) -> C . λ x : A -> B . f x ) ( λ y : A -> B . y )").unwrap();
+    let ast = p
+        .parse("( λ f : ( A -> B ) -> C . λ x : A -> B . f x ) ( λ y : A -> B . y )")
+        .unwrap();
     assert!(ast.is_complete());
 }
 
@@ -606,8 +618,7 @@ fn test_stlc_lambda_in_application_chain() {
     assert!(ast.is_complete());
 }
 
-
-// PArtial parsing tests 
+// PArtial parsing tests
 
 #[test]
 fn test_stlc_partial_application() {
@@ -616,7 +627,6 @@ fn test_stlc_partial_application() {
     // Partial application
     let ast = p.partial("(f ").unwrap();
     println!("Partial AST: {}", ast);
-
 }
 
 #[test]

@@ -1,7 +1,7 @@
-use crate::set_debug_level;
-use crate::logic::grammar::Grammar;
-use super::Parser;
 use super::MetaParser;
+use super::Parser;
+use crate::logic::grammar::Grammar;
+use crate::set_debug_level;
 
 // This file mainly test left recursive shemas
 // Made because it can be hard in the case of partial stuff
@@ -35,7 +35,6 @@ fn test_left_rec_single_operator() {
 
 #[test]
 fn test_left_rec_multiple_operators() {
-
     set_debug_level(crate::DebugLevel::Trace);
 
     // E ::= E '+' E | E '*' E | 'n'
@@ -102,6 +101,59 @@ fn test_left_rec_deep_chain() {
     let input = (0..20).map(|_| "a").collect::<Vec<_>>().join(" ");
     let ast = p.parse(&input).unwrap();
     assert!(ast.is_complete());
+}
+
+#[test]
+fn test_metaparser_multiplicative_growth() {
+    // Verify MetaParser grows depth multiplicatively (ceil(d * factor)), and
+    // that it returns the first depth in the growth sequence that can parse.
+    let spec = r#"
+    Chain ::= Chain 'a' | 'a'
+    start ::= Chain
+    "#;
+    let g = Grammar::load(spec).unwrap();
+
+    // choose an input that requires a non-trivial recursion depth
+    let chain_len = 12usize;
+    let input = (0..chain_len).map(|_| "a").collect::<Vec<_>>().join(" ");
+
+    // find the minimal depth that makes a raw Parser succeed
+    let mut baseline = Parser::new(g.clone());
+    let mut min_depth = None;
+    for d in 1..=100usize {
+        baseline.set_max_recursion(d);
+        match baseline.partial(&input) {
+            crate::logic::partial::PartialParseOutcome::Success { .. } => {
+                min_depth = Some(d);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let min_depth = min_depth.expect("should find a depth that succeeds");
+
+    // Configure MetaParser with multiplicative growth starting low
+    let start = 2usize;
+    let factor = 1.5f64;
+    let mut mp = MetaParser::new(g.clone())
+        .with_start_depth(start)
+        .with_max_depth(200)
+        .with_depth_factor(factor);
+
+    // compute expected depth produced by multiplicative growth
+    let mut expected = start;
+    while expected < min_depth {
+        let mut next = ((expected as f64) * factor).ceil() as usize;
+        if next <= expected {
+            next = expected + 1;
+        }
+        expected = next;
+    }
+
+    // run meta_partial and confirm it returns our expected growth value
+    let (_ast, used_depth) = mp.meta_partial(&input).expect("meta parse should succeed");
+    assert_eq!(used_depth, expected);
+    assert!(used_depth >= min_depth);
 }
 
 // ============================================================================

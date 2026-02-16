@@ -1,5 +1,5 @@
-# Proposition 7
+# Aufbau (Rust core)
 
-> Whereof one cannot speak, thereof one must be silent.
+[Writeup blog](https://unsuspicious.org/blog/proposition-7) — the engine powering the p7 project
 
-[Writeup blog](https://unsuspicious.org/blog/proposition-7)
+Reference: Rudolf Carnap, The Logical Syntax of Language.

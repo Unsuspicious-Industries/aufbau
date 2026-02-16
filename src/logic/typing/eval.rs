@@ -6,10 +6,10 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{NonTerminal, Terminal};
 use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::ops::{Unifier, UnifyResult, equal, subtype};
+use crate::logic::typing::ops::{equal, subtype, Unifier, UnifyResult};
 use crate::logic::typing::rule::{ConclusionKind, TypeOperation};
 use crate::logic::typing::{Conclusion, Premise, Type, TypeSetting, TypingJudgment, TypingRule};
-use crate::{debug_error, debug_trace};
+use crate::{debug_error, debug_info, debug_trace};
 use std::collections::HashMap;
 
 use super::binding::*;
@@ -28,7 +28,8 @@ pub fn check_tree_with_context(root: &NonTerminal, grammar: &Grammar, ctx: &Cont
     // Create empty type cache and start checking from root (empty path)
     let mut type_cache = HashMap::new();
     let tref = TreeRef::new(root, vec![]);
-    check_node(&tref, grammar, ctx, 0, &mut type_cache)
+    let (status, _) = check_node_with_context_output(&tref, grammar, ctx, 0, &mut type_cache);
+    status
 }
 
 /// Predicate: any tree in forest is well-typed?
@@ -245,8 +246,13 @@ fn drill_only_child_with_context(
 
     for idx in nt_indices {
         let child_tref = tref.get(idx);
-        let (child_status, child_ctx) =
-            check_node_with_context_output(&child_tref, grammar, &sibling_ctx, depth + 1, type_cache);
+        let (child_status, child_ctx) = check_node_with_context_output(
+            &child_tref,
+            grammar,
+            &sibling_ctx,
+            depth + 1,
+            type_cache,
+        );
 
         match child_status {
             TreeStatus::Valid(_) => {}
@@ -461,11 +467,54 @@ fn extract_context_transform(
 // ============================================================================
 // Premise Checking
 // ============================================================================
+// this is where we do descent
+// important
 
 enum PremiseResult {
     Ok(Option<Context>),
     Fail,
     Partial,
+}
+
+/// Shared helper: recurse into a bound term and return its `TreeStatus` + propagated context.
+/// Returns Ok((binding_kind, tree_status, propagated_ctx)) or Err(PremiseResult::Fail).
+fn recurse_bound_term(
+    tref: &TreeRef,
+    term_var: &str,
+    bound: &Bindings,
+    grammar: &Grammar,
+    ctx: &Context,
+    depth: usize,
+    type_cache: &mut HashMap<TreePath, Type>,
+) -> Result<(Binding, TreeStatus, Option<Context>), PremiseResult> {
+    match bound.get(term_var) {
+        Binding::Full(p) => {
+            let (child_status, child_ctx) = check_node_with_context_output(
+                &tref.get_path(p.clone()),
+                grammar,
+                ctx,
+                depth + 1,
+                type_cache,
+            );
+            Ok((Binding::Full(p.clone()), child_status, child_ctx))
+        }
+        Binding::Partial(p) => {
+            let child_ref = tref.get_path(p.clone());
+            if child_ref.exists() {
+                let (child_status, child_ctx) =
+                    check_node_with_context_output(&child_ref, grammar, ctx, depth + 1, type_cache);
+                Ok((Binding::Partial(p.clone()), child_status, child_ctx))
+            } else {
+                // No concrete child yet — treat as a partial path-of Any
+                Ok((
+                    Binding::Partial(p.clone()),
+                    TreeStatus::Partial(Type::PathOf(Box::new(Type::Any), p.clone())),
+                    None,
+                ))
+            }
+        }
+        Binding::None => Err(PremiseResult::Fail),
+    }
 }
 
 fn check_premise(
@@ -499,6 +548,13 @@ fn check_premise(
         None => base_ctx.clone(),
     };
 
+    let mut propagated_ctx: Option<Context> = None;
+    let no_propagate = premise
+        .setting
+        .as_ref()
+        .map(|s| s.no_propagate)
+        .unwrap_or(false);
+
     // Check judgment
     match &premise.judgment {
         Some(TypingJudgment::Ascription((term_var, expected_ty))) => {
@@ -509,66 +565,41 @@ fn check_premise(
                 expected_ty
             );
 
-            // Get the path to the bound variable and construct full path
-            let mut propagated_ctx: Option<Context> = None;
-            let var_ty = match bound.get(term_var) {
-                Binding::Full(p) => {
-                    // getting a **real type** here
-                    let (child_status, child_ctx) = check_node_with_context_output(
-                        &tref.get_path(p.clone()),
-                        grammar,
-                        &ctx,
-                        depth + 1,
-                        type_cache,
-                    );
-                    if let Some(next_ctx) = child_ctx {
-                        propagated_ctx = Some(next_ctx);
+            if matches!(bound.get(term_var), Binding::None) {
+                if let Some(nt) = tref.get_nt() {
+                    if nt.production.rhs.is_empty() {
+                        return PremiseResult::Ok(None);
                     }
-                    match child_status {
-                        TreeStatus::Valid(t) => {
-                            debug_trace!(
-                                "typing",
-                                "Full binding for {} at path {:?} has type {}",
-                                term_var,
-                                p,
-                                t
-                            );
-                            t
-                        }
-                        TreeStatus::Partial(_) => return PremiseResult::Partial,
+                }
+            }
 
-                        TreeStatus::Malformed | TreeStatus::TooDeep => return PremiseResult::Fail,
-                    }
+            // Use shared helper to fetch bound term status + propagated ctx
+            let (binding_kind, child_status, child_ctx) =
+                match recurse_bound_term(tref, term_var, bound, grammar, &ctx, depth, type_cache) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+
+            if let Some(next_ctx) = child_ctx {
+                debug_info!("typing", "Propagating context from child: {:?}", next_ctx);
+                if !no_propagate {
+                    propagated_ctx = Some(next_ctx);
                 }
-                Binding::Partial(p) => {
-                    debug_trace!("typing", "Partial binding for {} at path {:?}", term_var, p);
-                    // Even though the binding is partial (extensible), the child node
-                    // may already exist and be type-checkable. If it's Malformed,
-                    // the tree can never be completed to a well-typed tree.
-                    let child_ref = tref.get_path(p.clone());
-                    if child_ref.exists() {
-                        let (child_status, child_ctx) = check_node_with_context_output(
-                            &child_ref,
-                            grammar,
-                            &ctx,
-                            depth + 1,
-                            type_cache,
-                        );
-                        if let Some(next_ctx) = child_ctx {
-                            propagated_ctx = Some(next_ctx);
-                        }
-                        match child_status {
-                            TreeStatus::Malformed | TreeStatus::TooDeep => {
-                                return PremiseResult::Fail;
-                            }
-                            TreeStatus::Valid(t) => t,
-                            TreeStatus::Partial(t) => t,
-                        }
-                    } else {
-                        Type::PathOf(Box::new(Type::Any), p.clone())
-                    }
+            }
+
+            // Determine variable type according to binding kind & child status
+            let var_ty = match (binding_kind, child_status) {
+                (Binding::Full(_), TreeStatus::Valid(t)) => t,
+                (Binding::Full(_), TreeStatus::Partial(_)) => return PremiseResult::Partial,
+                (Binding::Full(_), TreeStatus::Malformed | TreeStatus::TooDeep) => {
+                    return PremiseResult::Fail;
                 }
-                Binding::None => return PremiseResult::Fail,
+                (Binding::Partial(_), TreeStatus::Valid(t)) => t,
+                (Binding::Partial(_), TreeStatus::Partial(t)) => t,
+                (Binding::Partial(_), TreeStatus::Malformed | TreeStatus::TooDeep) => {
+                    return PremiseResult::Fail;
+                }
+                _ => return PremiseResult::Fail,
             };
 
             debug_trace!("typing", "Got variable type : {}", var_ty);
@@ -647,6 +678,38 @@ fn check_premise(
             }
         }
 
+        Some(TypingJudgment::Check(term_var)) => {
+            // `check(e)` — ensure the bound term `e` typechecks (we don't care about its type)
+            debug_trace!("typing", "Checking (check) premise for {}", term_var);
+
+            if matches!(bound.get(term_var), Binding::None) {
+                if let Some(nt) = tref.get_nt() {
+                    if nt.production.rhs.is_empty() {
+                        return PremiseResult::Ok(None);
+                    }
+                }
+            }
+
+            // Use the shared helper and then treat any Partial status as Partial,
+            // Valid status as Ok, and Malformed/TooDeep as Fail.
+            let (_binding_kind, child_status, child_ctx) =
+                match recurse_bound_term(tref, term_var, bound, grammar, &ctx, depth, type_cache) {
+                    Ok(v) => v,
+                    Err(e) => return e,
+                };
+
+            match child_status {
+                TreeStatus::Valid(_) => {
+                    if no_propagate {
+                        PremiseResult::Ok(None)
+                    } else {
+                        PremiseResult::Ok(child_ctx)
+                    }
+                }
+                TreeStatus::Partial(_) => PremiseResult::Partial,
+                TreeStatus::Malformed | TreeStatus::TooDeep => PremiseResult::Fail,
+            }
+        }
         Some(TypingJudgment::Membership(var_name, _)) => {
             debug_trace!(
                 "eval",
@@ -741,12 +804,10 @@ fn check_premise(
         }
 
         None => {
-            if premise.setting.is_some() {
-                PremiseResult::Ok(Some(ctx))
-            } else {
-                PremiseResult::Ok(None)
-            }
-        } // Setting-only premise
+            // error
+            debug_trace!("typing", "Premise has no judgment");
+            return PremiseResult::Fail;
+        }
     }
 }
 
@@ -930,20 +991,6 @@ fn eval_conclusion(
     }
 }
 
-// utils
-
-/// Occurs check for meta variables: does ?name appear in ty?
-/// Prevents construction of infinite types like ?A = Arrow(?A, ?B).
-fn occurs_meta(name: &str, ty: &Type) -> bool {
-    match ty {
-        Type::Meta(n) => n == name,
-        Type::Arrow(a, b) => occurs_meta(name, a) || occurs_meta(name, b),
-        Type::Union(parts) => parts.iter().any(|p| occurs_meta(name, p)),
-        Type::Not(a) => occurs_meta(name, a),
-        Type::Partial(t, _) | Type::PathOf(t, _) => occurs_meta(name, t),
-        _ => false,
-    }
-}
 
 fn has_meta(ty: &Type) -> bool {
     debug_trace!("eval", "Checking is {} has Meta", ty);
@@ -964,9 +1011,7 @@ fn has_unresolved_subtyping_hole(ty: &Type) -> bool {
         Type::PathOf(inner, _) | Type::Partial(inner, _) | Type::Not(inner) => {
             has_unresolved_subtyping_hole(inner)
         }
-        Type::Arrow(a, b) => {
-            has_unresolved_subtyping_hole(a) || has_unresolved_subtyping_hole(b)
-        }
+        Type::Arrow(a, b) => has_unresolved_subtyping_hole(a) || has_unresolved_subtyping_hole(b),
         Type::Union(parts) => parts.iter().any(has_unresolved_subtyping_hole),
         Type::Atom(_) | Type::Raw(_) | Type::None => false,
     }
@@ -1039,7 +1084,12 @@ fn solve_binding(tref: &TreeRef, ty: &Type, bound: &Bindings) -> Result<Type, St
                             );
                             match Type::parse_partial(&tval) {
                                 Ok(ty) => {
-                                    debug_trace!("typing", "Parsed partial raw type '{}' as {:?}", tval, ty);
+                                    debug_trace!(
+                                        "typing",
+                                        "Parsed partial raw type '{}' as {:?}",
+                                        tval,
+                                        ty
+                                    );
                                     return Ok(ty);
                                 }
                                 Err(e2) => {
@@ -1110,7 +1160,9 @@ fn resolve_ctx_calls(ty: &Type, ctx: &Context) -> Type {
             Box::new(resolve_ctx_calls(a, ctx)),
             Box::new(resolve_ctx_calls(b, ctx)),
         ),
-        Type::Union(parts) => Type::Union(parts.iter().map(|p| resolve_ctx_calls(p, ctx)).collect()),
+        Type::Union(parts) => {
+            Type::Union(parts.iter().map(|p| resolve_ctx_calls(p, ctx)).collect())
+        }
         Type::Not(a) => Type::Not(Box::new(resolve_ctx_calls(a, ctx))),
         Type::Partial(t, s) => Type::Partial(Box::new(resolve_ctx_calls(t, ctx)), s.clone()),
         Type::PathOf(t, p) => Type::PathOf(Box::new(resolve_ctx_calls(t, ctx)), p.clone()),

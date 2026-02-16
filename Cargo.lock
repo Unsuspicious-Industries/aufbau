@@ -104,6 +104,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d92bec98840b8f03a5ff5413de5293bfcd8bf96467cf5452609f939ec6f5de16"
 
 [[package]]
+name = "aufbau"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bimap",
+ "clap",
+ "indicatif",
+ "moka",
+ "once_cell",
+ "proptest",
+ "rand 0.8.5",
+ "rayon",
+ "regex",
+ "regex-syntax",
+ "rouille",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -792,28 +812,6 @@ name = "once_cell_polyfill"
 version = "1.70.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4895175b425cb1f87721b59f0f286c2092bd4af812243672510e1ac53e2e0ad"
-
-[[package]]
-name = "p7"
-version = "0.1.0"
-dependencies = [
- "anstream",
- "anstyle",
- "anyhow",
- "bimap",
- "clap",
- "indicatif",
- "moka",
- "once_cell",
- "proptest",
- "rand 0.8.5",
- "rayon",
- "regex",
- "regex-syntax",
- "rouille",
- "serde",
- "serde_json",
-]
 
 [[package]]
 name = "parking_lot"

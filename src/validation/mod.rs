@@ -14,7 +14,6 @@
 /// 2. **Type Safety**: Completions respect typing rules
 /// 3. **Completeness**: Completion results are fully parsed (no holes)
 ///
-
 pub mod completability;
 
 pub mod complexity;

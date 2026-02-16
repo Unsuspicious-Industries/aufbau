@@ -2,9 +2,8 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use anstyle::{AnsiColor, Style};
-use p7::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
-use p7::logic::{Parser, grammar::Grammar};
+use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use aufbau::logic::{Parser, grammar::Grammar};
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -41,17 +40,9 @@ pub struct VizArgs {
     #[arg(short = 'p', long = "port", default_value_t = 5173)]
     pub port: u16,
 
-    /// Optional grammar spec to use when loading a serialized AST file
+    /// Optional grammar spec to use when launching the viz server
     #[arg(short = 's', long = "spec", value_name = "FILE")]
     pub spec: Option<PathBuf>,
-
-    /// Path to a serialized AST file (S-expression `.ast`) to preload into the viz UI
-    #[arg(long = "ast", value_name = "FILE")]
-    pub ast: Option<PathBuf>,
-
-    /// Optional string representing the original input for the serialized AST (defaults to empty)
-    #[arg(long = "ast-input", value_name = "TEXT", default_value = "")]
-    pub ast_input: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -138,9 +129,8 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
 
-    p7::viz::serve(&bind);
+    aufbau::viz::serve(&bind);
 }
-
 
 fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
     let _ = debug_level; // wired globally above
@@ -198,7 +188,7 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
 
     // Parse partial input
     let mut parser = Parser::new(grammar.clone());
-    let past = match parser.partial(&input) {
+    let past = match parser.partial(&input).into_result() {
         Ok(p) => p,
         Err(e) => {
             eprintln!("parse error: {}", e);
@@ -221,10 +211,7 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
         std::process::exit(0);
     }
 
-    let ok = Style::new().fg_color(Some(AnsiColor::Green.into()));
-    let _dim = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
-
-    println!("{ok}Found {} completion(s):{ok:#}", candidates.len());
+    println!("Found {} completion(s):", candidates.len());
     println!();
 
     for (idx, token) in candidates.iter().enumerate() {

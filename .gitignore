@@ -1,6 +1,5 @@
 # Build artifacts
 target
-python/target
 validation
 examine*
 
@@ -8,7 +7,6 @@ CONTEXT_DUMP.md
 CONTEXT.md 
 
 # Virtual environments
-python/.venv
 .venv
 
 # Temporary files
@@ -42,4 +40,3 @@ build/
 # OS
 .DS_Store
 Thumbs.db
-

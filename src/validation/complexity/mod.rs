@@ -3,20 +3,20 @@
 //! This module provides utilities to empirically measure the time complexity
 //! of the parser on different grammar types and input sizes.
 
-pub mod stlc;
 pub mod basic;
 pub mod fun;
+pub mod stlc;
 
-use std::time::Duration;
-use rayon::prelude::*;
 use crate::logic::grammar::Grammar;
+use rayon::prelude::*;
+use std::time::Duration;
 use std::time::Instant;
 
 /// Run a complexity experiment in parallel (optional jobs)
 pub fn run_complexity_experiment(
     grammar: &Grammar,
     generator: fn(usize) -> String,
-    name: &str,
+    _name: &str,
     max_n: usize,
     tries: usize,
     jobs: Option<usize>,

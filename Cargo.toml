@@ -1,20 +1,18 @@
 [package]
-name = "p7"
+name = "aufbau"
 version = "0.1.0"
 edition = "2024"
-authors = ["Paul Kronlund-Drouault"]
+authors = ["pkd <pkd@unsuspicious.org>"]
 description = "Type-aware constrained decoding for LLMs using context-dependent grammars with typing rules"
 license = "MIT"
-repository = "https://github.com/Unsuspicious-Industries/p7"
+repository = "https://github.com/Unsuspicious-Industries/aufbau"
 homepage = "https://unsuspicious.org/blog/proposition-7"
-documentation = "https://docs.rs/p7"
+documentation = "https://docs.rs/aufbau"
 readme = "readme.md"
 keywords = ["llm", "constrained-decoding", "type-systems", "grammar", "parsing"]
 categories = ["parsing", "text-processing", "development-tools"]
 exclude = [
     "target/",
-    "python/target/",
-    "python/.venv/",
     ".venv/",
     "tmp/",
     "perf.data*",
@@ -27,7 +25,7 @@ exclude = [
 path = "src/mod.rs"
 
 [[bin]]
-name = "p7"
+name = "aufbau"
 path = "src/main.rs"
 
 
@@ -36,8 +34,6 @@ regex = "1.10" # legacy should remove
 bimap = "0.6.3"
 
 clap = { version = "4.5", features = ["derive"] }
-anstream = "0.6"
-anstyle = "1.0"
 rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

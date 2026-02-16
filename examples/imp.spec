@@ -24,12 +24,15 @@ AtomicExpr ::= Variable | Integer | Boolean | '(' Expression ')'
 
 // Binary operations - no left recursion!
 // We build up precedence by having expression reference the next level
-BinaryOp(bin_op) ::= AtomicExpr[lhs] BinOperator[op] AtomicExpr[rhs]
+ArithOp(arith_op) ::= AtomicExpr[lhs] ArithOperator[op] AtomicExpr[rhs]
 
-BinOperator ::= '+' | '-' | '*' | '/' | '==' | '!=' | '<' | '<=' | '>' | '>='
+ArithOperator ::= '+' | '-' | '*' | '/' 
+
+CompOp(comp_op) ::= AtomicExpr[lhs] CompOperator[op] AtomicExpr[rhs]
+CompOperator ::= '==' | '!=' | '<' | '<=' | '>' | '>='
 
 // Top level expression
-Expression ::= BinaryOp | AtomicExpr
+Expression ::= ArithOp | CompOp | AtomicExpr
 
 // ===================== Statements =====================
 // Statements perform actions, modify state
@@ -37,8 +40,8 @@ Expression ::= BinaryOp | AtomicExpr
 // Variable declaration: let x: Int = 5;
 Declaration(decl) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';'
 
-// Assignment (to existing variable): x:Int = 10;
-Assignment(assign) ::= Identifier[name] ':' Type[τ] '=' Expression[value] ';'
+// Assignment (to existing variable): x = 10;
+Assignment(assign) ::= Identifier[name] '=' Expression[value] ';'
 
 // If statement with optional else
 IfStmt(if) ::= 'if' '(' Expression[cond] ')' Block[then_block]
@@ -53,8 +56,7 @@ Block(block) ::= '{' Statements[stmts] '}'
 // Statement list
 Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
 
-Statements::= Statement[head] Statements[tail] | ε
- 
+Statements(stmts) ::= Statement[head] Statements[tail] | ε
 
 // Top-level program is a block
 Program(program) ::= Block[main]
@@ -78,12 +80,13 @@ x ∈ Γ
 
 // Binary operation
 Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
-------------------------------------------------- (bin_op)
+------------------------------------------------- (arith_op)
 'Int'
 
-Γ ⊢ lhs : ?T, Γ ⊢ rhs : ?T
---------------------------------------------------- (bin_op)
+Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
+------------------------------------------------- (comp_op)
 'Bool'
+
 
 // ---------- Statements (produce void type ∅) ----------
 
@@ -97,27 +100,33 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 ------------------------------ (assign)
 ∅
 
-// If statement: condition is Bool, body produces ?T
-Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T
+// If statement: condition is Bool, body produces ?T (no ctx propagation from block)
+Γ ⊢ cond : 'Bool', [Γ] ⊢ then_block : ?T
 --------------------------------------- (if)
 ?T
 
 // If-else: both branches produce same type
-Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
+Γ ⊢ cond : 'Bool', [Γ] ⊢ then_block : ?T, [Γ] ⊢ else_block : ?T
 ------------------------------------------------------------ (if_else)
 ?T
 
 // While: condition is Bool, body produces ?T
-Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
+Γ ⊢ cond : 'Bool', [Γ] ⊢ body : ?T
 -------------------------------- (while)
 ?T
 
-// Block: statements produce ?T
-Γ ⊢ stmts : ?T
+// check without asserting type
+Γ ▷ head, Γ ▷ tail 
+-------------- (stmts)
+∅
+
+// Block: statements produce ?T (no ctx propagation)
+[Γ] ▷ stmts 
 -------------- (block)
-?T
+∅
+
 
 // Program
-Γ ⊢ main : ?T
+Γ ▷ main 
 -------------- (program)
-?T
+∅

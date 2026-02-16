@@ -1,4 +1,4 @@
-// These tests enforce the β(b, p) grammar-path invariants 
+// These tests enforce the β(b, p) grammar-path invariants
 // We are checking if the spec is respected
 // For example `stlc_abs_binding_paths_match_spec` asserts β(τ₁, abs) = 3@1·0.
 #![cfg(test)]

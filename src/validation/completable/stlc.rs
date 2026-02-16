@@ -54,12 +54,9 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         T::sound("open paren prefix", "(", 4),
         T::sound("paren then lambda", "(λ", 4),
         // Variables with context
-        T::sound("bound var in ctx", "x", 1)
-            .with_context(vec![("x", "A")]),
-        T::sound("multiple vars in ctx", "x", 1)
-            .with_context(vec![("x", "A"), ("y", "B")]),
-        T::sound("app with ctx", "f x", 1)
-            .with_context(vec![("f", "A->B"), ("x", "A")]),
+        T::sound("bound var in ctx", "x", 1).with_context(vec![("x", "A")]),
+        T::sound("multiple vars in ctx", "x", 1).with_context(vec![("x", "A"), ("y", "B")]),
+        T::sound("app with ctx", "f x", 1).with_context(vec![("f", "A->B"), ("x", "A")]),
         // Complex type annotations
         T::sound("paren type", "λx:(A).x", 1),
         T::sound("complex arrow", "λf:((A->B)->C).f", 1),

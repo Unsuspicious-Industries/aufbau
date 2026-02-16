@@ -2,26 +2,29 @@
 
 pub mod arithmetic;
 
-pub mod weird;
-pub mod stlc;
 pub mod fun;
+pub mod stlc;
+pub mod weird;
 
 pub mod imp;
 
+use regex_syntax::ast::print;
+
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse::Parser;
+use crate::logic::partial::parse_extended_input;
+use crate::logic::partial::MetaParser;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::Regex as DerivativeRegex;
 use crate::validation::completability::{
-    CompletionResult, PrefixSoundnessResult, complete, sound_complete 
+    complete, sound_complete, CompletionResult, PrefixSoundnessResult,
 };
+use std::f32::consts::E;
 use std::time::{Duration, Instant};
 
 // ============================================================================
 // Performance Debugging Infrastructure
 // ============================================================================
-
 
 /// Wrapper that times completion with context
 pub fn timed_sound_complete(
@@ -85,11 +88,12 @@ impl TypedCompletionTestCase {
         }
     }
 
-    /// Expect-pass helper: completable input, no prefix soundness check.
+    /// Expect-pass helper: completable input. Prefix-soundness is now required by default.
+    ///
+    /// Use `.without_soundness()` on the returned object when you explicitly do NOT
+    /// want to require every prefix to be completable.
     pub fn ok(desc: &'static str, input: &'static str, depth: usize) -> Self {
-        Self::new(desc, input, false)
-            .with_depth(depth)
-            .without_soundness()
+        Self::new(desc, input, false).with_depth(depth)
     }
 
     /// Expect-pass with prefix soundness check.
@@ -168,9 +172,18 @@ pub fn run_test_timed_meta(
         // ── Expecting success ────────────────────────────────────────────
         false => {
             if case.require_prefix_soundness {
-                let (result, elapsed) =
-                    timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-                eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
+                let (result, elapsed) = timed_sound_complete(
+                    grammar,
+                    case.input,
+                    case.max_depth,
+                    Some(ctx.clone()),
+                    None,
+                );
+                eprintln!(
+                    "CASE_TIME input=\"{}\" time_ms={}",
+                    case.input,
+                    elapsed.as_millis()
+                );
 
                 // Attach prefix-level metadata to the test run meta so CLI can emit structured JSON
                 let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
@@ -206,13 +219,20 @@ pub fn run_test_timed_meta(
                     // Per-prefix breakdown: every prefix and its pass/fail status + rich meta
                     m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
                     for (i, pd) in result.prefix_meta.iter().enumerate() {
-                        m.push_str(&format!("prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?} beam_fallback={:?}\n", i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count, pd.beam_fallback));
+                        m.push_str(&format!(
+                            "prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?}\n",
+                            i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count
+                        ));
                         for (j, v) in pd.visited_sample.iter().enumerate() {
                             m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
                         }
                         if let Some(vc) = pd.visited_count {
                             if vc > pd.visited_sample.len() {
-                                m.push_str(&format!("prefix_{}_visited_truncated={}\n", i, vc - pd.visited_sample.len()));
+                                m.push_str(&format!(
+                                    "prefix_{}_visited_truncated={}\n",
+                                    i,
+                                    vc - pd.visited_sample.len()
+                                ));
                             }
                         }
                     }
@@ -222,34 +242,37 @@ pub fn run_test_timed_meta(
             } else {
                 let (result, elapsed) =
                     timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-                eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
+                eprintln!(
+                    "CASE_TIME input=\"{}\" time_ms={}",
+                    case.input,
+                    elapsed.as_millis()
+                );
 
                 match result {
-                    CompletionResult::Success { complete_input, beam_fallback, .. } => {
-                        meta.beam_fallback = Some(beam_fallback);
+                    CompletionResult::Success { complete_input, .. } => {
                         TestResult::Pass(Some(complete_input))
                     }
                     CompletionResult::Failure {
                         max_depth_reached,
                         states_explored,
                         visited_states,
-                        beam_fallback,
                     } => {
-                        meta.beam_fallback = Some(beam_fallback);
                         meta.states_explored = Some(visited_states.len());
 
                         let mut m = String::new();
                         m.push_str("kind=completion_failed\n");
                         m.push_str(&format!("input={}\n", case.input));
                         m.push_str(&format!("states_explored={}\n", states_explored));
-                        m.push_str(&format!("beam_fallback={}\n", beam_fallback));
                         m.push_str(&format!("max_depth_reached={}\n", max_depth_reached));
                         m.push_str(&format!("visited_count={}\n", visited_states.len()));
                         for (i, state) in visited_states.iter().take(20).enumerate() {
                             m.push_str(&format!("visited_{}={}\n", i, state));
                         }
                         if visited_states.len() > 20 {
-                            m.push_str(&format!("visited_truncated={}\n", visited_states.len() - 20));
+                            m.push_str(&format!(
+                                "visited_truncated={}\n",
+                                visited_states.len() - 20
+                            ));
                         }
                         TestResult::Fail(m)
                     }
@@ -288,16 +311,24 @@ pub fn run_test_timed_meta(
         true => {
             let (result, elapsed) =
                 timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-            eprintln!("CASE_TIME input=\"{}\" time_ms={}", case.input, elapsed.as_millis());
+            eprintln!(
+                "CASE_TIME input=\"{}\" time_ms={}",
+                case.input,
+                elapsed.as_millis()
+            );
 
             match result {
-                    CompletionResult::Success { complete_input, depth, completion_path, ast, beam_fallback } => {
+                CompletionResult::Success {
+                    complete_input,
+                    completion_depth: depth,
+                    completion_path,
+                    ast,
+                } => {
                     let mut m = String::new();
                     m.push_str("kind=unexpected_success\n");
                     m.push_str(&format!("input={}\n", case.input));
                     m.push_str(&format!("completed_to={}\n", complete_input));
-                    m.push_str(&format!("beam_fallback={}\n", beam_fallback));
-                    m.push_str(&format!("depth={}\n", depth));
+                    m.push_str(&format!("completion_depth={}\n", depth));
                     m.push_str(&format!("path_len={}\n", completion_path.len()));
                     for (i, tok) in completion_path.iter().take(30).enumerate() {
                         m.push_str(&format!("path_{}={}\n", i, tok));
@@ -331,7 +362,10 @@ pub enum TestResult {
 
 impl TestResult {
     pub fn is_pass(&self) -> bool {
-        matches!(self, TestResult::Pass(_))
+        match self {
+            TestResult::Pass(_) => true,
+            TestResult::Fail(_) => false,
+        }
     }
 }
 
@@ -372,7 +406,7 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
                 passed += 1;
             }
             TestResult::Fail(msg) => {
-                // First line of msg is always kind=... 
+                // First line of msg is always kind=...
                 let kind = msg.lines().next().unwrap_or("kind=unknown");
                 eprintln!(
                     "CASE_FAIL idx={} desc=\"{}\" input=\"{}\" time_ms={} {}",
@@ -398,7 +432,10 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
     };
     eprintln!(
         "BATCH_END passed={} failed={} avg_ms={} total_ms={}",
-        passed, failed, avg_ms, total_time.as_millis()
+        passed,
+        failed,
+        avg_ms,
+        total_time.as_millis()
     );
 
     BatchResult {
@@ -431,7 +468,10 @@ impl BatchResult {
             );
             for (idx, (desc, input, msg)) in self.failures.iter().enumerate() {
                 let kind = msg.lines().next().unwrap_or("kind=unknown");
-                eprintln!("FAILURE idx={} desc=\"{}\" input=\"{}\" {}", idx, desc, input, kind);
+                eprintln!(
+                    "FAILURE idx={} desc=\"{}\" input=\"{}\" {}",
+                    idx, desc, input, kind
+                );
                 for line in msg.lines().skip(1) {
                     if !line.trim().is_empty() {
                         eprintln!("FAILURE_DETAIL idx={} {}", idx, line.trim());
@@ -453,49 +493,71 @@ impl BatchResult {
 
 /// Get all syntactically valid completions for an input
 pub fn get_completions(grammar: &Grammar, input: &str) -> Vec<DerivativeRegex> {
-    let mut parser = Parser::new(grammar.clone());
-    match parser.partial(input) {
-        Ok(partial) => partial.completions(grammar).tokens,
-        Err(_) => vec![],
+    let mut parser = MetaParser::new(grammar.clone());
+    get_completions_with_meta(&mut parser, input)
+}
+
+/// Get completions using a reusable MetaParser (incremental-friendly)
+pub fn get_completions_with_meta(parser: &mut MetaParser, input: &str) -> Vec<DerivativeRegex> {
+    match parser.meta_partial(input) {
+        Ok((partial, depth)) => {
+            println!("Depth reached: {}", depth);
+            partial.completions(&parser.parser().grammar).tokens
+        }
+        Err(e) => {
+            println!("Error during parsing: {}", e);
+            vec![]
+        }
     }
 }
 
-/// Extend input with a completion token, handling spacing
-/// useful as utils
-fn extend_input(input: &str, token: &str) -> String {
-    let first_char = token.chars().next().unwrap_or(' ');
-    if input.is_empty()
-        || input.ends_with(' ')
-        || input.ends_with('\n')
-        || input.ends_with('\t')
-        || !first_char.is_alphanumeric()
-    {
-        format!("{}{}", input, token)
-    } else {
-        format!("{} {}", input, token)
+/// Get completions using a reusable MetaParser, filtered by typing.
+pub fn get_typed_completions_with_meta(
+    parser: &mut MetaParser,
+    input: &str,
+    ctx: &Context,
+) -> Vec<DerivativeRegex> {
+    match parser.meta_partial(input) {
+        Ok((partial, depth)) => {
+            println!("Depth reached: {}", depth);
+            let grammar = &parser.parser().grammar;
+            partial
+                .completions_in_ctx(grammar, ctx)
+                .tokens
+                .into_iter()
+                .filter(|token| {
+                    token
+                        .example()
+                        .map(|example| verify_completion_well_typed(grammar, input, &example, ctx))
+                        .unwrap_or(Err("no example".to_string()))
+                        .is_ok()
+                })
+                .collect()
+        }
+        Err(e) => {
+            println!("Error during parsing: {}", e);
+            vec![]
+        }
     }
 }
 
-/// Verify that a completion leads to a well-typed AND complete tree
-pub fn verify_completion_well_typed(
+/// Verify that a completion leads to a well-typed tree and return the extended input.
+pub fn extend_input_checked(
     grammar: &Grammar,
     input: &str,
     completion: &str,
     ctx: &Context,
-) -> Result<(), String> {
-    let extended = extend_input(input, completion);
-
-    let mut parser = Parser::new(grammar.clone());
-    let partial = parser
-        .partial(&extended)
-        .map_err(|e| format!("Parse failed for '{}': {}", extended, e))?;
+) -> Result<String, String> {
+    let (partial, extended) =
+        parse_extended_input(grammar, input, completion).map_err(|e| e.to_string())?;
 
     // Check for COMPLETE and well-typed trees (TreeStatus::Valid, not Partial)
     let any_complete_and_typed = partial.roots.iter().any(|root| {
-        root.is_complete() && matches!(
-            check_tree_with_context(root, grammar, ctx),
-            TreeStatus::Valid(_)
-        )
+        root.is_complete()
+            && matches!(
+                check_tree_with_context(root, grammar, ctx),
+                TreeStatus::Valid(_)
+            )
     });
 
     // Also accept partial trees as valid during incremental completion
@@ -507,7 +569,7 @@ pub fn verify_completion_well_typed(
     });
 
     if any_complete_and_typed || any_well_typed {
-        Ok(())
+        Ok(extended)
     } else {
         Err(format!(
             "Completion '{}' after '{}' produces no well-typed trees (extended: '{}')",
@@ -516,7 +578,15 @@ pub fn verify_completion_well_typed(
     }
 }
 
-
+/// Verify that a completion leads to a well-typed AND complete tree
+pub fn verify_completion_well_typed(
+    grammar: &Grammar,
+    input: &str,
+    completion: &str,
+    ctx: &Context,
+) -> Result<(), String> {
+    extend_input_checked(grammar, input, completion, ctx).map(|_| ())
+}
 
 // ============================================================================
 // Grammar Loading Utilities
@@ -538,4 +608,3 @@ pub fn load_example_grammar(name: &str) -> Grammar {
 pub fn load_inline_grammar(spec: &str) -> Grammar {
     Grammar::load(spec).expect("Failed to load inline grammar")
 }
-

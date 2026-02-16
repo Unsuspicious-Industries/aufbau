@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(test)]
 fn fun_grammar() -> Grammar {
     load_example_grammar("fun")
 }
