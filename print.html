@@ -49,7 +49,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-53698079.js";
+            window.path_to_searchindex_js = "searchindex-eea25041.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ea9c70a7.js"></script>
@@ -618,19 +618,19 @@ In practice, the <strong>edge match</strong> is ensured by following the <em>tre
 <h1 id="implementation-details"><a class="header" href="#implementation-details">Implementation Details</a></h1>
 <p>Our module is structured as follows:</p>
 <ul>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/"><code>grammar</code></a> where we define the grammar data structures and loading logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/partial/"><code>partial</code></a> where we implement the partial parser $\Psi_L$ that interprets grammars to collect <strong>partial parse forests</strong> (see next section)</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/binding/"><code>bind</code></a> where we implement the binding resolution logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/"><code>typing</code></a> where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It’s mainly used a filtering mechanism for completability.</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>grammar</code></a> where we define the grammar data structures and loading logic</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>partial</code></a> where we implement the partial parser $\Psi_L$ that interprets grammars to collect <strong>partial parse forests</strong> (see next section)</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>bind</code></a> where we implement the binding resolution logic</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>typing</code></a> where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It’s mainly used a filtering mechanism for completability.</li>
 </ul>
-<p>We also have auxiliary utils such as the <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/validation/"><code>validation</code></a> module which check <code>p7</code> for correctness and the complex custom regex engine <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/regex/"><code>regex</code></a> that is used for completeability over <em>two-level languages</em> (see here: <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>).</p>
+<p>We also have auxiliary utils such as the <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/validation/"><code>validation</code></a> module which check <code>aufbau</code> for correctness and the complex custom regex engine <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>regex</code></a> that is used for completeability over <em>two-level languages</em> (see here: <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>).</p>
 <h1 id="proof-and-structured"><a class="header" href="#proof-and-structured">Proof and structured</a></h1>
 <p>In this document we will go through each algorithm in detail, and try to prove their correctness. We will also provide a structured overview of the implementation, including the data structures and algorithms used.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="grammar-specification"><a class="header" href="#grammar-specification">Grammar Specification</a></h1>
 <p>The grammar is composed of a set of <strong>production rules</strong> with syntactic meaning, and attached <strong>typing rules</strong> conveying semantic information about the structure of the language.</p>
 <p>This document formally defines the grammar specification language as implemented in P7.</p>
-<p>The core data structures are defined in <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>.</p>
+<p>The core data structures are defined in <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>.</p>
 <h2 id="overall-structure"><a class="header" href="#overall-structure">Overall Structure</a></h2>
 <p>Grammar files for P7 are written in a simple BNF-like format with human-readable, inference-style typing rules.</p>
 <p>The goal of this specification is to be able to define the grammar $G$ as presented in <a href="#theoretical-foundation">our conceptual framework</a> in a nice and human readable way. This spec is a <strong>data oriented</strong> view of our rules.</p>
@@ -729,7 +729,7 @@ Expression ::= Term '+' Term | Term
 <div class="remark-title">Remark: Binding Resolution</div>
 
 <p>Bindings are resolved via <strong>grammar paths</strong> at type-checking time.</p>
-<p>See <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a> for the path construction algorithm.</p>
+<p>See <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a> for the path construction algorithm.</p>
 </div>
 
 <h3 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h3>
@@ -757,7 +757,8 @@ conclusion
 <tr><th>Syntax</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><code>Γ ⊢ e : τ</code></td><td>Term <code>e</code> has type <code>τ</code> in context <code>Γ</code></td></tr>
+<tr><td><code>Γ ⊢ e : τ</code></td><td>Term <code>e</code> has type <code>τ</code> in context <code>Γ</code> (inference)</td></tr>
+<tr><td><code>Γ ▷ e</code></td><td>Check that term <code>e</code> is well-typed in context <code>Γ</code> (checking)</td></tr>
 <tr><td><code>x ∈ Γ</code></td><td>Variable <code>x</code> is bound in context <code>Γ</code></td></tr>
 <tr><td><code>τ₁ = τ₂</code></td><td>Types must unify</td></tr>
 <tr><td><code>τ₁ ⊆ τ₂</code></td><td>Type <code>τ₁</code> is a subtype of <code>τ₂</code></td></tr>
@@ -768,8 +769,11 @@ conclusion
 <div class="example">
 <div class="example-title">Example: Premise Examples</div>
 
-<pre><code class="language-spec">// Check that f is a function and e matches its domain
+<pre><code class="language-spec">// Check that f is a function and e matches its domain (inference)
 Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
+
+// Check that e is well-typed (checking mode)
+Γ ▷ e
 
 // Variable must be in scope
 x ∈ Γ
@@ -793,6 +797,7 @@ x ∈ Γ
 <tr><td><code>τ</code></td><td>Return type <code>τ</code></td></tr>
 <tr><td><code>Γ(x)</code></td><td>Look up type of <code>x</code> in context and return it</td></tr>
 <tr><td><code>Γ → Γ[x:τ] ⊢ τ</code></td><td>Set type of <code>x</code> to <code>τ</code> in context and return <code>τ</code></td></tr>
+<tr><td><code>▷</code></td><td>Return void (checking mode)</td></tr>
 </tbody>
 </table>
 </div>
@@ -861,7 +866,7 @@ x ∈ Γ
 <div class="example">
 <div class="example-title">Example: Simply-Typed Lambda Calculus</div>
 
-<p>A complete specification for STLC from <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/examples/stlc.spec"><code>examples/stlc.spec</code></a>:</p>
+<p>A complete specification for STLC from <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/examples/stlc.spec"><code>examples/stlc.spec</code></a>:</p>
 <pre><code class="language-spec">// Identifier (supports Unicode)
 Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
 
@@ -912,11 +917,11 @@ x ∈ Γ
 <tr><th>Component</th><th>Path</th></tr>
 </thead>
 <tbody>
-<tr><td>Grammar structures</td><td><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/mod.rs"><code>https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/mod.rs</code></a></td></tr>
-<tr><td>Spec file loading</td><td><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/load.rs"><code>https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/load.rs</code></a></td></tr>
-<tr><td>Typing rules</td><td><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/rule.rs"><code>https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/rule.rs</code></a></td></tr>
-<tr><td>Type definitions</td><td><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/mod.rs"><code>https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/mod.rs</code></a></td></tr>
-<tr><td>Binding map</td><td><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/binding/grammar.rs"><code>https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/binding/grammar.rs</code></a></td></tr>
+<tr><td>Grammar structures</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs</code></a></td></tr>
+<tr><td>Spec file loading</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/load.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/load.rs</code></a></td></tr>
+<tr><td>Typing rules</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs</code></a></td></tr>
+<tr><td>Type definitions</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/mod.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/mod.rs</code></a></td></tr>
+<tr><td>Binding map</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs</code></a></td></tr>
 </tbody>
 </table>
 </div>

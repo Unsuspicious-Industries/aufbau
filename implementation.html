@@ -48,7 +48,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-53698079.js";
+            window.path_to_searchindex_js = "searchindex-eea25041.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-ea9c70a7.js"></script>
@@ -190,12 +190,12 @@
                         <h1 id="implementation-details"><a class="header" href="#implementation-details">Implementation Details</a></h1>
 <p>Our module is structured as follows:</p>
 <ul>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/grammar/"><code>grammar</code></a> where we define the grammar data structures and loading logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/partial/"><code>partial</code></a> where we implement the partial parser $\Psi_L$ that interprets grammars to collect <strong>partial parse forests</strong> (see next section)</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/binding/"><code>bind</code></a> where we implement the binding resolution logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/typing/"><code>typing</code></a> where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It’s mainly used a filtering mechanism for completability.</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>grammar</code></a> where we define the grammar data structures and loading logic</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>partial</code></a> where we implement the partial parser $\Psi_L$ that interprets grammars to collect <strong>partial parse forests</strong> (see next section)</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>bind</code></a> where we implement the binding resolution logic</li>
+<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>typing</code></a> where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It’s mainly used a filtering mechanism for completability.</li>
 </ul>
-<p>We also have auxiliary utils such as the <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/logic/validation/"><code>validation</code></a> module which check <code>p7</code> for correctness and the complex custom regex engine <a href="https://github.com/Unsuspicious-Industries/p7/blob/main/src/regex/"><code>regex</code></a> that is used for completeability over <em>two-level languages</em> (see here: <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>).</p>
+<p>We also have auxiliary utils such as the <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/validation/"><code>validation</code></a> module which check <code>aufbau</code> for correctness and the complex custom regex engine <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>regex</code></a> that is used for completeability over <em>two-level languages</em> (see here: <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>).</p>
 <h1 id="proof-and-structured"><a class="header" href="#proof-and-structured">Proof and structured</a></h1>
 <p>In this document we will go through each algorithm in detail, and try to prove their correctness. We will also provide a structured overview of the implementation, including the data structures and algorithms used.</p>
 
