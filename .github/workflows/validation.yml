@@ -10,8 +10,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  validation:
-    name: Run Validation Tests
+  # Run the fast "parseable" validation module in its own job (parallelizable)
+  parseable:
+    name: Parseable validation
     runs-on: ubuntu-latest
 
     steps:
@@ -27,21 +28,62 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Make CI script executable
-        run: chmod +x ./scripts/validate-ci.sh
+      - name: Run parseable validation
+        run: cargo run --release --bin aufbau -- validate -m parseable
 
-      - name: Run validation (parseable first, then completable suites)
-        run: ./scripts/validate-ci.sh
-
-      - name: Show generated reports
+      - name: Show generated reports (parseable)
         if: always()
         run: |
-          echo "Validation reports:"
+          echo "Validation reports (parseable):"
           ls -la validation/reports || true
+          echo "--- latest report ---"
+          ls -t validation/reports/*.txt 2>/dev/null | head -n 1 || true
+          tail -n +1 validation/reports/*.txt 2>/dev/null || true
 
-      - name: Upload validation reports
+      - name: Upload parseable reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validation-reports
+          name: validation-reports-parseable
+          path: validation/reports/*.txt
+
+  # Run each `completable` suite file as a separate matrix job so results are
+  # visible per-module in GitHub Actions (stlc, imp, fun, weird, arithmetic)
+  completable:
+    name: Completable validation — ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [arithmetic, stlc, imp, fun, weird]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run completable validation for ${{ matrix.module }}
+        run: cargo run --release --bin aufbau -- validate -m completable --filter "${{ matrix.module }}"
+
+      - name: Show generated reports (module)
+        if: always()
+        run: |
+          echo "Validation reports (module=${{ matrix.module }}):"
+          ls -la validation/reports || true
+          echo "--- failures (if any) ---"
+          grep -Hn "FAIL" validation/reports/*.txt || true
+
+      - name: Upload module reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports-${{ matrix.module }}
           path: validation/reports/*.txt
