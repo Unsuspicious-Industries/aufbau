@@ -3,10 +3,11 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aufbau::logic::Parser;
-use aufbau::logic::debug::{DebugLevel, set_debug_input, set_debug_level};
+use aufbau::logic::debug::{set_debug_input, set_debug_level, DebugLevel};
 use aufbau::logic::grammar::Grammar;
+use aufbau::logic::partial::Synthesizer;
 use aufbau::logic::typing::Context;
+use aufbau::logic::Parser;
 use aufbau::validation::completable::{self, TypedCompletionTestCase};
 
 /// Quick helper to examine completability for an input or a named test case
@@ -50,13 +51,46 @@ pub struct ExamineCmd {
     #[arg(long = "depth", default_value_t = 10)]
     pub depth: usize,
 
-    /// Optional maximum number of visited states (BFS cap)
-    #[arg(long = "max-states")]
-    pub max_states: Option<usize>,
-
     /// Print full ASTs / debug structures (off by default)
     #[arg(long = "dump-ast", action = clap::ArgAction::SetTrue)]
     pub dump_ast: bool,
+
+    /// Print completion sets and example tokens
+    #[arg(long = "dump-completions", action = clap::ArgAction::SetTrue)]
+    pub dump_completions: bool,
+}
+
+fn dump_completions(grammar: &Grammar, input: &str, ctx: &Context) {
+    let mut synth = Synthesizer::new(grammar.clone(), input);
+    match synth.partial() {
+        Ok(partial) => {
+            let raw = partial.completions(grammar);
+            println!("\n-- completions (raw) --");
+            for (i, token) in raw.iter().enumerate() {
+                println!(
+                    "  [{}] token='{}' example={:?}",
+                    i,
+                    token.to_pattern(),
+                    token.example()
+                );
+            }
+
+            let typed = synth.typed_completions(ctx);
+            println!("\n-- completions (typed) --");
+            for (i, token) in typed.iter().enumerate() {
+                println!(
+                    "  [{}] token='{}' example={:?}",
+                    i,
+                    token.to_pattern(),
+                    token.example()
+                );
+            }
+        }
+        Err(e) => {
+            println!("\n-- completions (raw) --");
+            println!("  partial parse failed: {}", e);
+        }
+    }
 }
 
 fn collect_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
@@ -134,9 +168,11 @@ pub fn run(args: &ExamineCmd) {
             suite_name, case.description
         );
 
+        let case_input = case.input;
+
         // === Parser / Partial AST ===
         let mut parser = Parser::new(grammar.clone());
-        match parser.partial(case.input).into_result() {
+        match parser.partial(case_input).into_result() {
             Ok(partial_ast) => {
                 eprintln!(
                     "-- parsed PartialAST ({} root(s)) --",
@@ -173,6 +209,10 @@ pub fn run(args: &ExamineCmd) {
                         eprintln!("PartialAST typed failed: {}", e);
                     }
                 }
+
+                if args.dump_completions {
+                    dump_completions(&grammar, case_input, &ctx);
+                }
             }
             Err(e) => {
                 eprintln!("parser.partial() error: {}", e);
@@ -204,18 +244,6 @@ pub fn run(args: &ExamineCmd) {
         println!("case.max_depth = {}", case.max_depth);
         println!("case.xfail = {}", case.xfail);
 
-        if let Some(bf) = meta.beam_fallback {
-            println!("beam_fallback = {}", bf);
-            if bf {
-                println!(
-                    "  (beam_fallback=true — the completion engine fell back to the faster beam search; results may be incomplete. Try increasing --depth or --max-states to avoid fallback.)"
-                );
-            } else {
-                println!(
-                    "  (beam_fallback=false — exhaustive/prefix search completed without using beam fallback)"
-                );
-            }
-        }
         if let Some(se) = meta.states_explored {
             println!("states_explored = {}", se);
         }
@@ -276,15 +304,25 @@ pub fn run(args: &ExamineCmd) {
                             .duration_since(UNIX_EPOCH)
                             .map(|d| d.as_secs())
                             .unwrap_or(0);
+                        let out_dir = PathBuf::from("validation/trees");
                         let filename = format!("examine_{}_{}.ast", safe_desc, ts);
+                        let out_path = out_dir.join(filename);
 
-                        match fs::write(&filename, serialized.as_bytes()) {
+                        if let Err(e) = fs::create_dir_all(&out_dir) {
+                            eprintln!("Failed to create output dir '{}': {}", out_dir.display(), e);
+                        }
+
+                        match fs::write(&out_path, serialized.as_bytes()) {
                             Ok(()) => {
-                                println!("Saved serialized completed tree to file: '{}'", filename)
+                                println!(
+                                    "Saved serialized completed tree to file: '{}'",
+                                    out_path.display()
+                                )
                             }
                             Err(e) => eprintln!(
                                 "Failed to write serialized tree to '{}': {}",
-                                filename, e
+                                out_path.display(),
+                                e
                             ),
                         }
 
@@ -305,6 +343,11 @@ pub fn run(args: &ExamineCmd) {
 
     // Mode 2: run ad-hoc input against a provided grammar spec
     if let Some(input) = &args.input {
+        let input_str = input.as_str();
+        if args.dump_completions {
+            set_debug_level(DebugLevel::Debug);
+            set_debug_input(Some(input_str.to_string()));
+        }
         let spec_path = match &args.spec {
             Some(p) => p.clone(),
             None => {
@@ -332,14 +375,14 @@ pub fn run(args: &ExamineCmd) {
             }
         };
 
+        if args.dump_completions {
+            let ctx = Context::new();
+            dump_completions(&grammar, input_str, &ctx);
+        }
+
         if args.sound {
-            let (res, dur) = completable::timed_sound_complete(
-                &grammar,
-                input,
-                args.depth,
-                None,
-                args.max_states,
-            );
+            let (res, dur) =
+                completable::timed_sound_complete(&grammar, input_str, args.depth, None);
             println!("sound_complete: time={} ms", dur.as_millis());
             println!("  is_sound = {}", res.is_sound);
             if let Some(fp) = res.failing_prefix {
@@ -364,8 +407,7 @@ pub fn run(args: &ExamineCmd) {
 
             std::process::exit(if res.is_sound { 0 } else { 1 });
         } else {
-            let res =
-                completable::timed_complete(&grammar, input, args.depth, None, args.max_states);
+            let res = completable::timed_complete(&grammar, input_str, args.depth, None);
             println!("complete: time={} ms", res.1.as_millis());
             match &res.0 {
                 aufbau::validation::completability::CompletionResult::Success {
@@ -392,10 +434,6 @@ pub fn run(args: &ExamineCmd) {
                         println!("  visited_states sample: {:?}", visited_states);
                     }
                     std::process::exit(1);
-                }
-                aufbau::validation::completability::CompletionResult::StateOverflow(n) => {
-                    println!("  StateOverflow: {}", n);
-                    std::process::exit(2);
                 }
                 aufbau::validation::completability::CompletionResult::Invalid(msg)
                 | aufbau::validation::completability::CompletionResult::Inconsistency(msg)

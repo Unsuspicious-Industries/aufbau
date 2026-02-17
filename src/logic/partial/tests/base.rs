@@ -150,8 +150,8 @@ fn test_metaparser_multiplicative_growth() {
         expected = next;
     }
 
-    // run meta_partial and confirm it returns our expected growth value
-    let (_ast, used_depth) = mp.meta_partial(&input).expect("meta parse should succeed");
+    // run partial and confirm it returns our expected growth value
+    let (_ast, used_depth) = mp.partial_with_depth(&input).expect("meta parse should succeed");
     assert_eq!(used_depth, expected);
     assert!(used_depth >= min_depth);
 }

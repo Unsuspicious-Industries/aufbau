@@ -29,37 +29,37 @@ use TypedCompletionTestCase as T;
 fn completable_cases() -> Vec<TypedCompletionTestCase> {
     vec![
         // Complete lambda expressions
-        T::sound("identity", "λx:A.x", 1),
-        T::sound("nested lambdas", "λx:A.λy:B.x", 1),
-        T::sound("triple nested", "λx:A.λy:B.λz:C.x", 1),
-        T::sound("use inner var", "λx:A.λy:B.y", 1),
+        T::ok("identity", "λx:A.x", 1),
+        T::ok("nested lambdas", "λx:A.λy:B.x", 1),
+        T::ok("triple nested", "λx:A.λy:B.λz:C.x", 1),
+        T::ok("use inner var", "λx:A.λy:B.y", 1),
         // Partial lambda expressions
-        T::sound("lambda prefix", "λ", 6),
-        T::sound("lambda with var", "λx", 5),
-        T::sound("lambda with colon", "λx:", 4),
-        T::sound("lambda with type", "λx:A", 3),
-        T::sound("lambda with dot", "λx:A.", 2),
+        T::ok("lambda prefix", "λ", 7),
+        T::ok("lambda with var", "λx", 6),
+        T::ok("lambda with colon", "λx:", 5),
+        T::ok("lambda with type", "λx:A", 4),
+        T::ok("lambda with dot", "λx:A.", 3),
         // Function types
-        T::sound("function type annotation", "λf:A->B.f", 1),
-        T::sound("nested function type", "λf:(A->B)->C.f", 1),
-        T::sound("curried type", "λf:A->B->C.f", 1),
+        T::ok("function type annotation", "λf:A->B.f", 1),
+        T::ok("nested function type", "λf:(A->B)->C.f", 1),
+        T::ok("curried type", "λf:A->B->C.f", 1),
         // Application expressions
-        T::sound("simple app", "λf:A->B.f x", 2),
-        T::sound("app in body", "λf:A->B.λx:A.f x", 2),
-        T::sound("partial app", "λf:A->B.f", 2),
+        T::ok("simple app", "λf:A->B.f x", 2).with_context(vec![("x", "'A'")]),
+        T::ok("app in body", "λf:A->B.λx:A.f x", 2),
+        T::ok("partial app", "λf:A->B.f", 2),
         // Parenthesized expressions
-        T::sound("paren var", "λx:A.(x)", 1),
-        T::sound("paren lambda", "(λx:A.x)", 1),
-        T::sound("nested parens", "((λx:A.x))", 1),
-        T::sound("open paren prefix", "(", 4),
-        T::sound("paren then lambda", "(λ", 4),
+        T::ok("paren var", "λx:A.(x)", 1),
+        T::ok("paren lambda", "(λx:A.x)", 1),
+        T::ok("nested parens", "((λx:A.x))", 1),
+        T::ok("open paren prefix", "(", 8),
+        T::ok("paren then lambda", "(λ", 7),
         // Variables with context
-        T::sound("bound var in ctx", "x", 1).with_context(vec![("x", "A")]),
-        T::sound("multiple vars in ctx", "x", 1).with_context(vec![("x", "A"), ("y", "B")]),
-        T::sound("app with ctx", "f x", 1).with_context(vec![("f", "A->B"), ("x", "A")]),
+        T::ok("bound var in ctx", "x", 1).with_context(vec![("x", "'A'")]),
+        T::ok("multiple vars in ctx", "x", 1).with_context(vec![("x", "'A'"), ("y", "'B'")]),
+        T::ok("app with ctx", "f x", 1).with_context(vec![("f", "'A'->'B'"), ("x", "'A'")]),
         // Complex type annotations
-        T::sound("paren type", "λx:(A).x", 1),
-        T::sound("complex arrow", "λf:((A->B)->C).f", 1),
+        T::ok("paren type", "λx:(A).x", 1),
+        T::ok("complex arrow", "λf:((A->B)->C).f", 1),
     ]
 }
 

@@ -13,7 +13,7 @@ pub use tree::*;
 
 pub use core::{Context, TreeRef};
 pub use eval::evaluate_typing;
-pub use ops::{Unifier, UnifyResult, equal, subtype};
+pub use ops::{equal, subtype, Unifier, UnifyResult};
 pub use symbols::{gather_raw_types, gather_terminal_nodes, gather_terminals, gather_type_symbols};
 ///---------------
 /// Type Representation

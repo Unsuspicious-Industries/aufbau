@@ -30,7 +30,7 @@ use std::collections::HashMap;
 const DEFAULT_START_DEPTH: usize = 5;
 
 /// Default maximum recursion depth to try before giving up
-const DEFAULT_MAX_DEPTH: usize = 100;
+const DEFAULT_MAX_DEPTH: usize = 100000;
 
 /// Default multiplicative factor for recursion depth growth (1.5x)
 const DEFAULT_DEPTH_FACTOR: f64 = 1.5;
@@ -102,7 +102,7 @@ impl MetaParser {
     }
     //parse but discard depth
     pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
-        let (ast, _depth) = self.meta_partial(input)?;
+        let ast = self.partial(input)?;
         Ok(PartialAST {
             roots: ast.completes(),
             input: ast.input,
@@ -116,8 +116,8 @@ impl MetaParser {
     /// - If parse succeeds but was depth-limited, continues to higher depth
     /// - If parse succeeds and wasn't depth-limited, returns results (won't improve with depth)
     ///
-    /// Returns the best partial AST found and the depth used
-    pub fn meta_partial(&mut self, input: &str) -> Result<(PartialAST, usize), String> {
+    /// Returns the best partial AST found
+    pub fn partial(&mut self, input: &str) -> Result<PartialAST, String> {
         // For incremental inputs, start from the last successful depth to avoid
         // repeated ascent through low depths on every prefix extension.
         // Otherwise fall back to grammar-level cache and configured start depth.
@@ -138,7 +138,7 @@ impl MetaParser {
         };
         debug_info!(
             "meta",
-            "MetaParser: Starting meta_partial with initial depth {} (cached best for grammar: {})",
+            "MetaParser: Starting partial with initial depth {} (cached best for grammar: {})",
             current_depth,
             self.gscache.get(&self.parser.grammar).unwrap_or(&0)
         );
@@ -167,7 +167,7 @@ impl MetaParser {
                     self.last_input = Some(input.to_string());
                     self.last_success_depth = Some(current_depth);
                     // return result
-                    return Ok((ast, current_depth));
+                    return Ok(ast);
                 }
                 PartialParseOutcome::Failure(ParseError::DepthLimit) => {
                     // Compute multiplicative growth (ceil), but ensure we always increase by at least 1
@@ -230,10 +230,15 @@ impl MetaParser {
         ))
     }
 
-    // partial but discard depth
-    pub fn partial(&mut self, input: &str) -> Result<PartialAST, String> {
-        let (ast, _depth) = self.meta_partial(input)?;
-        Ok(ast)
+    pub fn partial_typed(&mut self, input: &str) -> Result<PartialAST, String> {
+        let ast = self.partial(input)?;
+        ast.filter_typed(&self.parser.grammar)
+    }
+
+    /// Parse for partial results and return depth used (debugging/metrics)
+    pub fn partial_with_depth(&mut self, input: &str) -> Result<(PartialAST, usize), String> {
+        let ast = self.partial(input)?;
+        Ok((ast, self.last_success_depth.unwrap_or(self.start_depth)))
     }
 
     /// Clear the parser's cache (useful when switching to completely different input)
@@ -246,6 +251,11 @@ impl MetaParser {
     /// Get a reference to the underlying parser
     pub fn parser(&self) -> &Parser {
         &self.parser
+    }
+
+    /// Get the cached best depth for the current grammar, if any
+    pub fn cached_best_depth(&self) -> Option<usize> {
+        self.gscache.get(&self.parser.grammar).copied()
     }
 
     /// Get a mutable reference to the underlying parser

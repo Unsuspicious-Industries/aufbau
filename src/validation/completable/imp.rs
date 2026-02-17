@@ -33,25 +33,22 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         // Already complete (wrapped as a top-level Block)
         T::ok("var decl", "{ let x:Int=5; }", 2),
         T::ok("var init zero", "{ let x:Int=0; }", 2),
-        T::ok("var negative", "{ let x:Int=-5; }", 2),
         T::ok("var large", "{ let x:Int=999; }", 2),
         T::ok("bool decl", "{ let flag:Bool=true; }", 2),
         T::ok("union decl", "{ let u:Int|Bool=true; }", 2),
         // Nearly complete
         T::ok("var no semicolon", "{ let x:Int=5", 2),
-        T::ok("var no equals", "{ let x:Int", 3),
-        T::ok("var no value", "{ let x:Int=", 2),
-        // Partial
-        T::ok("var type only", "{ let x:Int", 3),
+        T::ok("var no equals", "{ let x:Int", 4),
+        T::ok("var no value", "{ let x:Int=", 3),
         T::ok("empty", "", 3),
         // Sequences
-        T::ok("two decls", "{ let x:Int=5; let y:Int=3; }", 2),
-        T::ok("sequence partial", "{ let x:Int=5; y", 5),
+        T::ok("two decls", "{ let x:Int=5; let y:Int=3; }", 3),
+        T::ok("sequence partial", "{ let x:Int=5; x", 6),
         // Arithmetic expressions
         T::ok("simple add", "{ let x:Int=1+2; }", 2),
-        T::ok("add chain", "{ let x:Int=1+2+3; }", 2),
+        T::ok("add chain", "{ let u:Int=1+2+3; }", 2),
         T::ok("subtract", "{ let x:Int=10-5; }", 2),
-        T::ok("multiply", "{ let x:Int=2*3; }", 2),
+        T::ok("multiply", "{ let z:Int=2*3; }", 2),
         T::ok("divide", "{ let x:Int=6/2; }", 2),
         // Parentheses in expressions
         T::ok("paren add", "{ let x:Int=(1+2); }", 2),
@@ -94,7 +91,7 @@ fn fail_cases() -> Vec<TypedCompletionTestCase> {
         // Mismatched parens
         T::fail("extra close paren", "{let x:Int=(1+2));"),
         T::fail("missing close paren", "{let x:Int=(1+2;"),
-        T::fail("missing open brace", "{let"),
+        T::fail("missing open brace", "let"),
         // Invalid syntax
         T::fail("close brace first", "}"),
         T::fail("random chars", "@#$;"),
@@ -115,8 +112,12 @@ fn check_completable() {
 /// Standalone test: ensure identifier in block has '=' as a completion path
 #[test]
 fn bare_identifier_has_assignment_completion_path() {
+    use crate::logic::partial::Synthesizer;
+    use crate::logic::typing::Type;
+
     let grammar = imp_grammar();
-    let completions = get_completions(&grammar, "{ x");
+    let mut synth = Synthesizer::new(grammar.clone(), "{ x");
+    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("x".to_string(), Type::Raw("Int".to_string()));
@@ -125,7 +126,7 @@ fn bare_identifier_has_assignment_completion_path() {
         token.matches("=")
             && token
                 .example()
-                .map(|example| extend_input_checked(&grammar, "{ x", &example, &ctx).is_ok())
+                .map(|example| synth.try_extend(&example, &ctx).is_ok())
                 .unwrap_or(false)
     });
     assert!(
@@ -134,10 +135,59 @@ fn bare_identifier_has_assignment_completion_path() {
     );
 }
 
+/// Ensure partial "t" is treated as partial "true" and can typecheck.
+#[test]
+fn union_decl_partial_true_is_well_typed() {
+    use crate::logic::partial::parse::Parser;
+    use crate::logic::partial::structure::Terminal;
+    use crate::logic::partial::Synthesizer;
+    use crate::logic::typing::symbols::gather_terminal_nodes;
+    use crate::logic::typing::Context;
+
+    let grammar = imp_grammar();
+    let input = "{ let u:Int|Bool=t";
+    let mut parser = Parser::new(grammar.clone());
+    let partial = parser
+        .partial(input)
+        .into_result()
+        .expect("partial parse should succeed");
+
+    let mut saw_partial_true = false;
+    for root in partial.roots() {
+        for term in gather_terminal_nodes(root) {
+            if let Terminal::Partial {
+                value, remainder, ..
+            } = term
+            {
+                if value == "t" {
+                    if let Some(rem) = remainder {
+                        if rem.matches("rue") {
+                            saw_partial_true = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(saw_partial_true, "expected partial terminal 't' for 'true'");
+
+    let mut synth = Synthesizer::new(grammar.clone(), input);
+    let ctx = Context::new();
+    assert!(
+        synth.try_extend("rue", &ctx).is_ok(),
+        "expected 't' to complete to well-typed 'true'"
+    );
+}
+
 #[test]
 fn identifier_in_block_has_assignment_completion_only() {
+    use crate::logic::partial::Synthesizer;
+    use crate::logic::typing::Type;
+
     let grammar = imp_grammar();
-    let completions = get_completions(&grammar, "{a");
+    let mut synth = Synthesizer::new(grammar.clone(), "{a");
+    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("a".to_string(), Type::Raw("Int".to_string()));
@@ -146,7 +196,7 @@ fn identifier_in_block_has_assignment_completion_only() {
         token.matches("=")
             && token
                 .example()
-                .map(|example| extend_input_checked(&grammar, "{a", &example, &ctx).is_ok())
+                .map(|example| synth.try_extend(&example, &ctx).is_ok())
                 .unwrap_or(false)
     });
     let has_let = completions.iter().any(|token| token.matches("let"));

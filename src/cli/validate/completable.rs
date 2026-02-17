@@ -29,7 +29,6 @@ struct CaseResult {
     passed: bool,
     duration: Duration,
     detail: String,
-    beam_fallback: Option<bool>,
     states_explored: Option<usize>,
 }
 
@@ -159,7 +158,6 @@ pub fn run(args: &ValidateCmd) {
                     "passed": is_pass,
                     "time_ms": duration.as_millis(),
                     "time_us": duration.as_micros(),
-                    "beam_fallback": meta.beam_fallback,
                     "states_explored": meta.states_explored,
                     "prefixes_checked": meta.prefixes_checked,
                     "prefix_total_time_us": meta.total_prefix_time_us,
@@ -230,7 +228,6 @@ pub fn run(args: &ValidateCmd) {
                 passed: is_pass,
                 duration,
                 detail: detail.clone(),
-                beam_fallback: meta.beam_fallback,
                 states_explored: meta.states_explored,
             });
 
@@ -266,7 +263,6 @@ pub fn run(args: &ValidateCmd) {
                         "prefixes_checked": c.get("prefixes_checked").cloned().unwrap_or(json!(null)),
                         "prefix_total_time_us": c.get("prefix_total_time_us").cloned().unwrap_or(json!(null)),
                         "states_explored": c.get("states_explored").cloned().unwrap_or(json!(null)),
-                        "beam_fallback": c.get("beam_fallback").cloned().unwrap_or(json!(null)),
                     })
                 })
                 .collect();
@@ -393,15 +389,10 @@ pub fn run(args: &ValidateCmd) {
             }
             writeln!(
                 f,
-                "    ok  {:30} {:>8}ms  \"{}\"{}",
+                "    ok  {:30} {:>8}ms  \"{}\"",
                 r.desc,
                 r.duration.as_millis(),
-                r.input,
-                if r.beam_fallback.unwrap_or(false) {
-                    " bf"
-                } else {
-                    ""
-                }
+                r.input
             )
             .ok();
         }
@@ -442,9 +433,6 @@ pub fn run(args: &ValidateCmd) {
                 )
                 .ok();
                 writeln!(f, "    input=\"{}\"", r.input).ok();
-                if let Some(bf) = r.beam_fallback {
-                    writeln!(f, "    beam_fallback={}", bf).ok();
-                }
                 if let Some(se) = r.states_explored {
                     writeln!(f, "    states_explored={}", se).ok();
                 }
@@ -510,20 +498,15 @@ pub fn run(args: &ValidateCmd) {
             results.iter().filter(|r| r.suite == *suite_name).collect();
         let sp = suite_results.iter().filter(|r| r.passed).count();
         let sf = suite_results.iter().filter(|r| !r.passed).count();
-        let s_bf = suite_results
-            .iter()
-            .filter(|r| r.beam_fallback.unwrap_or(false))
-            .count();
         let st: Duration = suite_results.iter().map(|r| r.duration).sum();
         let status = if sf == 0 { "ok" } else { "FAIL" };
         writeln!(
             f,
-            "    {:4}  {:40} passed={} failed={} beam_fallbacks={} time={}ms",
+            "    {:4}  {:40} passed={} failed={} time={}ms",
             status,
             suite_name,
             sp,
             sf,
-            s_bf,
             st.as_millis()
         )
         .ok();
@@ -578,15 +561,10 @@ pub fn run(args: &ValidateCmd) {
             }
             writeln!(
                 sf,
-                "    ok  {:30} {:>8}ms  \"{}\"{}",
+                "    ok  {:30} {:>8}ms  \"{}\"",
                 r.desc,
                 r.duration.as_millis(),
-                r.input,
-                if r.beam_fallback.unwrap_or(false) {
-                    " bf"
-                } else {
-                    ""
-                }
+                r.input
             )
             .ok();
         }
@@ -638,9 +616,6 @@ pub fn run(args: &ValidateCmd) {
                 )
                 .ok();
                 writeln!(ff, "    input=\"{}\"", r.input).ok();
-                if let Some(bf) = r.beam_fallback {
-                    writeln!(ff, "    beam_fallback={}", bf).ok();
-                }
                 if let Some(se) = r.states_explored {
                     writeln!(ff, "    states_explored={}", se).ok();
                 }
@@ -659,36 +634,24 @@ pub fn run(args: &ValidateCmd) {
     // Terminal summary
     eprintln!();
     eprintln!("----------------------------------------------");
-    let total_bf = results
-        .iter()
-        .filter(|r| r.beam_fallback.unwrap_or(false))
-        .count();
     if failed == 0 {
         eprintln!(
-            "  ALL {} CASES PASSED  ({}ms)  beam_fallbacks={} ",
+            "  ALL {} CASES PASSED  ({}ms)",
             total_cases,
-            total_duration.as_millis(),
-            total_bf
+            total_duration.as_millis()
         );
     } else {
         eprintln!(
-            "  {} FAILED / {} total  ({}ms)  beam_fallbacks={}",
+            "  {} FAILED / {} total  ({}ms)",
             failed,
             total_cases,
-            total_duration.as_millis(),
-            total_bf
+            total_duration.as_millis()
         );
         eprintln!();
         for r in &results {
             if !r.passed {
                 let kind = r.detail.lines().next().unwrap_or("");
-                eprintln!(
-                    "  FAIL  {} / {}  {}  bf={}",
-                    r.suite,
-                    r.desc,
-                    kind,
-                    r.beam_fallback.unwrap_or(false)
-                );
+                eprintln!("  FAIL  {} / {}  {}", r.suite, r.desc, kind);
             }
         }
     }

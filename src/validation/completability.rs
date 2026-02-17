@@ -1,66 +1,44 @@
 // Completability Validation
 //
-// Implements a formal framework for completability as defined in docs/challenges.md.
-//
 // A string s is completable in L if there exists s' such that ss' in L.
-// We use a partial parser and typing core to check for completability.
-//
-// Strategy:
-//   1. Beam search first (fast, O(k*d) instead of O(b^d))
-//   2. BFS fallback if beam misses (complete, explores all reachable states)
-//
-// All extensions are type-checked: only well-typed partial trees are kept.
+// We use partial parsing and typing to check completion and prefix soundness.
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::NonTerminal;
+use crate::logic::partial::{NonTerminal, Synthesizer};
+use crate::logic::typing::core::TreeStatus;
+use crate::logic::typing::eval::check_tree_with_context;
 use crate::logic::typing::Context;
-use crate::logic::{beam_complete, BeamConfig, BeamResult};
+use crate::logic::{search_complete, SearchConfig, SearchResult};
 use crate::regex::Regex as DerivativeRegex;
 
-// ============================================================================
-// Public Result Types
-// ============================================================================
-
-/// Result of completion exploration
 #[derive(Debug)]
 pub enum CompletionResult {
-    /// Successfully found a complete AST
     Success {
         complete_input: String,
         ast: NonTerminal,
         completion_path: Vec<DerivativeRegex>,
         completion_depth: usize,
     },
-    /// No completion found within the search bounds
     Failure {
         max_depth_reached: usize,
         states_explored: usize,
         visited_states: Vec<String>,
     },
-    StateOverflow(usize),
     Invalid(String),
     Inconsistency(String),
     Error(String),
 }
 
-/// Per-prefix detailed measurements useful for profiling and analytics
 #[derive(Debug, Clone)]
 pub struct PrefixDetail {
-    /// The prefix string (empty string for length 0)
     pub prefix: String,
-    /// Whether this prefix was completable
     pub ok: bool,
-    /// Time taken to check this prefix in microseconds
     pub time_us: u128,
-    /// Number of states explored (if available)
     pub states_explored: Option<usize>,
-    /// Count of visited states (if available)
     pub visited_count: Option<usize>,
-    /// Sample of visited states (truncated)
     pub visited_sample: Vec<String>,
 }
 
-/// Result of prefix soundness check with detailed information
 #[derive(Debug)]
 pub struct PrefixSoundnessResult {
     pub is_sound: bool,
@@ -69,150 +47,138 @@ pub struct PrefixSoundnessResult {
     pub prefix_details: Vec<(String, bool)>,
     pub complete_string: Option<String>,
     pub failing_prefix_visited_states: Option<Vec<String>>,
-    /// Rich per-prefix metadata (timings, visited counts, samples, beam info)
     pub prefix_meta: Vec<PrefixDetail>,
 }
 
-// ============================================================================
-// Unified completion: beam-first, BFS fallback
-// ============================================================================
-
-/// Complete with typing context.
-///
-/// Strategy: try beam search first (fast), fall back to BFS (thorough).
-/// All extensions are type-checked so only well-typed trees are explored.
 pub fn complete(
     grammar: &Grammar,
     input: &str,
     max_depth: usize,
     opt_ctx: Option<Context>,
-    max_states: Option<usize>,
 ) -> CompletionResult {
     let ctx = opt_ctx.unwrap_or_else(Context::new);
 
-    let beam_config = BeamConfig {
-        beam_width: 15,
+    let search_config = SearchConfig {
         max_depth,
-        max_states,
         ..Default::default()
     };
 
-    let beam_res = beam_complete(grammar, input, &beam_config, &ctx);
-    match beam_res {
-        BeamResult::Success {
+    match search_complete(grammar, input, &search_config, &ctx) {
+        SearchResult::Success {
             complete_input,
             ast,
             completion_path,
             depth,
-            ..
-        } => {
-            return CompletionResult::Success {
-                complete_input,
-                ast,
-                completion_path,
-                completion_depth: depth,
-            };
-        }
-        BeamResult::Invalid { message } => {
-            return CompletionResult::Invalid(message);
-        }
-        other => {
-            // TODO: imrpvoe error hanlding
-            return CompletionResult::Error(format!("Beam search failed: {:?}", other));
-        }
+        } => CompletionResult::Success {
+            complete_input,
+            ast,
+            completion_path,
+            completion_depth: depth,
+        },
+        SearchResult::Invalid { message } => CompletionResult::Invalid(message),
+        SearchResult::Exhausted {
+            max_depth: depth,
+            states_explored,
+            visited_states,
+        } => CompletionResult::Failure {
+            max_depth_reached: depth,
+            states_explored,
+            visited_states,
+        },
     }
 }
 
-// ============================================================================
-// Prefix Soundness (parallelized)
-// ============================================================================
-
-/// Check sound completion: every prefix of the input must be completable.
-///
-/// Check each prefix sequentially. Each prefix is checked independently.
 pub fn sound_complete(
     grammar: &Grammar,
     input: &str,
     max_depth: usize,
     opt_ctx: Option<Context>,
-    max_states: Option<usize>,
 ) -> PrefixSoundnessResult {
     let chars: Vec<char> = input.chars().collect();
     let ctx = opt_ctx.unwrap_or_else(Context::new);
 
-    // Collect prefixes to check
     let prefixes: Vec<(usize, String)> = (0..=chars.len())
         .map(|len| (len, chars[..len].iter().collect::<String>()))
         .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
         .collect();
 
-    // Check all prefixes in parallel
-    // Returns: (PrefixDetail, completion string if success, full visited_states if failure)
+    let mut synth = Synthesizer::new(grammar.clone(), input);
+
     let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
         .iter()
         .map(|(len, prefix)| {
             let depth_budget = max_depth + (chars.len() - len);
             let start = std::time::Instant::now();
-            let result = complete(grammar, prefix, depth_budget, Some(ctx.clone()), max_states);
-            let elapsed_us = start.elapsed().as_micros();
 
-            match result {
-                CompletionResult::Success { complete_input, .. } => {
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: true,
-                        time_us: elapsed_us,
-                        states_explored: None,
-                        visited_count: None,
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, Some(complete_input), None)
-                }
-                CompletionResult::Failure {
-                    visited_states,
-                    states_explored,
-                    ..
-                } => {
-                    let visited_sample = visited_states.iter().take(20).cloned().collect();
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: false,
-                        time_us: elapsed_us,
-                        states_explored: Some(states_explored),
-                        visited_count: Some(visited_states.len()),
-                        visited_sample,
-                    };
-                    (*len, detail, None, Some(visited_states))
-                }
-                CompletionResult::StateOverflow(limit) => {
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: false,
-                        time_us: elapsed_us,
-                        states_explored: Some(limit),
-                        visited_count: None,
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, None, None)
-                }
-                CompletionResult::Invalid(_)
-                | CompletionResult::Error(_)
-                | CompletionResult::Inconsistency(_) => {
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: false,
-                        time_us: elapsed_us,
-                        states_explored: None,
-                        visited_count: None,
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, None, None)
-                }
+            if *len == chars.len() {
+                let result = complete(grammar, prefix, depth_budget, Some(ctx.clone()));
+                let elapsed_us = start.elapsed().as_micros();
+                return match result {
+                    CompletionResult::Success { complete_input, .. } => {
+                        let detail = PrefixDetail {
+                            prefix: prefix.clone(),
+                            ok: true,
+                            time_us: elapsed_us,
+                            states_explored: None,
+                            visited_count: None,
+                            visited_sample: vec![],
+                        };
+                        (*len, detail, Some(complete_input), None)
+                    }
+                    CompletionResult::Failure {
+                        visited_states,
+                        states_explored,
+                        ..
+                    } => {
+                        let visited_sample = visited_states.iter().take(20).cloned().collect();
+                        let detail = PrefixDetail {
+                            prefix: prefix.clone(),
+                            ok: false,
+                            time_us: elapsed_us,
+                            states_explored: Some(states_explored),
+                            visited_count: Some(visited_states.len()),
+                            visited_sample,
+                        };
+                        (*len, detail, None, Some(visited_states))
+                    }
+                    CompletionResult::Invalid(_)
+                    | CompletionResult::Error(_)
+                    | CompletionResult::Inconsistency(_) => {
+                        let detail = PrefixDetail {
+                            prefix: prefix.clone(),
+                            ok: false,
+                            time_us: elapsed_us,
+                            states_explored: None,
+                            visited_count: None,
+                            visited_sample: vec![],
+                        };
+                        (*len, detail, None, None)
+                    }
+                };
             }
+
+            synth.set_input(prefix.clone());
+            let ok = match synth.partial() {
+                Ok(partial) => {
+                    let tokens = synth.typed_completions(&ctx);
+                    prefix_ok(grammar, &ctx, &partial, &tokens)
+                }
+                Err(_) => false,
+            };
+
+            let elapsed_us = start.elapsed().as_micros();
+            let detail = PrefixDetail {
+                prefix: prefix.clone(),
+                ok,
+                time_us: elapsed_us,
+                states_explored: None,
+                visited_count: None,
+                visited_sample: vec![],
+            };
+            (*len, detail, None, None)
         })
         .collect();
 
-    // Process results in a single loop
     let mut prefix_details = Vec::with_capacity(results.len());
     let mut prefix_meta = Vec::with_capacity(results.len());
     let mut failing_prefix = None;
@@ -252,14 +218,32 @@ pub fn sound_complete(
     }
 }
 
-// ============================================================================
-// Test helper
-// ============================================================================
-
-/// Test helper: Check if a grammar and input combination is completable
 pub fn is_completable(grammar: &Grammar, input: &str, max_depth: usize) -> bool {
     matches!(
-        complete(grammar, input, max_depth, None, None),
+        complete(grammar, input, max_depth, None),
         CompletionResult::Success { .. }
     )
+}
+
+fn prefix_ok(
+    grammar: &Grammar,
+    ctx: &Context,
+    partial: &crate::logic::PartialAST,
+    tokens: &crate::logic::partial::CompletionSet,
+) -> bool {
+    let mut saw_valid_complete = false;
+
+    for root in &partial.roots {
+        if root.is_complete() {
+            if matches!(
+                check_tree_with_context(root, grammar, ctx),
+                TreeStatus::Valid(_)
+            ) {
+                saw_valid_complete = true;
+                break;
+            }
+        }
+    }
+
+    saw_valid_complete || !tokens.is_empty()
 }

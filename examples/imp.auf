@@ -22,9 +22,9 @@ Variable(var) ::= Identifier[x]
 // Atomic expressions
 AtomicExpr ::= Variable | Integer | Boolean | '(' Expression ')'
 
-// Binary operations - no left recursion!
+
 // We build up precedence by having expression reference the next level
-ArithOp(arith_op) ::= AtomicExpr[lhs] ArithOperator[op] AtomicExpr[rhs]
+ArithOp(arith_op) ::= Expression[lhs] ArithOperator[op] Expression[rhs]
 
 ArithOperator ::= '+' | '-' | '*' | '/' 
 

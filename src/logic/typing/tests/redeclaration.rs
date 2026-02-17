@@ -7,11 +7,11 @@ The type system enforces strong typing where:
 3. This is enforced during evaluation
 */
 
-use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
-use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree;
+use crate::logic::typing::Type;
+use crate::logic::Parser;
 use crate::validation::completable::load_example_grammar;
 
 fn stlc() -> Grammar {
@@ -249,18 +249,15 @@ fn test_context_multiple_duplicates() {
         .expect("First binding should succeed");
 
     // Try multiple times with different types - all should fail
-    assert!(
-        ctx.extend("x".to_string(), Type::Raw("Bool".to_string()))
-            .is_err()
-    );
-    assert!(
-        ctx.extend("x".to_string(), Type::Raw("String".to_string()))
-            .is_err()
-    );
-    assert!(
-        ctx.extend("x".to_string(), Type::Atom("A".to_string()))
-            .is_err()
-    );
+    assert!(ctx
+        .extend("x".to_string(), Type::Raw("Bool".to_string()))
+        .is_err());
+    assert!(ctx
+        .extend("x".to_string(), Type::Raw("String".to_string()))
+        .is_err());
+    assert!(ctx
+        .extend("x".to_string(), Type::Atom("A".to_string()))
+        .is_err());
 
     // Original binding should still be intact
     match ctx.lookup("x") {

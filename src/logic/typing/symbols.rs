@@ -1,9 +1,9 @@
-//! Symbol Gathering - Collect terminals from AST and type symbols from typing rules
+//! Symbol Gathering,  Collecting terminals from AST and type symbols from typing rules
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
+use crate::logic::typing::Type;
 
 // =============================================================================
 // Terminal Gathering from AST

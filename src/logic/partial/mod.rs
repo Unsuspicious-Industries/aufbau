@@ -17,8 +17,8 @@ pub use structure::{Node, NonTerminal, PartialAST, Terminal};
 pub mod completion;
 pub use completion::*;
 
-pub mod extend;
-pub use extend::*;
+pub mod synth;
+pub use synth::Synthesizer;
 
 #[cfg(test)]
 mod tests;

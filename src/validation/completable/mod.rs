@@ -9,11 +9,8 @@ pub mod weird;
 pub mod imp;
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse_extended_input;
-use crate::logic::partial::MetaParser;
-use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::eval::check_tree_with_context;
-use crate::regex::Regex as DerivativeRegex;
+use crate::logic::typing::core::Context;
+use crate::logic::typing::eval::set_type_cache_enabled;
 use crate::validation::completability::{
     complete, sound_complete, CompletionResult, PrefixSoundnessResult,
 };
@@ -29,10 +26,9 @@ pub fn timed_sound_complete(
     input: &str,
     max_depth: usize,
     opt_ctx: Option<Context>,
-    max_states: Option<usize>,
 ) -> (PrefixSoundnessResult, Duration) {
     let start = Instant::now();
-    let result = sound_complete(grammar, input, max_depth, opt_ctx, max_states);
+    let result = sound_complete(grammar, input, max_depth, opt_ctx);
     let elapsed = start.elapsed();
     (result, elapsed)
 }
@@ -45,10 +41,9 @@ pub fn timed_complete(
     input: &str,
     max_depth: usize,
     opt_ctx: Option<Context>,
-    max_states: Option<usize>,
 ) -> (CompletionResult, Duration) {
     let start = Instant::now();
-    let result = complete(grammar, input, max_depth, opt_ctx, max_states);
+    let result = complete(grammar, input, max_depth, opt_ctx);
     let elapsed = start.elapsed();
     (result, elapsed)
 }
@@ -93,23 +88,9 @@ impl TypedCompletionTestCase {
         Self::new(desc, input, false).with_depth(depth)
     }
 
-    /// Expect-pass with prefix soundness check.
-    pub fn sound(desc: &'static str, input: &'static str, depth: usize) -> Self {
-        Self::new(desc, input, false).with_depth(depth)
-    }
-
     /// Expect-fail helper: syntax error, invalid input, etc.
     pub fn fail(desc: &'static str, input: &'static str) -> Self {
         Self::new(desc, input, true)
-    }
-
-    /// Expect-fail with an explicit typing context (for type-error tests).
-    pub fn typefail(
-        desc: &'static str,
-        input: &'static str,
-        ctx: Vec<(&'static str, &'static str)>,
-    ) -> Self {
-        Self::new(desc, input, true).with_context(ctx)
     }
 
     pub fn with_depth(mut self, depth: usize) -> Self {
@@ -131,7 +112,6 @@ impl TypedCompletionTestCase {
 /// Metadata for a single test run useful to profiling and reporting
 #[derive(Debug, Clone)]
 pub struct TestRunMeta {
-    pub beam_fallback: Option<bool>,
     pub states_explored: Option<usize>,
     /// Per-prefix metadata collected during prefix soundness checks (if any)
     pub prefix_meta: Option<Vec<crate::validation::completability::PrefixDetail>>,
@@ -147,167 +127,92 @@ pub fn run_test_timed_meta(
     grammar: &Grammar,
     case: &TypedCompletionTestCase,
 ) -> (TestResult, Duration, TestRunMeta) {
+    let cache_prev = set_type_cache_enabled(false);
     let start = Instant::now();
 
     // Build typing context
     let mut ctx = Context::new();
     for (var, ty_str) in &case.context {
-        if let Ok(ty) = crate::logic::typing::Type::parse(ty_str) {
+        // parsing raw is nceessary, Atoms are type variable in rules
+        if let Ok(ty) = crate::logic::typing::Type::parse_raw(ty_str) {
             ctx.add(var.to_string(), ty);
         }
     }
 
     let mut meta = TestRunMeta {
-        beam_fallback: None,
         states_explored: None,
         prefix_meta: None,
         prefixes_checked: None,
         total_prefix_time_us: None,
     };
 
-    let result = match case.xfail {
-        // ── Expecting success ────────────────────────────────────────────
-        false => {
-            if case.require_prefix_soundness {
-                let (result, elapsed) = timed_sound_complete(
-                    grammar,
-                    case.input,
-                    case.max_depth,
-                    Some(ctx.clone()),
-                    None,
-                );
-                eprintln!(
-                    "CASE_TIME input=\"{}\" time_ms={}",
-                    case.input,
-                    elapsed.as_millis()
-                );
+    let result = if !case.xfail {
+        if case.require_prefix_soundness {
+            let (result, elapsed) =
+                timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
+            eprintln!(
+                "CASE_TIME input=\"{}\" time_ms={}",
+                case.input,
+                elapsed.as_millis()
+            );
 
-                // Attach prefix-level metadata to the test run meta so CLI can emit structured JSON
-                let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
+            // Attach prefix-level metadata to the test run meta so CLI can emit structured JSON
+            let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
 
-                meta.prefix_meta = Some(result.prefix_meta.clone());
-                meta.prefixes_checked = Some(result.prefixes_checked);
-                meta.total_prefix_time_us = Some(total_prefix_time);
+            meta.prefix_meta = Some(result.prefix_meta.clone());
+            meta.prefixes_checked = Some(result.prefixes_checked);
+            meta.total_prefix_time_us = Some(total_prefix_time);
 
-                if result.is_sound {
-                    TestResult::Pass(result.complete_string)
-                } else {
-                    let mut m = String::new();
-                    m.push_str("kind=unsound_completion\n");
-                    m.push_str(&format!("input={}\n", case.input));
-                    m.push_str(&format!("prefixes_checked={}\n", result.prefixes_checked));
-                    m.push_str(&format!("prefix_total_time_us={}\n", total_prefix_time));
-
-                    if let Some(ref fp) = result.failing_prefix {
-                        m.push_str(&format!("failing_prefix={}\n", fp));
-                    }
-                    if let Some(ref complete) = result.complete_string {
-                        m.push_str(&format!("completed_to={}\n", complete));
-                    }
-
-                    // Visited states at the failing prefix
-                    if let Some(ref visited) = result.failing_prefix_visited_states {
-                        m.push_str(&format!("failing_visited_count={}\n", visited.len()));
-                        for (i, state) in visited.iter().enumerate() {
-                            m.push_str(&format!("failing_visited_{}={}\n", i, state));
-                        }
-                    }
-
-                    // Per-prefix breakdown: every prefix and its pass/fail status + rich meta
-                    m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
-                    for (i, pd) in result.prefix_meta.iter().enumerate() {
-                        m.push_str(&format!(
-                            "prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?}\n",
-                            i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count
-                        ));
-                        for (j, v) in pd.visited_sample.iter().enumerate() {
-                            m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
-                        }
-                        if let Some(vc) = pd.visited_count {
-                            if vc > pd.visited_sample.len() {
-                                m.push_str(&format!(
-                                    "prefix_{}_visited_truncated={}\n",
-                                    i,
-                                    vc - pd.visited_sample.len()
-                                ));
-                            }
-                        }
-                    }
-
-                    TestResult::Fail(m)
-                }
+            if result.is_sound {
+                TestResult::Pass(result.complete_string)
             } else {
-                let (result, elapsed) =
-                    timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
-                eprintln!(
-                    "CASE_TIME input=\"{}\" time_ms={}",
-                    case.input,
-                    elapsed.as_millis()
-                );
+                let mut m = String::new();
+                m.push_str("kind=unsound_completion\n");
+                m.push_str(&format!("input={}\n", case.input));
+                m.push_str(&format!("prefixes_checked={}\n", result.prefixes_checked));
+                m.push_str(&format!("prefix_total_time_us={}\n", total_prefix_time));
 
-                match result {
-                    CompletionResult::Success { complete_input, .. } => {
-                        TestResult::Pass(Some(complete_input))
+                if let Some(ref fp) = result.failing_prefix {
+                    m.push_str(&format!("failing_prefix={}\n", fp));
+                }
+                if let Some(ref complete) = result.complete_string {
+                    m.push_str(&format!("completed_to={}\n", complete));
+                }
+
+                // Visited states at the failing prefix
+                if let Some(ref visited) = result.failing_prefix_visited_states {
+                    m.push_str(&format!("failing_visited_count={}\n", visited.len()));
+                    for (i, state) in visited.iter().enumerate() {
+                        m.push_str(&format!("failing_visited_{}={}\n", i, state));
                     }
-                    CompletionResult::Failure {
-                        max_depth_reached,
-                        states_explored,
-                        visited_states,
-                    } => {
-                        meta.states_explored = Some(visited_states.len());
+                }
 
-                        let mut m = String::new();
-                        m.push_str("kind=completion_failed\n");
-                        m.push_str(&format!("input={}\n", case.input));
-                        m.push_str(&format!("states_explored={}\n", states_explored));
-                        m.push_str(&format!("max_depth_reached={}\n", max_depth_reached));
-                        m.push_str(&format!("visited_count={}\n", visited_states.len()));
-                        for (i, state) in visited_states.iter().take(20).enumerate() {
-                            m.push_str(&format!("visited_{}={}\n", i, state));
-                        }
-                        if visited_states.len() > 20 {
+                // Per-prefix breakdown: every prefix and its pass/fail status + rich meta
+                m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
+                for (i, pd) in result.prefix_meta.iter().enumerate() {
+                    m.push_str(&format!(
+                        "prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?}\n",
+                        i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count
+                    ));
+                    for (j, v) in pd.visited_sample.iter().enumerate() {
+                        m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
+                    }
+                    if let Some(vc) = pd.visited_count {
+                        if vc > pd.visited_sample.len() {
                             m.push_str(&format!(
-                                "visited_truncated={}\n",
-                                visited_states.len() - 20
+                                "prefix_{}_visited_truncated={}\n",
+                                i,
+                                vc - pd.visited_sample.len()
                             ));
                         }
-                        TestResult::Fail(m)
-                    }
-                    CompletionResult::Invalid(msg) => {
-                        let mut m = String::new();
-                        m.push_str("kind=invalid\n");
-                        m.push_str(&format!("input={}\n", case.input));
-                        m.push_str(&format!("reason={}\n", msg));
-                        TestResult::Fail(m)
-                    }
-                    CompletionResult::Error(msg) => {
-                        let mut m = String::new();
-                        m.push_str("kind=error\n");
-                        m.push_str(&format!("input={}\n", case.input));
-                        m.push_str(&format!("reason={}\n", msg));
-                        TestResult::Fail(m)
-                    }
-                    CompletionResult::Inconsistency(msg) => {
-                        let mut m = String::new();
-                        m.push_str("kind=inconsistency\n");
-                        m.push_str(&format!("input={}\n", case.input));
-                        m.push_str(&format!("reason={}\n", msg));
-                        TestResult::Fail(m)
-                    }
-                    CompletionResult::StateOverflow(limit) => {
-                        let mut m = String::new();
-                        m.push_str("kind=state_overflow\n");
-                        m.push_str(&format!("input={}\n", case.input));
-                        m.push_str(&format!("limit={}\n", limit));
-                        TestResult::Fail(m)
                     }
                 }
+
+                TestResult::Fail(m)
             }
-        }
-        // ── Expecting failure (xfail) ────────────────────────────────────
-        true => {
+        } else {
             let (result, elapsed) =
-                timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()), None);
+                timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
             eprintln!(
                 "CASE_TIME input=\"{}\" time_ms={}",
                 case.input,
@@ -315,34 +220,96 @@ pub fn run_test_timed_meta(
             );
 
             match result {
-                CompletionResult::Success {
-                    complete_input,
-                    completion_depth: depth,
-                    completion_path,
-                    ast,
+                CompletionResult::Success { complete_input, .. } => {
+                    TestResult::Pass(Some(complete_input))
+                }
+                CompletionResult::Failure {
+                    max_depth_reached,
+                    states_explored,
+                    visited_states,
                 } => {
+                    meta.states_explored = Some(visited_states.len());
+
                     let mut m = String::new();
-                    m.push_str("kind=unexpected_success\n");
+                    m.push_str("kind=completion_failed\n");
                     m.push_str(&format!("input={}\n", case.input));
-                    m.push_str(&format!("completed_to={}\n", complete_input));
-                    m.push_str(&format!("completion_depth={}\n", depth));
-                    m.push_str(&format!("path_len={}\n", completion_path.len()));
-                    for (i, tok) in completion_path.iter().take(30).enumerate() {
-                        m.push_str(&format!("path_{}={}\n", i, tok));
+                    m.push_str(&format!("states_explored={}\n", states_explored));
+                    m.push_str(&format!("max_depth_reached={}\n", max_depth_reached));
+                    m.push_str(&format!("visited_count={}\n", visited_states.len()));
+                    for (i, state) in visited_states.iter().take(20).enumerate() {
+                        m.push_str(&format!("visited_{}={}\n", i, state));
                     }
-                    if completion_path.len() > 30 {
-                        m.push_str(&format!("path_truncated={}\n", completion_path.len() - 30));
+                    if visited_states.len() > 20 {
+                        m.push_str(&format!(
+                            "visited_truncated={}\n",
+                            visited_states.len() - 20
+                        ));
                     }
-                    m.push_str(&format!("ast_root={}\n", ast.name));
-                    m.push_str(&format!("ast_complete={}\n", ast.is_complete()));
                     TestResult::Fail(m)
                 }
-                _ => TestResult::Pass(None),
+                CompletionResult::Invalid(msg) => {
+                    let mut m = String::new();
+                    m.push_str("kind=invalid\n");
+                    m.push_str(&format!("input={}\n", case.input));
+                    m.push_str(&format!("reason={}\n", msg));
+                    TestResult::Fail(m)
+                }
+                CompletionResult::Error(msg) => {
+                    let mut m = String::new();
+                    m.push_str("kind=error\n");
+                    m.push_str(&format!("input={}\n", case.input));
+                    m.push_str(&format!("reason={}\n", msg));
+                    TestResult::Fail(m)
+                }
+                CompletionResult::Inconsistency(msg) => {
+                    let mut m = String::new();
+                    m.push_str("kind=inconsistency\n");
+                    m.push_str(&format!("input={}\n", case.input));
+                    m.push_str(&format!("reason={}\n", msg));
+                    TestResult::Fail(m)
+                }
             }
         }
-    };
+    }
+    // ── Expecting failure (xfail) ────────────────────────────────────
+    else {
+        let (result, elapsed) =
+            timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
+        eprintln!(
+            "CASE_TIME input=\"{}\" time_ms={}",
+            case.input,
+            elapsed.as_millis()
+        );
 
-    (result, start.elapsed(), meta)
+        match result {
+            CompletionResult::Success {
+                complete_input,
+                completion_depth: depth,
+                completion_path,
+                ast,
+            } => {
+                let mut m = String::new();
+                m.push_str("kind=unexpected_success\n");
+                m.push_str(&format!("input={}\n", case.input));
+                m.push_str(&format!("completed_to={}\n", complete_input));
+                m.push_str(&format!("completion_depth={}\n", depth));
+                m.push_str(&format!("path_len={}\n", completion_path.len()));
+                for (i, tok) in completion_path.iter().take(30).enumerate() {
+                    m.push_str(&format!("path_{}={}\n", i, tok));
+                }
+                if completion_path.len() > 30 {
+                    m.push_str(&format!("path_truncated={}\n", completion_path.len() - 30));
+                }
+                m.push_str(&format!("ast_root={}\n", ast.name));
+                m.push_str(&format!("ast_complete={}\n", ast.is_complete()));
+                TestResult::Fail(m)
+            }
+            _ => TestResult::Pass(None),
+        }
+    };
+    let output = (result, start.elapsed(), meta);
+    set_type_cache_enabled(cache_prev);
+    output
 }
 
 /// Backwards-compatible wrapper that returns the original pair
@@ -482,107 +449,6 @@ impl BatchResult {
             );
         }
     }
-}
-
-// ============================================================================
-// Well-Typed Completion Verification
-// ============================================================================
-
-/// Get all syntactically valid completions for an input
-pub fn get_completions(grammar: &Grammar, input: &str) -> Vec<DerivativeRegex> {
-    let mut parser = MetaParser::new(grammar.clone());
-    get_completions_with_meta(&mut parser, input)
-}
-
-/// Get completions using a reusable MetaParser (incremental-friendly)
-pub fn get_completions_with_meta(parser: &mut MetaParser, input: &str) -> Vec<DerivativeRegex> {
-    match parser.meta_partial(input) {
-        Ok((partial, depth)) => {
-            println!("Depth reached: {}", depth);
-            partial.completions(&parser.parser().grammar).tokens
-        }
-        Err(e) => {
-            println!("Error during parsing: {}", e);
-            vec![]
-        }
-    }
-}
-
-/// Get completions using a reusable MetaParser, filtered by typing.
-pub fn get_typed_completions_with_meta(
-    parser: &mut MetaParser,
-    input: &str,
-    ctx: &Context,
-) -> Vec<DerivativeRegex> {
-    match parser.meta_partial(input) {
-        Ok((partial, depth)) => {
-            println!("Depth reached: {}", depth);
-            let grammar = &parser.parser().grammar;
-            partial
-                .completions_in_ctx(grammar, ctx)
-                .tokens
-                .into_iter()
-                .filter(|token| {
-                    token
-                        .example()
-                        .map(|example| verify_completion_well_typed(grammar, input, &example, ctx))
-                        .unwrap_or(Err("no example".to_string()))
-                        .is_ok()
-                })
-                .collect()
-        }
-        Err(e) => {
-            println!("Error during parsing: {}", e);
-            vec![]
-        }
-    }
-}
-
-/// Verify that a completion leads to a well-typed tree and return the extended input.
-pub fn extend_input_checked(
-    grammar: &Grammar,
-    input: &str,
-    completion: &str,
-    ctx: &Context,
-) -> Result<String, String> {
-    let (partial, extended) =
-        parse_extended_input(grammar, input, completion).map_err(|e| e.to_string())?;
-
-    // Check for COMPLETE and well-typed trees (TreeStatus::Valid, not Partial)
-    let any_complete_and_typed = partial.roots.iter().any(|root| {
-        root.is_complete()
-            && matches!(
-                check_tree_with_context(root, grammar, ctx),
-                TreeStatus::Valid(_)
-            )
-    });
-
-    // Also accept partial trees as valid during incremental completion
-    let any_well_typed = partial.roots.iter().any(|root| {
-        matches!(
-            check_tree_with_context(root, grammar, ctx),
-            TreeStatus::Valid(_) | TreeStatus::Partial(_)
-        )
-    });
-
-    if any_complete_and_typed || any_well_typed {
-        Ok(extended)
-    } else {
-        Err(format!(
-            "Completion '{}' after '{}' produces no well-typed trees (extended: '{}')",
-            completion, input, extended
-        ))
-    }
-}
-
-/// Verify that a completion leads to a well-typed AND complete tree
-pub fn verify_completion_well_typed(
-    grammar: &Grammar,
-    input: &str,
-    completion: &str,
-    ctx: &Context,
-) -> Result<(), String> {
-    extend_input_checked(grammar, input, completion, ctx).map(|_| ())
 }
 
 // ============================================================================

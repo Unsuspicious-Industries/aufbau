@@ -10,10 +10,27 @@ use crate::logic::typing::ops::{equal, subtype, Unifier, UnifyResult};
 use crate::logic::typing::rule::{ConclusionKind, TypeOperation};
 use crate::logic::typing::{Conclusion, Premise, Type, TypeSetting, TypingJudgment, TypingRule};
 use crate::{debug_error, debug_info, debug_trace};
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use super::binding::*;
 use super::core::*;
+
+thread_local! {
+    static TYPE_CACHE_ENABLED: Cell<bool> = Cell::new(true);
+}
+
+pub fn set_type_cache_enabled(enabled: bool) -> bool {
+    TYPE_CACHE_ENABLED.with(|flag| {
+        let prev = flag.get();
+        flag.set(enabled);
+        prev
+    })
+}
+
+fn type_cache_enabled() -> bool {
+    TYPE_CACHE_ENABLED.with(|flag| flag.get())
+}
 
 // ============================================================================
 // Core API - single tree checking
@@ -53,9 +70,11 @@ pub fn check_node(
     }
 
     // Check if we already computed the type for this path
-    if let Some(cached_type) = type_cache.get(node.path()) {
-        debug_trace!("typing", "Got cached type : {:?}", cached_type);
-        return TreeStatus::Valid(cached_type.clone());
+    if type_cache_enabled() {
+        if let Some(cached_type) = type_cache.get(node.path()) {
+            debug_trace!("typing", "Got cached type : {:?}", cached_type);
+            return TreeStatus::Valid(cached_type.clone());
+        }
     }
 
     // Handle terminals uniformly (OK to clone terminals)
@@ -94,7 +113,13 @@ fn check_nt(
                 name,
                 tref.path()
             );
-            return apply_rule(tref, rule, grammar, ctx, depth, type_cache);
+            let status = apply_rule(tref, rule, grammar, ctx, depth, type_cache);
+            if let Some(nt) = tref.get_nt() {
+                if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+                    return TreeStatus::Malformed;
+                }
+            }
+            return status;
         }
     }
     let name = tref.name().unwrap_or("?");
@@ -110,7 +135,13 @@ fn check_nt(
     //   - If production has exactly ONE non-terminal child, drill through it
     //   - This handles wrapper productions like `Term ::= BaseTerm`
     //   - Productions with multiple children or only terminals return Any
-    drill_only_child(tref, grammar, ctx, depth, type_cache)
+    let status = drill_only_child(tref, grammar, ctx, depth, type_cache);
+    if let Some(nt) = tref.get_nt() {
+        if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+            return TreeStatus::Malformed;
+        }
+    }
+    status
 }
 
 /// Drill through "only-child" wrapper productions
@@ -130,12 +161,11 @@ fn drill_only_child(
 ) -> TreeStatus {
     let (status, _) = drill_only_child_with_context(tref, grammar, ctx, depth, type_cache);
 
-    // Cache the computed type (both valid and partial)
-    match &status {
-        TreeStatus::Valid(ty) | TreeStatus::Partial(ty) => {
+    // Cache only fully valid types
+    if type_cache_enabled() {
+        if let TreeStatus::Valid(ty) = &status {
             type_cache.insert(tref.path_vec(), ty.clone());
         }
-        _ => {}
     }
 
     status
@@ -154,8 +184,10 @@ fn check_node_with_context_output(
     }
 
     // Check if we already computed the type for this path
-    if let Some(cached_type) = type_cache.get(tref.path()) {
-        return (TreeStatus::Valid(cached_type.clone()), None);
+    if type_cache_enabled() {
+        if let Some(cached_type) = type_cache.get(tref.path()) {
+            return (TreeStatus::Valid(cached_type.clone()), None);
+        }
     }
 
     // Handle terminals uniformly (OK to clone terminals)
@@ -189,12 +221,25 @@ fn check_nt_with_context_output(
     // If this production has a typing rule, apply it and check for context transform
     if let Some(rule_name) = tref.rule() {
         if let Some(rule) = grammar.typing_rules.get(rule_name) {
-            return apply_rule_with_context_output(tref, rule, grammar, ctx, depth, type_cache);
+            let (status, ctx_out) =
+                apply_rule_with_context_output(tref, rule, grammar, ctx, depth, type_cache);
+            if let Some(nt) = tref.get_nt() {
+                if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+                    return (TreeStatus::Malformed, None);
+                }
+            }
+            return (status, ctx_out);
         }
     }
 
     // No rule - try to drill and propagate any context transform from children
-    drill_only_child_with_context(tref, grammar, ctx, depth, type_cache)
+    let (status, ctx_out) = drill_only_child_with_context(tref, grammar, ctx, depth, type_cache);
+    if let Some(nt) = tref.get_nt() {
+        if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+            return (TreeStatus::Malformed, None);
+        }
+    }
+    (status, ctx_out)
 }
 
 /// Drill through productions, propagating context transforms
@@ -214,12 +259,11 @@ fn drill_only_child_with_context(
         let result =
             check_node_with_context_output(&child_tref, grammar, ctx, depth + 1, type_cache);
 
-        // Cache the type from the single child for the parent
-        match &result.0 {
-            TreeStatus::Valid(ty) | TreeStatus::Partial(ty) => {
+        // Cache only fully valid types from the single child for the parent
+        if type_cache_enabled() {
+            if let TreeStatus::Valid(ty) = &result.0 {
                 type_cache.insert(tref.path_vec(), ty.clone());
             }
-            _ => {}
         }
 
         return result;
@@ -407,12 +451,11 @@ fn apply_rule_with_context_output(
     debug_trace!("typing", "Unifier after conclusion : {:?}", unifier);
     debug_trace!("typing", "Status after conclusion : {:?}", status);
 
-    // Cache the computed type (both valid and partial)
-    match &status {
-        TreeStatus::Valid(ty) | TreeStatus::Partial(ty) => {
+    // Cache only fully valid types
+    if type_cache_enabled() {
+        if let TreeStatus::Valid(ty) = &status {
             type_cache.insert(tref.path_vec(), ty.clone());
         }
-        _ => {}
     }
 
     // Check for context transform in conclusion (e.g., Γ -> Γ[x:τ])
@@ -653,28 +696,24 @@ fn check_premise(
 
             debug_trace!(
                 "typing",
-                "Got ascription variables : {} ?= {}",
+                "Got ascription variables : {} ⊆ {}",
                 var_ty,
                 right_ty
             );
 
             // Both sides are now fully resolved (no meta variables).
-            // Use structural equality with context call resolution.
+            // Use subtyping with context call resolution.
             let var_ty_r = resolve_ctx_calls(&var_ty, &ctx);
             let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
-            match equal(&var_ty_r, &right_ty_r) {
-                Some(true) => {
-                    debug_trace!("premise", "Equal types");
-                    PremiseResult::Ok(propagated_ctx)
-                }
-                Some(false) => {
-                    debug_trace!("premise", "Unequal types");
-                    PremiseResult::Fail
-                }
-                None => {
-                    debug_trace!("premise", "Equality indeterminate (unresolved)");
-                    PremiseResult::Partial
-                }
+            if is_indeterminate_subtyping_check(&var_ty_r, &right_ty_r) {
+                debug_trace!("premise", "Subtyping indeterminate (unresolved)");
+                PremiseResult::Partial
+            } else if subtype(&var_ty_r, &right_ty_r) {
+                debug_trace!("premise", "Subtype holds");
+                PremiseResult::Ok(propagated_ctx)
+            } else {
+                debug_trace!("premise", "Subtype fails");
+                PremiseResult::Fail
             }
         }
 
@@ -990,7 +1029,6 @@ fn eval_conclusion(
         }
     }
 }
-
 
 fn has_meta(ty: &Type) -> bool {
     debug_trace!("eval", "Checking is {} has Meta", ty);

@@ -1,5 +1,6 @@
-# Aufbau (Rust core)
+# Aufbau 
 
-[Writeup blog](https://unsuspicious.org/blog/proposition-7) — the engine powering the p7 project
+From Carnap's *Der logische Aufbau der Welt*.
 
-Reference: Rudolf Carnap, The Logical Syntax of Language.
+A Rust meta-logic engine powering the [**Proposition 7**](https://unsuspicious.org/blog/proposition-7) constrained generation system.
+

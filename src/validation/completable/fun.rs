@@ -217,16 +217,8 @@ fn fail_syntax_cases() -> Vec<TypedCompletionTestCase> {
 
 fn fail_app_type_cases() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::typefail(
-            "wrong arg type bool for int",
-            "f(true)",
-            vec![("f", "Int -> Int")],
-        ),
-        T::typefail(
-            "wrong arg type int for bool",
-            "f(1)",
-            vec![("f", "Bool -> Bool")],
-        ),
+        T::fail("wrong arg type bool for int", "f(true)").with_context(vec![("f", "Int -> Int")]),
+        T::fail("wrong arg type int for bool", "f(1)").with_context(vec![("f", "Bool -> Bool")]),
     ]
 }
 

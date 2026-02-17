@@ -22,21 +22,24 @@ fi
 reports_dir="$repo_root/validation/reports"
 mkdir -p "$reports_dir"
 
-modules=()
+# Always run `parseable` first, then the completable test suites. If callers
+# pass explicit modules, preserve their order but avoid duplicating
+# `parseable`.
+modules=("parseable")
 if [ "$#" -gt 0 ]; then
-  # Use provided modules from args
-  modules=("${@}")
+  # Use provided modules from args (preserve order, skip duplicate parseable)
+  for arg in "$@"; do
+    [ "$arg" = "parseable" ] && continue
+    modules+=("$arg")
+  done
 else
-  # auto-detect modules from src/validation/completable/*.rs
+  # auto-detect completable modules from src/validation/completable/*.rs
   for f in "$repo_root"/src/validation/completable/*.rs; do
     [ -f "$f" ] || continue
     name="$(basename "$f" .rs)"
     [ "$name" = "mod" ] && continue
     modules+=("$name")
   done
-
-  # Include parseable module (runs fast parseable suites across grammars)
-  modules+=("parseable")
 fi
 
 if [ ${#modules[@]} -eq 0 ]; then

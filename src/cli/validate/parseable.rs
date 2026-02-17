@@ -663,7 +663,7 @@ pub fn run(args: &ValidateCmd) {
     eprintln!();
     eprintln!("----------------------------------------------");
     if failed == 0 {
-        eprintln!("  ALL {} CASES PASSED  beam_fallbacks=?  ", total_cases,);
+        eprintln!("  ALL {} CASES PASSED", total_cases);
     } else {
         eprintln!("  {} FAILED / {} total  ", failed, total_cases,);
         eprintln!();

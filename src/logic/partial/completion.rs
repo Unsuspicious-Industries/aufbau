@@ -1,8 +1,7 @@
 use super::*;
+use crate::debug_debug;
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Symbol};
-use crate::logic::typing::core::{Context, TreeStatus};
-use crate::logic::typing::eval::check_tree_with_context;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use std::collections::HashSet;
 
@@ -25,6 +24,18 @@ impl CompletionSet {
         self.tokens.iter()
     }
 
+    pub fn len(&self) -> usize {
+        self.tokens.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tokens.is_empty()
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&DerivativeRegex> {
+        self.tokens.get(idx)
+    }
+
     pub fn matches(&self, text: &str) -> bool {
         let text = text.as_ref();
         self.tokens.iter().any(|t| match t.prefix_match(text) {
@@ -34,6 +45,23 @@ impl CompletionSet {
                 Err(_) => false,
             },
         })
+    }
+
+    pub fn filtered<F>(&self, mut predicate: F) -> Self
+    where
+        F: FnMut(&DerivativeRegex) -> bool,
+    {
+        let tokens = self
+            .tokens
+            .iter()
+            .cloned()
+            .filter(|t| predicate(t))
+            .collect();
+        Self::new(tokens).cleanup()
+    }
+
+    pub fn empty() -> Self {
+        Self { tokens: Vec::new() }
     }
 
     pub fn cleanup(&self) -> Self {
@@ -48,69 +76,25 @@ impl CompletionSet {
 
 impl PartialAST {
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
-        self.completions_in_ctx(grammar, &Context::new())
-    }
-
-    /// Get valid next tokens with a typing context, filtering ill-typed roots.
-    ///
-    /// Use this when you have an initial typing context (e.g., pre-declared variables).
-    pub fn completions_in_ctx(&self, grammar: &Grammar, ctx: &Context) -> CompletionSet {
         debug_trace!(
             "partial.completion",
-            "PartialAST::typed_completions: input='{}', roots={}, ctx_size={}",
+            "PartialAST::completions: input='{}', roots={}",
             self.input,
-            self.roots.len(),
-            ctx.bindings.len()
-        );
-
-        // Filter roots to only well-typed ones when they are complete.
-        // For partial roots, typing can legitimately fail due to unbound vars
-        // or missing context that will be provided by future tokens.
-        let roots_for_completion: Vec<_> = self
-            .roots
-            .iter()
-            .filter(|root| {
-                if !root.is_complete() {
-                    return true;
-                }
-                match check_tree_with_context(root, grammar, ctx) {
-                    TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
-                    TreeStatus::Malformed => {
-                        debug_trace!(
-                            "partial.completion",
-                            "  Filtering out malformed root: {}",
-                            root.name
-                        );
-                        false
-                    }
-                    TreeStatus::TooDeep => {
-                        debug_trace!(
-                            "partial.completion",
-                            " Recursion error too deep: {}",
-                            root.name
-                        );
-                        false
-                    }
-                }
-            })
-            .collect();
-
-        debug_trace!(
-            "partial.completion",
-            "  Roots for completion: {} / {}",
-            roots_for_completion.len(),
             self.roots.len()
         );
 
-        debug_trace!(
-            "partial.completion",
-            "  Collecting valid tokens from well-typed roots",
-        );
-
-        let tokens: Vec<_> = roots_for_completion
+        let tokens: Vec<_> = self
+            .roots
             .iter()
             .flat_map(|root| root.collect_valid_tokens(grammar))
             .collect();
+
+        debug_debug!(
+            "partial.completion",
+            "PartialAST::completions: input='{}' raw_tokens={:?}",
+            self.input,
+            tokens.iter().map(|t| t.to_pattern()).collect::<Vec<_>>()
+        );
 
         CompletionSet::new(tokens).cleanup()
     }
@@ -202,39 +186,38 @@ impl Node {
 
 /// Get the FIRST set for a symbol (all tokens that can start this symbol).
 fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<DerivativeRegex> {
-    first_set_rec(symbol, grammar, &mut HashSet::new())
-}
+    fn first_set_rec(
+        symbol: &Symbol,
+        grammar: &Grammar,
+        visited: &mut HashSet<String>,
+    ) -> Vec<DerivativeRegex> {
+        match symbol {
+            Symbol::Terminal { regex, .. } => vec![regex.clone()],
+            Symbol::Nonterminal { name: nt_name, .. } => {
+                if visited.contains(nt_name) {
+                    return vec![];
+                }
+                visited.insert(nt_name.clone());
 
-fn first_set_rec(
-    symbol: &Symbol,
-    grammar: &Grammar,
-    visited: &mut HashSet<String>,
-) -> Vec<DerivativeRegex> {
-    match symbol {
-        Symbol::Terminal { regex, .. } => vec![regex.clone()],
-        Symbol::Nonterminal { name: nt_name, .. } => {
-            if visited.contains(nt_name) {
-                return vec![];
+                let res = if let Some(productions) = grammar.productions.get(nt_name) {
+                    productions
+                        .iter()
+                        .flat_map(|prod| {
+                            if let Some(first_sym) = prod.rhs.first() {
+                                first_set_rec(first_sym, grammar, visited)
+                            } else {
+                                vec![]
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                };
+
+                visited.remove(nt_name);
+                res
             }
-            visited.insert(nt_name.clone());
-
-            let res = if let Some(productions) = grammar.productions.get(nt_name) {
-                productions
-                    .iter()
-                    .flat_map(|prod| {
-                        if let Some(first_sym) = prod.rhs.first() {
-                            first_set_rec(first_sym, grammar, visited)
-                        } else {
-                            vec![]
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
-
-            visited.remove(nt_name);
-            res
         }
     }
+    first_set_rec(symbol, grammar, &mut HashSet::new())
 }

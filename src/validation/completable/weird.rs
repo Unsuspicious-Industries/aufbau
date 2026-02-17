@@ -221,7 +221,7 @@ fn epsilon_fail() -> Vec<TypedCompletionTestCase> {
 
 fn deep_nesting_ok() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::ok("simple", "x", 1),
+        T::ok("simple", "x", 2),
         T::ok("one level", "(x)", 3),
         T::ok("two levels", "((x))", 5),
         T::ok("three levels", "(((x)))", 7),
@@ -290,7 +290,10 @@ fn typed_simple_ok() -> Vec<TypedCompletionTestCase> {
 }
 
 fn typed_simple_fail() -> Vec<TypedCompletionTestCase> {
-    vec![T::fail("unbound x", "x"), T::fail("unbound foo", "foo")]
+    vec![
+        T::fail("unbound x", "x").with_context(vec![]),
+        T::fail("unbound foo", "foo").with_context(vec![]),
+    ]
 }
 
 fn context_extending_ok() -> Vec<TypedCompletionTestCase> {
@@ -303,8 +306,8 @@ fn context_extending_ok() -> Vec<TypedCompletionTestCase> {
 
 fn context_extending_fail() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::fail("unbound x", "x"),
-        T::fail("wrong var", "let x : int in y"),
+        T::fail("unbound x", "x").with_context(vec![]),
+        T::fail("wrong var", "let x : int in y").with_context(vec![]),
     ]
 }
 

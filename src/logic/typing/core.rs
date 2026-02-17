@@ -1,8 +1,8 @@
 //! Core typing types - Context and TreeStatus
 
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::rule::TypeOperation;
+use crate::logic::typing::Type;
 use std::collections::HashMap;
 
 // =============================================================================

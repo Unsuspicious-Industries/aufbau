@@ -410,12 +410,12 @@ impl Parser {
                 Ok(s) => s,
                 Err(e) => return PartialParseOutcome::Failure(ParseError::Tokenization(e)),
             };
-            debug_debug!("parser2      ", "Tokenized into {:?}", segments);
+            debug_trace!("parser2      ", "Tokenized into {:?}", segments);
 
             let normalized_segments = self.normalize_segments(&segments);
             if let Some(prev) = &self.last_input_segments {
                 if !is_prefix(prev, &normalized_segments) {
-                    debug_debug!("parser2      ", "Cache invalidated (input prefix mismatch)");
+                    debug_trace!("parser2      ", "Cache invalidated (input prefix mismatch)");
                     self.span_cache.clear();
                     self.cache_monitor.record_cache_invalidation();
                 }
@@ -428,7 +428,7 @@ impl Parser {
                 None => return PartialParseOutcome::Failure(ParseError::NoStartSymbol),
             };
 
-            debug_debug!("parser2      ", "Start nonterminal: {}", start_nt);
+            debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
             // Parse from start with absolute position 0
             let mut parse_state = ParseState::new();
@@ -457,7 +457,7 @@ impl Parser {
                 .collect();
 
             if valid_roots.is_empty() {
-                debug_debug!(
+                debug_trace!(
                     "parser2      ",
                     "No alternatives consuming {} segments for start symbol '{}'",
                     total_segments,
@@ -528,7 +528,7 @@ impl Parser {
         // Users can adjust max_recursion via with_max_recursion() or MetaParser
         // to allow deeper parses for non-ambiguous grammars
         if level > self.max_recursion {
-            debug_debug!(
+            debug_trace!(
                 "parser2      ",
                 "{}[L{}] Termination: Global depth limit exceeded (> {})",
                 indent,
@@ -604,7 +604,7 @@ impl Parser {
             // Termination fallback
             // computer crashed too many times before
             if *count >= local_limit {
-                debug_debug!(
+                debug_trace!(
                     "parser2      ",
                     "{}[L{}] Termination: Too much recursion (>= {}, remaining segments: {})",
                     indent,
@@ -653,7 +653,7 @@ impl Parser {
 
         for &alt_idx in &shuffled_indices {
             let prod = &productions[alt_idx];
-            debug_debug!(
+            debug_trace!(
                 "parser2      ",
                 "{}[L{}] Trying production {}@{}: {} on {}",
                 indent,
@@ -671,7 +671,7 @@ impl Parser {
             match self.parse_production(segments, prod, abs_pos, level, parse_state) {
                 Ok(prod_results) => {
                     if prod_results.is_empty() {
-                        debug_debug!(
+                        debug_trace!(
                             "parser2      ",
                             "{}[L{}] Production {}@{} produced no results",
                             indent,
@@ -681,7 +681,7 @@ impl Parser {
                         );
                         continue;
                     } else {
-                        debug_debug!(
+                        debug_trace!(
                             "parser2      ",
                             "{}[L{}] Production {}@{} succeeded with {} parse sequences",
                             indent,
@@ -705,7 +705,7 @@ impl Parser {
                     }
                 }
                 Err(e) => {
-                    debug_debug!(
+                    debug_trace!(
                         "parser2      ",
                         "{}[L{}] Production {}@{} failed: {}",
                         indent,

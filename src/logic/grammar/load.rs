@@ -9,11 +9,22 @@ impl Grammar {
         let mut grammar = Grammar::new();
         // Track first-seen order of nonterminals to pick a deterministic start symbol
         let mut nt_order: Vec<String> = Vec::new();
-        // Split input into blocks separated by blank lines
-        let blocks: Vec<&str> = input
-            .split("\n\n")
-            .filter(|b| !b.trim().is_empty())
-            .collect();
+        // Split input into blocks separated by blank (or whitespace-only) lines
+        let mut blocks = Vec::new();
+        let mut current = Vec::new();
+        for line in input.lines() {
+            if line.trim().is_empty() {
+                if !current.is_empty() {
+                    blocks.push(current.join("\n"));
+                    current.clear();
+                }
+            } else {
+                current.push(line);
+            }
+        }
+        if !current.is_empty() {
+            blocks.push(current.join("\n"));
+        }
 
         for block in blocks {
             let lines: Vec<&str> = block

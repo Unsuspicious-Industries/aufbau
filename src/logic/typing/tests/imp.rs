@@ -1,9 +1,8 @@
 use core::panic;
 
-use crate::logic::partial::meta::MetaParser;
 use crate::logic::partial::parse::Parser;
+use crate::logic::partial::Synthesizer;
 use crate::logic::typing::core::Context;
-use crate::validation::completable::{extend_input_checked, get_completions_with_meta};
 use crate::{set_debug_level, testing::*};
 
 fn imp_grammar() -> &'static crate::logic::grammar::Grammar {
@@ -16,23 +15,16 @@ fn imp_grammar() -> &'static crate::logic::grammar::Grammar {
 /// It's skipped unless you set `P7_DEBUG_IMP_COMPLETION=1`.
 #[test]
 fn imp_completion_debug_smoke() {
-    if std::env::var("P7_DEBUG_IMP_COMPLETION").ok().as_deref() != Some("1") {
-        return;
-    }
-    let grammar = imp_grammar();
-    let mut meta = MetaParser::new(grammar.clone());
-    meta.parser_mut().enable_cache_monitoring(true);
-
     // Start with the smallest possible input that currently fails in the
     // `validation::completable::imp` batch: empty string.
     let input = "{";
-    let max_depth = 3;
+    let grammar = imp_grammar();
+    let mut synth = Synthesizer::new(grammar.clone(), input);
 
     // 1) Token-level completion suggestions from the partial parser.
     let ctx = Context::new();
-    let tokens = get_completions_with_meta(&mut meta, input);
+    let tokens = synth.typed_completions(&ctx);
     eprintln!("\n=== IMP completion debug ===");
-    eprintln!("input={:?} max_depth={}", input, max_depth);
     eprintln!("token completions ({}):", tokens.len());
     for (i, t) in tokens.iter().take(50).enumerate() {
         eprintln!("  {:>2}. {}", i + 1, t);
@@ -43,19 +35,15 @@ fn imp_completion_debug_smoke() {
     let mut prng: u64 = 0x9e3779b977c8715u64;
     // have a completion loop
     for i in 0..100 {
-        let tokens = get_completions_with_meta(&mut meta, &current_input);
+        synth.set_input(current_input.clone());
+        let tokens = synth.typed_completions(&ctx);
         println!("Tokens at iteration {}: ", i);
         for (j, t) in tokens.iter().take(10).enumerate() {
             println!("  {:>2}. {}", j + 1, t);
         }
         if tokens.is_empty() {
-            eprintln!(
-                "\n=== Cache report (early) ===\n{}",
-                meta.parser().cache_report(10, 5)
-            );
             // if the tree is complete yay else nay
-            let tree = meta.parse(&current_input).unwrap();
-            if let Some(croot) = tree.complete() {
+            if let Some(croot) = synth.complete() {
                 println!("Complete tree found at iteration {}: {}", i, croot);
                 return;
             } else {
@@ -67,9 +55,9 @@ fn imp_completion_debug_smoke() {
         }
 
         // rotate PRNG (LCG) and pick an index into tokens
-        prng = prng.wrapping_mul(6364136223846793005).wrapping_add(1);
+        prng = prng.wrapping_mul(636413923846793005).wrapping_add(1);
         let idx = (prng as usize) % tokens.len();
-        let t = &tokens[idx];
+        let t = tokens.iter().nth(idx).expect("token index out of range");
 
         let example = match t.example() {
             Some(value) => value,
@@ -79,10 +67,8 @@ fn imp_completion_debug_smoke() {
             }
         };
 
-        match extend_input_checked(grammar, &current_input, &example, &ctx) {
-            Ok(extended) => {
-                current_input = extended;
-            }
+        match synth.try_extend(&example, &ctx) {
+            Ok((_partial, extended)) => current_input = extended,
             Err(_) => {
                 println!("Rejected token at iteration {}: {}", i, example);
                 continue;
@@ -90,10 +76,7 @@ fn imp_completion_debug_smoke() {
         }
         println!("Current input after iteration {}: {:?}", i, current_input);
     }
-    eprintln!(
-        "\n=== Cache report ===\n{}",
-        meta.parser().cache_report(10, 5)
-    );
+    eprintln!("\n=== Cache report ===\n{}", "(no cache report)");
     eprintln!("Final completed input: {:?}", current_input);
 }
 

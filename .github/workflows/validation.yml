@@ -13,9 +13,6 @@ jobs:
   validation:
     name: Run Validation Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        module: [arithmetic, stlc, fun, imp, weird, parseable]
 
     steps:
       - name: Checkout repository
@@ -30,27 +27,21 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Build `aufbau` binary (release)
-        run: cargo build --bin aufbau --release --verbose
+      - name: Make CI script executable
+        run: chmod +x ./scripts/validate-ci.sh
 
-      - name: Run `aufbau validate` for module
-        run: |
-          echo "Running validation for module: ${{ matrix.module }}"
-          if [ "${{ matrix.module }}" = "parseable" ]; then
-            ./target/release/aufbau validate -m parseable
-          else
-            ./target/release/aufbau validate --filter "${{ matrix.module }}"
-          fi
+      - name: Run validation (parseable first, then completable suites)
+        run: ./scripts/validate-ci.sh
 
       - name: Show generated reports
         if: always()
         run: |
-          echo "Reports for module: ${{ matrix.module }}"
+          echo "Validation reports:"
           ls -la validation/reports || true
 
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: validation-reports-${{ matrix.module }}
+          name: validation-reports
           path: validation/reports/*.txt

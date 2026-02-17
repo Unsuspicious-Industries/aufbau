@@ -2,12 +2,12 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
-use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
-use crate::logic::typing::Type;
 use crate::logic::typing::core::{Context, TreePath, TreeRef, TreeStatus};
 use crate::logic::typing::eval::{check_node, check_tree_with_context};
+use crate::logic::typing::Type;
+use crate::logic::Parser;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -208,7 +208,30 @@ impl PartialAST {
             .cloned()
             .collect();
         match roots.is_empty() {
-            true => Err("No well-typed trees".into()),
+            true => Err(format!("No well-typed trees: {}", self)),
+            false => Ok(PartialAST {
+                roots,
+                input: self.input.clone(),
+            }),
+        }
+    }
+
+    pub fn filter_typed_ctx(&self, g: &Grammar, ctx: &Context) -> Result<PartialAST, String> {
+        let roots: Vec<_> = self
+            .roots
+            .iter()
+            .filter(|r| match check_tree_with_context(r, g, ctx) {
+                TreeStatus::Malformed => false,
+                TreeStatus::TooDeep => false,
+                _ => {
+                    crate::debug_trace!("typing", "Tree is well-typed: {}", r);
+                    true
+                }
+            })
+            .cloned()
+            .collect();
+        match roots.is_empty() {
+            true => Err(format!("No well-typed trees: {}", self)),
             false => Ok(PartialAST {
                 roots,
                 input: self.input.clone(),
