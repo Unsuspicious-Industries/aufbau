@@ -71,7 +71,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run completable validation for ${{ matrix.module }}
-        run: cargo run --release --bin aufbau -- validate -m completable --filter "${{ matrix.module }}"
+        run: cargo run --release --bin aufbau -- validate -m completable --filter "${{ matrix.module }}::"
 
       - name: Show generated reports (module)
         if: always()
