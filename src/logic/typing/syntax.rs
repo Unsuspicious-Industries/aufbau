@@ -32,7 +32,7 @@ impl fmt::Display for Type {
                 write!(f, "{}", rendered.join(" | "))
             }
             Type::Not(t) => write!(f, "¬{}", t),
-            Type::ContextCall(ctx, var) => write!(f, "{}({})", ctx, var),
+            Type::ContextCall(_ctx, var) => write!(f, "lookup({})", var),
             Type::Any => write!(f, "⊤"),
             Type::None => write!(f, "∅"),
 

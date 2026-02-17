@@ -5,6 +5,7 @@
 //! The Unifier provides proper Hindley-Milner style unification following the
 //! formal spec in §1.7, replacing the ad-hoc set_meta/solve_meta system.
 
+use crate::logic::typing::core::Context;
 use crate::logic::typing::Type;
 use std::collections::HashMap;
 
@@ -60,6 +61,12 @@ impl UnifyResult {
 pub struct Unifier {
     /// The substitution map: meta variable name → type
     pub substitution: HashMap<String, Type>,
+    /// Current typing context for resolving context calls
+    pub context: Option<Context>,
+    /// Resolved binding names for context calls (binding name -> current text).
+    /// This lets Γ(name) resolve to Γ(x) once `name` is bound to `x` in the tree,
+    /// without changing any typing rules.
+    pub binding_values: HashMap<String, String>,
 }
 
 impl Unifier {
@@ -69,7 +76,25 @@ impl Unifier {
 
     /// Create from an existing map (for backward compatibility during migration)
     pub fn from_map(map: HashMap<String, Type>) -> Self {
-        Self { substitution: map }
+        Self {
+            substitution: map,
+            context: None,
+            binding_values: HashMap::new(),
+        }
+    }
+
+    pub fn set_context(&mut self, ctx: &Context) {
+        self.context = Some(ctx.clone());
+    }
+
+    pub fn clear_context(&mut self) {
+        self.context = None;
+    }
+
+    /// Update binding name resolution from the current tree.
+    /// This keeps context calls like Γ(name) synced to the latest bound name text.
+    pub fn set_binding_values(&mut self, values: HashMap<String, String>) {
+        self.binding_values = values;
     }
 
     /// Export the underlying map (for backward compatibility)
@@ -106,9 +131,10 @@ impl Unifier {
     /// Apply the current substitution to a type, resolving all bound meta variables.
     /// This is the replacement for `solve_meta`.
     pub fn apply(&self, ty: &Type) -> Result<Type, String> {
-        match ty {
+        let resolved = self.resolve_ctx_call(ty, true);
+        match resolved {
             Type::Meta(name) => {
-                if let Some(bound) = self.substitution.get(name) {
+                if let Some(bound) = self.substitution.get(&name) {
                     // Recursively apply to handle chains: ?A -> ?B where ?B is also bound
                     self.apply(bound)
                 } else {
@@ -116,22 +142,30 @@ impl Unifier {
                 }
             }
             Type::Arrow(a, b) => {
-                let a = self.apply(a)?;
-                let b = self.apply(b)?;
+                let a = self.apply(a.as_ref())?;
+                let b = self.apply(b.as_ref())?;
                 Ok(Type::Arrow(Box::new(a), Box::new(b)))
             }
             Type::Union(parts) => {
                 let mut resolved = Vec::with_capacity(parts.len());
                 for p in parts {
-                    resolved.push(self.apply(p)?);
+                    resolved.push(self.apply(&p)?);
                 }
                 Ok(Type::Union(resolved))
             }
             Type::Not(a) => {
-                let a = self.apply(a)?;
+                let a = self.apply(a.as_ref())?;
                 Ok(Type::Not(Box::new(a)))
             }
-            _ => Ok(ty.clone()),
+            Type::Partial(t, s) => Ok(Type::Partial(
+                Box::new(self.resolve_ctx_call(t.as_ref(), false)),
+                s,
+            )),
+            Type::PathOf(t, p) => Ok(Type::PathOf(
+                Box::new(self.resolve_ctx_call(t.as_ref(), false)),
+                p,
+            )),
+            _ => Ok(resolved),
         }
     }
 
@@ -146,6 +180,12 @@ impl Unifier {
         }
     }
 
+    /// Resolve context calls (including binding-name rebinding) for subtyping/equality.
+    /// Partial wrappers remain unresolved to preserve indeterminate behavior on incomplete trees.
+    pub fn resolve_for_subtyping(&self, ty: &Type) -> Type {
+        self.resolve_ctx_call(ty, true)
+    }
+
     /// Unify two types following §1.7:
     /// UNIFY(τ₁, τ₂, σ) attempts to find a substitution making τ₁ = τ₂
     ///
@@ -154,9 +194,9 @@ impl Unifier {
     /// - Indeterminate: can't decide yet (involves Any, paths, context calls)
     /// - Fail: types are definitively incompatible
     pub fn unify(&mut self, t1: &Type, t2: &Type) -> UnifyResult {
-        // Apply current substitution first (walk)
-        let t1 = self.walk(t1);
-        let t2 = self.walk(t2);
+        // Resolve context calls first, then apply current substitution (walk)
+        let t1 = self.walk(&self.resolve_ctx_call(t1, true));
+        let t2 = self.walk(&self.resolve_ctx_call(t2, true));
 
         match (&t1, &t2) {
             // Identical types
@@ -279,6 +319,55 @@ impl Unifier {
                 } else {
                     ty.clone()
                 }
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    fn resolve_ctx_call(&self, ty: &Type, allow_context: bool) -> Type {
+        match ty {
+            Type::ContextCall(ctx_name, var) => {
+                // First, rebind the lookup variable if it refers to a binding name.
+                // Example: Γ(name) where `name` is bound to `x` becomes Γ(x).
+                let resolved_var = self
+                    .binding_values
+                    .get(var)
+                    .map(|v| v.as_str())
+                    .unwrap_or(var.as_str());
+                // Then, attempt a context lookup if allowed. For partial types we keep
+                // context calls unresolved so they can remain indeterminate.
+                if allow_context {
+                    if let Some(ctx) = self.context.as_ref() {
+                        if let Some(found) = ctx.lookup(resolved_var) {
+                            return found.clone();
+                        }
+                        // Prefix lookups keep partial inputs indeterminate, rather than failing.
+                        if ctx.lookup_starts_with(resolved_var).is_some() {
+                            return ty.clone();
+                        }
+                    }
+                }
+                if resolved_var != var.as_str() {
+                    return Type::ContextCall(ctx_name.clone(), resolved_var.to_string());
+                }
+                ty.clone()
+            }
+            Type::Arrow(a, b) => Type::Arrow(
+                Box::new(self.resolve_ctx_call(a, allow_context)),
+                Box::new(self.resolve_ctx_call(b, allow_context)),
+            ),
+            Type::Union(parts) => Type::Union(
+                parts
+                    .iter()
+                    .map(|p| self.resolve_ctx_call(p, allow_context))
+                    .collect(),
+            ),
+            Type::Not(a) => Type::Not(Box::new(self.resolve_ctx_call(a, allow_context))),
+            Type::Partial(t, s) => {
+                Type::Partial(Box::new(self.resolve_ctx_call(t, false)), s.clone())
+            }
+            Type::PathOf(t, p) => {
+                Type::PathOf(Box::new(self.resolve_ctx_call(t, false)), p.clone())
             }
             _ => ty.clone(),
         }

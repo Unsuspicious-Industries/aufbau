@@ -64,6 +64,29 @@ fn stlc_type_parsing_and_display() {
 }
 
 #[test]
+fn context_lookup_type_parsing_and_display() {
+    let lookup = Type::parse("Γ(x)").expect("parse Γ(x)");
+    match lookup {
+        Type::ContextCall(ctx, var) => {
+            assert_eq!(ctx, "Γ");
+            assert_eq!(var, "x");
+        }
+        other => panic!("Expected ContextCall, got {:?}", other),
+    }
+    assert_eq!(format!("{}", Type::parse("Γ(x)").unwrap()), "lookup(x)");
+
+    let lookup_keyword = Type::parse("lookup(y)").expect("parse lookup(y)");
+    match &lookup_keyword {
+        Type::ContextCall(ctx, var) => {
+            assert_eq!(ctx, "lookup");
+            assert_eq!(var, "y");
+        }
+        other => panic!("Expected ContextCall, got {:?}", other),
+    }
+    assert_eq!(format!("{}", lookup_keyword), "lookup(y)");
+}
+
+#[test]
 fn stlc_lambda_rule_parse_and_inspect() {
     let premises = "Γ[x:τ₁] ⊢ e : τ₂".to_string();
     let conclusion = "τ₁ -> τ₂".to_string();

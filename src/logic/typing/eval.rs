@@ -591,6 +591,11 @@ fn check_premise(
         None => base_ctx.clone(),
     };
 
+    unifier.set_context(&ctx);
+    // Keep unifier in sync with the latest binding names so Γ(name) can
+    // resolve through the current tree's bindings during subtyping/unification.
+    unifier.set_binding_values(build_binding_value_map(tref, bound));
+
     let mut propagated_ctx: Option<Context> = None;
     let no_propagate = premise
         .setting
@@ -703,8 +708,8 @@ fn check_premise(
 
             // Both sides are now fully resolved (no meta variables).
             // Use subtyping with context call resolution.
-            let var_ty_r = resolve_ctx_calls(&var_ty, &ctx);
-            let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
+            let var_ty_r = unifier.resolve_for_subtyping(&var_ty);
+            let right_ty_r = unifier.resolve_for_subtyping(&right_ty);
             if is_indeterminate_subtyping_check(&var_ty_r, &right_ty_r) {
                 debug_trace!("premise", "Subtyping indeterminate (unresolved)");
                 PremiseResult::Partial
@@ -818,8 +823,8 @@ fn check_premise(
             match op {
                 TypeOperation::Equality => {
                     // Types must unify (be structurally equal or unifiable via meta vars)
-                    let left_ty_r = resolve_ctx_calls(&left_ty, &ctx);
-                    let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
+                    let left_ty_r = unifier.resolve_for_subtyping(&left_ty);
+                    let right_ty_r = unifier.resolve_for_subtyping(&right_ty);
                     match equal(&left_ty_r, &right_ty_r) {
                         Some(true) => PremiseResult::Ok(None),
                         Some(false) => PremiseResult::Fail,
@@ -829,8 +834,8 @@ fn check_premise(
                 TypeOperation::Inclusion => {
                     // τ₁ ⊆ τ₂ means τ₁ is a subtype of τ₂
                     // For now: structural equality or left is None or right is Any
-                    let left_ty_r = resolve_ctx_calls(&left_ty, &ctx);
-                    let right_ty_r = resolve_ctx_calls(&right_ty, &ctx);
+                    let left_ty_r = unifier.resolve_for_subtyping(&left_ty);
+                    let right_ty_r = unifier.resolve_for_subtyping(&right_ty);
                     if is_indeterminate_subtyping_check(&left_ty_r, &right_ty_r) {
                         PremiseResult::Partial
                     } else if subtype(&left_ty_r, &right_ty_r) {
@@ -1191,19 +1196,22 @@ fn solve_binding(tref: &TreeRef, ty: &Type, bound: &Bindings) -> Result<Type, St
     }
 }
 
-fn resolve_ctx_calls(ty: &Type, ctx: &Context) -> Type {
-    match ty {
-        Type::ContextCall(_, v) => ctx.lookup(v).cloned().unwrap_or_else(|| ty.clone()),
-        Type::Arrow(a, b) => Type::Arrow(
-            Box::new(resolve_ctx_calls(a, ctx)),
-            Box::new(resolve_ctx_calls(b, ctx)),
-        ),
-        Type::Union(parts) => {
-            Type::Union(parts.iter().map(|p| resolve_ctx_calls(p, ctx)).collect())
+fn build_binding_value_map(tref: &TreeRef, bound: &Bindings) -> HashMap<String, String> {
+    let mut values = HashMap::new();
+
+    // Only include bindings that can be read as concrete text right now.
+    // Missing paths remain absent so lookups stay indeterminate on partial trees.
+    for (name, path) in bound.iter_full() {
+        if let Some(text) = tref.node_text_path(path) {
+            values.insert(name.clone(), text);
         }
-        Type::Not(a) => Type::Not(Box::new(resolve_ctx_calls(a, ctx))),
-        Type::Partial(t, s) => Type::Partial(Box::new(resolve_ctx_calls(t, ctx)), s.clone()),
-        Type::PathOf(t, p) => Type::PathOf(Box::new(resolve_ctx_calls(t, ctx)), p.clone()),
-        _ => ty.clone(),
     }
+
+    for (name, path) in bound.iter_partial() {
+        if let Some(text) = tref.node_text_path(path) {
+            values.insert(name.clone(), text);
+        }
+    }
+
+    values
 }

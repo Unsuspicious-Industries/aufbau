@@ -1,7 +1,7 @@
 use core::panic;
 
 use crate::logic::partial::parse::Parser;
-use crate::logic::partial::Synthesizer;
+use crate::logic::partial::{MetaParser, Synthesizer};
 use crate::logic::typing::core::Context;
 use crate::{set_debug_level, testing::*};
 
@@ -115,8 +115,6 @@ fn imp_typing_fails_on_unbound_var_in_operation_rhs() {
     );
 }
 
-/*
-
 // Not yet implemented
 // WIP
 
@@ -124,9 +122,9 @@ fn imp_typing_fails_on_unbound_var_in_operation_rhs() {
 fn imp_typing_accepts_union_assignment() {
     // Union annotation should accept either member type through inclusion.
     let grammar = imp_grammar();
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone());
 
-    let res = parser.partial_typed("u:Int|Bool=true;");
+    let res = parser.partial_typed("{ let u:Int|Bool=true; }");
     assert!(
         res.is_ok(),
         "expected union assignment to typecheck, got {:?}",
@@ -134,21 +132,19 @@ fn imp_typing_accepts_union_assignment() {
     );
 }
 
-
 #[test]
 fn imp_typing_rejects_union_in_int_operation() {
     // A union-typed variable cannot be used where Int is required for arithmetic.
     let grammar = imp_grammar();
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone());
 
-    let res = parser.partial_typed("u:Int|Bool=true; u+1;");
+    let res = parser.partial_typed("{u:Int|Bool=true; u+1;}");
     assert!(
         res.is_err(),
         "expected union-int mismatch to fail, got {:?}",
         res.ok()
     );
 }
-*/
 
 #[test]
 fn imp_typing_accepts_sequential_var_reuse() {
@@ -159,6 +155,20 @@ fn imp_typing_accepts_sequential_var_reuse() {
     assert!(
         res.is_ok(),
         "expected sequential var reuse to typecheck, got {:?}",
+        res.err()
+    );
+}
+
+#[test]
+fn imp_typing_accepts_sequential_var_assign() {
+    set_debug_level(crate::DebugLevel::Trace);
+    let grammar = imp_grammar();
+    let mut parser = MetaParser::new(grammar.clone());
+
+    let res = parser.partial_typed("{ let x:Int=5; x=6; }");
+    assert!(
+        res.is_ok(),
+        "expected sequential var assign to typecheck, got {:?}",
         res.err()
     );
 }

@@ -33,6 +33,7 @@ fn assert_well_typed_with_level(p: &mut MetaParser, input: &str, level: crate::D
     let g = &p.parser().grammar;
 
     let any_ok = completes.iter().any(|tree| {
+        println!("Checking tree: {}", tree);
         let status = check_tree(tree, g);
         println!("  '{}' -> {:?}", input, status);
         status.is_ok()
@@ -228,16 +229,16 @@ fn test_bare_unbound_variable() {
 // ============================================================================
 
 #[test]
-fn test_lambda_applied_to_arg() {
+fn test_fun_applied_to_arg() {
     let g = load_grammar();
-    println!("\n=== Lambda Applied to Arg ===");
+    println!("\n=== fun Applied to Arg ===");
     let mut p = MetaParser::new(g.clone());
     add_module_filter("meta");
     add_module_filter("parser2");
     add_module_filter("typing");
     assert_well_typed_with_level(
         &mut p,
-        "(f: Int -> Int) => (x: Int) => f x",
-        crate::DebugLevel::Trace,
+        "(f: Int -> Int) => ((x: Int) => f(x))",
+        crate::DebugLevel::Info,
     );
 }

@@ -54,6 +54,16 @@ impl Bindings {
             Binding::None
         }
     }
+
+    /// Iterate full (resolved) bindings.
+    pub fn iter_full(&self) -> impl Iterator<Item = (&String, &TreePath)> {
+        self.full.iter()
+    }
+
+    /// Iterate partial (frontier) bindings.
+    pub fn iter_partial(&self) -> impl Iterator<Item = (&String, &TreePath)> {
+        self.partial.iter()
+    }
 }
 
 pub fn resolve_bindings(
@@ -120,7 +130,7 @@ fn validate_path(nt: &NonTerminal, p: &GrammarPath) -> PathValidationResult {
             }
             match nt.get(step.i) {
                 Ok(Some(child)) => match child {
-                    Node::NonTerminal(nt) => validate_path(nt, &rest),
+                    Node::NonTerminal(nt) => validate_path(&nt, &rest),
                     Node::Terminal(_) => match rest.is_empty() {
                         true => PathValidationResult::Valid,
                         false => PathValidationResult::Invalid,
@@ -151,7 +161,7 @@ pub fn is_frontier(nt: &NonTerminal, p: &TreePath) -> bool {
             }
             match nt.get(*i) {
                 Ok(Some(child)) => match child {
-                    Node::NonTerminal(nt) => is_frontier(nt, &p[1..].to_vec()),
+                    Node::NonTerminal(nt) => is_frontier(&nt, &p[1..].to_vec()),
                     Node::Terminal(_) => false,
                 },
 

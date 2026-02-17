@@ -532,7 +532,7 @@ impl fmt::Display for Conclusion {
                     }
                 }
             }
-            ConclusionKind::ContextLookup(ctx, var) => write!(f, "{}({})", ctx, var),
+            ConclusionKind::ContextLookup(_ctx, var) => write!(f, "lookup({})", var),
         }
     }
 }
