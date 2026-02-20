@@ -14,6 +14,8 @@ use crate::logic::typing::eval::set_type_cache_enabled;
 use crate::validation::completability::{
     complete, sound_complete, CompletionResult, PrefixSoundnessResult,
 };
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -66,6 +68,8 @@ pub struct TypedCompletionTestCase {
     pub context: Vec<(&'static str, &'static str)>,
     /// Whether to require all prefixes to be completable (soundness).
     pub require_prefix_soundness: bool,
+    /// Timeout in seconds for the test (default: 180 = 3 minutes)
+    pub timeout_secs: u64,
 }
 
 impl TypedCompletionTestCase {
@@ -77,6 +81,7 @@ impl TypedCompletionTestCase {
             max_depth: 10,
             context: vec![],
             require_prefix_soundness: true,
+            timeout_secs: 180,
         }
     }
 
@@ -107,6 +112,11 @@ impl TypedCompletionTestCase {
         self.require_prefix_soundness = false;
         self
     }
+
+    pub fn with_timeout_secs(mut self, secs: u64) -> Self {
+        self.timeout_secs = secs;
+        self
+    }
 }
 
 /// Metadata for a single test run useful to profiling and reporting
@@ -129,11 +139,44 @@ pub fn run_test_timed_meta(
 ) -> (TestResult, Duration, TestRunMeta) {
     let cache_prev = set_type_cache_enabled(false);
     let start = Instant::now();
+    let timeout = Duration::from_secs(case.timeout_secs);
 
-    // Build typing context
+    let (tx, rx) = mpsc::channel();
+    let grammar_clone = grammar.clone();
+    let case_clone = case.clone();
+
+    thread::spawn(move || {
+        let result = run_test_inner(&grammar_clone, &case_clone);
+        let _ = tx.send(result);
+    });
+
+    let result = match rx.recv_timeout(timeout) {
+        Ok((result, meta)) => (result, meta),
+        Err(_) => {
+            let mut m = String::new();
+            m.push_str("kind=timeout\n");
+            m.push_str(&format!("input={}\n", case.input));
+            m.push_str(&format!("timeout_secs={}\n", case.timeout_secs));
+            (
+                TestResult::Fail(m),
+                TestRunMeta {
+                    states_explored: None,
+                    prefix_meta: None,
+                    prefixes_checked: None,
+                    total_prefix_time_us: None,
+                },
+            )
+        }
+    };
+
+    let output = (result.0, start.elapsed(), result.1);
+    set_type_cache_enabled(cache_prev);
+    output
+}
+
+fn run_test_inner(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestResult, TestRunMeta) {
     let mut ctx = Context::new();
     for (var, ty_str) in &case.context {
-        // parsing raw is nceessary, Atoms are type variable in rules
         if let Ok(ty) = crate::logic::typing::Type::parse_raw(ty_str) {
             ctx.add(var.to_string(), ty);
         }
@@ -156,7 +199,6 @@ pub fn run_test_timed_meta(
                 elapsed.as_millis()
             );
 
-            // Attach prefix-level metadata to the test run meta so CLI can emit structured JSON
             let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
 
             meta.prefix_meta = Some(result.prefix_meta.clone());
@@ -179,7 +221,6 @@ pub fn run_test_timed_meta(
                     m.push_str(&format!("completed_to={}\n", complete));
                 }
 
-                // Visited states at the failing prefix
                 if let Some(ref visited) = result.failing_prefix_visited_states {
                     m.push_str(&format!("failing_visited_count={}\n", visited.len()));
                     for (i, state) in visited.iter().enumerate() {
@@ -187,7 +228,6 @@ pub fn run_test_timed_meta(
                     }
                 }
 
-                // Per-prefix breakdown: every prefix and its pass/fail status + rich meta
                 m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
                 for (i, pd) in result.prefix_meta.iter().enumerate() {
                     m.push_str(&format!(
@@ -270,9 +310,7 @@ pub fn run_test_timed_meta(
                 }
             }
         }
-    }
-    // ── Expecting failure (xfail) ────────────────────────────────────
-    else {
+    } else {
         let (result, elapsed) =
             timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
         eprintln!(
@@ -307,9 +345,7 @@ pub fn run_test_timed_meta(
             _ => TestResult::Pass(None),
         }
     };
-    let output = (result, start.elapsed(), meta);
-    set_type_cache_enabled(cache_prev);
-    output
+    (result, meta)
 }
 
 /// Backwards-compatible wrapper that returns the original pair
