@@ -1,13 +1,6 @@
 pub mod parse;
 pub use parse::{ParseError, Parser, PartialParseOutcome};
 
-mod cache;
-
-pub(crate) use cache::SpanCache;
-
-pub mod monitor;
-pub use monitor::{CacheStatsSnapshot, CacheTimingSnapshot};
-
 pub mod meta;
 pub use meta::*;
 
@@ -43,10 +36,12 @@ Loop ::= B 'c' Loop | B 'c'
 start ::= U | Loop | 't'
     "#;
 
+    // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     println!("Grammar: {:#?}", g);
     let mut p = crate::logic::partial::Parser::new(g);
     let input = "barcbarc";
+    // Safety: Parse must succeed for valid test input.
     let ast = p.partial(input).unwrap();
     println!("Partial AST: {}", ast);
 }
@@ -62,17 +57,20 @@ fn test_complete_len() {
 
     crate::set_debug_level(crate::DebugLevel::Trace);
 
+    // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     let mut p = crate::logic::partial::Parser::new(g.clone());
 
     // Test complete parse
     let input = "hello world";
     println!("Input: {}", input);
+    // Safety: Parse must succeed for valid test input.
     let ast = p.partial(input).unwrap();
 
     assert!(ast.is_complete(), "AST should be complete");
 
     // Tokenize using the grammar's tokenizer
+    // Safety: Tokenization must succeed for valid test input.
     let segments = g.tokenize(input).unwrap();
 
     // Get the complete alternative's segment range
@@ -86,6 +84,7 @@ fn test_complete_len() {
 
     if let Some(seg_range) = range {
         // Convert to byte range to verify coverage
+        // Safety: Segment range must be valid for the segments it was derived from.
         let (start_byte, end_byte) = seg_range.to_byte_range(&segments).unwrap();
         assert_eq!(
             end_byte - start_byte,
@@ -102,13 +101,16 @@ fn test_complete_len_partial() {
     start ::= 'complete' 'sentence'
     "#;
 
+    // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     let mut p = crate::logic::partial::Parser::new(g.clone());
 
     // Partial input
     let input = "complete";
+    // Safety: Parse must succeed for valid test input.
     let ast = p.partial(input).unwrap();
 
+    // Safety: Tokenization must succeed for valid test input.
     let segments = g.tokenize(input).unwrap();
 
     // The AST may have partial alternatives
@@ -138,14 +140,17 @@ fn test_complete_len_nested() {
     start ::= Outer
     "#;
 
+    // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     let mut p = crate::logic::partial::Parser::new(g.clone());
 
     let input = "foobar";
+    // Safety: Parse must succeed for valid test input.
     let ast = p.partial(input).unwrap();
 
     assert!(ast.is_complete(), "Nested parse should be complete");
 
+    // Safety: Tokenization must succeed for valid test input.
     let segments = g.tokenize(input).unwrap();
 
     let root = ast
@@ -160,6 +165,7 @@ fn test_complete_len_nested() {
     );
 
     if let Some(seg_range) = range {
+        // Safety: Segment range must be valid for the segments it was derived from.
         let (start_byte, end_byte) = seg_range.to_byte_range(&segments).unwrap();
         assert_eq!(
             end_byte - start_byte,
@@ -173,12 +179,15 @@ fn test_complete_len_nested() {
 fn serialize_complex_stlc() {
     let spec = include_str!("../../../examples/stlc.auf");
 
+    // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
     let mut p = crate::logic::partial::Parser::new(g.clone());
 
     let input = "λ f : A -> B -> C -> D . f x y z";
+    // Safety: Parse must succeed for valid test input.
     let ast = p.partial(input).unwrap();
 
+    // Safety: Root must be complete for this specific test case.
     let complete = ast.complete().unwrap();
 
     let serialized = complete.serialize();

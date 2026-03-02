@@ -35,12 +35,14 @@ fn type_cache_enabled() -> bool {
 // ============================================================================
 // Core API - single tree checking
 // ============================================================================
-/// Check a single tree → TreeStatus
+/// Evaluates a single tree against a grammar.
+///
+/// Returns a `TreeStatus` indicating if the tree is well-typed, partial, or malformed.
 pub fn check_tree(root: &NonTerminal, grammar: &Grammar) -> TreeStatus {
     check_tree_with_context(root, grammar, &Context::new())
 }
 
-/// Check with initial context
+/// Evaluates a single tree starting from an initial typing context.
 pub fn check_tree_with_context(root: &NonTerminal, grammar: &Grammar, ctx: &Context) -> TreeStatus {
     // Create empty type cache and start checking from root (empty path)
     let mut type_cache = HashMap::new();
@@ -49,126 +51,113 @@ pub fn check_tree_with_context(root: &NonTerminal, grammar: &Grammar, ctx: &Cont
     status
 }
 
-/// Predicate: any tree in forest is well-typed?
+/// Predicate: returns true if at least one tree in the forest is well-typed.
 pub fn evaluate_typing(roots: &[NonTerminal], grammar: &Grammar) -> bool {
     roots.iter().any(|r| check_tree(r, grammar).is_ok())
 }
 
 // ============================================================================
-// Node Checking (recursive descent)
+// Node Evaluation (recursive descent)
 // ============================================================================
 
+/// Evaluates a node within a tree.
+///
+/// Invariants:
+/// - Depth limit (50) prevents infinite recursion on cyclic grammars.
+/// - Valid(T) means the node satisfies all typing constraints and derived type is T.
+/// - Partial(T) means the node is indeterminate (at frontier or incomplete) but not yet malformed.
+/// - Malformed means the node definitively violates a typing rule.
 pub fn check_node(
-    node: &TreeRef,
-    grammar: &Grammar,
+    t: &TreeRef,
+    g: &Grammar,
     ctx: &Context,
-    depth: usize,
-    type_cache: &mut HashMap<TreePath, Type>,
+    d: usize,
+    cache: &mut HashMap<TreePath, Type>,
 ) -> TreeStatus {
-    if depth > 50 {
+    if d > 50 {
         return TreeStatus::TooDeep;
     }
 
-    // Check if we already computed the type for this path
     if type_cache_enabled() {
-        if let Some(cached_type) = type_cache.get(node.path()) {
-            debug_trace!("typing", "Got cached type : {:?}", cached_type);
-            return TreeStatus::Valid(cached_type.clone());
+        if let Some(ty) = cache.get(t.path()) {
+            debug_trace!("typing", "Got cached type : {:?}", ty);
+            return TreeStatus::Valid(ty.clone());
         }
     }
 
-    // Handle terminals uniformly (OK to clone terminals)
-    if node.is_terminal() {
-        if let Some(term) = node.as_terminal() {
+    if t.is_terminal() {
+        if let Some(term) = t.as_terminal() {
             match term {
-                // Terminals are unconstrained because they're just syntax, not type constraints
                 Terminal::Complete { .. } => TreeStatus::Valid(Type::Any),
                 Terminal::Partial { .. } => TreeStatus::Partial(Type::Any),
             }
         } else {
             TreeStatus::Malformed
         }
-    } else if node.is_nt() {
-        check_nt(node, grammar, ctx, depth, type_cache)
+    } else if t.is_nt() {
+        check_nt(t, g, ctx, d, cache)
     } else {
         TreeStatus::Malformed
     }
 }
 
+/// Evaluates a non-terminal node.
+///
+/// Invariant: A production with a typing rule is valid only if the rule is satisfied.
+/// Invariant: A production without a rule is "transparent" and inherits its child's type.
 fn check_nt(
-    tref: &TreeRef,
-    grammar: &Grammar,
+    t: &TreeRef,
+    g: &Grammar,
     ctx: &Context,
-    depth: usize,
-    type_cache: &mut HashMap<TreePath, Type>,
+    d: usize,
+    cache: &mut HashMap<TreePath, Type>,
 ) -> TreeStatus {
-    // If this production has a typing rule, apply it
-    if let Some(rule_name) = tref.rule() {
-        if let Some(rule) = grammar.typing_rules.get(rule_name) {
-            let name = tref.name().unwrap_or("?");
-            debug_trace!(
-                "eval",
-                "Applying rule {} to {} at path {:?}",
-                rule_name,
-                name,
-                tref.path()
-            );
-            let status = apply_rule(tref, rule, grammar, ctx, depth, type_cache);
-            if let Some(nt) = tref.get_nt() {
-                if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+    if let Some(rn) = t.rule() {
+        if let Some(r) = g.typing_rules.get(rn) {
+            let n = t.name().unwrap_or("?");
+            debug_trace!("eval", "Applying rule {} to {} at {:?}", rn, n, t.path());
+            let s = apply_rule(t, r, g, ctx, d, cache);
+            if let Some(nt) = t.get_nt() {
+                if nt.is_complete() && !nt.is_extensible() && matches!(s, TreeStatus::Partial(_)) {
                     return TreeStatus::Malformed;
                 }
             }
-            return status;
+            return s;
         }
     }
-    let name = tref.name().unwrap_or("?");
-    debug_trace!(
-        "eval",
-        "No typing rule for {} at path {:?}, drilling",
-        name,
-        tref.path()
-    );
 
-    // No rule - check for transparent wrapper pattern
-    // HEURISTIC: Only-child drilling
-    //   - If production has exactly ONE non-terminal child, drill through it
-    //   - This handles wrapper productions like `Term ::= BaseTerm`
-    //   - Productions with multiple children or only terminals return Any
-    let status = drill_only_child(tref, grammar, ctx, depth, type_cache);
-    if let Some(nt) = tref.get_nt() {
-        if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+    let n = t.name().unwrap_or("?");
+    debug_trace!("eval", "No rule for {} at {:?}, drilling", n, t.path());
+
+    let s = drill_only_child(t, g, ctx, d, cache);
+    if let Some(nt) = t.get_nt() {
+        if nt.is_complete() && !nt.is_extensible() && matches!(s, TreeStatus::Partial(_)) {
             return TreeStatus::Malformed;
         }
     }
-    status
+    s
 }
 
-/// Drill through "only-child" wrapper productions
+/// Evaluates a production without a rule.
 ///
-/// SEMANTICS:
-/// - Productions without typing rules are "transparent" if they have exactly
-///   one non-terminal child
-/// - The type of the production is the type of that single child
-/// - If there are 0 or 2+ non-terminal children, it's an error (no typing rule and no direct NT descendant)
-/// - Terminals (like ')', literals) have no type significance
+/// Invariant: Only-child non-terminals propagate their type to the parent.
+/// Invariant: Multiple children yield `Type::Any` (unconstrained sequence).
 fn drill_only_child(
-    tref: &TreeRef,
-    grammar: &Grammar,
+    t: &TreeRef,
+    g: &Grammar,
     ctx: &Context,
-    depth: usize,
-    type_cache: &mut HashMap<TreePath, Type>,
+    d: usize,
+    cache: &mut HashMap<TreePath, Type>,
 ) -> TreeStatus {
-    let (status, _) = drill_only_child_with_context(tref, grammar, ctx, depth, type_cache);
+    let (s, _) = drill_only_child_with_context(t, g, ctx, d, cache);
 
-    // Cache only fully valid types
     if type_cache_enabled() {
-        if let TreeStatus::Valid(ty) = &status {
-            type_cache.insert(tref.path_vec(), ty.clone());
+        if let TreeStatus::Valid(ty) = &s {
+            cache.insert(t.path_vec(), ty.clone());
         }
     }
 
-    status
+    s
 }
 
 /// Check a node and return both its status AND any context transform it produces
@@ -224,7 +213,10 @@ fn check_nt_with_context_output(
             let (status, ctx_out) =
                 apply_rule_with_context_output(tref, rule, grammar, ctx, depth, type_cache);
             if let Some(nt) = tref.get_nt() {
-                if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+                if nt.is_complete()
+                    && !nt.is_extensible()
+                    && matches!(status, TreeStatus::Partial(_))
+                {
                     return (TreeStatus::Malformed, None);
                 }
             }
@@ -235,7 +227,7 @@ fn check_nt_with_context_output(
     // No rule - try to drill and propagate any context transform from children
     let (status, ctx_out) = drill_only_child_with_context(tref, grammar, ctx, depth, type_cache);
     if let Some(nt) = tref.get_nt() {
-        if nt.is_complete() && matches!(status, TreeStatus::Partial(_)) {
+        if nt.is_complete() && !nt.is_extensible() && matches!(status, TreeStatus::Partial(_)) {
             return (TreeStatus::Malformed, None);
         }
     }
@@ -507,12 +499,6 @@ fn extract_context_transform(
     Some(new_ctx)
 }
 
-// ============================================================================
-// Premise Checking
-// ============================================================================
-// this is where we do descent
-// important
-
 enum PremiseResult {
     Ok(Option<Context>),
     Fail,
@@ -548,7 +534,6 @@ fn recurse_bound_term(
                     check_node_with_context_output(&child_ref, grammar, ctx, depth + 1, type_cache);
                 Ok((Binding::Partial(p.clone()), child_status, child_ctx))
             } else {
-                // No concrete child yet — treat as a partial path-of Any
                 Ok((
                     Binding::Partial(p.clone()),
                     TreeStatus::Partial(Type::PathOf(Box::new(Type::Any), p.clone())),
@@ -560,6 +545,7 @@ fn recurse_bound_term(
     }
 }
 
+/// Evaluates a typing premise within the current unification context.
 fn check_premise(
     tref: &TreeRef,
     premise: &Premise,
@@ -618,7 +604,11 @@ fn check_premise(
                     if nt.production.rhs.is_empty() {
                         return PremiseResult::Ok(None);
                     }
+                    if !nt.is_complete() {
+                        return PremiseResult::Partial;
+                    }
                 }
+                return PremiseResult::Fail;
             }
 
             // Use shared helper to fetch bound term status + propagated ctx
@@ -731,7 +721,11 @@ fn check_premise(
                     if nt.production.rhs.is_empty() {
                         return PremiseResult::Ok(None);
                     }
+                    if !nt.is_complete() {
+                        return PremiseResult::Partial;
+                    }
                 }
+                return PremiseResult::Fail;
             }
 
             // Use the shared helper and then treat any Partial status as Partial,
@@ -779,9 +773,12 @@ fn check_premise(
                     if let Some(path) = bound.get_partial(var_name) {
                         match tref.node_text_path(path) {
                             Some(val) => {
-                                // Check for context entries matching this prefix
-                                if let Some(_starts_with) = ctx.lookup_starts_with(&val) {
-                                    PremiseResult::Partial // ok but partial
+                                // If exact binding exists, premise is fully satisfied.
+                                if ctx.lookup(&val).is_some() {
+                                    PremiseResult::Ok(None)
+                                // Otherwise allow prefix match as indeterminate.
+                                } else if let Some(_starts_with) = ctx.lookup_starts_with(&val) {
+                                    PremiseResult::Partial
                                 } else {
                                     PremiseResult::Fail
                                 }
@@ -1006,7 +1003,16 @@ fn eval_conclusion(
                 );
                 match ctx.lookup(&name) {
                     Some(t) => TreeStatus::Valid(t.clone()),
-                    None => return TreeStatus::Malformed, // variable fully resolved but not in Γ → type error
+                    None => {
+                        // Keep identifier-prefix states alive during completion:
+                        // if Γ has a binding that starts with this name, this is
+                        // indeterminate (partial), not malformed.
+                        if ctx.lookup_starts_with(&name).is_some() {
+                            TreeStatus::Partial(Type::Any)
+                        } else {
+                            TreeStatus::Malformed
+                        }
+                    }
                 }
             } else {
                 if let Some(path) = bound.get_partial(var_name) {

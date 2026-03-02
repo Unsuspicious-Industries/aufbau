@@ -18,16 +18,56 @@
 //! These tests run in O(n²) time for an input of length n (checking all prefixes),
 //! but each prefix check is just a single parse - no BFS exploration.
 
+pub mod arithmetic;
 pub mod fun;
 pub mod imp;
 pub mod stlc;
+pub mod toy;
 pub mod weird;
 // pub mod clike;
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse::Parser;
+use crate::logic::partial::MetaParser;
+use crate::logic::typing::core::Context;
+use crate::logic::typing::Type;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
+
+const DEPTH_BASE: usize = 10;
+
+/// Compute a bounded max-depth for **valid** test cases based on input complexity.
+///
+/// Valid cases need to actually find a parse, so the budget is larger than for
+/// xfail cases.  Recursion depth needed is at most proportional to nesting level,
+/// which is at most proportional to input length.
+///
+///   depth = DEPTH_BASE + input.len() / 2
+///
+/// Examples:
+///   "42"                                                           →  11
+///   "1 + 2"                                                        →  12
+///   "let f: Int -> Int = (x: Int) => x * 2; f(21)"               →  33
+///   "(f: Int -> Int) => ((g: …) => ((h: …) => f(g(h(1)))))"       →  45
+pub fn valid_depth_for(input: &str) -> usize {
+    DEPTH_BASE + input.len() / 2
+}
+
+/// Compute a bounded max-depth for **xfail** test cases based on input complexity.
+///
+/// Xfail cases only need to confirm the input *fails*, so a tighter budget is
+/// appropriate — enough to rule out shallow parses without wasting time on deep
+/// left-recursive expansions.
+///
+///   depth = DEPTH_BASE + input.len() / 4
+///
+/// Examples:
+///   "x"                                          →  10
+///   "1 + 2.0"                                    →  11
+///   "let n: Int = 9.8; n"                        →  14
+///   "((x: Int) => x + 1)(2.0)"                   →  16
+pub fn xfail_depth_for(input: &str) -> usize {
+    DEPTH_BASE + input.len() / 4
+}
 
 // ============================================================================
 // Test Framework
@@ -73,6 +113,13 @@ pub struct ParseTestCase {
     pub check_typing: bool,
     /// Initial typing context for typed parsing
     pub context: Vec<(&'static str, &'static str)>,
+    /// Optional MetaParser depth budget for this case.
+    ///
+    /// `None` means: let MetaParser decide adaptively (no cap).
+    /// All standard constructors (`valid`, `structural`, `invalid`, `type_error`)
+    /// set this to an input-length-derived bound to prevent hangs on left-recursive
+    /// grammars.  Use `with_parse_max_depth` to override on individual cases.
+    pub parse_max_depth: Option<usize>,
 }
 
 impl ParseTestCase {
@@ -82,8 +129,9 @@ impl ParseTestCase {
             description: desc,
             input,
             xfail: false,
-            check_typing: false, // partial type checking unsupported
+            check_typing: true,
             context: vec![],
+            parse_max_depth: Some(valid_depth_for(input)),
         }
     }
 
@@ -95,6 +143,7 @@ impl ParseTestCase {
             xfail: false,
             check_typing: false,
             context: vec![],
+            parse_max_depth: Some(valid_depth_for(input)),
         }
     }
 
@@ -106,6 +155,7 @@ impl ParseTestCase {
             xfail: true,
             check_typing: false,
             context: vec![],
+            parse_max_depth: Some(xfail_depth_for(input)),
         }
     }
 
@@ -117,6 +167,7 @@ impl ParseTestCase {
             xfail: true,
             check_typing: true,
             context: vec![],
+            parse_max_depth: Some(xfail_depth_for(input)),
         }
     }
 
@@ -131,6 +182,11 @@ impl ParseTestCase {
         self.context = ctx;
         self
     }
+
+    pub fn with_parse_max_depth(mut self, depth: usize) -> Self {
+        self.parse_max_depth = Some(depth);
+        self
+    }
 }
 
 /// Check if all prefixes of an input can be partially parsed
@@ -141,32 +197,37 @@ pub fn check_all_prefixes_parseable(
     grammar: &Grammar,
     input: &str,
     check_typing: bool,
+    ctx: &Context,
+    parse_max_depth: Option<usize>,
 ) -> ParseResult {
     let start = Instant::now();
     let chars: Vec<char> = input.chars().collect();
 
-    // Determine the range of prefix lengths to check (exclude full input here)
-    let max_prefix = if chars.is_empty() { 0 } else { chars.len() - 1 };
-
-    // Collect prefixes to check, skipping whitespace-only prefixes after the first
-    let prefixes: Vec<(usize, String)> = (0..=max_prefix)
+    // Collect all prefixes including the full input, skipping whitespace-only
+    // prefixes after the empty one.
+    let prefixes: Vec<(usize, String)> = (0..=chars.len())
         .map(|len| (len, chars[..len].iter().collect::<String>()))
         .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
         .collect();
 
-    // Check prefixes in parallel. Each item returns `Option<String>` where `Some(err)`
-    // indicates a parse error for that prefix, while `None` indicates success.
+    // Check all prefixes (including full input) in parallel. Each item returns
+    // `Option<String>` where `Some(err)` indicates a parse error, `None` success.
     let results: Vec<Option<String>> = prefixes
         .par_iter()
         .map(|(_len, prefix)| {
-            let mut parser = Parser::new(grammar.clone());
+            // Scale depth budget to the prefix length: short prefixes need
+            // shallow depth, only the full input needs the full budget.
+            // Cap at the case's parse_max_depth when one is set.
+            let prefix_depth = valid_depth_for(prefix);
+            let depth = match parse_max_depth {
+                Some(d) => prefix_depth.min(d),
+                None => prefix_depth,
+            };
+            let mut parser = MetaParser::new(grammar.clone()).with_max_depth(depth);
             let res = if check_typing {
-                parser.partial_typed(prefix)
+                parser.partial_typed_ctx(prefix, ctx)
             } else {
-                parser
-                    .partial(prefix)
-                    .into_result()
-                    .map_err(|e| e.to_string())
+                parser.partial(prefix)
             };
             match res {
                 Ok(_) => None,
@@ -186,36 +247,6 @@ pub fn check_all_prefixes_parseable(
         }
     }
 
-    // Check the full input. For typed checks, require at least one complete
-    // well-typed tree (not just partial typed branches).
-    let mut parser = Parser::new(grammar.clone());
-    if check_typing {
-        match parser.partial(input).into_result() {
-            Ok(ast) => {
-                if let Err(e) = ast.typed_complete(grammar) {
-                    return ParseResult::Fail {
-                        failing_prefix: input.to_string(),
-                        error: format!("Expected complete well-typed tree, got: {}", e),
-                        prefix_index: input.chars().count(),
-                    };
-                }
-            }
-            Err(e) => {
-                return ParseResult::Fail {
-                    failing_prefix: input.to_string(),
-                    error: e.to_string(),
-                    prefix_index: input.chars().count(),
-                };
-            }
-        }
-    } else if let Err(e) = parser.partial(input).into_result() {
-        return ParseResult::Fail {
-            failing_prefix: input.to_string(),
-            error: e.to_string(),
-            prefix_index: input.chars().count(),
-        };
-    }
-
     ParseResult::Pass {
         duration: start.elapsed(),
         prefix_count: chars.len() + 1,
@@ -223,14 +254,22 @@ pub fn check_all_prefixes_parseable(
 }
 
 /// Check if input fails to parse (for xfail tests)
-pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> ParseResult {
+pub fn check_parse_fails(
+    grammar: &Grammar,
+    input: &str,
+    check_typing: bool,
+    parse_max_depth: Option<usize>,
+) -> ParseResult {
     let start = Instant::now();
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = match parse_max_depth {
+        Some(d) => MetaParser::new(grammar.clone()).with_max_depth(d),
+        None => MetaParser::new(grammar.clone()),
+    };
 
     if check_typing {
         // For type errors, syntax may still parse. We only fail this check if a
         // complete well-typed tree exists.
-        match parser.partial(input).into_result() {
+        match parser.partial(input) {
             Ok(ast) => {
                 if ast.typed_complete(grammar).is_ok() {
                     ParseResult::Fail {
@@ -252,7 +291,7 @@ pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> 
             },
         }
     } else {
-        match parser.partial(input).into_result() {
+        match parser.partial(input) {
             Ok(t) => ParseResult::Fail {
                 failing_prefix: input.to_string(),
                 error: format!("Expected parse/type failure but succeeded with {}", t).to_string(),
@@ -266,14 +305,32 @@ pub fn check_parse_fails(grammar: &Grammar, input: &str, check_typing: bool) -> 
     }
 }
 
+/// Build a Context from the test case's context field
+fn build_context(pairs: &[(&str, &str)]) -> Context {
+    let mut ctx = Context::new();
+    for (name, ty_str) in pairs {
+        let ty = Type::parse_raw(ty_str)
+            .unwrap_or_else(|e| panic!("Failed to parse type '{}' in test context: {}", ty_str, e));
+        ctx.add(name.to_string(), ty);
+    }
+    ctx
+}
+
 /// Run a single parseability test case
 pub fn run_parse_test(grammar: &Grammar, case: &ParseTestCase) -> ParseResult {
+    let ctx = build_context(&case.context);
     if case.xfail {
         // For xfail cases, we expect the full input to fail parsing
-        check_parse_fails(grammar, case.input, case.check_typing)
+        check_parse_fails(grammar, case.input, case.check_typing, case.parse_max_depth)
     } else {
         // For valid cases, all prefixes should be parseable
-        check_all_prefixes_parseable(grammar, case.input, case.check_typing)
+        check_all_prefixes_parseable(
+            grammar,
+            case.input,
+            case.check_typing,
+            &ctx,
+            case.parse_max_depth,
+        )
     }
 }
 
@@ -340,6 +397,7 @@ pub fn run_parse_batch(
 
     for case in cases {
         let start = Instant::now();
+        // actuall running
         let result = run_parse_test(grammar, case);
         let elapsed = start.elapsed();
 
@@ -401,7 +459,6 @@ pub fn run_parse_batch(
     } else {
         total_duration / cases.len() as u32
     };
-
     (
         BatchResult {
             passed,
@@ -412,6 +469,55 @@ pub fn run_parse_batch(
         },
         case_records,
     )
+}
+
+// ============================================================================
+// Suite Registry
+// ============================================================================
+
+/// Collect all parseable test suites.
+///
+/// Each entry is `(suite_name, grammar, valid_cases, invalid_cases)`.
+pub fn all_suites() -> Vec<(
+    &'static str,
+    Grammar,
+    Vec<ParseTestCase>,
+    Vec<ParseTestCase>,
+)> {
+    let mut modules: Vec<(&str, Grammar, Vec<ParseTestCase>, Vec<ParseTestCase>)> = vec![
+        (
+            "arithmetic",
+            arithmetic::arithmetic_grammar(),
+            arithmetic::valid_expressions_cases(),
+            arithmetic::invalid_expressions_cases(),
+        ),
+        (
+            "fun",
+            load_example_grammar("fun"),
+            fun::valid_expressions_cases(),
+            fun::invalid_expressions_cases(),
+        ),
+        (
+            "imp",
+            load_example_grammar("imp"),
+            imp::valid_expressions_cases(),
+            imp::invalid_expressions_cases(),
+        ),
+        (
+            "stlc",
+            load_example_grammar("stlc"),
+            stlc::valid_expressions_cases(),
+            stlc::invalid_expressions_cases(),
+        ),
+        (
+            "toy",
+            load_example_grammar("toy"),
+            toy::valid_expressions_cases(),
+            toy::invalid_expressions_cases(),
+        ),
+    ];
+    modules.extend(weird::suites());
+    modules
 }
 
 // ============================================================================

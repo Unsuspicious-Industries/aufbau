@@ -7,9 +7,6 @@
 use std::collections::HashSet;
 
 /// Default delimiters for tokenization (whitespace).
-/// !JANKY! This causes completions problems,
-/// and adds harcoded constraints that should ideally
-/// be dealt with at the grammar level instead.
 pub const DEFAULT_DELIMITERS: &[char] = &[' ', '\n', '\t'];
 
 /// A tokenized segment of input with text and position information.
@@ -24,9 +21,8 @@ pub struct Segment {
     pub end: usize,
     /// The segment's index in the token stream (set during tokenization)
     pub index: usize,
-    /// If true, this segment is a prefix of one or more special tokens
-    /// (occurs at end of input when we have incomplete special tokens like "-" for "->")
-    /// Also not very elegant
+    /// If true, this segment is a prefix of one or more special tokens.
+    /// (Occurs at end of input when we have incomplete special tokens like "-" for "->")
     pub is_partial_special: bool,
 }
 
@@ -337,7 +333,7 @@ mod tests {
     // prefixes "true"/"then").
     // ================================================================
 
-    /// Helper: build a tokenizer with the same specials as the fun grammar.
+    /// Assert tokenization using the Fun grammar specials.
     fn fun_tokenizer() -> Tokenizer {
         let special_tokens = vec![
             "->".into(),

@@ -35,7 +35,7 @@ impl Context {
 
     /// Γ[x:τ] - functional extension (immutable)
     pub fn extend(&self, x: String, ty: Type) -> Result<Self, String> {
-        // check for coonflicts
+        // check for conflicts
         if self.bindings.contains_key(&x) {
             return Err(format!("Context already contains binding for '{}'", x));
         }
@@ -45,15 +45,21 @@ impl Context {
         Ok(new)
     }
 
-    /// Γ[x:τ] - extension with shadowing allowed (immutable)
+    /// Γ[x:τ] - extension with shadowing allowed (immutable).
+    ///
+    /// NOTE: This method is not currently used in the main typing pipeline.
+    /// The shadowing policy (whether a rule may re-bind a variable already in scope)
+    /// is unspecified; see src/notes.md §4.
     pub fn shadow(&self, x: String, ty: Type) -> Self {
         let mut new = self.clone();
         new.bindings.insert(x, ty);
         new
     }
     pub fn extend_unresolved(&self, path: TreePath, ty: Type) -> Result<Self, String> {
-        // check for conflicts same path => overwrite (i think)
-        // !JANKY!
+        // check for conflicts at same path.
+        // Policy: error on duplicate unresolved path (do not silently overwrite).
+        // NOTE: the correct policy here is unresolved — see src/notes.md §5.
+        // !JANKY! — leave this flag until the policy is decided and specced.
         if self.unresolved_bindings.contains_key(&path) {
             return Err(format!(
                 "Context already contains unresolved binding for path '{:?}'",
@@ -208,6 +214,12 @@ impl<'a> TreeRef<'a> {
     }
 }
 
+/// Dead code — scaffolding for a future constraint-propagation pass.
+///
+/// The intent is to link partial nodes together (e.g. "these two nodes must have
+/// the same type") to enable bidirectional type inference across a partial tree.
+/// This feature is not yet designed or specced; see src/notes.md §3.
+#[allow(dead_code)]
 pub enum Constraint<'a> {
     Op(TreeRef<'a>, TypeOperation, TreeRef<'a>), // two partial nodes are linked by an operation
     Type(TreeRef<'a>, Type),                     // a partial node has a specific type

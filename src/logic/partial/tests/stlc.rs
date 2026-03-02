@@ -1,5 +1,6 @@
 use super::Parser;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::MetaParser;
 use crate::testing::*;
 
 /// The STLC grammar spec loaded from the examples directory
@@ -45,16 +46,16 @@ fn test_stlc_simple_application_with_serialization() {
     assert_stlc_parse_matches(
         "f x",
         r#"(Expression @1 #2
-    (Application @0 #2
-    (AtomicExpression @0 #1
-      (Variable @0 #1
-        (Identifier @0 $x #1
-                    (T "f"))))
-    (Expression @0 $r #1
+  (Application @0 #2
+    (Expression @0 $l #1
       (AtomicExpression @0 #1
         (Variable @0 #1
           (Identifier @0 $x #1
-                        (T "x"))))))"#,
+            (T "f")))))
+    (AtomicExpression @0 $r #1
+      (Variable @0 #1
+        (Identifier @0 $x #1
+          (T "x"))))))"",
     );
 }
 
@@ -377,11 +378,11 @@ fn test_stlc_apply() {
 #[test]
 fn test_stlc_flip() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
-    // Flip: λf.λx.λy.f y x
+    // Flip: λf.λy.λx.f y x  (left-assoc: (f y) x, so y:A first then x:B)
     let ast = p
-        .parse("λ f : A -> B -> C . λ x : A . λ y : B . f y x")
+        .parse("λ f : A -> B -> C . λ y : A . λ x : B . f y x")
         .unwrap();
     assert!(ast.is_complete());
 }
@@ -401,9 +402,9 @@ fn test_stlc_compose() {
 #[test]
 fn test_stlc_s_combinator() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
-    // S combinator: λx.λy.λz.x z (y z)
+    // S combinator: λx.λy.λz.x z (y z)  (left-assoc: (x z) (y z))
     let ast = p
         .parse("λ x : A -> B -> C . λ y : A -> B . λ z : A . x z ( y z )")
         .unwrap();
@@ -482,7 +483,7 @@ fn test_stlc_deep_nested_lambdas() {
 #[test]
 fn test_stlc_deep_nested_types() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = crate::logic::partial::MetaParser::new(g);
 
     // Deep type nesting
     let ast = p

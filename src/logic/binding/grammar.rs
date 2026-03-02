@@ -1,8 +1,13 @@
 // Grammar paths implement the β(b, p) construction from the spec with
-// acyclic regular paths only
-// Recursive segments are truncated after MAX_RECURSION_DEPTH
-// until the regular-path generalisation lands. Example: for STLC `Abstraction(abs)` the path
-// `[(3, Some(1)), (0, None)]` mirrors the formal β(τ₁, abs) = 3@1·0 constraint.
+// acyclic paths only. Recursive segments are truncated after MAX_RECURSION_DEPTH
+// to avoid infinite DFS. The planned fix is to generalise to regular path
+// expressions (finite automata over grammar steps), but this is not yet specced.
+// Until then, bindings reachable only via paths longer than MAX_RECURSION_DEPTH
+// will be silently unresolvable at type-check time — no error is emitted.
+// See src/notes.md §7 and spec/notes.md §6.
+//
+// Example: for STLC `Abstraction(abs)` the path `[(3, Some(1)), (0, None)]`
+// mirrors the formal β(τ₁, abs) = 3@1·0 constraint.
 use std::collections::{HashMap, HashSet};
 
 use crate::logic::grammar::{Grammar, Production, Symbol};

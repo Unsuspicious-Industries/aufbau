@@ -1,7 +1,12 @@
 use super::super::completion::*;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::{MetaParser, Synthesizer};
+use crate::logic::typing::{Context, Type};
 use crate::regex::Regex as DerivativeRegex;
-use crate::{logic::partial::parse::Parser, set_debug_level, testing::load_example_grammar};
+use crate::{
+    add_module_filter, clear_module_filters, logic::partial::parse::Parser, set_debug_level,
+    testing::load_example_grammar,
+};
 
 fn complete(spec: &str, input: &str) -> CompletionSet {
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
@@ -601,5 +606,61 @@ fn typed_completions_filters_malformed_roots() {
     assert!(
         !completions.tokens.is_empty(),
         "Should have completions for well-typed partial parse"
+    );
+}
+
+#[test]
+fn typed_completions_keep_identifier_prefix_with_context() {
+    let spec = r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Expr ::= Variable Expr | Variable
+        start ::= Expr
+
+        x ∈ Γ
+        -------------- (var)
+        Γ(x)
+    "#;
+
+    let g = Grammar::load(spec).unwrap();
+    // Narrow trace to the typing/completion pipeline used by this repro.
+    clear_module_filters();
+    add_module_filter("completion");
+    add_module_filter("typing");
+    add_module_filter("eval");
+    add_module_filter("binding");
+    set_debug_level(crate::DebugLevel::Trace);
+
+    let mut synth = Synthesizer::new(g.clone(), "f");
+    let ctx = Context::new()
+        .extend("foo".into(), Type::Raw("int".into()))
+        .unwrap();
+
+    // Step 1: prove this is typable as a partial tree before completion filtering.
+    let mut p = MetaParser::new(g.clone());
+    let ast = p.partial("f").unwrap();
+    let typed = ast.filter_typed_ctx(&g, &ctx);
+    assert!(
+        typed.is_ok(),
+        "partial AST should remain typable with prefix context, got: {:?}",
+        typed.err()
+    );
+
+    let tokens = synth.typed_completions(&ctx);
+    assert!(
+        !tokens.is_empty(),
+        "typed completions should keep identifier-prefix continuations"
+    );
+}
+
+#[test]
+fn typed_completions_include_let_separator_after_value() {
+    let grammar = load_example_grammar("fun");
+    let mut synth = Synthesizer::new(grammar, "let x: Int = 0");
+    let tokens = synth.typed_completions(&Context::new());
+
+    assert!(
+        tokens.iter().any(|t| t.matches(";")),
+        "typed completions should include ';' after let value"
     );
 }

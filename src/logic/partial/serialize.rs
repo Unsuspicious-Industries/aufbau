@@ -34,8 +34,7 @@ use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
 use crate::regex::Regex as DerivativeRegex;
 
-// ---------------- S-expression parsing helpers ----------------
-
+// S-expression parsing
 #[derive(Debug, Clone, PartialEq)]
 pub enum SExpr {
     Atom(String),

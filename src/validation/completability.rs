@@ -102,15 +102,18 @@ pub fn sound_complete(
         .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
         .collect();
 
-    let mut synth = Synthesizer::new(grammar.clone(), input);
-
     let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
         .iter()
         .map(|(len, prefix)| {
-            let depth_budget = max_depth + (chars.len() - len);
+            // Keep one extra expansion step available for the exact input prefix.
+            // This prevents off-by-one failures on prefixes that require an
+            // additional structural token before meaningful term expansion.
+            let depth_budget = max_depth + (chars.len() - len) + 2;
             let start = std::time::Instant::now();
 
             if *len == chars.len() {
+                // Fast path: if the full input already has a complete well-typed
+
                 let result = complete(grammar, prefix, depth_budget, Some(ctx.clone()));
                 let elapsed_us = start.elapsed().as_micros();
                 return match result {
@@ -157,10 +160,22 @@ pub fn sound_complete(
                 };
             }
 
-            synth.set_input(prefix.clone());
-            let ok = match synth.partial() {
+            // Use a fresh Synthesizer for each prefix so that depth hints
+            // learned from earlier (shorter) prefixes do not bleed into the
+            // parse of later prefixes.  A short prefix like "set" may parse at
+            // depth 1 (Variable), and reusing that hint for "set " then fails
+            // to find the deeper Bind partial tree that is the only valid
+            // continuation, producing a false soundness failure.
+            let mut prefix_synth = Synthesizer::new(grammar.clone(), prefix.clone());
+            let ok = match prefix_synth.partial() {
                 Ok(partial) => {
-                    let tokens = synth.typed_completions(&ctx);
+                    let mut tokens = prefix_synth.typed_completions(&ctx);
+                    if tokens.is_empty() {
+                        // For untyped grammars (no typing rules) typed_completions
+                        // always returns empty. Fall back to syntactic completions,
+                        // mirroring the fallback in search::build_children.
+                        tokens = prefix_synth.completions();
+                    }
                     prefix_ok(grammar, &ctx, &partial, &tokens)
                 }
                 Err(_) => false,
@@ -231,19 +246,158 @@ fn prefix_ok(
     partial: &crate::logic::PartialAST,
     tokens: &crate::logic::partial::CompletionSet,
 ) -> bool {
-    let mut saw_valid_complete = false;
+    if !tokens.is_empty() {
+        return true;
+    }
+
+    let mut saw_typed_root = false;
 
     for root in &partial.roots {
-        if root.is_complete() {
-            if matches!(
-                check_tree_with_context(root, grammar, ctx),
-                TreeStatus::Valid(_)
-            ) {
-                saw_valid_complete = true;
+        match check_tree_with_context(root, grammar, ctx) {
+            // Prefix soundness accepts any root that is currently typable or
+            // typing-indeterminate (partial), even if the root is syntactically
+            // incomplete. This is required for states like `... in` where the
+            // body has not started yet.
+            TreeStatus::Valid(_) | TreeStatus::Partial(_) => {
+                saw_typed_root = true;
                 break;
             }
+            _ => {}
         }
     }
 
-    saw_valid_complete || !tokens.is_empty()
+    saw_typed_root
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logic::grammar::Grammar;
+    use crate::logic::partial::Synthesizer;
+
+    #[test]
+    fn prefix_ok_accepts_typed_partial_complete_identifier() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Variable(var) ::= Identifier[x]
+            Expression ::= Variable
+
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+        "#;
+
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = Context::new()
+            .extend("foo".into(), crate::logic::typing::Type::Raw("bool".into()))
+            .unwrap();
+
+        let mut synth = Synthesizer::new(grammar.clone(), "f");
+        let partial = synth.partial().unwrap();
+        let tokens = synth.typed_completions(&ctx);
+
+        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+    }
+
+    #[test]
+    fn prefix_ok_accepts_context_extending_prefix_before_body() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Type ::= 'int' | 'bool'
+            Variable(var) ::= Identifier[x]
+            Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
+            Expression ::= Variable | Let
+
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+
+            Γ[x:τ] ⊢ e : ?T
+            ------------------------ (let)
+            ?T
+        "#;
+
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = Context::new();
+        let mut synth = Synthesizer::new(grammar.clone(), "let x : int in");
+        let partial = synth.partial().unwrap();
+        let tokens = synth.typed_completions(&ctx);
+
+        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+    }
+
+    #[test]
+    fn prefix_ok_accepts_nested_let_prefix_before_inner_body() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Type ::= 'int' | 'bool'
+            Variable(var) ::= Identifier[x]
+            Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
+            Expression ::= Variable | Let
+
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+
+            Γ[x:τ] ⊢ e : ?T
+            ------------------------ (let)
+            ?T
+        "#;
+
+        let grammar = Grammar::load(spec).unwrap();
+        let ctx = Context::new();
+        let mut synth = Synthesizer::new(grammar.clone(), "let x : int in let y : bool in");
+        let partial = synth.partial().unwrap();
+        let tokens = synth.typed_completions(&ctx);
+
+        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+    }
+
+    #[test]
+    fn complete_accepts_keyword_prefix_requiring_separator() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Let ::= 'let' Identifier ':' 'int' 'in' Identifier
+            Expression ::= Let | Identifier
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let result = complete(&grammar, "let", 6, Some(Context::new()));
+        assert!(matches!(result, CompletionResult::Success { .. }));
+    }
+
+    #[test]
+    fn complete_accepts_keyword_and_name_prefix() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Let ::= 'let' Identifier ':' 'int' 'in' Identifier
+            Expression ::= Let | Identifier
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let result = complete(&grammar, "let x", 6, Some(Context::new()));
+        assert!(matches!(result, CompletionResult::Success { .. }));
+    }
+
+    #[test]
+    fn typed_completions_keep_separator_when_later_premise_term_missing() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Int ::= /[0-9]+/
+            Var(var) ::= Identifier[x]
+            Let(let) ::= 'let' Identifier[a] '=' Int[v] ';' Var[b]
+            Expr ::= Let | Var
+
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+
+            Γ[a:'int'] ⊢ b : ?T
+            ------------------- (let)
+            ?T
+        "#;
+        let grammar = Grammar::load(spec).unwrap();
+        let mut synth = Synthesizer::new(grammar, "let a = 1");
+        let tokens = synth.typed_completions(&Context::new());
+
+        assert!(!tokens.is_empty());
+    }
 }

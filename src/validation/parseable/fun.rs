@@ -20,20 +20,41 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("float division", "10.0 /. 2.0"),
         ParseTestCase::valid("float op with completable int", "1.0 +. 2"),
         // === Lambda ===
-        ParseTestCase::valid("simple lambda", "(x: Int) => x + 1"),
-        ParseTestCase::valid("float lambda", "(x: Float) => x *. 2.0"),
+        ParseTestCase::valid("simple lambda", "(x: Int) => x + 1").with_parse_max_depth(10),
+        ParseTestCase::valid("float lambda", "(x: Float) => x *. 2.0").with_parse_max_depth(10),
+        ParseTestCase::valid(
+            "higher-order nested application",
+            "(f: Int -> Int) => ((x: Int) => f(x))",
+        )
+        .with_parse_max_depth(15),
+        ParseTestCase::valid(
+            "higher-order compose concrete arg",
+            "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
+        )
+        .with_parse_max_depth(18),
+        // NOTE: triple-compose ("(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))")
+        // requires depth 18, which takes ~4s per parse and makes the prefix-check suite intractably slow.
+        // Removed until cross-depth memoization is implemented to fix the exponential complexity.
+        ParseTestCase::valid(
+            "higher-order application",
+            "(f: Int ) => (g: Int -> Int) => (x: Int) => f + g(x)",
+        )
+        .with_parse_max_depth(18),
         // === Application ===
-        ParseTestCase::valid("lambda application", "((x: Int) => x + 1)(41)"),
+        ParseTestCase::valid("lambda application", "((x: Int) => x + 1)(41)")
+            .with_parse_max_depth(12),
         // === Let binding ===
         ParseTestCase::valid("simple let", "let n: Int = 12; n + 1"),
         ParseTestCase::valid(
             "let with lambda",
             "let f: Int -> Int = (x: Int) => x * 2; f(21)",
-        ),
+        )
+        .with_parse_max_depth(18),
         ParseTestCase::valid(
             "float let",
             "let f: Float -> Float = (x: Float) => x +. 1.0; f(2.5)",
-        ),
+        )
+        .with_parse_max_depth(18),
     ]
 }
 
@@ -43,17 +64,99 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("missing ':' in let", "let n Int = 12;"),
         ParseTestCase::invalid("missing semicolon", "let n: Int = 12 n"),
         ParseTestCase::invalid("bad identifier", "let 1x: Int = 3;"),
+        ParseTestCase::invalid("close paren first", ")"),
+        ParseTestCase::invalid("extra close paren", "(1))"),
+        ParseTestCase::invalid("at sign", "@"),
+        ParseTestCase::invalid("hash", "#"),
+        ParseTestCase::invalid("dollar", "$x"),
+        ParseTestCase::invalid("backslash", "\\x"),
+        ParseTestCase::invalid("leading plus", "+ 1"),
+        ParseTestCase::invalid("leading star", "* 2"),
+        ParseTestCase::invalid("double operator", "1 ++ 2"),
+        ParseTestCase::invalid("let no name", "let : Int = 1; 1"),
+        ParseTestCase::invalid("let double semi", "let x: Int = 1;; x"),
+        ParseTestCase::invalid("arrow without lambda", "=> 1"),
+        ParseTestCase::invalid("lambda missing arrow", "(x: Int) x"),
         // === Type errors ===
         ParseTestCase::type_error("int expected, float given", "let n: Int = 9.8; n"),
         ParseTestCase::type_error("float expected, int given", "let x: Float = 1; x"),
+        ParseTestCase::type_error("let int declared bool value", "let x: Int = true; x"),
+        ParseTestCase::type_error("let int declared float value", "let x: Int = 1.0; x"),
         // === Operator type errors ===
         ParseTestCase::type_error("int operator with float", "1 + 2.0"),
         ParseTestCase::type_error("mixed operators", "1 +. 2.0"),
         ParseTestCase::type_error("mixed operators", "3 +. 5"),
+        ParseTestCase::type_error("bool plus int", "true + 1"),
+        ParseTestCase::type_error("int plus bool", "1 + false"),
+        ParseTestCase::type_error("bool float op", "true +. 1.0"),
         // === Application errors ===
         ParseTestCase::type_error("wrong argument type", "((x: Int) => x + 1)(2.0)"),
         ParseTestCase::type_error("apply non-function", "1(2)"),
+        ParseTestCase::type_error("apply bool", "true(1)"),
+        ParseTestCase::type_error("unbound x", "x"),
+        ParseTestCase::type_error("unbound in expr", "x + 1"),
+        ParseTestCase::type_error("unbound func", "f(1)"),
+        ParseTestCase::type_error("unbound in let body", "let x: Int = 1; y"),
+        ParseTestCase::type_error("var outside scope", "let x: Int = y; x"),
+        ParseTestCase::type_error("wrong arg type bool for int", "f(true)")
+            .with_context(vec![("f", "Int -> Int")]),
+        ParseTestCase::type_error("wrong arg type int for bool", "f(1)")
+            .with_context(vec![("f", "Bool -> Bool")]),
+        ParseTestCase::type_error(
+            "higher-order application type mismatch",
+            "(f: Float ) => (g: Int -> Int) => (x: Int) => f + g(x)",
+        ),
+        ParseTestCase::type_error(
+            "higher-order application type mismatch subtle",
+            "(f: Int -> Int ) => (g: Int -> Int) => (x: Int) => f + g(x)",
+        ),
     ]
+}
+
+#[test]
+#[ignore = "depth probe - run manually to diagnose fun grammar performance"]
+fn probe_fun_parse_depth() {
+    use crate::logic::partial::MetaParser;
+    use std::time::Instant;
+    let grammar = fun_grammar();
+    let cases = [
+        ("simple", "42"),
+        ("lambda", "(x: Int) => x + 1"),
+        ("nested app", "(f: Int -> Int) => ((x: Int) => f(x))"),
+        (
+            "double compose",
+            "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
+        ),
+        (
+            "triple compose",
+            "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
+        ),
+        (
+            "higher-order app",
+            "(f: Int ) => (g: Int -> Int) => (x: Int) => f + g(x)",
+        ),
+    ];
+    for (name, input) in &cases {
+        println!("\n--- {} ({} chars) ---", name, input.len());
+        for &depth in &[5usize, 8, 10, 12, 15, 18, 20, 25, 30] {
+            let start = Instant::now();
+            let mut parser = MetaParser::new(grammar.clone())
+                .with_max_depth(depth)
+                .with_start_depth(depth);
+            let res = parser.partial(input);
+            let elapsed = start.elapsed();
+            println!(
+                "  depth={:2}: {} in {:?}",
+                depth,
+                if res.is_ok() { "OK  " } else { "FAIL" },
+                elapsed
+            );
+            if elapsed.as_secs() > 5 {
+                println!("  (too slow, stopping)");
+                break;
+            }
+        }
+    }
 }
 
 #[test]

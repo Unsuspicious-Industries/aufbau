@@ -31,10 +31,7 @@ pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
         ("fun::parenthesized", g.clone(), paren_cases()),
         ("fun::variables", g.clone(), variable_cases()),
         ("fun::empty_prefix", g.clone(), empty_prefix_cases()),
-        ("fun::fail_type_errors", g.clone(), fail_type_error_cases()),
-        ("fun::fail_unbound", g.clone(), fail_unbound_cases()),
-        ("fun::fail_syntax", g.clone(), fail_syntax_cases()),
-        ("fun::fail_app_types", g, fail_app_type_cases()),
+        ("fun::prefixes", g, prefix_cases()),
     ]
 }
 
@@ -139,6 +136,29 @@ fn application_cases() -> Vec<TypedCompletionTestCase> {
             "let f: Int -> Int = (x: Int) => x; f(42)",
             2,
         ),
+        T::ok(
+            "higher-order nested application",
+            "(f: Int -> Int) => ((x: Int) => f(x))",
+            2,
+        ),
+        T::ok(
+            "higher-order compose lambda",
+            "(f: Int -> Int) => ((g: Int -> Int) => ((x: Int) => f(g(x))))",
+            3,
+        )
+        .without_soundness(),
+        T::ok(
+            "higher-order compose concrete arg",
+            "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
+            3,
+        )
+        .without_soundness(),
+        T::ok(
+            "higher-order triple compose concrete arg",
+            "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
+            4,
+        )
+        .without_soundness(),
         T::ok("apply var arg", "f(x)", 1).with_context(vec![("f", "Int -> Int"), ("x", "Int")]),
     ]
 }
@@ -172,53 +192,14 @@ fn empty_prefix_cases() -> Vec<TypedCompletionTestCase> {
     vec![T::ok("empty input", "", 3)]
 }
 
-fn fail_type_error_cases() -> Vec<TypedCompletionTestCase> {
+fn prefix_cases() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::fail("int op on floats", "1.0 + 2.0"),
-        T::fail("mixed int float add", "1 + 1.0"),
-        T::fail("bool plus int", "true + 1"),
-        T::fail("int plus bool", "1 + false"),
-        T::fail("bool float op", "true +. 1.0"),
-        T::fail("let float declared int value", "let x: Float = 1; x"),
-        T::fail("let int declared bool value", "let x: Int = true; x"),
-        T::fail("let int declared float value", "let x: Int = 1.0; x"),
-        T::fail("apply non-function", "1(2)"),
-        T::fail("apply bool", "true(1)"),
-    ]
-}
-
-fn fail_unbound_cases() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("unbound x", "x"),
-        T::fail("unbound in expr", "x + 1"),
-        T::fail("unbound func", "f(1)"),
-        T::fail("unbound in let body", "let x: Int = 1; y"),
-        T::fail("var outside scope", "let x: Int = y; x"),
-    ]
-}
-
-fn fail_syntax_cases() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("close paren first", ")"),
-        T::fail("extra close paren", "(1))"),
-        T::fail("at sign", "@"),
-        T::fail("hash", "#"),
-        T::fail("dollar", "$x"),
-        T::fail("backslash", "\\x"),
-        T::fail("leading plus", "+ 1"),
-        T::fail("leading star", "* 2"),
-        T::fail("double operator", "1 ++ 2"),
-        T::fail("let no name", "let : Int = 1; 1"),
-        T::fail("let double semi", "let x: Int = 1;; x"),
-        T::fail("arrow without lambda", "=> 1"),
-        T::fail("lambda missing arrow", "(x: Int) x"),
-    ]
-}
-
-fn fail_app_type_cases() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::fail("wrong arg type bool for int", "f(true)").with_context(vec![("f", "Int -> Int")]),
-        T::fail("wrong arg type int for bool", "f(1)").with_context(vec![("f", "Bool -> Bool")]),
+        T::ok("let keyword", "let", 6),
+        T::ok("let name", "let x", 6),
+        T::ok("let colon", "let x:", 5),
+        T::ok("lambda open paren", "(", 6),
+        T::ok("lambda param", "(x", 6),
+        T::ok("lambda colon", "(x:", 5),
     ]
 }
 
@@ -290,29 +271,8 @@ fn check_completable_empty_prefix() {
 }
 
 #[test]
-fn check_fail_type_errors() {
+fn check_completable_prefixes() {
     let grammar = fun_grammar();
-    let res = run_test_batch(&grammar, &fail_type_error_cases());
-    res.assert_all_passed();
-}
-
-#[test]
-fn check_fail_unbound_variables() {
-    let grammar = fun_grammar();
-    let res = run_test_batch(&grammar, &fail_unbound_cases());
-    res.assert_all_passed();
-}
-
-#[test]
-fn check_fail_syntax_errors() {
-    let grammar = fun_grammar();
-    let res = run_test_batch(&grammar, &fail_syntax_cases());
-    res.assert_all_passed();
-}
-
-#[test]
-fn check_fail_application_type_errors() {
-    let grammar = fun_grammar();
-    let res = run_test_batch(&grammar, &fail_app_type_cases());
+    let res = run_test_batch(&grammar, &prefix_cases());
     res.assert_all_passed();
 }

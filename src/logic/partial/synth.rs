@@ -1,8 +1,9 @@
 use crate::debug_debug;
 use crate::logic::grammar::Grammar;
+use crate::logic::grammar::Symbol;
 use crate::logic::partial::completion::CompletionSet;
 use crate::logic::partial::{MetaParser, PartialAST};
-use crate::logic::typing::symbols::gather_terminals;
+use crate::logic::typing::symbols::gather_raw_types;
 use crate::logic::typing::Context;
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::HashSet;
@@ -16,10 +17,11 @@ pub struct Synthesizer {
 impl Synthesizer {
     pub fn new(grammar: Grammar, input: impl Into<String>) -> Self {
         let meta = MetaParser::new(grammar.clone());
+        let input = input.into();
         Self {
             grammar,
             meta,
-            input: input.into(),
+            input,
         }
     }
 
@@ -36,7 +38,9 @@ impl Synthesizer {
     }
 
     pub fn partial(&mut self) -> Result<PartialAST, String> {
-        self.meta.partial(&self.input).map_err(|e| e.to_string())
+        self.meta
+            .partial_with_depth(&self.input)
+            .map(|(ast, _)| ast)
     }
 
     pub fn completions(&mut self) -> CompletionSet {
@@ -48,8 +52,9 @@ impl Synthesizer {
 
     // returns completions from typed trees
     pub fn typed_completions(&mut self, ctx: &Context) -> CompletionSet {
-        match self.meta.partial_with_depth(&self.input) {
-            Ok((mut partial, used_depth)) => {
+        let input = self.input.clone();
+        match self.meta.partial_with_depth(&input) {
+            Ok((partial, _used_depth)) => {
                 let typed = match partial.filter_typed_ctx(&self.grammar, ctx) {
                     Ok(ast) => ast,
                     Err(e) => {
@@ -59,40 +64,7 @@ impl Synthesizer {
                             self.input,
                             e
                         );
-                        // try reparsing with more depth to get better completions, but don't fail if it doesn't work
-                        // VERY HACKING FIXING
-                        let base_depth = self.meta.cached_best_depth().unwrap_or(used_depth);
-                        let retry_depth = base_depth.saturating_mul(2);
-                        let try2 = match MetaParser::new(self.grammar().clone())
-                            .with_start_depth(retry_depth)
-                            .partial(&self.input)
-                        {
-                            Ok(ast) => ast,
-                            Err(e) => {
-                                debug_debug!(
-                                    "completion",
-                                    "typed_completions: retry failed input='{}' depth={} err='{}'",
-                                    self.input,
-                                    retry_depth,
-                                    e
-                                );
-                                return CompletionSet::empty();
-                            }
-                        };
-                        match try2.filter_typed_ctx(&self.grammar, ctx) {
-                            Ok(ast) => ast,
-                            Err(e) => {
-                                debug_debug!(
-                                    "completion",
-                                    "typed_completions: retry filter_typed_ctx failed input='{}' depth={} err='{}'",
-                                    self.input,
-                                    retry_depth,
-                                    e
-                                );
-                                return CompletionSet::empty();
-                            }
-                        }
-                        // END OF HACK
+                        return CompletionSet::empty();
                     }
                 };
                 let tokens = typed.completions(&self.grammar);
@@ -162,28 +134,29 @@ impl Synthesizer {
         ctx: &Context,
         max_examples: usize,
     ) -> Option<(PartialAST, String)> {
+        self.extend_all_with_regex(token, ctx, max_examples)
+            .into_iter()
+            .next()
+    }
+
+    pub fn extend_all_with_regex(
+        &mut self,
+        token: &DerivativeRegex,
+        ctx: &Context,
+        max_examples: usize,
+    ) -> Vec<(PartialAST, String)> {
+        self.extend_all_with_regex_candidates(token, ctx, &[], max_examples)
+    }
+
+    pub fn extend_all_with_regex_candidates(
+        &mut self,
+        token: &DerivativeRegex,
+        ctx: &Context,
+        extra_candidates: &[String],
+        max_examples: usize,
+    ) -> Vec<(PartialAST, String)> {
         let mut candidates = Vec::new();
         let mut seen = HashSet::new();
-
-        if let Ok(partial) = self.partial() {
-            for root in &partial.roots {
-                for term in gather_terminals(root) {
-                    if token.matches(&term) && seen.insert(term.clone()) {
-                        candidates.push(term);
-                    }
-                }
-            }
-        }
-
-        if !candidates.is_empty() {
-            debug_debug!(
-                "completion",
-                "extend_with_regex: input='{}' token='{}' gathered_terminals={:?}",
-                self.input,
-                token.to_pattern(),
-                candidates
-            );
-        }
 
         if let Some(example) = token.example() {
             if seen.insert(example.clone()) {
@@ -191,9 +164,37 @@ impl Synthesizer {
             }
         }
 
-        for example in token.examples(max_examples) {
-            if seen.insert(example.clone()) {
-                candidates.push(example);
+        for raw in gather_raw_types(&self.grammar) {
+            if token.matches(&raw) && seen.insert(raw.clone()) {
+                candidates.push(raw);
+            }
+        }
+
+        // Fallback: try concrete terminal symbols from the grammar that
+        // satisfy the expected completion regex. This keeps completion
+        // grammar-agnostic while broadening search coverage.
+        for lit in &self.grammar.special_tokens {
+            if token.matches(lit) && seen.insert(lit.clone()) {
+                candidates.push(lit.clone());
+            }
+        }
+        for prods in self.grammar.productions.values() {
+            for prod in prods {
+                for sym in &prod.rhs {
+                    if let Symbol::Terminal { regex, .. } = sym {
+                        if let Some(example) = regex.example() {
+                            if token.matches(&example) && seen.insert(example.clone()) {
+                                candidates.push(example);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for candidate in extra_candidates {
+            if token.matches(candidate) && seen.insert(candidate.clone()) {
+                candidates.push(candidate.clone());
             }
         }
 
@@ -207,13 +208,20 @@ impl Synthesizer {
             );
         }
 
+        let mut out = Vec::new();
+        let mut seen_extended = HashSet::new();
         for candidate in candidates {
+            if max_examples > 0 && out.len() >= max_examples {
+                break;
+            }
             if let Ok((partial, extended)) = self.try_extend(&candidate, ctx) {
-                return Some((partial, extended));
+                if seen_extended.insert(extended.clone()) {
+                    out.push((partial, extended));
+                }
             }
         }
 
-        None
+        out
     }
 
     pub fn complete(&mut self) -> Option<crate::logic::partial::NonTerminal> {
@@ -221,14 +229,37 @@ impl Synthesizer {
     }
 
     fn parse_extended(&mut self, token: &str) -> Result<(PartialAST, String), String> {
-        let direct = format!("{}{}", self.input, token);
-        if let Ok(partial) = self.meta.partial(&direct) {
-            return Ok((partial, direct));
-        }
+        // hacky and hardcoded
+        // bad
+        let needs_sep = self
+            .input
+            .chars()
+            .last()
+            .map(|c| c.is_ascii_alphanumeric() || c == '_')
+            .unwrap_or(false)
+            && token
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_alphanumeric() || c == '_')
+                .unwrap_or(false);
 
         let spaced = format!("{} {}", self.input, token);
-        if let Ok(partial) = self.meta.partial(&spaced) {
-            return Ok((partial, spaced));
+        let direct = format!("{}{}", self.input, token);
+
+        if needs_sep {
+            if let Ok((partial, _)) = self.meta.partial_with_depth(&spaced) {
+                return Ok((partial, spaced));
+            }
+            if let Ok((partial, _)) = self.meta.partial_with_depth(&direct) {
+                return Ok((partial, direct));
+            }
+        } else {
+            if let Ok((partial, _)) = self.meta.partial_with_depth(&direct) {
+                return Ok((partial, direct));
+            }
+            if let Ok((partial, _)) = self.meta.partial_with_depth(&spaced) {
+                return Ok((partial, spaced));
+            }
         }
 
         Err(format!(

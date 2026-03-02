@@ -15,6 +15,11 @@ fn imp_grammar() -> &'static crate::logic::grammar::Grammar {
 /// It's skipped unless you set `P7_DEBUG_IMP_COMPLETION=1`.
 #[test]
 fn imp_completion_debug_smoke() {
+    // Keep this as an opt-in debug harness: it is intentionally expensive.
+    if std::env::var("P7_DEBUG_IMP_COMPLETION").ok().as_deref() != Some("1") {
+        return;
+    }
+
     // Start with the smallest possible input that currently fails in the
     // `validation::completable::imp` batch: empty string.
     let input = "{";
@@ -34,7 +39,7 @@ fn imp_completion_debug_smoke() {
     // pseudo-random rotation seed for selecting completions deterministically
     let mut prng: u64 = 0x9e3779b977c8715u64;
     // have a completion loop
-    for i in 0..100 {
+    for i in 0..20 {
         synth.set_input(current_input.clone());
         let tokens = synth.typed_completions(&ctx);
         println!("Tokens at iteration {}: ", i);

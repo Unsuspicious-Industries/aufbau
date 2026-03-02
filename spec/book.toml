@@ -6,8 +6,8 @@ title = "Proposition 7: Truth by Construction"
 
 [output.html]
 mathjax-support = true
-additional-js = ["theme/collapse-examples.js"]
-additional-css = ["theme/proofs.css","theme/uncertainty.css","theme/status.css"]
+additional-js = ["theme/collapse-examples.js","theme/margin.js","theme/synth-widget.js"]
+additional-css = ["theme/proofs.css","theme/uncertainty.css","theme/status.css","theme/margin.css"]
 
 [preprocessor.links]
 

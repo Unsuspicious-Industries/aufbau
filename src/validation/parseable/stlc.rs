@@ -3,25 +3,6 @@
 //! Fast tests for Simply Typed Lambda Calculus that verify
 //! all prefixes are parseable without doing full completion search.
 //! Focuses on left-recursive application parsing.
-//!
-//! ## Performance Characteristics
-//!
-//! These tests demonstrate the parser's ability to handle left-recursive grammars
-//! efficiently through memoization. The STLC grammar has the left-recursive rule:
-//! Application -> Term BaseTerm
-//! Term -> Application | BaseTerm
-//!
-//! Without memoization, this would cause exponential time complexity.
-//! With memoization, we achieve polynomial time complexity.
-//!
-//! ## Expected Time Complexity
-//!
-//! For an input of length n:
-//! - Without memoization: O(2^n) - exponential due to left-recursion
-//! - With memoization: O(n^2 * |G|) - polynomial, where |G| is grammar size
-//!
-//! The n^2 factor comes from checking all prefixes (n positions) and
-//! each prefix taking O(n * |G|) time with memoization.
 
 use super::*;
 
@@ -61,10 +42,15 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("arrow A->B->C", "λf:A->B->C.f"),
         ParseTestCase::valid("arrow A->B->C->D", "λf:A->B->C->D.f"),
         // === Applications in lambda bodies ===
-        ParseTestCase::valid("lambda with app", "λf:A->B.λx:A.f x"),
-        ParseTestCase::valid("lambda with double app", "λf:A->B->C.λx:A.λy:B.f x y"),
+        // Left-recursive application chains need extra depth: each application
+        // step adds ~2 recursion levels, so depth ≈ 10 + 2*num_args.
+        ParseTestCase::valid("lambda with app", "λf:A->B.λx:A.f x").with_parse_max_depth(30),
+        ParseTestCase::valid("lambda with double app", "λf:A->B->C.λx:A.λy:B.f x y")
+            .with_parse_max_depth(30),
         // === Complex nested cases ===
-        ParseTestCase::valid("nested lambda with app", "λx:A.λy:B.f x y"),
+        ParseTestCase::valid("nested lambda with app", "λx:A.λy:B.f x y")
+            .with_context(vec![("f", "A->B->C")])
+            .with_parse_max_depth(30),
         // === Parenthesized applications ===
         // non typed
         ParseTestCase::structural("paren app", "(f x)"),
@@ -80,25 +66,64 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("symbol only", "!@#"),
         // === Invalid lambda syntax ===
         ParseTestCase::invalid("lambda no var", "λ:"),
+        ParseTestCase::invalid("double colon", "λx::A"),
+        ParseTestCase::invalid("missing var", "λ:A"),
+        ParseTestCase::invalid("missing type", "λx:.x"),
+        ParseTestCase::invalid("double dot", "λx:A..x"),
+        ParseTestCase::invalid("double lambda", "λλx:A.x"),
+        ParseTestCase::invalid("colon before lambda", ":λx:A.x"),
+        ParseTestCase::invalid("dot before lambda", ".λx:A.x"),
         // === Invalid type syntax ===
         ParseTestCase::invalid("arrow no rhs", "λf:A->.f"),
         ParseTestCase::invalid("arrow no lhs", "λf:->B.f"),
+        ParseTestCase::invalid("arrow first", "->A"),
+        ParseTestCase::invalid("double arrow", "λx:A-->B.x"),
+        ParseTestCase::invalid("just arrow", "->"),
         // === Invalid parentheses ===
         ParseTestCase::invalid("empty paren", "()"),
         ParseTestCase::invalid("paren no content", "( )"),
+        ParseTestCase::invalid("close paren first", ")"),
+        ParseTestCase::invalid("extra close paren", "(λx:A.x))"),
+        ParseTestCase::invalid("close in type", "λx:).x"),
+        ParseTestCase::invalid("just colon", ":"),
+        ParseTestCase::invalid("just dot", "."),
+        ParseTestCase::invalid("semicolon", "λx:A;x"),
+        ParseTestCase::invalid("hash", "#x"),
+        ParseTestCase::invalid("dollar", "$x"),
+        ParseTestCase::invalid("backslash", "\\x"),
         ParseTestCase::type_error("unbound variable", "x"),
         ParseTestCase::type_error("unbound in app", "f x"),
+        ParseTestCase::type_error("unbound func", "f"),
+        ParseTestCase::type_error("var outside scope", "λx:A.y"),
+        ParseTestCase::type_error("shadowed var used outside", "λx:A.(λy:B.x) y"),
     ]
 }
 
 pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
     vec![
         // === Test left-associative application parsing ===
-        ParseTestCase::valid("simple left app", "f x"),
-        ParseTestCase::valid("chained left app", "f x y"),
-        ParseTestCase::valid("long chain left app", "f x y z w v u"),
+        // Each application step adds ~2 recursion levels in the left-recursive grammar,
+        // so we set depth = 10 + 2 * num_args as a safe budget.
+        ParseTestCase::valid("simple left app", "f x")
+            .with_context(vec![("f", "A->B"), ("x", "A")])
+            .with_parse_max_depth(20),
+        ParseTestCase::valid("chained left app", "f x y")
+            .with_context(vec![("f", "A->B->C"), ("x", "A"), ("y", "B")])
+            .with_parse_max_depth(25),
+        ParseTestCase::valid("long chain left app", "f x y z w v u")
+            .with_context(vec![
+                ("f", "A->B->C->D->E->F->G"),
+                ("x", "A"),
+                ("y", "B"),
+                ("z", "C"),
+                ("w", "D"),
+                ("v", "E"),
+                ("u", "F"),
+            ])
+            .with_parse_max_depth(30),
         // === Test in lambda contexts ===
-        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y"),
+        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y")
+            .with_parse_max_depth(30),
     ]
 }
 

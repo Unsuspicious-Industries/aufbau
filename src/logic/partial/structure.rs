@@ -1,8 +1,7 @@
 use crate::logic::grammar::Production;
 use crate::logic::segment::SegmentRange;
 use crate::regex::Regex as DerivativeRegex;
-
-use crate::*;
+use std::sync::Arc;
 
 /// Top-level partial AST result
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -52,7 +51,7 @@ pub struct NonTerminal {
     /// Name of the nonterminal (e.g., "Expr", "start")
     pub name: String,
     /// The production rule used for this node
-    pub production: Production,
+    pub production: Arc<Production>,
     /// The index of the alternative chosen
     pub alternative_index: usize,
     /// The children nodes
@@ -96,7 +95,7 @@ impl Terminal {
 impl NonTerminal {
     pub fn new(
         name: String,
-        production: Production,
+        production: impl Into<Arc<Production>>,
         alternative_index: usize,
         children: Vec<Node>,
         binding: Option<String>,
@@ -104,7 +103,7 @@ impl NonTerminal {
     ) -> Self {
         Self {
             name,
-            production,
+            production: production.into(),
             alternative_index,
             children,
             binding,
@@ -130,6 +129,19 @@ impl NonTerminal {
             Node::Terminal(Terminal::Complete { .. }) => true,
             Node::Terminal(Terminal::Partial { .. }) => false,
         })
+    }
+
+    pub fn is_extensible(&self) -> bool {
+        // A nonterminal is extensible if it is not complete or if its last child is extensible
+        if !self.is_complete() {
+            return true;
+        }
+        match self.children.last() {
+            Some(Node::NonTerminal(nt)) => nt.is_extensible(),
+            Some(Node::Terminal(Terminal::Complete { extension: e, .. })) => e.is_some(),
+            Some(Node::Terminal(Terminal::Partial { .. })) => true,
+            None => false, // No children means it's complete and not extensible
+        }
     }
 
     // max parsed len
@@ -197,30 +209,25 @@ impl NonTerminal {
     }
 
     pub fn is_frontier(&self, index: usize) -> bool {
-        debug_trace!(
-            "partial",
-            "checking frontier for index {} with len {}",
-            index,
-            self.children.len()
-        );
-        if !(index == self.children.len() - 1) || self.is_complete() {
-            return false;
+        self.frontier_child_index() == Some(index)
+    }
+
+    /// Return the child index where the unique frontier advances, if any.
+    ///
+    /// Frontier is defined from incompleteness, not from extensibility.
+    /// - Complete nodes have no frontier.
+    /// - If this node is missing children, frontier is the next expected child.
+    /// - Otherwise frontier is the rightmost incomplete child.
+    pub fn frontier_child_index(&self) -> Option<usize> {
+        if self.is_complete() {
+            return None;
         }
-        match self.children.get(index) {
-            Some(child) => match child {
-                Node::Terminal(_) => true,
-                Node::NonTerminal(nt) => {
-                    if nt.children.len() == 0 {
-                        return true;
-                    } else if nt.children.len() == 1 {
-                        return nt.is_frontier(0);
-                    } else {
-                        return false; // Not sure of this one
-                    }
-                }
-            },
-            None => false,
+
+        if self.children.len() < self.production.rhs.len() {
+            return Some(self.children.len());
         }
+
+        self.children.iter().rposition(|child| !child.is_complete())
     }
 
     pub fn get(&self, index: usize) -> Result<Option<&Node>, String> {

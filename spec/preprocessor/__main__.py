@@ -1,6 +1,7 @@
 from proofs import process as process_proofs
 from status import process as process_status
 from paths import process as process_paths
+from margin import process as process_margin
 
 import json
 import sys
@@ -8,6 +9,7 @@ import sys
 def process(content: str) -> str:
     """Apply all preprocessors to the content."""
     content = process_proofs(content)
+    content = process_margin(content)
     content = process_status(content)
     content = process_paths(content)
     return content

@@ -1,3 +1,4 @@
+
 pub mod examine;
 pub mod logic;
 pub mod validate;
@@ -37,6 +38,7 @@ pub enum Commands {
     Validate(self::validate::ValidateCmd),
     /// Quick helper to examine completability for an input or test-case
     Examine(self::examine::ExamineCmd),
+
 }
 
 pub fn run() {

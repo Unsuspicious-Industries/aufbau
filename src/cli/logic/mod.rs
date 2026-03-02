@@ -154,8 +154,8 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
             std::process::exit(2);
         }
     };
-    if let Some(start) = &args.start {
-        grammar.set_start(start.clone());
+    if let Some(s) = &args.start {
+        grammar.set_start(s.clone());
     }
 
     // Get input from either --input or --file

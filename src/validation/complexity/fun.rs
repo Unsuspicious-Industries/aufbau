@@ -2,9 +2,10 @@
 #![allow(unused_imports)]
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse::Parser;
-use crate::validation::complexity::{ComplexityData, determine_complexity_exponent};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use crate::logic::partial::MetaParser;
+use crate::validation::completability::{complete, CompletionResult};
+use crate::validation::complexity::{determine_complexity_exponent, ComplexityData};
+use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::time::Instant;
 
 fn fun_grammar() -> Grammar {
@@ -123,9 +124,62 @@ fn generate_complex_random_fun(n: usize) -> String {
 
     out
 }
+
+/// Generate an incomplete let-chain prefix that requires completion.
+///
+/// Example (n = 2):
+/// `let x0: Int = 1; let x1: Int = 1; let x2: Int =`
+fn generate_incomplete_let_chain(n: usize) -> String {
+    let mut out = String::new();
+    for i in 0..n {
+        out.push_str(&format!("let x{}: Int = 1; ", i));
+    }
+    out.push_str(&format!("let x{}: Int =", n));
+    out
+}
+
+fn measure_completion_time(
+    grammar: &Grammar,
+    input: &str,
+    max_depth: usize,
+) -> std::time::Duration {
+    let start = Instant::now();
+    let _ = complete(grammar, input, max_depth, None);
+    start.elapsed()
+}
+
+fn run_completion_complexity_test(
+    grammar: &Grammar,
+    generator: fn(usize) -> String,
+    name: &str,
+    max_n: usize,
+    tries: usize,
+) -> Vec<ComplexityData> {
+    println!("\n=== {} Complexity Test ===", name);
+    println!("Testing completion input sizes from 1 to {}", max_n);
+
+    assert!(tries >= max_n * 2);
+
+    let indices: Vec<usize> = (0..=tries).map(|i| ((i + max_n / 2) % max_n) + 1).collect();
+    let mut results = Vec::with_capacity(indices.len());
+
+    for n in indices {
+        let input = generator(n);
+        let depth_budget = n + 4;
+        let duration = measure_completion_time(grammar, &input, depth_budget);
+        results.push(ComplexityData::new(n, duration, input));
+    }
+
+    for r in &results {
+        println!("n={:2}: len={} -> {:?}", r.n, r.input.len(), r.time);
+    }
+
+    results
+}
+
 fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
     // Keep a bounded recursion budget so complexity tests stay practical in CI.
-    let mut parser = Parser::new(grammar.clone()).with_max_recursion(16);
+    let mut parser = MetaParser::new(grammar.clone());
     let start = Instant::now();
     let _ = parser.partial(input);
     start.elapsed()
@@ -199,6 +253,16 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 12,
                 32,
                 jobs,
+            ),
+        ),
+        (
+            "Fun Completion Let Prefix".to_string(),
+            run_completion_complexity_test(
+                &grammar,
+                generate_incomplete_let_chain,
+                "Fun Completion Let Prefix",
+                6,
+                18,
             ),
         ),
     ]
@@ -302,5 +366,46 @@ fn fun_complex_random_complexity() {
         k < 8.0,
         "Fun complex-random parsing should stay below ~O(n^8), got O(n^{:.2})",
         k
+    );
+}
+
+#[test]
+fn fun_completion_let_prefix_complexity() {
+    let grammar = fun_grammar();
+    let data = run_completion_complexity_test(
+        &grammar,
+        generate_incomplete_let_chain,
+        "Fun Completion Let Prefix",
+        6,
+        18,
+    );
+
+    let k = determine_complexity_exponent(&data);
+
+    println!("\nEmpirical completion complexity: O(n^{:.2})", k);
+    println!("Completion input grows as incomplete let-chain prefixes.");
+
+    assert!(
+        k < 8.0,
+        "Fun completion on let prefixes should stay below ~O(n^8), got O(n^{:.2})",
+        k
+    );
+    assert!(k > 0.01, "Complexity exponent should be > 0");
+
+    let mut observed_success = false;
+    for point in &data {
+        let input = generate_incomplete_let_chain(point.n);
+        let depth_budget = point.n + 4;
+        if matches!(
+            complete(&grammar, &input, depth_budget, None),
+            CompletionResult::Success { .. }
+        ) {
+            observed_success = true;
+            break;
+        }
+    }
+    assert!(
+        observed_success,
+        "Expected at least one successful completion across sampled n"
     );
 }

@@ -85,7 +85,7 @@ impl DFA {
 
         while let Some(current_set) = unmarked_states.pop_front() {
             // Step 5: For each symbol in the alphabet, compute the transition
-            let alphabet = get_alphabet(&nfa);
+            let alphabet = extract_alphabet(&nfa);
             for &symbol in &alphabet {
                 // Compute the set of states reachable from `current_set` via `symbol`
                 let mut move_set: BTreeSet<StateId> = BTreeSet::new();
@@ -161,8 +161,8 @@ impl DFA {
 
         // Collect alphabet from both DFAs
         let alphabet = self
-            .alphabet()
-            .union(&other.alphabet())
+            .extract_dfa_alphabet()
+            .union(&other.extract_dfa_alphabet())
             .copied()
             .collect::<HashSet<_>>();
 
@@ -225,8 +225,8 @@ impl DFA {
         }
     }
 
-    /// Helper to extract alphabet from DFA
-    fn alphabet(&self) -> HashSet<Symbol> {
+    /// Extracts alphabet from DFA states.
+    fn extract_dfa_alphabet(&self) -> HashSet<Symbol> {
         self.states
             .iter()
             .flat_map(|state| state.transitions.keys().copied())
@@ -252,18 +252,17 @@ impl DFA {
 
     pub fn derive(&self, input: &str) -> Option<DFA> {
         if let Some(state) = self.run(input) {
-            let derived = DFA {
+            Some(DFA {
                 states: self.states.clone(),
                 start: state,
                 accept_states: self.accept_states.clone(),
-            };
-            Some(derived) // do not clean because its expensive
+            })
         } else {
             None
         }
     }
 
-    // remove unreachable states
+    // Removal of unreachable states
     pub fn clean(&self) -> DFA {
         let mut reachable = HashSet::new();
         let mut stack = vec![self.start];
@@ -396,16 +395,16 @@ impl Not for &DFA {
     }
 }
 
-// Helper function to get the alphabet of the NFA
-fn get_alphabet(nfa: &NFA) -> Vec<Symbol> {
+/// Extracts the alphabet from the NFA by collecting all transition symbols.
+fn extract_alphabet(nfa: &NFA) -> Vec<Symbol> {
     let mut alphabet: HashSet<Symbol> = HashSet::new();
-    for state in nfa.states.clone() {
-        for (symbol, _) in state.transitions.clone() {
-            alphabet.insert(symbol);
+    for state in &nfa.states {
+        for (symbol, _) in &state.transitions {
+            alphabet.insert(*symbol);
         }
     }
     let mut sorted_alphabet: Vec<Symbol> = alphabet.into_iter().collect();
-    sorted_alphabet.sort();
+    sorted_alphabet.sort_unstable();
     sorted_alphabet
 }
 
@@ -663,7 +662,7 @@ mod tests {
         //  XOR accept function: (a_in_accept XOR b_in_accept)
         assert!(xor_dfa.accepts("")); // In a* but not aa*
         assert!(!xor_dfa.accepts("a")); // In both, so not in XOR
-        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
+                                        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
     }
 
     #[test]
@@ -683,8 +682,8 @@ mod tests {
         assert!(!complement_dfa.accepts("")); // Empty string is in a*, so not in complement
         assert!(!complement_dfa.accepts("a")); // 'a' is in a*, so not in complement
         assert!(!complement_dfa.accepts("aa")); // 'aa' is in a*, so not in complement
-        // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
-        // This is a limitation of the current complement implementation
+                                                // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
+                                                // This is a limitation of the current complement implementation
     }
 
     #[test]

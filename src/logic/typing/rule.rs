@@ -82,7 +82,12 @@ impl ConclusionContext {
     }
 }
 
-/// What a conclusion produces
+/// What a conclusion produces.
+///
+/// NOTE: The spec's conclusion table also lists `▷` (void/checking mode), which would
+/// correspond to a `Void` variant here. That form is NOT implemented — `▷` is only
+/// supported as a premise (`TypingJudgment::Check`), not as a conclusion.
+/// See src/notes.md §2 and spec/notes.md §14.
 #[derive(Debug, Clone)]
 pub enum ConclusionKind {
     /// A type result

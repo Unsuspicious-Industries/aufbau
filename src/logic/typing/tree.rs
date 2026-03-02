@@ -263,6 +263,21 @@ impl Parser {
             .map_err(|e| e.to_string())?;
         partial_ast.filter_typed(&self.grammar)
     }
+
+    pub fn partial_typed_ctx(&mut self, input: &str, ctx: &Context) -> Result<PartialAST, String> {
+        let partial_ast = self
+            .partial(input)
+            .into_result()
+            .map_err(|e| e.to_string())?;
+        partial_ast.filter_typed_ctx(&self.grammar, ctx)
+    }
+}
+
+impl crate::logic::partial::MetaParser {
+    pub fn partial_typed_ctx(&mut self, input: &str, ctx: &Context) -> Result<PartialAST, String> {
+        let partial_ast = self.partial(input)?;
+        partial_ast.filter_typed_ctx(&self.parser().grammar, ctx)
+    }
 }
 
 // ============================================================================

@@ -233,7 +233,7 @@ fn decode_nonterminal(
 
     Ok(NonTerminal {
         name: nt_name.to_string(),
-        production,
+        production: production.into(),
         alternative_index,
         children,
         binding,
@@ -413,10 +413,7 @@ fn read_varint(cursor: &mut &[u8]) -> io::Result<u64> {
     Ok(result)
 }
 
-// ============================================================================
-// Helper for grammar symbols
-// ============================================================================
-
+// Functions for grammar symbols
 impl crate::logic::grammar::Symbol {
     fn as_nonterminal(&self) -> Option<&str> {
         use crate::logic::grammar::Symbol;

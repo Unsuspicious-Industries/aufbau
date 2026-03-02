@@ -8,6 +8,9 @@ mod fun;
 mod imp;
 mod lc;
 mod redeclaration;
+mod fx;
+mod parse;
+
 
 use super::*;
 use crate::logic::grammar::Grammar;

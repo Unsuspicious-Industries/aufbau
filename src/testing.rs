@@ -33,6 +33,7 @@ use std::path::Path;
 /// ```ignore
 /// let g = load_example_grammar("stlc");
 /// ```
+
 pub fn load_example_grammar(name: &str) -> Grammar {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
@@ -363,7 +364,8 @@ pub fn assert_partial_structurally_matches(
 ) {
     let mut parser = Parser::new(grammar.clone());
     let ast = parser
-        .parse(input)
+        .partial(input)
+        .into_result()
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
 
     assert!(!ast.roots.is_empty(), "AST should have at least one root");

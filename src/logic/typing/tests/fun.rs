@@ -11,10 +11,9 @@ fn load_grammar() -> Grammar {
     Grammar::load(spec).expect("Failed to load Fun grammar")
 }
 
-/// Helper: parse input, get complete trees, check that at least one is well-typed
+/// Assert that at least one complete parse is well-typed.
 ///
-/// Accept a shared `MetaParser` so the grammar start-depth cache (`gscache`)
-/// can be reused across multiple calls.
+/// Reuses a single `MetaParser` instance across checks.
 fn assert_well_typed_with_level(p: &mut MetaParser, input: &str, level: crate::DebugLevel) {
     set_debug_level(level);
     let ast = p
@@ -45,7 +44,7 @@ fn assert_well_typed(p: &mut MetaParser, input: &str) {
     assert_well_typed_with_level(p, input, crate::DebugLevel::Info);
 }
 
-/// Helper: parse input, get complete trees, check that ALL are malformed
+/// Assert that all complete parses are malformed.
 fn assert_malformed(g: &Grammar, input: &str) {
     set_debug_level(crate::DebugLevel::Info);
     let mut parser = Parser::new(g.clone()).with_max_recursion(15);

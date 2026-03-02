@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-// Helper functions for compact, *consistent* tree display.
+// Functions for compact, consistent tree display.
 
 fn indent(level: usize) -> String {
     const INDENT: &str = "  ";

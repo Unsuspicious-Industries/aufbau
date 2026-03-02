@@ -14,7 +14,7 @@ pub struct CompletionSet {
 
 impl CompletionSet {
     fn new(mut tokens: Vec<DerivativeRegex>) -> Self {
-        // Deduplicate and sort
+        // Deduplicate.
         let unique: HashSet<_> = tokens.drain(..).collect();
         let tokens: Vec<_> = unique.into_iter().collect();
         Self { tokens }
@@ -65,9 +65,13 @@ impl CompletionSet {
     }
 
     pub fn cleanup(&self) -> Self {
-        // deduplicate and remove epslons
-        let unique: HashSet<_> = self.tokens.clone().drain(..).collect();
-        let tokens: Vec<_> = unique.into_iter().filter(|t| !t.is_nullable()).collect();
+        // Remove nullable tokens.
+        let tokens: Vec<_> = self
+            .tokens
+            .iter()
+            .filter(|t| !t.is_nullable())
+            .cloned()
+            .collect();
         Self { tokens }
     }
 }

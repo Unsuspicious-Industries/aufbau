@@ -1,19 +1,14 @@
-use std::collections::HashMap;
-use std::time::Instant;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use super::cache::{is_prefix, SegmentKey};
-use super::monitor::{CacheMonitor, CacheStatsSnapshot, CacheTimingSnapshot};
-use super::SpanCache;
+use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
 use crate::logic::partial::{Node, NonTerminal, PartialAST, Terminal};
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
-use crate::{debug_debug, debug_trace};
 
-/// Rotate production indices by level (Caesar cipher style).
-///
 /// Shifts indices [0..n) by `level` positions, wrapping around.
-/// This ensures different recursion depths try productions in different orders.
+/// Different recursion depths try productions in different orders to distribute search effort.
 ///
 /// Example with n=4, level=1: [1, 2, 3, 0]
 /// Example with n=4, level=2: [2, 3, 0, 1]
@@ -80,9 +75,8 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
  */
 
 /// Default maximum recursion depth for left-recursive grammars.
-/// Set to 20 which handles most real-world cases while preventing
-/// exponential blowup on highly ambiguous grammars.
-/// Use MetaParser for adaptive depth finding, or with_max_recursion() to override.
+/// Limits depth to prevent exponential blowup on ambiguous grammars.
+/// MetaParser enables adaptive depth finding. Override with `with_max_recursion`.
 const DEFAULT_MAX_RECURSION_DEPTH: usize = 15;
 
 /// Outcome of a partial parse operation with detailed metadata.
@@ -126,7 +120,6 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 impl PartialParseOutcome {
-    /// Returns true if the parse produced at least one complete tree.
     pub fn is_complete(&self) -> bool {
         match self {
             Self::Success { ast } => ast.roots.iter().any(|r| r.is_complete()),
@@ -134,7 +127,6 @@ impl PartialParseOutcome {
         }
     }
 
-    /// Returns true if parse succeeded (even if partial).
     pub fn is_success(&self) -> bool {
         match self {
             Self::Success { .. } => true,
@@ -142,12 +134,6 @@ impl PartialParseOutcome {
         }
     }
 
-    /// Convert to simple Result for backward compatibility.
-    ///
-    /// Note: If the outcome has 0 roots (e.g., due to depth limit), this returns
-    /// an error because an AST with no roots is not useful for most purposes.
-    /// Use pattern matching on PartialParseOutcome directly if you need to handle
-    /// depth-limited empty results specially.
     pub fn into_result(self) -> Result<PartialAST, ParseError> {
         match self {
             Self::Success { ast } if !ast.roots.is_empty() => Ok(ast),
@@ -156,7 +142,6 @@ impl PartialParseOutcome {
         }
     }
 
-    /// Get reference to AST if success.
     pub fn ast(&self) -> Option<&PartialAST> {
         match self {
             Self::Success { ast } => Some(ast),
@@ -164,16 +149,14 @@ impl PartialParseOutcome {
         }
     }
 
-    /// Unwrap the AST, panicking if this was a failure or if roots are empty.
     pub fn unwrap(self) -> PartialAST {
         match self {
             Self::Success { ast } if !ast.roots.is_empty() => ast,
-            Self::Success { .. } => panic!("Called unwrap on ParseSuccess with 0 roots"),
-            Self::Failure(e) => panic!("Called unwrap on ParseFailure: {}", e),
+            Self::Success { .. } => panic!("Called unwrap on Success with 0 roots"),
+            Self::Failure(e) => panic!("Called unwrap on Failure: {}", e),
         }
     }
 
-    /// Unwrap with custom error message, panicking if this was a failure or if roots are empty.
     pub fn expect(self, msg: &str) -> PartialAST {
         match self {
             Self::Success { ast } if !ast.roots.is_empty() => ast,
@@ -181,16 +164,14 @@ impl PartialParseOutcome {
         }
     }
 
-    /// Returns true for success (backward compatibility with Result).
     pub fn is_ok(&self) -> bool {
         self.is_success()
     }
 
-    /// Unwrap the error, panicking if this was a success.
     pub fn unwrap_err(self) -> ParseError {
         match self {
             Self::Failure(e) => e,
-            Self::Success { .. } => panic!("Called unwrap_err on successful parse"),
+            Self::Success { .. } => panic!("Called unwrap_err on Success"),
         }
     }
 }
@@ -198,15 +179,23 @@ impl PartialParseOutcome {
 /// Tracks parsing state for a single parse operation
 ///
 /// This struct contains per-parse state that should NOT be shared across
-/// multiple parse calls. It tracks recursion to detect cycles during parsing.
+/// multiple parse calls. It tracks recursion to detect cycles during parsing,
+/// and memoizes completed sub-parses within a single invocation so the parser
+/// runs in polynomial rather than exponential time.
 struct ParseState {
     /// Tracks recursion depth for (non-terminal, absolute_position)
     /// Used to detect potential infinite loops within a single parse
     visited: HashMap<(String, usize), usize>,
     /// Set to true when we hit the depth limit during this parse.
-    /// When true, we should not cache results because they may be incomplete
-    /// due to early termination, and higher depths could find more results.
     hit_depth_limit: bool,
+    /// Within-call memo: (nt_name, abs_pos, segments_len) -> trees
+    /// Keyed by segments_len (= how many tokens are available from abs_pos),
+    /// so entries from different call sites never collide.
+    memo: HashMap<(String, usize, usize), Vec<NonTerminal>>,
+    /// Tracks which memo_keys are currently being computed (on the call stack).
+    /// Memo lookup is only skipped for keys that are actively in-progress,
+    /// not for all keys sharing the same (nt, pos) visited entry.
+    in_progress: HashSet<(String, usize, usize)>,
 }
 
 impl ParseState {
@@ -214,6 +203,8 @@ impl ParseState {
         Self {
             visited: HashMap::new(),
             hit_depth_limit: false,
+            memo: HashMap::new(),
+            in_progress: HashSet::new(),
         }
     }
 }
@@ -230,86 +221,19 @@ pub struct Parser {
     pub(crate) grammar: Grammar,
     /// Maximum recursion depth for left-recursive patterns like `Expr Expr`
     max_recursion: usize,
-    /// Span-keyed memoization cache for parsing results.
-    span_cache: SpanCache,
-    /// Tracks the previous normalized input segments for cache invalidation.
-    last_input_segments: Option<Vec<SegmentKey>>,
     /// Whether the last parse hit the depth limit
     last_hit_depth_limit: bool,
-
-    cache_monitor: CacheMonitor,
 }
 
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
         let mut specials = grammar.special_tokens.clone();
-        // Ensure longest-match for multi-char literals (e.g. "<=", ">=", "==")
-        // by checking longer specials before their prefixes ("<", ">", "=").
         specials.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
         Self {
             grammar,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
-            span_cache: SpanCache::default(),
-            last_input_segments: None,
             last_hit_depth_limit: false,
-            cache_monitor: CacheMonitor::new(),
         }
-    }
-
-    pub fn enable_cache_monitoring(&mut self, enabled: bool) {
-        self.cache_monitor.set_enabled(enabled);
-    }
-
-    pub fn reset_cache_monitoring(&mut self) {
-        self.cache_monitor.reset();
-    }
-
-    pub fn cache_stats(&self) -> CacheStatsSnapshot {
-        self.cache_monitor.stats_snapshot()
-    }
-
-    pub fn cache_timing(&self) -> CacheTimingSnapshot {
-        self.cache_monitor.timing_snapshot()
-    }
-
-    pub fn cache_report(&self, max_nonterminals: usize, max_entries_per_nt: usize) -> String {
-        let counts = self.span_cache.counts();
-        let stats = self.cache_stats();
-        let timing = self.cache_timing();
-
-        let mut out = String::new();
-        out.push_str(&format!(
-            "cache: enabled={} nts={} span_buckets={} trees={}\n",
-            stats.enabled, counts.nt_count, counts.span_buckets, counts.stored_trees
-        ));
-        out.push_str(&format!(
-            "lookups={} exact={} prefix={} miss={} scanned={}\n",
-            stats.lookups,
-            stats.lookup_hits_exact,
-            stats.lookup_hits_prefix,
-            stats.lookup_misses,
-            stats.lookup_scanned_entries
-        ));
-        out.push_str(&format!(
-            "stores={} inserts={} updates={} invalidations={} clears={} depth_limited={}\n",
-            stats.stores,
-            stats.store_inserts,
-            stats.store_updates,
-            stats.cache_invalidations,
-            stats.cache_clears,
-            stats.depth_limited_parses
-        ));
-        out.push_str(&format!(
-            "time: partial_total={:?} lookup_total={:?} store_total={:?} partial_last={:?}\n",
-            timing.partial_total, timing.lookup_total, timing.store_total, timing.partial_last
-        ));
-
-        out.push_str(&format!(
-            "note: span cache only; max_nts={}, max_entries_per_nt={}\n",
-            max_nonterminals, max_entries_per_nt
-        ));
-
-        out
     }
 
     /// Set the maximum recursion depth for left-recursive grammars (builder pattern)
@@ -328,17 +252,8 @@ impl Parser {
         self.last_hit_depth_limit
     }
 
-    /// Clear the memoization cache.
-    ///
-    /// Use this when switching to a completely different input that doesn't
-    /// share a common prefix with previous inputs. This frees memory and
-    /// ensures stale cached results don't affect parsing.
-    ///
-    /// For incremental parsing of progressively longer inputs (e.g., "x" -> "x t" -> "x t +"),
-    /// do NOT clear the cache as it provides the performance benefit.
     pub fn clear_cache(&mut self) {
-        self.cache_monitor.record_cache_clear();
-        self.span_cache.clear();
+        // no-op: cache removed
     }
 
     /// Parse input and return a complete AST (simple interface).
@@ -374,37 +289,11 @@ impl Parser {
         }
     }
 
-    /// Main entry point: parse input and return rich outcome with depth metadata.
-    ///
-    /// ## Cache Reuse
-    ///
-    /// The parser maintains a memoization cache across calls. Cache is reused when
-    /// the new input starts with the previous input (incremental parsing scenario).
-    /// Otherwise, the cache is cleared automatically.
-    ///
-    /// When extending input (e.g., "x" -> "x + y"), cache entries at the previous
-    /// input boundary are invalidated since they may have different parses with
-    /// more input available.
-    ///
-    /// Example of cache reuse:
-    /// ```text
-    /// parser.partial("x")      // Fresh parse, caches results
-    /// parser.partial("x + y")  // Different input, cache cleared
-    /// parser.partial("x + y")  // Same input, cache reused
-    /// ```
-    ///
-    /// ## Return Value
-    ///
-    /// Returns `PartialParseOutcome`.
-    /// Use `Parser::last_hit_depth_limit()` to check whether the last `partial()`
-    /// invocation hit the recursion depth limit.
     pub fn partial(&mut self, input: &str) -> PartialParseOutcome {
-        let start_time = Instant::now();
         self.last_hit_depth_limit = false;
 
         debug_trace!("parser2      ", "Starting parse of input: '{}'", input);
 
-        // Tokenize
         let outcome = (|| {
             let segments = match self.tokenize(input) {
                 Ok(s) => s,
@@ -412,17 +301,6 @@ impl Parser {
             };
             debug_trace!("parser2      ", "Tokenized into {:?}", segments);
 
-            let normalized_segments = self.normalize_segments(&segments);
-            if let Some(prev) = &self.last_input_segments {
-                if !is_prefix(prev, &normalized_segments) {
-                    debug_trace!("parser2      ", "Cache invalidated (input prefix mismatch)");
-                    self.span_cache.clear();
-                    self.cache_monitor.record_cache_invalidation();
-                }
-            }
-            self.last_input_segments = Some(normalized_segments);
-
-            // Get start nonterminal (clone to avoid borrow conflict)
             let start_nt = match self.grammar.start_nonterminal() {
                 Some(s) => s.to_string(),
                 None => return PartialParseOutcome::Failure(ParseError::NoStartSymbol),
@@ -430,52 +308,35 @@ impl Parser {
 
             debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
-            // Parse from start with absolute position 0
             let mut parse_state = ParseState::new();
             let roots =
                 match self.parse_nonterminal(&segments, &start_nt, None, 0, 0, &mut parse_state) {
                     Ok(r) => r,
                     Err(e) => {
-                        // Internal errors from parse_nonterminal are typically grammar issues
                         return PartialParseOutcome::Failure(ParseError::Tokenization(e));
                     }
                 };
 
             let total_segments = segments.len();
             let depth_limited = parse_state.hit_depth_limit;
-
-            // record for callers: whether this parse hit the depth limit
             self.last_hit_depth_limit = depth_limited;
-            if depth_limited {
-                self.cache_monitor.record_depth_limited_parse();
-            }
 
-            // Filter roots that consumed all input
             let valid_roots: Vec<NonTerminal> = roots
                 .into_iter()
                 .filter(|r| r.consumed_segments == total_segments)
                 .collect();
 
             if valid_roots.is_empty() {
-                debug_trace!(
-                    "parser2      ",
-                    "No alternatives consuming {} segments for start symbol '{}'",
-                    total_segments,
-                    start_nt
-                );
-                // If we hit the depth limit, report that specifically so MetaParser can retry
                 if depth_limited {
                     return PartialParseOutcome::Failure(ParseError::DepthLimit);
                 }
                 return PartialParseOutcome::Failure(ParseError::NoValidParse);
             }
 
-            let ast = PartialAST::new(valid_roots, input.to_string());
-
-            PartialParseOutcome::Success { ast }
+            PartialParseOutcome::Success {
+                ast: PartialAST::new(valid_roots, input.to_string()),
+            }
         })();
-
-        self.cache_monitor.record_partial(start_time.elapsed());
         outcome
     }
 
@@ -541,54 +402,22 @@ impl Parser {
             return Ok(Vec::new());
         }
 
-        // Check span cache first (only complete subtrees)
-        if self.allow_cache_lookup(segments) {
-            let max_len = segments.len();
-            let t0 = if self.cache_monitor.enabled() {
-                Some(Instant::now())
-            } else {
-                None
-            };
-
-            if self
-                .span_cache
-                .can_answer(self.max_recursion, nt_name, abs_pos, max_len)
-            {
-                let (cached_result, scanned) =
-                    self.span_cache
-                        .collect(self.max_recursion, nt_name, abs_pos, max_len);
-                self.cache_monitor.record_lookup(scanned, true, false);
-                if let Some(t0) = t0 {
-                    self.cache_monitor.record_lookup_time(t0.elapsed());
-                }
-                debug_trace!(
-                    "parser2      ",
-                    "{}[L{}] Cache HIT for '{}' at span {}+{}",
-                    indent,
-                    level,
-                    nt_name,
-                    abs_pos,
-                    max_len
-                );
-                return Ok(cached_result);
-            }
-
-            let computed_len = self
-                .span_cache
-                .computed_len(self.max_recursion, nt_name, abs_pos);
-            if computed_len > 0 {
-                self.cache_monitor.record_lookup(0, false, true);
-            } else {
-                self.cache_monitor.record_lookup(0, false, false);
-            }
-            if let Some(t0) = t0 {
-                self.cache_monitor.record_lookup_time(t0.elapsed());
-            }
-        }
-
         // Check for recursion on same input position for cycle detection
         // Uses absolute position to correctly detect cycles
         let key = (nt_name.to_string(), abs_pos);
+
+        // Within-call memo lookup: if we already computed this (nt, pos, len)
+        // tuple during this parse invocation, return the cached result directly.
+        // This keeps the parser polynomial-time on ambiguous / left-recursive grammars.
+        // We only skip the lookup if this exact memo_key is currently being computed
+        // (i.e. we are in a recursive call for this same triple), to avoid serving
+        // a stale in-progress partial result.
+        let memo_key = (nt_name.to_string(), abs_pos, segments.len());
+        if !parse_state.in_progress.contains(&memo_key) {
+            if let Some(cached) = parse_state.memo.get(&memo_key) {
+                return Ok(cached.clone());
+            }
+        }
         if let Some(count) = parse_state.visited.get(&key) {
             let local_limit = self.max_recursion.min(segments.len().saturating_add(2));
             debug_trace!(
@@ -600,7 +429,6 @@ impl Parser {
                 abs_pos,
                 count
             );
-
             // Termination fallback
             // computer crashed too many times before
             if *count >= local_limit {
@@ -636,23 +464,37 @@ impl Parser {
             parse_state.visited.insert(key.clone(), 1);
         }
 
+        parse_state.in_progress.insert(memo_key.clone());
+
         // Clone productions to avoid borrow conflict with span cache
-        let productions = self
+        let productions_len = self
             .grammar
             .productions
             .get(nt_name)
             .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?
-            .clone();
+            .len();
 
         // Shuffle productions using a PRNG seeded by level to avoid bias
         // This helps explore different parse alternatives at different depths,
         // preventing systematic bias toward earlier productions
-        let shuffled_indices = prng_shuffle(productions.len(), level);
+        let shuffled_indices = prng_shuffle(productions_len, level);
 
-        let mut results = Vec::new();
+        let mut outcomes = Vec::new();
 
         for &alt_idx in &shuffled_indices {
-            let prod = &productions[alt_idx];
+            let prod = self
+                .grammar
+                .productions
+                .get(nt_name)
+                .and_then(|ps| ps.get(alt_idx))
+                .ok_or_else(|| {
+                    format!(
+                        "No production index {} for nonterminal '{}'",
+                        alt_idx, nt_name
+                    )
+                })?
+                .clone();
+            let prod_ref = Arc::new(prod);
             debug_trace!(
                 "parser2      ",
                 "{}[L{}] Trying production {}@{}: {} on {}",
@@ -660,7 +502,7 @@ impl Parser {
                 level,
                 nt_name,
                 alt_idx,
-                prod,
+                prod_ref,
                 segments
                     .iter()
                     .map(|s| s.text())
@@ -668,9 +510,9 @@ impl Parser {
                     .join(" ")
             );
 
-            match self.parse_production(segments, prod, abs_pos, level, parse_state) {
-                Ok(prod_results) => {
-                    if prod_results.is_empty() {
+            match self.parse_production(segments, &prod_ref, abs_pos, level, parse_state) {
+                Ok(prod_outcomes) => {
+                    if prod_outcomes.is_empty() {
                         debug_trace!(
                             "parser2      ",
                             "{}[L{}] Production {}@{} produced no results",
@@ -688,19 +530,19 @@ impl Parser {
                             level,
                             nt_name,
                             alt_idx,
-                            prod_results.len()
+                            prod_outcomes.len()
                         );
-                        for children in prod_results {
+                        for children in prod_outcomes {
                             let consumed = self.count_consumed_segments(&children);
                             let nt = NonTerminal::new(
                                 nt_name.to_string(),
-                                prod.clone(),
+                                Arc::clone(&prod_ref),
                                 alt_idx,
                                 children,
                                 binding.clone(),
                                 consumed,
                             );
-                            results.push(nt);
+                            outcomes.push(nt);
                         }
                     }
                 }
@@ -719,6 +561,7 @@ impl Parser {
         }
 
         parse_state.visited.remove(&key);
+        parse_state.in_progress.remove(&memo_key);
 
         debug_trace!(
             "parser2      ",
@@ -726,72 +569,16 @@ impl Parser {
             indent,
             level,
             nt_name,
-            results.len()
+            outcomes.len()
         );
 
-        // Cache optimization: only store complete results that made progress
-        // AND only when we didn't hit the depth limit during this parse.
-        // This ensures:
-        // 1. We don't cache failures (waste of space)
-        // 2. We don't cache partial results (could lead to infinite loops)
-        // 3. We only cache when we've actually done useful work
-        // 4. We don't cache depth-limited results (higher depths might find more)
-        if !results.is_empty() && !parse_state.hit_depth_limit && self.allow_cache_store(segments) {
-            let mut by_len: HashMap<usize, Vec<NonTerminal>> = HashMap::new();
-            for nt in results.iter() {
-                if nt.is_complete() && nt.consumed_segments > 0 {
-                    by_len
-                        .entry(nt.consumed_segments)
-                        .or_default()
-                        .push(nt.clone());
-                }
-            }
+        // Store in within-call memo so sibling productions don't recompute this.
+        // We always store — the depth limit is a uniform cap across all calls in
+        // this parse, so the result for (nt, pos, len) is deterministic regardless
+        // of which call path reaches it first.
+        parse_state.memo.insert(memo_key, outcomes.clone());
 
-            if !by_len.is_empty() {
-                debug_trace!(
-                    "parser2      ",
-                    "{}[L{}] Caching complete results for '{}'",
-                    indent,
-                    level,
-                    nt_name
-                );
-
-                let t0 = if self.cache_monitor.enabled() {
-                    Some(Instant::now())
-                } else {
-                    None
-                };
-
-                let mut updates: u64 = 0;
-                let mut inserts: u64 = 0;
-                for (len, trees) in by_len {
-                    let existed = self.span_cache.store_span(
-                        self.max_recursion,
-                        nt_name,
-                        abs_pos,
-                        len,
-                        trees,
-                    );
-                    if existed {
-                        updates += 1;
-                    } else {
-                        inserts += 1;
-                    }
-                }
-
-                self.span_cache
-                    .mark_computed(self.max_recursion, nt_name, abs_pos, segments.len());
-
-                let total_entries_after = self.span_cache.counts().span_buckets;
-                self.cache_monitor
-                    .record_store(updates, inserts, total_entries_after);
-                if let Some(t0) = t0 {
-                    self.cache_monitor.record_store_time(t0.elapsed());
-                }
-            }
-        }
-
-        Ok(results)
+        Ok(outcomes)
     }
 
     /// Parse a production (sequence of symbols)
@@ -870,7 +657,7 @@ impl Parser {
             return Ok(Vec::new());
         }
 
-        let mut results = Vec::with_capacity(first_parses.len());
+        let mut outcomes = Vec::with_capacity(first_parses.len());
         let mut rest_cache: HashMap<usize, Vec<Vec<Node>>> = HashMap::new();
 
         for node in first_parses {
@@ -883,7 +670,7 @@ impl Parser {
             if !node.is_complete() {
                 // store result on full consumption only
                 if consumed == segments.len() {
-                    results.push(vec![node]);
+                    outcomes.push(vec![node]);
                 }
                 continue;
             }
@@ -910,11 +697,11 @@ impl Parser {
             for mut rest_nodes in rest_parses {
                 let mut full_parse = vec![node.clone()];
                 full_parse.append(&mut rest_nodes);
-                results.push(full_parse);
+                outcomes.push(full_parse);
             }
         }
 
-        Ok(results)
+        Ok(outcomes)
     }
 
     /// Count how many segments a node consumes
@@ -1086,29 +873,5 @@ impl Parser {
         };
 
         Ok(node.into_iter().collect())
-    }
-
-    fn normalize_segments(&self, segments: &[Segment]) -> Vec<SegmentKey> {
-        segments
-            .iter()
-            .map(|s| SegmentKey {
-                text: s.text(),
-                is_partial_special: s.is_partial_special,
-            })
-            .collect()
-    }
-
-    fn allow_cache_lookup(&self, segments: &[Segment]) -> bool {
-        if segments.is_empty() {
-            return false;
-        }
-        !segments.last().map_or(false, |s| s.is_partial_special)
-    }
-
-    fn allow_cache_store(&self, segments: &[Segment]) -> bool {
-        if segments.is_empty() {
-            return false;
-        }
-        !segments.last().map_or(false, |s| s.is_partial_special)
     }
 }

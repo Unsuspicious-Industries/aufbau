@@ -95,12 +95,12 @@ fn stlc_abs_binding_paths_match_spec() {
         }
     };
 
-    assert_path("a", "lambda", vec![vec![(1, None)]]);
-    assert_path("e", "lambda", vec![vec![(5, None)]]);
-    assert_path("τ", "lambda", vec![vec![(3, None)]]);
+    assert_path("a", "lambda", vec![vec![(1, Some(0))]]);
+    assert_path("e", "lambda", vec![vec![(5, Some(0))]]);
+    assert_path("τ", "lambda", vec![vec![(3, Some(0))]]);
 
     // Application rule binding paths (from examples/stlc.auf)
     // Application(app) ::= AtomicExpression[l] AtomicExpression[r]
-    assert_path("l", "app", vec![vec![(0, None)]]);
-    assert_path("r", "app", vec![vec![(1, None)]]);
+    assert_path("l", "app", vec![vec![(0, Some(0))]]);
+    assert_path("r", "app", vec![vec![(1, Some(0))]]);
 }

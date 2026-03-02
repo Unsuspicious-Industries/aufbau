@@ -1,4 +1,4 @@
-# Basic Concepts and Notations
+#[D] Basic Concepts and Notations
 
 First, we are going to establish some simple concepts of programming language theory, so that we can refer to them later in the specification.
 
@@ -47,7 +47,7 @@ An **expression** $s \in \Sigma^\ast$ is said to be **completable** in $L$ if th
 
 >D Completability Set
 For any expression $s \in \Sigma^\ast$, the **completability set** is:
-$$\mathcal{C}_L(s) = \{a \in \Sigma : \exists s' \in \Sigma^\ast : sas' \in L\}$$
+$$\mathcal{C}_L(s) = \\{a \in \Sigma : \exists s' \in \Sigma^\ast : sas' \in L\\}$$
 <
 
 The completability set is central to our formalism. We can use it to state an important equivalence:
@@ -66,7 +66,3 @@ $$
 s\in L \iff \mathcal{C}_L(s) = \\{\epsilon\\}
 $$
 <
-
-## Structure of this Specification
-
-We will start by defining the theoretical foundations to our approach, and then mix it up with algorithmic and implementation details and actual references to the codebase.

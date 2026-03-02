@@ -1,36 +1,23 @@
-
-# Partial Trees and Forests
+#[D] Partial Trees and Forests
 
 >D Partial Tree
-A **partial tree** is a structure $t = (V, E,\lambda,\pi,\alpha,\text{root})$ where:
-- $V$ is a finite set of nodes
-- $E \subseteq V \times \mathbb{N} \times V$ is a finite set of directed, position-indexed edges
-- $\lambda: V \to N \cup T$ assigns a label to each node
-- $\pi: V \to P$ assigns the production used at each node
-- $\alpha: V \to \mathbb{N}$ records the alternative index chosen at each non-terminal node
-- $\text{root} \in V$ is the root node
-
-Each partial tree corresponds to either a **complete** parse of input $s$, or a parse that can become complete by extending $s$. A partial tree **must** have consumed all input to be valid.
+A **partial tree** $t = (V, E,\lambda,\pi,\alpha,\text{root})$ is a structure where:
+- $V$: finite set of nodes.
+- $E \subseteq V \times \mathbb{N} \times V$: position-indexed edges.
+- $\lambda: V \to N \cup T$: node labels.
+- $\pi: V \to P$: production associated with the node.
+- $\alpha: V \to \mathbb{N}$: chosen alternative index.
+- $\text{root} \in V$: the start node.
 <
-
->D Partial Forest
-The **partial parse forest** for input $s$ is the finite ordered set of all partial trees for $s$ produced by the parser. Trees in the forest differ by the alternatives chosen during parsing.
-<
-
->R Forest Ordering
-Parsing a production $A = \alpha \ |\ \beta$ creates two trees: $A(\alpha)$ and $A(\beta)$. The forest is ordered by the definition order of alternatives in the grammar. The alternative index function $\alpha$ records which choice was made at each non-terminal—this is essential for binding resolution.
-<
-
-We use the notation $x[i]$ to designate the node pointed at by the edge indexed at $i$ from node $x$.
 
 ### Tree Paths
 
 >D Tree Path
-The space of **tree paths** is $\mathcal{P} = \mathbb{N}^*$, where each coordinate is an edge index pointing to a specific child (similar to de Bruijn indexing). Every node $v \in V$ has a unique path $\text{path}(v)$ from the root:
+The space of **tree paths** is $\mathcal{P} = \mathbb{N}^*$, where each coordinate is an edge index pointing to a specific child. Every node $v \in V$ has a unique path $\text{path}(v)$ from the root:
 
 $$\text{path}(v) = \begin{cases}
-\varepsilon & \text{if } v \text{ is root} \\
-	\text{path}(v') \cdot i & \text{if } v' \text{ is parent of } v \text{ and } v \text{ is its } i\text{-th child}
+\varepsilon & \text{if } v \text{ is root} \\\\
+\text{path}(v') \cdot i & \text{if } v' \text{ is parent of } v \text{ and } v \text{ is its } i\text{-th child}
 \end{cases}$$
 <
 
@@ -38,35 +25,50 @@ $$\text{path}(v) = \begin{cases}
 Paths are injective: $\text{path}_T(x_1) = \text{path}_T(x_2) \implies x_1 = x_2$.
 <
 
-We extend the notation with *relative paths* $p = i_0 \cdot i_1 \cdots i_n$ using $x[p] = (x[i_0])[i_1 \cdot i_2 \cdots i_n]$.
+We use $x[i]$ for the child at index $i$, and extend this to relative paths $x[p]$.
+
+### Terminal Status and Extensibility
+
+A terminal node matching input $s$ has a status:
+- **Complete**: Matched a full token. It may carry an **extension** derivative $D_s(r)$ for further matching.
+- **Partial**: Matched only a prefix. It carries a **remainder** derivative for what must follow.
+
+>D Extensibility
+A terminal $v$ is **extensible** if its derivative with respect to its matched text is non-empty:
+$$\text{extensible}(v) \iff D_{\text{matched}(v)}(r_v) \neq \emptyset$$
+<
+
+A terminal can be **both complete and extensible**. For example, `/[a-z]+/` matching `foo` is complete but extensible by `bar`. Conversely, a terminal is incomplete and not extensible only if its remainder regex is $\emptyset$ (a parse error). This distinction is critical for [binding resolution](./binding.md) where bindings to extensible terminals on the rightmost spine are treated as `Partial`.
 
 ### Completeness and Frontiers
 
->D Satisfied Symbol
-For non-terminal $v \in V$ with production $\pi(v) = \alpha_0 \cdots \alpha_n$, symbol $\alpha_s$ is **satisfied** if $v[s]$ exists and is complete.
-<
-
->D Complete Node
 A node is **complete** by induction:
-- A terminal is complete if it matched the full input (we ignore the non-complete case, handled [here](https://unsuspicious.org/blog/completing-regex/))
-- A non-terminal $v$ is complete $\iff$ all symbols $\alpha_0, \ldots, \alpha_n$ in $\pi(v)$ are satisfied
-<
-
->R Completeness and Language Membership
-Using a parser $\Psi_L$, saying "node $v$ is complete" is equivalent to saying "the expression node $v$ represents belongs in language $L$".
-<
+- A terminal is complete if it matched the full input.
+- A non-terminal $v$ is complete $\iff$ all symbols in its production $\pi(v)$ are satisfied.
 
 >D Frontier
-The **frontier** of a tree is the path to the incomplete node at the end of the tree. In a complete tree, there is no frontier. The frontier is unique.
+The **frontier** is the path to the unique incomplete node where parsing stopped. In a complete tree, there is no frontier.
+<
+
+>D Partial Forest
+The **partial forest** for input $s$ is the finite ordered set of all partial trees. Trees differ by the alternatives chosen; the forest is ordered by the grammar's definition order.
 <
 
 >D Forest Completeness
-A partial forest $\mathcal{F} = \{t_1,t_2,\cdots t_n\}$ is **complete** if and only if:
-$$\exists k \ |\ t_k \text{ is complete}$$
+A forest is **complete** $\iff$ at least one tree in it is complete.
 <
 
+### Monotonicity
 
->E Completing a Lambda Abstraction
+For partial parses $\mathcal{F}(s)$ extending to $\mathcal{F}(s \cdot t)$, the frontier path length is monotonically non-decreasing.
+
+>L Frontier Monotonicity
+$\operatorname{front}(\mathcal{F}(s \cdot t)) \geq \operatorname{front}(\mathcal{F}(s))$
+<
+
+This property is a primary invariant for parser correctness; a decreasing frontier indicates an engine failure.
+
+>E Lambda Completion
 **Input**: `λx:Int.`
 
 **Partial Tree**:
@@ -83,39 +85,9 @@ T = Expression
             └─[5]→ Expression  [Missing / End of Input]
 ```
 
-**Frontier**: path `[0, 5]`, where parsing stopped due to end of input.
-
-The tree is **not complete** but is **completable**. The completion set consists of all strings satisfying the `Expression` production, for example:
- - `Expression → AtomicExpression → Variable → Identifier → /[a-z][a-zA-Z0-9]*/`
-
-Choosing `"x"` as a completion yields the complete tree:
-
-```
-T' = Expression
-      └─[0]→ Abstraction(abs)  [COMPLETE]
-             ├─[0]→ "λ"
-             ├─[1]→ Identifier("x")
-             ├─[2]→ ":"
-             ├─[3]→ Type
-             │      └─[0]→ AtomicType
-             │             └─[0]→ BaseType("Int")
-             ├─[4]→ "."
-             └─[5]→ Expression
-                    └─[0]→ AtomicExpression
-                           └─[0]→ Variable(dec)
-                                  └─[0]→ Identifier("x")
-```
+**Frontier**: path `[0, 5]`. Choosing `"x"` as a completion yields a complete tree where the `Abstraction` node is satisfied.
 <
 
->L Frontier Monotonicity
-For partial parses $\mathcal{F}(s)$ extending to $\mathcal{F}(s \cdot t)$ with $t \in S'$:
-$$\operatorname{front}\_{\mathcal{F}(s \cdot t)}(v) \gt \operatorname{front}\_{\mathcal{F}(s)}(v)$$
-<
-
->P Frontier Monotonicity
-Trivial by definition of $S'$: any valid completion must advance the frontier.
-<
-
->R Monotonicity as a Debugging Tool
-This property is useful for verifying parser correctness as if the frontier ever decreases, something is wrong.
+>I build partial tree
+{"label":"parse: \u03bbx:Int.","input":"","steps":[{"token":"\u03bb","tokens":["\u03bb"],"display":"Expression\n \u2514 Abstraction\n   \u251c [0] \u03bb \u2713\n   \u2514 [1..5] missing\nfrontier: [0,1]"},{"token":"x","tokens":["x"],"display":"Expression\n \u2514 Abstraction\n   \u251c [0] \u03bb \u2713\n   \u251c [1] Ident(x) \u2713\n   \u2514 [2..5] missing\nfrontier: [0,2]"},{"token":":","tokens":[":"],"display":"Expression\n \u2514 Abstraction\n   \u251c [0] \u03bb \u2713\n   \u251c [1] Ident(x) \u2713\n   \u251c [2] : \u2713\n   \u2514 [3..5] missing\nfrontier: [0,3]"},{"token":"Int","tokens":["Int","Bool"],"display":"Expression\n \u2514 Abstraction\n   \u251c [0] \u03bb \u2713\n   \u251c [1] x \u2713\n   \u251c [2] : \u2713\n   \u251c [3] Type(Int) \u2713\n   \u2514 [4..5] missing\nfrontier: [0,4]"},{"token":".","tokens":["."],"display":"Expression\n \u2514 Abstraction\n   \u251c [0] \u03bb \u2713\n   \u251c [1] x \u2713  [2] : \u2713  [3] Int \u2713\n   \u251c [4] . \u2713\n   \u2514 [5] Expression  \u2190 frontier\nfrontier: [0,5]"}]}
 <
