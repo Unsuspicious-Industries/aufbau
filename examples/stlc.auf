@@ -20,8 +20,8 @@ Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
 // Atomic expressions
 AtomicExpression ::= Variable | '(' Expression ')' | Lambda
 
-// Applications (left-associative via iteration)
-Application(app) ::= AtomicExpression[l] Expression[r]
+// Applications (left-associative)
+Application(app) ::= Expression[l] AtomicExpression[r]
 
 // Expressions (start symbol)
 Expression ::= AtomicExpression |  Application

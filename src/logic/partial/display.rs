@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-// Helper functions for compact, *consistent* tree display.
+// Functions for compact, consistent tree display.
 
 fn indent(level: usize) -> String {
     const INDENT: &str = "  ";
@@ -40,11 +40,12 @@ fn format_node(node: &super::Node, level: usize) -> String {
 
 impl Display for super::PartialAST {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "PartialAST ({} roots):", self.roots.len())?;
-        for (i, root) in self.roots.iter().enumerate() {
+        let roots = self.roots();
+        writeln!(f, "PartialAST ({} roots):", roots.len())?;
+        for (i, root) in roots.iter().enumerate() {
             writeln!(f, "Root {}:", i)?;
             write!(f, "{}", format_nonterminal(root, 1))?;
-            if i < self.roots.len() - 1 {
+            if i < roots.len() - 1 {
                 writeln!(f)?;
             }
         }

@@ -31,7 +31,7 @@ pub fn run_complexity_experiment(
         let input = generator(n);
         let start = Instant::now();
         // create a parser and measure
-        let mut parser = crate::logic::partial::parse::Parser::new(grammar.clone());
+        let mut parser = crate::logic::partial::MetaParser::new(grammar.clone());
         let _ = parser.partial(&input);
         let duration = start.elapsed();
         ComplexityData::new(n, duration, input)

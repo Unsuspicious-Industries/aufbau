@@ -36,7 +36,9 @@ impl fmt::Display for Type {
             Type::Any => write!(f, "⊤"),
             Type::None => write!(f, "∅"),
 
-            // incomplete shit
+            // Internal types: Path, PathOf, and Partial are implementation-level
+            // types that should not appear in user-facing output. These Display
+            // impls are placeholders; see src/notes.md §11.
             Type::Path(p) => write!(
                 f,
                 "{}",
@@ -53,10 +55,7 @@ impl fmt::Display for Type {
     }
 }
 
-// ============================================================================
-// Helper functions for type parsing
-// ============================================================================
-
+// Type parsing implementation
 impl Type {
     // Public API: parse a type expression with default syntax (atoms parsed as Atom).
     pub fn parse(type_str: &str) -> Result<Self, String> {
@@ -531,8 +530,8 @@ mod tests {
                 println!("Codomain (should be B->C): {:?}", codomain);
 
                 // For curried application to work, domain must be simple A
-                // this fail but idk why i'm gonna kill this fucking compiler bullshit typing
-                // zeoifhzjkebfhjzebfuziebfziuoebfhiuezrbfh
+                // TODO: assert the correct property here once Context::equal is available.
+                // See src/notes.md §10 for context.
                 //assert!(equal(**domain, Type::Atom("A".into()), Context::new()));
             }
             _ => panic!("Expected arrow type"),

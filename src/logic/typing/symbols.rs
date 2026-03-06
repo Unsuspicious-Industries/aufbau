@@ -3,6 +3,7 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
 use crate::logic::typing::rule::{ConclusionKind, TypingJudgment, TypingRule};
+use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::Type;
 
 // =============================================================================
@@ -14,6 +15,28 @@ pub fn gather_terminals(root: &NonTerminal) -> Vec<String> {
     let mut terminals = Vec::new();
     collect_terminals_from_node(&Node::NonTerminal(root.clone()), &mut terminals);
     terminals
+}
+
+/// Collect all terminal values from a TypedNode.
+pub fn gather_terminals_typed(root: &TypedNode) -> Vec<String> {
+    let mut terminals = Vec::new();
+    collect_terminals_from_typed(root, &mut terminals);
+    terminals
+}
+
+fn collect_terminals_from_typed(node: &TypedNode, out: &mut Vec<String>) {
+    match node {
+        TypedNode::Term { val, .. } => {
+            if !val.is_empty() {
+                out.push(val.clone());
+            }
+        }
+        TypedNode::Expr { children, .. } => {
+            for child in children {
+                collect_terminals_from_typed(child, out);
+            }
+        }
+    }
 }
 
 /// Collect all terminals as Terminal structs (preserving complete/partial info)
@@ -231,10 +254,11 @@ mod tests {
         let g = Grammar::load(spec).unwrap();
         let mut p = Parser::new(g);
         let ast = p.partial(input).unwrap();
-        ast.roots
+        let roots = ast.roots();
+        roots
             .iter()
             .find(|r| r.is_complete())
-            .or_else(|| ast.roots.first())
+            .or_else(|| roots.first())
             .cloned()
             .expect("need at least one tree")
     }

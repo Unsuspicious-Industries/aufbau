@@ -1,8 +1,7 @@
-use crate::logic::debug::{DebugLevel, add_module_filter, clear_module_filters, set_debug_input};
-use crate::logic::partial::{Node, Terminal};
+use crate::logic::debug::{add_module_filter, clear_module_filters, set_debug_input, DebugLevel};
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::{check_tree, check_tree_with_context};
-use crate::{logic::Parser, logic::grammar::Grammar, set_debug_level};
+use crate::{logic::grammar::Grammar, logic::Parser, set_debug_level};
 use rouille::{Request, Response};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -319,7 +318,7 @@ pub fn handle_analyze_request(request: &Request) -> Response {
     let typed_ast = match partial.typed_ctx(&grammar, &ctx) {
         Ok(typed) => {
             let trees: Vec<TypedTreeInfo> = partial
-                .roots
+                .roots()
                 .iter()
                 .enumerate()
                 .map(|(i, root)| {
@@ -357,7 +356,7 @@ pub fn handle_analyze_request(request: &Request) -> Response {
         warnings,
         error: None,
         is_complete: partial.is_complete(),
-        root_count: partial.roots.len(),
+        root_count: partial.roots().len(),
         tokens,
         ast_graph,
         typed_ast,
@@ -437,7 +436,7 @@ pub fn handle_list_specs(_request: &Request) -> Response {
 fn typed_node_to_response(node: &crate::logic::typing::tree::TypedNode) -> TypedNodeResponse {
     use crate::logic::typing::tree::TypedNode as TN;
     match node {
-        TN::Term { val, ty } => TypedNodeResponse::Term {
+        TN::Term { val, ty, .. } => TypedNodeResponse::Term {
             val: val.clone(),
             ty: format!("{ty}"),
         },
@@ -446,6 +445,7 @@ fn typed_node_to_response(node: &crate::logic::typing::tree::TypedNode) -> Typed
             children,
             ty,
             complete,
+            ..
         } => TypedNodeResponse::Expr {
             name: name.clone(),
             ty: format!("{ty}"),
@@ -492,7 +492,7 @@ pub fn handle_parser_viz_request(request: &Request) -> Response {
     println!(
         "Parsed input: '{}', partial roots: {}",
         input,
-        partial.roots.len()
+        partial.roots().len()
     );
 
     let graph = build_graph(&partial, &grammar);
@@ -506,7 +506,7 @@ pub fn handle_parser_viz_request(request: &Request) -> Response {
         completions: well_typed_completions,
         all_completions: all_completion_strings,
         is_complete: partial.is_complete(),
-        root_count: partial.roots.len(),
+        root_count: partial.roots().len(),
     };
 
     Response::json(&response)
@@ -530,7 +530,7 @@ fn filter_well_typed_completions(
                 Ok(partial) => {
                     // Check if any tree is well-typed
                     partial
-                        .roots
+                        .roots()
                         .iter()
                         .any(|root| match check_tree(root, grammar) {
                             TreeStatus::Valid(_) | TreeStatus::Partial(_) => true,
@@ -545,44 +545,7 @@ fn filter_well_typed_completions(
 }
 
 /// Extract all identifier tokens from the AST by traversing terminal nodes
-fn extract_symbols_from_ast(ast: &crate::logic::partial::PartialAST) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut seen = HashSet::new();
-
-    for root in ast.roots() {
-        collect_tokens_from_node(&Node::NonTerminal(root.clone()), &mut tokens, &mut seen);
-    }
-
-    tokens
-}
-
-fn collect_tokens_from_node(node: &Node, tokens: &mut Vec<String>, seen: &mut HashSet<String>) {
-    match node {
-        Node::Terminal(Terminal::Complete { value, .. }) => {
-            if !value.is_empty()
-                && !value.chars().all(|c| c.is_whitespace())
-                && seen.insert(value.clone())
-            {
-                tokens.push(value.clone());
-            }
-        }
-        Node::Terminal(Terminal::Partial { value, .. }) => {
-            if !value.is_empty()
-                && !value.chars().all(|c| c.is_whitespace())
-                && seen.insert(value.clone())
-            {
-                tokens.push(value.clone());
-            }
-        }
-        Node::NonTerminal(nt) => {
-            for child in &nt.children {
-                collect_tokens_from_node(child, tokens, seen);
-            }
-        }
-    }
-}
-
-/// Compute completions for a parsed `PartialAST`.
+/// Compute completions for a parsed `PartialAST` via its `TypedAST`.
 ///
 /// Returns (well_typed_completions, all_completion_strings).
 fn compute_completions_for_partial(
@@ -590,14 +553,35 @@ fn compute_completions_for_partial(
     partial: &crate::logic::partial::PartialAST,
     grammar: &Grammar,
 ) -> (Vec<String>, Vec<String>) {
-    let symbols = extract_symbols_from_ast(partial);
-    let completion_regexes = partial.completions(grammar);
+    let typed = match partial.typed(grammar) {
+        Ok(t) => t,
+        Err(_) => return (vec![], vec![]),
+    };
+    let symbols = extract_symbols_from_typed(&typed);
+    let completion_regexes = typed.completions(grammar);
     let all_completion_strings: Vec<String> = completion_regexes
         .iter()
         .filter_map(|regex| find_working_completion(input, regex, &symbols, grammar))
         .collect();
     let well_typed = filter_well_typed_completions(input, &all_completion_strings, grammar);
     (well_typed, all_completion_strings)
+}
+
+fn extract_symbols_from_typed(ast: &crate::logic::typing::TypedAST) -> Vec<String> {
+    use crate::logic::typing::gather_terminals_typed;
+    let mut tokens = Vec::new();
+    let mut seen = HashSet::new();
+    for root in &ast.roots {
+        for terminal in gather_terminals_typed(root) {
+            if !terminal.is_empty()
+                && !terminal.chars().all(|c| c.is_whitespace())
+                && seen.insert(terminal.clone())
+            {
+                tokens.push(terminal);
+            }
+        }
+    }
+    tokens
 }
 
 /// Find the first working completion for a regex

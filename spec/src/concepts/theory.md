@@ -1,58 +1,39 @@
-# Theoretical Foundation
+#[D] Theoretical Foundation
 
-This chapter lays out the formal foundations for our grammar-based parsing system with type annotations and binding resolution.
+This chapter defines the formal structures underlying the Aufbau system: grammars, parse forests, partial trees, typing judgments, and the completability guarantee.
 
-## Core Definitions
+Sources: [`src/logic/grammar/mod.rs`](~/src/logic/grammar/mod.rs), [`src/logic/partial/structure.rs`](~/src/logic/partial/structure.rs), [`src/logic/typing/mod.rs`](~/src/logic/typing/mod.rs)
+
+## Grammar
 
 >D Grammar
-A **grammar** $G$ is a tuple $(N,T,P,S,\Theta,A)$ where:
+A **grammar** $G$ is a tuple $(N, T, P, S, \Theta, A)$ where:
 
-- $N$ is the set of non-terminals
-- $T$ is the set of terminals
-- $P$ is the set of productions with binding annotations
-- $S \in N$ is the start symbol
-- $\Theta: P \to \theta \cup \{\varepsilon\}$ assigns an optional typing rule to each production
-- $A: N \to P^*$ maps each non-terminal to its production alternatives
+- $N$: finite set of non-terminals (strings).
+- $T$: finite set of terminals, each a derivative regex over the input alphabet.
+- $P$: set of productions. Each production is a pair $(\text{lhs} \in N,\ \text{rhs} \in (T \cup N)^*)$ with an optional typing rule name.
+- $S \in N$: the distinguished start symbol.
+- $\Theta$: a finite map from rule names to typing rules (may be empty).
+- $A: N \to P^*$: the alternative map — for each non-terminal, the ordered list of its productions.
 <
 
->R Production
-A **production** $p \in P$ is a sequence of length $n$:
-$$ \alpha_0[b_0] \alpha_1[b_1]\cdots \alpha_n[b_n] $$
+### Symbol
 
-where:
-- $\forall k \in [0;n], \alpha_k \in T \cup N$ (each element is a terminal or non-terminal)
-- $\forall k \in [0;n], b_k \in \mathcal{B} \cup \{\varepsilon\}$ (each element may have a binding)
-- $\mathcal{B}$ is the set of bindings and $\varepsilon$ denotes the empty binding
+>D Symbol
+A **symbol** is either:
+
+- A **terminal** `Symbol::Terminal { regex, binding }`: matches a segment of input via a derivative regex. Literal strings `'x'` and `"x"` compile to `Regex::literal(x)`; `/pattern/` compiles to a full regex.
+- A **non-terminal** `Symbol::Nonterminal { name, binding }`: a reference to another production rule by name.
+
+Both variants carry an optional **binding name** used by the typing system to reference sub-trees.
 <
 
->D Non-terminal Alternatives
-Each non-terminal $n \in N$ is associated with a set of production alternatives via function $A$. Using BNF notation:
-$$ n ::= p_1 \ |\ p_2 \ |\ \cdots \ |\ p_m $$
+### Production
+
+>D Production
+A **production** is a sequence of symbols $\alpha_0[b_0]\,\alpha_1[b_1]\cdots\alpha_n[b_n]$ where each $\alpha_k \in T \cup N$ and each $b_k \in \mathcal{B} \cup \{\varepsilon\}$ is an optional binding name. Productions also carry an optional rule name string used to look up a typing rule in $\Theta$.
 <
 
-## Goals
-
-With these definitions in place, our goals in the project are to be able to procedurally build a parser $\Psi_L$ for any language $L$ defined by a grammar $G$.
-
->D Partial Parser
-With $\Sigma$ an alphabet and $L$ a language a **partial parser** for $L$ is a function
-$$
-\Phi_L : \Sigma^* \rightarrow \\{\text{accept},\text{reject}\\}
-$$
-defined as:
-$$
-\Phi_L(s) = \begin{cases}
-\text{accept} &  \mathcal{C}_L(s) \neq \emptyset \\\\
-\text{reject} & \text{otherwise}
-\end{cases}
-$$
-<
-
-Finally, we want to be able to resolve **bindings** in the parse trees produced by $\Psi_L$, and use the **typing rules** $\Theta$ to enforce type correctness during parsing.
-
->R Completability via Partial Parsing
-When $s$ is completable:
-- $\Psi_L(s) \neq \text{reject}$
-- $\mathcal{F} = \Psi_L(s)$ is **not complete**
-- $\mathcal{F}$ becomes complete by extension with some $s' \in S'$
+>R Grammar Equality
+Grammar equality (used for the meta-parser cache) compares `productions`, `special_tokens`, `delimiters`, and `start`. The `typing_rules` field is deliberately excluded because of indeterminate forms like the meta variables `?X` or the context calls.
 <

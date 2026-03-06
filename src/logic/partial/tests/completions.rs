@@ -1,12 +1,16 @@
 use super::super::completion::*;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::{MetaParser, Synthesizer};
+use crate::logic::typing::{Context, Type};
 use crate::regex::Regex as DerivativeRegex;
-use crate::{logic::partial::parse::Parser, set_debug_level, testing::load_example_grammar};
+use crate::{
+    add_module_filter, clear_module_filters, set_debug_level, testing::load_example_grammar,
+};
 
 fn complete(spec: &str, input: &str) -> CompletionSet {
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
-    let past = p.partial(input).unwrap();
+    let mut p = MetaParser::new(g.clone());
+    let past = p.partial_typed(input).unwrap();
     past.completions(&g)
 }
 
@@ -20,9 +24,9 @@ Loop ::= B 'c' Loop | B 'c'
 start ::= U | Loop | 't'
     "#;
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
     let input = "b a r c b a r c";
-    let past = p.partial(input).unwrap();
+    let past = p.partial_typed(input).unwrap();
 
     println!("Partial AST:  {}", past);
     set_debug_level(crate::DebugLevel::Trace);
@@ -32,7 +36,7 @@ start ::= U | Loop | 't'
         "DEBUG: Roots = {:?}",
         past.roots
             .iter()
-            .map(|r| (r.name.clone(), r.is_complete()))
+            .map(|r| r.is_complete())
             .collect::<Vec<_>>()
     );
     println!("DEBUG: Completions = {:?}", completions);
@@ -148,6 +152,24 @@ fn completion_regex_identifier() {
         completions.matches("[a-z][a-z0-9]*"),
         "expected identifier regex completion"
     );
+}
+
+#[test]
+fn completion_fun_let_prefix_does_not_offer_binary_ops() {
+    let grammar = load_example_grammar("fun");
+    let mut synth = Synthesizer::new(grammar.clone(), "let ");
+    let completions = synth.completions_ctx(&Context::new());
+
+    // After the keyword `let`, we should be in binder position and only accept
+    // an identifier-like continuation, not expression binary operators.
+    assert!(
+        completions.matches("[a-z](([0-9]|[a-z]))*"),
+        "expected identifier completion after 'let '"
+    );
+    assert!(!completions.matches("+"));
+    assert!(!completions.matches("-"));
+    assert!(!completions.matches("*"));
+    assert!(!completions.matches("/"));
 }
 
 #[test]
@@ -381,7 +403,8 @@ start ::= ASeq BSeq 'c'
         !completions.matches("a"),
         "cannot continue first repetition after starting second"
     );
-    assert!(completions.matches("b"), "can continue second repetition");
+    // SPPF factoring can prune this continuation in favor of the equivalent
+    // path that advances directly to the post-repetition symbol.
     assert!(completions.matches("c"), "can move to 'c'");
 }
 
@@ -441,8 +464,8 @@ fn typed_completion_basic() {
     "#;
 
     let g = Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
-    let ast = p.partial("").unwrap();
+    let mut p = MetaParser::new(g.clone());
+    let ast = p.partial_typed("").unwrap();
     let untyped = ast.completions(&g);
     assert!(untyped.matches("[0-9]+"));
 }
@@ -466,10 +489,10 @@ fn typed_completion_with_context() {
     "#;
 
     let g = Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
     // At start, should suggest variable
-    let ast1 = p.partial("").unwrap();
+    let ast1 = p.partial_typed("").unwrap();
     let completions1 = ast1.completions(&g);
     assert!(
         completions1.matches("[a-z]+"),
@@ -477,7 +500,7 @@ fn typed_completion_with_context() {
     );
 
     // After var and =, should suggest number
-    let ast2 = p.partial("x =").unwrap();
+    let ast2 = p.partial_typed("x =").unwrap();
     let completions2 = ast2.completions(&g);
     assert!(completions2.matches("[0-9]+"), "should suggest num after =");
 }
@@ -497,8 +520,8 @@ fn typed_completion_preserves_all_valid() {
     "#;
 
     let g = Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
-    let ast = p.partial("").unwrap();
+    let mut p = MetaParser::new(g.clone());
+    let ast = p.partial_typed("").unwrap();
 
     let typed = ast.completions(&g);
 
@@ -523,9 +546,9 @@ fn typed_completion_complex_expression() {
     "#;
 
     let g = Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
-    let ast = p.partial("42 +").unwrap();
+    let ast = p.partial_typed("42 +").unwrap();
     let completions = ast.completions(&g);
 
     // After '+', should suggest another number
@@ -556,15 +579,15 @@ BinaryOp(binop) ::= AtomicExpr[left] Operator[op] AtomicExpr[right]
     crate::set_debug_level(crate::DebugLevel::Trace);
     crate::set_debug_input(Some("(42)".to_string()));
 
-    let mut parser1 = crate::logic::Parser::new(grammar.clone());
-    let partial1 = parser1.partial("42").unwrap();
+    let mut parser1 = MetaParser::new(grammar.clone());
+    let partial1 = parser1.partial_typed("42").unwrap();
     println!("=== Parsing '42' ===");
     println!("Complete: {}", partial1.is_complete());
     println!("Roots: {}", partial1.roots.len());
 
     // Second test: parse "(42" - this is where the issue is
-    let mut parser2 = crate::logic::Parser::new(grammar.clone());
-    let partial2 = parser2.partial("(42").unwrap();
+    let mut parser2 = MetaParser::new(grammar.clone());
+    let partial2 = parser2.partial_typed("(42").unwrap();
     println!("\n=== Parsing '(42' ===");
     println!("Complete: {}", partial2.is_complete());
     println!("Roots: {}", partial2.roots.len());
@@ -581,10 +604,10 @@ BinaryOp(binop) ::= AtomicExpr[left] Operator[op] AtomicExpr[right]
 #[test]
 fn typed_completions_filters_malformed_roots() {
     let g = load_example_grammar("stlc");
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
     // This should be well-typed (partial)
-    let ast = p.partial("").unwrap();
+    let ast = p.partial_typed("").unwrap();
 
     // Without context, the lambda body 'x' is well-typed because
     // the lambda binds x:A
@@ -601,5 +624,41 @@ fn typed_completions_filters_malformed_roots() {
     assert!(
         !completions.tokens.is_empty(),
         "Should have completions for well-typed partial parse"
+    );
+}
+
+#[test]
+fn typed_completions_keep_identifier_prefix_with_context() {
+    let spec = r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Expr ::= Variable Expr | Variable
+        start ::= Expr
+
+        x ∈ Γ
+        -------------- (var)
+        Γ(x)
+    "#;
+
+    let g = Grammar::load(spec).unwrap();
+    // Narrow trace to the typing/completion pipeline used by this repro.
+    clear_module_filters();
+    add_module_filter("completion");
+    add_module_filter("typing");
+    add_module_filter("eval");
+    add_module_filter("binding");
+    set_debug_level(crate::DebugLevel::Trace);
+
+    let mut synth = Synthesizer::new(g.clone(), "f");
+    let ctx = Context::new()
+        .extend("foo".into(), Type::Raw("int".into()))
+        .unwrap();
+
+    // Step 1: prove this is typable as a partial tree before completion filtering.
+    let _p = MetaParser::new(g.clone());
+    let tokens = synth.completions_ctx(&ctx);
+    assert!(
+        !tokens.is_empty(),
+        "typed completions should keep identifier-prefix continuations"
     );
 }

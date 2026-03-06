@@ -1,4 +1,57 @@
 /* ═══════════════════════════════════════════════════════════════════════════
+   FA-SVG ICONS - fill and visibility fix
+   The compiled chrome.css in this mdBook version lacks .fa-svg rules.
+   SVG paths default fill to black; force currentColor so they inherit
+   the surrounding text color and remain visible on all themes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.fa-svg svg {
+    fill: currentColor;
+    width: 1em;
+    height: 1em;
+    vertical-align: -0.125em;
+    display: inline-block;
+}
+
+#menu-bar .fa-svg,
+#menu-bar .icon-button {
+    color: var(--fg);
+    opacity: 0.7;
+}
+
+#menu-bar .fa-svg:hover,
+#menu-bar .icon-button:hover {
+    opacity: 1;
+}
+
+.nav-chapters .fa-svg,
+.mobile-nav-chapters .fa-svg {
+    fill: var(--fg);
+    opacity: 0.7;
+}
+
+.nav-chapters:hover .fa-svg,
+.mobile-nav-chapters:hover .fa-svg {
+    opacity: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MATHJAX DARK MODE FIX
+   MathJax CHTML output inherits color but the container can pick up
+   a background from ancestor rules. Force transparent bg and inherit
+   color so math is always readable.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+mjx-container {
+    color: inherit !important;
+    background: transparent !important;
+}
+
+mjx-container svg {
+    color: inherit !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MATHEMATICAL THEOREM ENVIRONMENTS
    Refined design - Subtle colors, clean lines, modern typography
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -12,40 +65,15 @@
 .remark,
 .assumption {
     position: relative;
-    margin: 2em 0;
-    padding: 1.2em 1.5em 1.2em 1.5em;
-    background: #fafafa;
-    border-left: 4px solid #000000;
+    margin: 1.4em 0;
+    padding: 0.7em 1em 0.7em 1em;
+    background: rgba(0,0,0,0.03);
+    border-left: 3px solid #ccc;
     overflow: visible;
 }
 
-/* Dark theme support */
-.navy .theorem,
-.navy .definition,
-.navy .lemma,
-.navy .proof,
-.navy .example,
-.navy .remark,
-.navy .assumption,
-.coal .theorem,
-.coal .definition,
-.coal .lemma,
-.coal .proof,
-.coal .example,
-.coal .remark,
-.coal .assumption,
-.ayu .theorem,
-.ayu .definition,
-.ayu .lemma,
-.ayu .proof,
-.ayu .example,
-.ayu .remark,
-.ayu .assumption {
-    background: #1f1f1f;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
-   TITLE BADGES - Clean label style
+   TITLE LABELS - small, muted, inline at top of box
    ───────────────────────────────────────────────────────────────────────────── */
 
 .theorem-title,
@@ -55,173 +83,107 @@
 .example-title,
 .remark-title,
 .assumption-title {
-    position: absolute;
-    top: -0.7em;
-    left: 1.2em;
-    padding: 0.3em 0.9em;
+    display: block;
+    font-size: 0.7em;
     font-weight: 600;
-    font-size: 0.8em;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 0.4em;
+    color: inherit;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   THEOREM - Soft blue, primary results
+   THEOREM - blue-gray
    ───────────────────────────────────────────────────────────────────────────── */
 
-.theorem {
-    border-left-color: #3b82f6;
-    background: #eff6ff;
-}
-
-.theorem-title {
-    background: #3b82f6;
-    color: #ffffff;
-}
-
-.navy .theorem,
-.coal .theorem,
-.ayu .theorem {
-    border-left-color: #60a5fa;
-    background: #1e3a5f;
-}
+.theorem { border-left-color: #7bafd4; background: rgba(123,175,212,0.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   DEFINITION - Soft green, foundational
+   DEFINITION - muted green
    ───────────────────────────────────────────────────────────────────────────── */
 
-.definition {
-    border-left-color: #10b981;
-    background-color: #ffffff;
-}
-
-.definition-title {
-    background: #10b981;
-    color: #ffffff;
-}
-
-.navy .definition,
-.coal .definition,
-.ayu .definition {
-    border-left-color: #34d399;
-    background: #1e3d32;
-}
+.definition { border-left-color: #6aaa8a; background: rgba(106,170,138,0.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   LEMMA - Neutral gray, supporting
+   LEMMA - neutral gray
    ───────────────────────────────────────────────────────────────────────────── */
 
-.lemma {
-    border-left-color: #6b7280;
-    background: #f9fafb;
-}
-
-.lemma-title {
-    background: #6b7280;
-    color: #ffffff;
-}
-
-.navy .lemma,
-.coal .lemma,
-.ayu .lemma {
-    border-left-color: #9ca3af;
-    background: #262626;
-}
+.lemma { border-left-color: #999; background: rgba(0,0,0,0.04); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   PROOF - Minimal dashed border
+   PROOF - dashed, no fill
    ───────────────────────────────────────────────────────────────────────────── */
 
 .proof {
-    border: 2px dashed #0f1927;
-    background: #fafafa;
-}
-
-.proof-title {
-    background: #0f1927;
-    color: #f9fafb;
-    font-style: italic;
+    border-left: 3px dashed #aaa;
+    background: transparent;
 }
 
 /* QED symbol */
 .proof::after {
     content: "∎";
     position: absolute;
-    bottom: 0.3em;
-    right: 0.5em;
-    font-size: 1.5em;
-    color: #0f1927;
-}
-
-.navy .proof::after,
-.coal .proof::after,
-.ayu .proof::after {
-    color: #9ca3af;
+    bottom: 0.2em;
+    right: 0.4em;
+    font-size: 1em;
+    opacity: 0.4;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   EXAMPLE - Soft red background with left bar only
+   EXAMPLE - muted red
    ───────────────────────────────────────────────────────────────────────────── */
 
-.example {
-    border: none;
-    border-left: 4px solid #ef4444;
-    background: #fef2f2;
-}
-
-.example-title {
-    background: #ef4444;
-    color: #ffffff;
-}
-
-.navy .example,
-.coal .example,
-.ayu .example {
-    border-left-color: #f87171;
-    background: #3d1f1f;
-}
+.example { border-left-color: #c47a7a; background: rgba(196,122,122,0.07); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   REMARK - Soft purple, secondary info
+   REMARK - muted purple
    ───────────────────────────────────────────────────────────────────────────── */
 
-.remark {
-    border: 2px dashed #8b5cf6;
-    border-left: 2px dashed #8b5cf6;
-}
-
-.remark-title {
-    background: #8b5cf6;
-    color: #ffffff;
-}
-
-.navy .remark,
-.coal .remark,
-.ayu .remark {
-    border-left-color: #a78bfa;
-    background: #2d1f3d;
-}
+.remark { border-left-color: #9b86c0; background: rgba(155,134,192,0.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
-   ASSUMPTION - Orange, important conditions
+   ASSUMPTION - muted orange
    ───────────────────────────────────────────────────────────────────────────── */
 
-.assumption {
-    border: 1px solid #fb923c;
-    border-left: 4px solid #f97316;
-    background: #fff7ed;
+.assumption { border-left-color: #c8924a; background: rgba(200,146,74,0.08); }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SIDEBAR - always show nested sections + subsection styling
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* mdBook hides .section ol when the preceding sibling li lacks .expanded.
+   part-title separators are never .expanded, so they collapse the first item
+   of every section. Override: always show nested section lists. */
+.chapter li + li > ol.section {
+    display: block !important;
 }
 
-.assumption-title {
-    background: #f97316;
-    color: #ffffff;
+/* Parent li wraps so ol.section drops below the link instead of sitting beside it */
+.chapter li {
+    flex-wrap: wrap;
 }
 
-.navy .assumption,
-.coal .assumption,
-.ayu .assumption {
-    border-color: #fb923c;
-    border-left-color: #fb923c;
-    background: #3d2a1f;
+/* Subsections: no indent, sit flush under parent, full width */
+ol.section {
+    padding-inline-start: 8px !important;
+    width: 100%;
+}
+
+/* Subsection links: dimmer, slightly smaller */
+ol.section .chapter-item a {
+    font-size: 0.875em;
+    opacity: 0.6;
+}
+
+ol.section .chapter-item a:hover,
+ol.section .chapter-item a.active {
+    opacity: 1;
+}
+
+/* Tighter top margin for subsection items */
+ol.section li.chapter-item {
+    margin-block-start: 0.15em;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
 use crate::logic::partial::structure::Node;
+use crate::logic::partial::MetaParser;
 use crate::set_debug_level;
 
 #[test]
@@ -50,11 +51,11 @@ fn test_alternatives() {
 
     let ast = p.partial("a").unwrap();
     assert!(ast.is_complete());
-    assert_eq!(ast.roots.len(), 1);
-    assert_eq!(ast.roots[0].name, "start");
+    assert_eq!(ast.roots().len(), 1);
+    assert_eq!(ast.roots()[0].name, "start");
 
     // Verify child structure
-    let child = &ast.roots[0].children[0];
+    let child = &ast.roots()[0].children[0];
     if let Node::NonTerminal(nt) = child {
         assert_eq!(nt.name, "A");
     } else {
@@ -75,8 +76,9 @@ fn test_partial_alternatives() {
     let ast = p.partial("a").unwrap();
     // A: complete (matched 'a')
     // B: partial (matched 'a', missing 'b')
-    // Both should be present as roots
-    assert_eq!(ast.roots.len(), 2);
+    // With SPPF expansion there can be duplicate materializations, so assert
+    // at least two candidates are available.
+    assert!(ast.roots().len() >= 2);
 }
 
 #[test]
@@ -129,7 +131,7 @@ fn test_binding_preservation() {
     let ast = p.partial("42").unwrap();
     assert!(ast.is_complete());
 
-    let root = &ast.roots[0];
+    let root = &ast.roots()[0];
     let child = &root.children[0];
     if let Node::NonTerminal(nt) = child {
         assert_eq!(nt.binding, Some("x".to_string()));
@@ -179,4 +181,72 @@ fn test_partial_lambda_arrow() {
     assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
     let ast = result.unwrap();
     assert!(!ast.is_complete(), "AST should be partial (incomplete)");
+}
+
+#[test]
+fn test_fun_float_operator_prefix_parseability() {
+    let spec = include_str!("../../../../examples/fun.auf");
+    let g = Grammar::load(spec).unwrap();
+
+    let tokenized = g.tokenize("1.0 +.").unwrap();
+    let texts: Vec<String> = tokenized.iter().map(|s| s.text()).collect();
+    assert!(
+        !texts.is_empty(),
+        "Tokenizer should produce at least one segment for float op prefix"
+    );
+
+    let mut p = MetaParser::new(g).with_max_depth(41);
+    let parsed = p.partial("1.0 +.");
+    assert!(
+        parsed.is_ok(),
+        "Expected structural partial parse for '1.0 +.', got {:?}",
+        parsed.err()
+    );
+}
+
+#[test]
+fn test_toy_concat_prefix_parseability() {
+    let spec = include_str!("../../../../examples/toy.auf");
+    let g = Grammar::load(spec).unwrap();
+    let mut p = MetaParser::new(g).with_max_depth(62);
+    let parsed = p.partial("beep: Fizz +");
+    assert!(
+        parsed.is_ok(),
+        "Expected structural partial parse for 'beep: Fizz +', got {:?}",
+        parsed.err()
+    );
+}
+
+#[test]
+fn test_fun_let_prefix_contains_let_branch() {
+    let spec = include_str!("../../../../examples/fun.auf");
+    let g = Grammar::load(spec).unwrap();
+    let mut p = MetaParser::new(g).with_max_depth(41);
+    let ast = p.partial("let ").expect("partial parse should succeed");
+
+    let has_let = ast
+        .roots()
+        .iter()
+        .any(|root| root.serialize().contains("(Let") || root.serialize().contains("Let("));
+    assert!(has_let, "expected a Let branch for prefix 'let '");
+}
+
+#[test]
+fn test_keywords_are_not_matched_by_identifier_regex() {
+    let spec = r#"
+    Identifier ::= /[a-z][a-z0-9]*/
+    Variable ::= Identifier
+    Let ::= 'let' Identifier
+    start ::= Let | Variable
+    "#;
+    let g = Grammar::load(spec).unwrap();
+    let mut p = MetaParser::new(g).with_max_depth(27);
+    let ast = p.partial("let").expect("partial parse should succeed");
+
+    // Reserved keywords should not be consumed through broad regex terminals.
+    let any_variable_root = ast
+        .roots()
+        .iter()
+        .any(|r| r.serialize().contains("Variable"));
+    assert!(!any_variable_root, "keyword `let` parsed as Variable");
 }

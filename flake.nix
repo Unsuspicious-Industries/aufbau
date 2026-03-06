@@ -48,19 +48,15 @@
           gh
 
           # Linker & toolchain
-          clang
-          mold
           binutils
           nix-ld
+          clang
+          mold
 
           # Libraries
           openssl
           pkg-config
           zlib
-
-          # Editor
-          pkgs.vscodium
-	  zed-editor
         ];
 
         lspServers = with pkgs; [

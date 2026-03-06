@@ -5,13 +5,41 @@ The type system enforces strong typing where:
 1. Variables are fixed types (can't be rebound)
 2. Context extension fails if variable already exists
 3. This is enforced during evaluation
+
+## Parser depth bounds
+
+Originally these tests used `Parser::new` (fixed recursion depth 15), which was
+sufficient for short STLC inputs.  The new API requires `MetaParser`, whose
+default `max_depth` is 256 — high enough to cause OOM when tests run in
+parallel.
+
+We cap at `STLC_MAX_DEPTH = 62`, which is the third rung of MetaParser's
+geometric probe ladder (factor 1.5, start 5: 5→8→12→18→27→41→62…).
+
+Observed minimum parse depths per input (empirical, not proven):
+  "λx : Int. λx : Bool. x"           → needs rung 27 (depth ≥ 23)
+  "λx : Int. λy : Bool. x"           → needs rung 27 (depth ≥ 23)
+  "λx : Int. λy : Bool. λx:String. x"→ needs rung 41 (depth ≥ 40)
+  "λx : Int. λy : Bool. λz:String. x"→ needs rung 41 (depth ≥ 40)
+  "λx : Int. (λx : Bool. x) x"       → needs rung 62 (depth > 41)
+
+We use a single constant covering the worst case.  `valid_depth_for` (10 +
+byte_len/2) was not used because it falls between ladder rungs, making the
+cap silently ineffective.
+
+HACKY: no formal proof 62 is sufficient for all STLC inputs.  If a test fails
+with "No parse results after trying depths … to 62", raise STLC_MAX_DEPTH to
+the next rung (93).
 */
 
+// HACKY depth cap — see module comment above.
+const STLC_MAX_DEPTH: usize = 62;
+
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::MetaParser;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree;
 use crate::logic::typing::Type;
-use crate::logic::Parser;
 use crate::validation::completable::load_example_grammar;
 
 fn stlc() -> Grammar {
@@ -71,9 +99,10 @@ fn test_nested_lambda_same_variable_rejected() {
     // λx : Int. λx : Bool. x
     // This should fail because inner lambda tries to rebind 'x'
     let g = stlc();
-    let mut p = Parser::new(g.clone());
+    let input = "λx : Int. λx : Bool. x";
+    let mut p = MetaParser::new(g.clone()).with_max_depth(STLC_MAX_DEPTH);
 
-    let ast = p.partial("λx : Int. λx : Bool. x").unwrap();
+    let ast = p.partial(input).unwrap();
 
     // Parse should succeed but typing should fail
     let completes = ast.completes();
@@ -105,9 +134,10 @@ fn test_nested_lambda_different_variables_accepted() {
     // λx : Int. λy : Bool. x
     // This should succeed because variables have different names
     let g = stlc();
-    let mut p = Parser::new(g.clone());
+    let input = "λx : Int. λy : Bool. x";
+    let mut p = MetaParser::new(g.clone()).with_max_depth(STLC_MAX_DEPTH);
 
-    let ast = p.partial("λx : Int. λy : Bool. x").unwrap();
+    let ast = p.partial(input).unwrap();
 
     let completes = ast.completes();
     assert!(
@@ -141,9 +171,10 @@ fn test_triple_nested_lambda_duplicate_rejected() {
     // λx : Int. λy : Bool. λx : String. x
     // Middle variable is different, but innermost tries to rebind 'x'
     let g = stlc();
-    let mut p = Parser::new(g.clone());
+    let input = "λx : Int. λy : Bool. λx : String. x";
+    let mut p = MetaParser::new(g.clone()).with_max_depth(STLC_MAX_DEPTH);
 
-    let ast = p.partial("λx : Int. λy : Bool. λx : String. x").unwrap();
+    let ast = p.partial(input).unwrap();
 
     let completes = ast.completes();
 
@@ -174,9 +205,10 @@ fn test_triple_nested_lambda_all_different_accepted() {
     // λx : Int. λy : Bool. λz : String. x
     // All different variables - should succeed
     let g = stlc();
-    let mut p = Parser::new(g.clone());
+    let input = "λx : Int. λy : Bool. λz : String. x";
+    let mut p = MetaParser::new(g.clone()).with_max_depth(STLC_MAX_DEPTH);
 
-    let ast = p.partial("λx : Int. λy : Bool. λz : String. x").unwrap();
+    let ast = p.partial(input).unwrap();
 
     let completes = ast.completes();
     assert!(
@@ -211,9 +243,10 @@ fn test_lambda_with_application_duplicate_rejected() {
     // Inner lambda rebinds x, then applies it to outer x
     // The inner lambda should fail to type check due to redeclaration
     let g = stlc();
-    let mut p = Parser::new(g.clone());
+    let input = "λx : Int. (λx : Bool. x) x";
+    let mut p = MetaParser::new(g.clone()).with_max_depth(STLC_MAX_DEPTH);
 
-    let ast = p.partial("λx : Int. (λx : Bool. x) x").unwrap();
+    let ast = p.partial(input).unwrap();
 
     let completes = ast.completes();
 

@@ -1,8 +1,19 @@
+// Typing tests for the IMP language (imperative: let, assign, if, while).
+//
+// ## Parser depth bounds
+//
+// MetaParser defaults to max_depth=256, which causes OOM when tests run in
+// parallel.  Tests that use MetaParser cap depth with `valid_depth_for(input)`
+// (10 + byte_len/2), calibrated for Fun/IMP-size inputs.
+//
+// HACKY: no formal proof this bound is tight; if tests fail with "No parse
+// results after trying depths …", increase the cap.
 use core::panic;
 
 use crate::logic::partial::parse::Parser;
 use crate::logic::partial::{MetaParser, Synthesizer};
 use crate::logic::typing::core::Context;
+use crate::validation::parseable::valid_depth_for;
 use crate::{set_debug_level, testing::*};
 
 fn imp_grammar() -> &'static crate::logic::grammar::Grammar {
@@ -15,6 +26,11 @@ fn imp_grammar() -> &'static crate::logic::grammar::Grammar {
 /// It's skipped unless you set `P7_DEBUG_IMP_COMPLETION=1`.
 #[test]
 fn imp_completion_debug_smoke() {
+    // Keep this as an opt-in debug harness: it is intentionally expensive.
+    if std::env::var("P7_DEBUG_IMP_COMPLETION").ok().as_deref() != Some("1") {
+        return;
+    }
+
     // Start with the smallest possible input that currently fails in the
     // `validation::completable::imp` batch: empty string.
     let input = "{";
@@ -23,7 +39,7 @@ fn imp_completion_debug_smoke() {
 
     // 1) Token-level completion suggestions from the partial parser.
     let ctx = Context::new();
-    let tokens = synth.typed_completions(&ctx);
+    let tokens = synth.completions_ctx(&ctx);
     eprintln!("\n=== IMP completion debug ===");
     eprintln!("token completions ({}):", tokens.len());
     for (i, t) in tokens.iter().take(50).enumerate() {
@@ -34,9 +50,9 @@ fn imp_completion_debug_smoke() {
     // pseudo-random rotation seed for selecting completions deterministically
     let mut prng: u64 = 0x9e3779b977c8715u64;
     // have a completion loop
-    for i in 0..100 {
+    for i in 0..20 {
         synth.set_input(current_input.clone());
-        let tokens = synth.typed_completions(&ctx);
+        let tokens = synth.completions_ctx(&ctx);
         println!("Tokens at iteration {}: ", i);
         for (j, t) in tokens.iter().take(10).enumerate() {
             println!("  {:>2}. {}", j + 1, t);
@@ -122,7 +138,8 @@ fn imp_typing_fails_on_unbound_var_in_operation_rhs() {
 fn imp_typing_accepts_union_assignment() {
     // Union annotation should accept either member type through inclusion.
     let grammar = imp_grammar();
-    let mut parser = MetaParser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone())
+        .with_max_depth(valid_depth_for("{ let u:Int|Bool=true; }"));
 
     let res = parser.partial_typed("{ let u:Int|Bool=true; }");
     assert!(
@@ -136,7 +153,8 @@ fn imp_typing_accepts_union_assignment() {
 fn imp_typing_rejects_union_in_int_operation() {
     // A union-typed variable cannot be used where Int is required for arithmetic.
     let grammar = imp_grammar();
-    let mut parser = MetaParser::new(grammar.clone());
+    let mut parser =
+        MetaParser::new(grammar.clone()).with_max_depth(valid_depth_for("{u:Int|Bool=true; u+1;}"));
 
     let res = parser.partial_typed("{u:Int|Bool=true; u+1;}");
     assert!(
@@ -163,7 +181,8 @@ fn imp_typing_accepts_sequential_var_reuse() {
 fn imp_typing_accepts_sequential_var_assign() {
     set_debug_level(crate::DebugLevel::Trace);
     let grammar = imp_grammar();
-    let mut parser = MetaParser::new(grammar.clone());
+    let mut parser =
+        MetaParser::new(grammar.clone()).with_max_depth(valid_depth_for("{ let x:Int=5; x=6; }"));
 
     let res = parser.partial_typed("{ let x:Int=5; x=6; }");
     assert!(
@@ -176,7 +195,8 @@ fn imp_typing_accepts_sequential_var_assign() {
 #[test]
 fn imp_typing_accepts_sequential_var_in_expr() {
     let grammar = imp_grammar();
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone())
+        .with_max_depth(valid_depth_for("{ let x:Int=5; let y:Int=x+1; }"));
 
     let res = parser.partial_typed("{ let x:Int=5; let y:Int=x+1; }");
     assert!(

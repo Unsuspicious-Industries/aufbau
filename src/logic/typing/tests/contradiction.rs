@@ -22,7 +22,11 @@ fn test_valid_app() {
     println!("Input: {}", input);
 
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast.roots.iter().filter(|r| r.is_complete()).collect();
+    let complete_trees: Vec<_> = ast
+        .roots()
+        .into_iter()
+        .filter(|r| r.is_complete())
+        .collect();
 
     let valid = complete_trees.iter().any(|tree| {
         let status = check_tree(tree, &grammar);
@@ -42,7 +46,11 @@ fn test_simple_lambda() {
     println!("Input: {}", input);
 
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast.roots.iter().filter(|r| r.is_complete()).collect();
+    let complete_trees: Vec<_> = ast
+        .roots()
+        .into_iter()
+        .filter(|r| r.is_complete())
+        .collect();
 
     for tree in &complete_trees {
         let status = check_tree(tree, &grammar);
@@ -68,7 +76,11 @@ fn test_unbound_variable() {
 
     set_debug_level(crate::DebugLevel::Trace);
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast.roots.iter().filter(|r| r.is_complete()).collect();
+    let complete_trees: Vec<_> = ast
+        .roots()
+        .into_iter()
+        .filter(|r| r.is_complete())
+        .collect();
 
     // All complete trees should be malformed (unbound variable)
     let all_malformed = complete_trees

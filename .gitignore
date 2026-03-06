@@ -23,6 +23,7 @@ flamegraph.svg
 .vscode/
 *.swp
 *.swo
+.opencode
 
 # Python
 __pycache__/

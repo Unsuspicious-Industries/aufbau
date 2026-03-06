@@ -20,10 +20,7 @@ pub fn imp_grammar() -> Grammar {
 
 pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
     let g = imp_grammar();
-    vec![
-        ("imp::completable", g.clone(), completable_cases()),
-        ("imp::fail", g, fail_cases()),
-    ]
+    vec![("imp::completable", g, completable_cases())]
 }
 
 use TypedCompletionTestCase as T;
@@ -70,34 +67,6 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
     ]
 }
 
-fn fail_cases() -> Vec<TypedCompletionTestCase> {
-    vec![
-        // Syntax errors
-        T::fail("assign before decl", "{x=5;"),
-        T::fail("missing type for declaration", "{let x=5;"),
-        T::fail("missing value", "{let x:Int;"),
-        // Invalid types
-        T::fail("wrong type", "{let x:String=5;"),
-        T::fail("lowercase type", "{let x:int=5;"),
-        // Unbound variables
-        T::fail("unbound var", "{let y:Int=x;"),
-        T::fail("use before decl", "{let y:Int=x+1; let x:Int=5;"),
-        // Type errors
-        T::fail("union used as int", "{let u:Int|Bool=true; u+1;"),
-        // Syntax errors in expressions
-        T::fail("invalid operator", "{let x:Int=5%2;"),
-        T::fail("operator first", "{let x:Int=+5;"),
-        T::fail("double operator", "{let x:Int=1++2;"),
-        // Mismatched parens
-        T::fail("extra close paren", "{let x:Int=(1+2));"),
-        T::fail("missing close paren", "{let x:Int=(1+2;"),
-        T::fail("missing open brace", "let"),
-        // Invalid syntax
-        T::fail("close brace first", "}"),
-        T::fail("random chars", "@#$;"),
-    ]
-}
-
 // ============================================================================
 // Batch Test Cases
 // ============================================================================
@@ -117,10 +86,10 @@ fn bare_identifier_has_assignment_completion_path() {
 
     let grammar = imp_grammar();
     let mut synth = Synthesizer::new(grammar.clone(), "{ x");
-    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("x".to_string(), Type::Raw("Int".to_string()));
+    let completions = synth.completions_ctx(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")
@@ -138,23 +107,20 @@ fn bare_identifier_has_assignment_completion_path() {
 /// Ensure partial "t" is treated as partial "true" and can typecheck.
 #[test]
 fn union_decl_partial_true_is_well_typed() {
-    use crate::logic::partial::parse::Parser;
     use crate::logic::partial::structure::Terminal;
+    use crate::logic::partial::MetaParser;
     use crate::logic::partial::Synthesizer;
     use crate::logic::typing::symbols::gather_terminal_nodes;
     use crate::logic::typing::Context;
 
     let grammar = imp_grammar();
     let input = "{ let u:Int|Bool=t";
-    let mut parser = Parser::new(grammar.clone());
-    let partial = parser
-        .partial(input)
-        .into_result()
-        .expect("partial parse should succeed");
+    let mut parser = MetaParser::new(grammar.clone());
+    let partial = parser.partial(input).expect("partial parse should succeed");
 
     let mut saw_partial_true = false;
     for root in partial.roots() {
-        for term in gather_terminal_nodes(root) {
+        for term in gather_terminal_nodes(&root) {
             if let Terminal::Partial {
                 value, remainder, ..
             } = term
@@ -187,10 +153,10 @@ fn identifier_in_block_has_assignment_completion_only() {
 
     let grammar = imp_grammar();
     let mut synth = Synthesizer::new(grammar.clone(), "{a");
-    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("a".to_string(), Type::Raw("Int".to_string()));
+    let completions = synth.completions_ctx(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")
@@ -210,11 +176,4 @@ fn identifier_in_block_has_assignment_completion_only() {
         !has_while,
         "did not expect 'while' after identifier in block"
     );
-}
-
-#[test]
-fn check_fail() {
-    let grammar = imp_grammar();
-    let res = run_test_batch(&grammar, &fail_cases());
-    res.assert_all_passed();
 }

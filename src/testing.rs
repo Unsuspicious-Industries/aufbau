@@ -33,6 +33,7 @@ use std::path::Path;
 /// ```ignore
 /// let g = load_example_grammar("stlc");
 /// ```
+
 pub fn load_example_grammar(name: &str) -> Grammar {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
@@ -111,11 +112,13 @@ pub fn assert_parses_as(grammar: &Grammar, input: &str, expected_root: &str) {
         "AST should be complete for input: {}",
         input
     );
-    assert!(!ast.roots.is_empty(), "AST should have at least one root");
+    assert!(!ast.roots().is_empty(), "AST should have at least one root");
     assert_eq!(
-        ast.roots[0].name, expected_root,
+        ast.roots()[0].name,
+        expected_root,
         "Expected root '{}', got '{}'",
-        expected_root, ast.roots[0].name
+        expected_root,
+        ast.roots()[0].name
     );
 }
 
@@ -146,14 +149,14 @@ pub fn assert_parse_matches(grammar: &Grammar, input: &str, expected_serialized:
         "AST should be complete for input: {}",
         input
     );
-    assert!(!ast.roots.is_empty(), "AST should have at least one root");
+    assert!(!ast.roots().is_empty(), "AST should have at least one root");
 
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
 
     // Compare trees
-    let actual = &ast.roots[0];
+    let actual = &ast.roots()[0];
     assert_trees_equal(actual, &expected, input);
 }
 
@@ -173,14 +176,14 @@ pub fn assert_partial_matches(grammar: &Grammar, input: &str, expected_serialize
         .parse(input)
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
 
-    assert!(!ast.roots.is_empty(), "AST should have at least one root");
+    assert!(!ast.roots().is_empty(), "AST should have at least one root");
 
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
 
     // Find a matching tree in the roots
-    let found = ast.roots.iter().any(|root| trees_equal(root, &expected));
+    let found = ast.roots().iter().any(|root| trees_equal(root, &expected));
 
     assert!(
         found,
@@ -344,15 +347,30 @@ pub fn assert_parse_structurally_matches(
         "AST should be complete for input: {}",
         input
     );
-    assert!(!ast.roots.is_empty(), "AST should have at least one root");
+    assert!(!ast.roots().is_empty(), "AST should have at least one root");
 
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
 
-    // Compare trees structurally (ignoring extensions/remainders)
-    let actual = &ast.roots[0];
-    assert_trees_match(actual, &expected, input);
+    // Compare trees structurally (ignoring extensions/remainders). With an SPPF-backed
+    // parser, root enumeration order is not semantically meaningful, so we accept any
+    // complete root that matches the expected structure.
+    let roots = ast.roots();
+    let found_match = roots.iter().any(|root| trees_match(root, &expected));
+
+    assert!(
+        found_match,
+        "No complete root in AST matches expected tree for input '{}'\nExpected:\n{}\nActual roots:\n{}",
+        input,
+        expected.serialize(),
+        roots
+            .iter()
+            .enumerate()
+            .map(|(i, r)| format!("Root {}:\n{}", i, r.serialize()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
 }
 
 /// Assert that parsing produces a partial tree with at least one root that structurally matches
@@ -363,24 +381,26 @@ pub fn assert_partial_structurally_matches(
 ) {
     let mut parser = Parser::new(grammar.clone());
     let ast = parser
-        .parse(input)
+        .partial(input)
+        .into_result()
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
 
-    assert!(!ast.roots.is_empty(), "AST should have at least one root");
+    assert!(!ast.roots().is_empty(), "AST should have at least one root");
 
     // Deserialize the expected tree
     let expected = NonTerminal::deserialize(expected_serialized, grammar)
         .unwrap_or_else(|e| panic!("Failed to deserialize expected tree: {}", e));
 
     // Check if any root structurally matches
-    let found_match = ast.roots.iter().any(|root| trees_match(root, &expected));
+    let roots = ast.roots();
+    let found_match = roots.iter().any(|root| trees_match(root, &expected));
 
     assert!(
         found_match,
         "No root in AST matches expected tree for input '{}'\nExpected:\n{}\nActual roots:\n{}",
         input,
         expected.serialize(),
-        ast.roots
+        roots
             .iter()
             .enumerate()
             .map(|(i, r)| format!("Root {}:\n{}", i, r.serialize()))

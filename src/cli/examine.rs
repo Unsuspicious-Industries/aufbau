@@ -3,11 +3,10 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aufbau::logic::debug::{set_debug_input, set_debug_level, DebugLevel};
+use aufbau::logic::debug::set_debug_input;
 use aufbau::logic::grammar::Grammar;
 use aufbau::logic::partial::Synthesizer;
 use aufbau::logic::typing::Context;
-use aufbau::logic::Parser;
 use aufbau::validation::completable::{self, TypedCompletionTestCase};
 
 /// Quick helper to examine completability for an input or a named test case
@@ -36,9 +35,8 @@ pub struct ExamineCmd {
     #[arg(short = 'f', long = "filter")]
     pub filter: Option<String>,
 
-    /// Expected outcome for the checked input/case: `ok`, `fail`, or `type_error`.
-    /// When given with --case this will overwrite the test-case's pass/fail and
-    /// depth characteristics.
+    /// Expected outcome for the checked input/case.
+    /// In completable mode, only `ok` is supported.
     #[arg(long = "expected", value_enum)]
     pub expected: Option<ExpectedOutcome>,
 
@@ -62,34 +60,18 @@ pub struct ExamineCmd {
 
 fn dump_completions(grammar: &Grammar, input: &str, ctx: &Context) {
     let mut synth = Synthesizer::new(grammar.clone(), input);
-    match synth.partial() {
-        Ok(partial) => {
-            let raw = partial.completions(grammar);
-            println!("\n-- completions (raw) --");
-            for (i, token) in raw.iter().enumerate() {
-                println!(
-                    "  [{}] token='{}' example={:?}",
-                    i,
-                    token.to_pattern(),
-                    token.example()
-                );
-            }
-
-            let typed = synth.typed_completions(ctx);
-            println!("\n-- completions (typed) --");
-            for (i, token) in typed.iter().enumerate() {
-                println!(
-                    "  [{}] token='{}' example={:?}",
-                    i,
-                    token.to_pattern(),
-                    token.example()
-                );
-            }
-        }
-        Err(e) => {
-            println!("\n-- completions (raw) --");
-            println!("  partial parse failed: {}", e);
-        }
+    let typed = synth.completions_ctx(ctx);
+    println!("\n-- completions --");
+    for (i, token) in typed.iter().enumerate() {
+        println!(
+            "  [{}] token='{}' example={:?}",
+            i,
+            token.to_pattern(),
+            token.example()
+        );
+    }
+    if typed.is_empty() {
+        println!("  (no completions)");
     }
 }
 
@@ -97,6 +79,7 @@ fn collect_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
     let mut out = Vec::new();
     out.extend(completable::arithmetic::suites());
     out.extend(completable::stlc::suites());
+    out.extend(completable::toy::suites());
     out.extend(completable::fun::suites());
     out.extend(completable::imp::suites());
     out.extend(completable::weird::suites());
@@ -138,21 +121,16 @@ pub fn run(args: &ExamineCmd) {
         // Pick the first match (convenience) and run it with full test harness
         let (suite_name, grammar, mut case) = matches.remove(0);
 
-        set_debug_level(DebugLevel::Debug);
         set_debug_input(Some(case.input.to_string()));
 
         // If user provided --expected or --depth, overwrite the case configuration
         if let Some(exp) = &args.expected {
             match exp {
-                ExpectedOutcome::Ok => {
-                    case.xfail = false;
-                }
-                ExpectedOutcome::Fail => {
-                    case.xfail = true;
-                }
-                ExpectedOutcome::TypeError => {
-                    // Treat as an expected failing case due to type error.
-                    case.xfail = true;
+                ExpectedOutcome::Ok => {}
+                ExpectedOutcome::Fail | ExpectedOutcome::TypeError => {
+                    eprintln!(
+                        "warning: completable no longer supports expected fail/type_error; use parseable validation for negative cases"
+                    );
                 }
             }
             // Always override depth when explicitly provided on the CLI
@@ -164,15 +142,15 @@ pub fn run(args: &ExamineCmd) {
         }
 
         eprintln!(
-            "Running case from suite '{}' — {}\n",
+            "Running case from suite '{}' - {}\n",
             suite_name, case.description
         );
 
         let case_input = case.input;
 
         // === Parser / Partial AST ===
-        let mut parser = Parser::new(grammar.clone());
-        match parser.partial(case_input).into_result() {
+        let mut synth = Synthesizer::new(grammar.clone(), case_input);
+        match synth.partial() {
             Ok(partial_ast) => {
                 eprintln!(
                     "-- parsed PartialAST ({} root(s)) --",
@@ -194,7 +172,7 @@ pub fn run(args: &ExamineCmd) {
                 match partial_ast.typed_ctx(&grammar, &ctx) {
                     Ok(typed_ast) => {
                         eprintln!(
-                            "PartialAST typed successfully — TypedAST has {} root(s)",
+                            "PartialAST typed successfully - TypedAST has {} root(s)",
                             typed_ast.roots.len()
                         );
                         if args.dump_ast {
@@ -242,7 +220,6 @@ pub fn run(args: &ExamineCmd) {
         println!("case.input = '{}'", case.input);
         println!("case.description = '{}'", case.description);
         println!("case.max_depth = {}", case.max_depth);
-        println!("case.xfail = {}", case.xfail);
 
         if let Some(se) = meta.states_explored {
             println!("states_explored = {}", se);
@@ -288,8 +265,9 @@ pub fn run(args: &ExamineCmd) {
         if let aufbau::validation::completable::TestResult::Pass(opt_comp) = &result {
             if let Some(comp_str) = opt_comp.clone() {
                 // Parse the completed string to obtain the completed PartialAST
-                let mut parser = Parser::new(grammar.clone());
-                match parser.partial(&comp_str).into_result() {
+                // using the same adaptive parser path as completability checks.
+                let mut synth_done = Synthesizer::new(grammar.clone(), &comp_str);
+                match synth_done.partial() {
                     Ok(ast) => {
                         // Serialize to the canonical string format and write as binary
                         let serialized = ast.serialize();
@@ -345,7 +323,6 @@ pub fn run(args: &ExamineCmd) {
     if let Some(input) = &args.input {
         let input_str = input.as_str();
         if args.dump_completions {
-            set_debug_level(DebugLevel::Debug);
             set_debug_input(Some(input_str.to_string()));
         }
         let spec_path = match &args.spec {

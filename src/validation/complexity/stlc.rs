@@ -2,8 +2,8 @@
 #![allow(unused_imports)]
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::parse::Parser;
-use crate::validation::complexity::{ComplexityData, determine_complexity_exponent};
+use crate::logic::partial::MetaParser;
+use crate::validation::complexity::{determine_complexity_exponent, ComplexityData};
 use std::time::Instant;
 
 fn stlc_grammar() -> Grammar {
@@ -89,7 +89,7 @@ fn generate_nested_lambda_with_app(n: usize) -> String {
 
 /// Measure parse time for a single input
 fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone());
     let start = Instant::now();
     let _ = parser.partial(input);
     start.elapsed()

@@ -10,8 +10,8 @@ const DEEP_NESTING: &str = r#"
     start ::= L5
 "#;
 
-use crate::logic::Parser;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::MetaParser;
 
 use super::*;
 
@@ -71,7 +71,7 @@ fn generate_random_string(n: usize) -> String {
 use std::time::Instant;
 
 fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone());
     let start = Instant::now();
     let _ = parser.partial(input);
     start.elapsed()

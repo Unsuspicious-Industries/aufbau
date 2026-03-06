@@ -1,7 +1,7 @@
-use super::*;
 use crate::debug_debug;
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Symbol};
+use crate::logic::typing::tree::{TypedAST, TypedNode};
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use std::collections::HashSet;
 
@@ -14,9 +14,16 @@ pub struct CompletionSet {
 
 impl CompletionSet {
     fn new(mut tokens: Vec<DerivativeRegex>) -> Self {
-        // Deduplicate and sort
+        // Deduplicate.
         let unique: HashSet<_> = tokens.drain(..).collect();
-        let tokens: Vec<_> = unique.into_iter().collect();
+        let mut tokens: Vec<_> = unique.into_iter().collect();
+        // Deterministic ordering matters for stable, reproducible completion search.
+        // Prefer shorter/simpler patterns first, then lexical tie-break.
+        tokens.sort_by(|a, b| {
+            let pa = a.to_pattern();
+            let pb = b.to_pattern();
+            pa.len().cmp(&pb.len()).then_with(|| pa.cmp(&pb))
+        });
         Self { tokens }
     }
 
@@ -65,21 +72,27 @@ impl CompletionSet {
     }
 
     pub fn cleanup(&self) -> Self {
-        // deduplicate and remove epslons
-        let unique: HashSet<_> = self.tokens.clone().drain(..).collect();
-        let tokens: Vec<_> = unique.into_iter().filter(|t| !t.is_nullable()).collect();
+        // Remove nullable tokens.
+        let tokens: Vec<_> = self
+            .tokens
+            .iter()
+            .filter(|t| !t.is_nullable())
+            .cloned()
+            .collect();
         Self { tokens }
     }
 }
 
 // === Implementation ========================================================================== //
 
-impl PartialAST {
+impl TypedAST {
+    // careful completions could lead to an unwell-typed tree
+    // this is structural compltions froma typed tree.
     pub fn completions(&self, grammar: &Grammar) -> CompletionSet {
         debug_trace!(
             "partial.completion",
-            "PartialAST::completions: input='{}', roots={}",
-            self.input,
+            "TypedAST::completions: input='{}', roots={}",
+            self.text(),
             self.roots.len()
         );
 
@@ -91,8 +104,8 @@ impl PartialAST {
 
         debug_debug!(
             "partial.completion",
-            "PartialAST::completions: input='{}' raw_tokens={:?}",
-            self.input,
+            "TypedAST::completions: input='{}' raw_tokens={:?}",
+            self.text(),
             tokens.iter().map(|t| t.to_pattern()).collect::<Vec<_>>()
         );
 
@@ -100,80 +113,15 @@ impl PartialAST {
     }
 }
 
-impl NonTerminal {
-    pub fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
-        let mut tokens = Vec::new();
-
-        if self.is_complete() {
-            // If complete, we can only extend the last token if it is extensible
-            if let Some(last) = self.children.last() {
-                tokens.extend(last.collect_extensions());
-            }
-            return tokens;
-        }
-
-        // Partial node: find the frontier
-        if let Some(last_child) = self.children.last() {
-            match last_child {
-                Node::Terminal(Terminal::Partial {
-                    remainder: Some(rem),
-                    value,
-                    ..
-                }) => {
-                    tokens.push(rem.clone());
-                    // Only collect extension from second-to-last if the partial terminal is empty
-                    // (i.e., we haven't started typing the next token yet)
-                    if value.is_empty() && self.children.len() >= 2 {
-                        if let Some(prev) = self.children.get(self.children.len() - 2) {
-                            tokens.extend(prev.collect_extensions());
-                        }
-                    }
-                }
-                Node::NonTerminal(nt) => {
-                    if !nt.is_complete() {
-                        tokens.extend(nt.collect_valid_tokens(grammar));
-                    } else {
-                        // Last child is complete. We need the next symbol in the production
-                        // AND we should include any extension from the complete child.
-                        tokens.extend(last_child.collect_extensions());
-                        let next_idx = self.children.len();
-                        if let Some(symbol) = self.production.rhs.get(next_idx) {
-                            tokens.extend(first_set(symbol, grammar));
-                        }
-                    }
-                }
-                Node::Terminal(Terminal::Complete { extension, .. }) => {
-                    // Last child is complete terminal. Include extension AND next symbol.
-                    if let Some(ext) = extension {
-                        tokens.push(ext.clone());
-                    }
-                    let next_idx = self.children.len();
-                    if let Some(symbol) = self.production.rhs.get(next_idx) {
-                        tokens.extend(first_set(symbol, grammar));
-                    }
-                }
-                _ => {}
-            }
-        } else {
-            // No children. First symbol.
-            if let Some(symbol) = self.production.rhs.first() {
-                tokens.extend(first_set(symbol, grammar));
-            }
-        }
-
-        tokens
-    }
-}
-
-impl Node {
+impl TypedNode {
     fn collect_extensions(&self) -> Vec<DerivativeRegex> {
         match self {
-            Node::Terminal(Terminal::Complete {
+            TypedNode::Term {
                 extension: Some(ext),
                 ..
-            }) => vec![ext.clone()],
-            Node::NonTerminal(nt) => {
-                if let Some(last) = nt.children.last() {
+            } => vec![ext.clone()],
+            TypedNode::Expr { children, .. } => {
+                if let Some(last) = children.last() {
                     last.collect_extensions()
                 } else {
                     vec![]
@@ -181,6 +129,87 @@ impl Node {
             }
             _ => vec![],
         }
+    }
+
+    pub fn collect_valid_tokens(&self, grammar: &Grammar) -> Vec<DerivativeRegex> {
+        let (complete, name, alt_index, children) = match self {
+            TypedNode::Expr {
+                complete,
+                name,
+                alt_index,
+                children,
+                ..
+            } => (complete, name, alt_index, children),
+            TypedNode::Term { .. } => return vec![],
+        };
+
+        // Resolve the production RHS from the grammar (cheap — just two table lookups).
+        let rhs = grammar
+            .productions
+            .get(name)
+            .and_then(|alts| alts.get(*alt_index))
+            .map(|p| p.rhs.as_slice())
+            .unwrap_or(&[]);
+
+        let mut tokens = Vec::new();
+
+        if *complete {
+            if let Some(last) = children.last() {
+                tokens.extend(last.collect_extensions());
+            }
+            return tokens;
+        }
+
+        if let Some(last_child) = children.last() {
+            match last_child {
+                TypedNode::Term {
+                    remainder: Some(rem),
+                    val,
+                    ..
+                } => {
+                    tokens.push(rem.clone());
+                    // If we haven't started this token yet, also offer extension of the previous child
+                    if val.is_empty() && children.len() >= 2 {
+                        if let Some(prev) = children.get(children.len() - 2) {
+                            tokens.extend(prev.collect_extensions());
+                        }
+                    }
+                }
+                TypedNode::Expr {
+                    complete: false, ..
+                } => {
+                    tokens.extend(last_child.collect_valid_tokens(grammar));
+                }
+                TypedNode::Expr { complete: true, .. } => {
+                    tokens.extend(last_child.collect_extensions());
+                    let next_idx = children.len();
+                    if let Some(symbol) = rhs.get(next_idx) {
+                        tokens.extend(first_set(symbol, grammar));
+                    }
+                }
+                TypedNode::Term {
+                    remainder: None,
+                    extension,
+                    ..
+                } => {
+                    // Complete terminal
+                    if let Some(ext) = extension {
+                        tokens.push(ext.clone());
+                    }
+                    let next_idx = children.len();
+                    if let Some(symbol) = rhs.get(next_idx) {
+                        tokens.extend(first_set(symbol, grammar));
+                    }
+                }
+            }
+        } else {
+            // No children yet — offer the first symbol of the production
+            if let Some(symbol) = rhs.first() {
+                tokens.extend(first_set(symbol, grammar));
+            }
+        }
+
+        tokens
     }
 }
 

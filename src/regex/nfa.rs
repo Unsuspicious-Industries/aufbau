@@ -1,7 +1,7 @@
 // Custom engine for automata
 // drawings from asciiflow.com
 
-use crate::regex::{Regex, dfa::DFA};
+use crate::regex::{dfa::DFA, Regex};
 
 // Core types
 type StateId = usize;
@@ -95,11 +95,10 @@ impl NFA {
         // NFA construction follows Thompson's algorithm
         match r {
             Regex::Empty => {
-                // Empty regex accepts nothing - create unreachable dead end
-                let deadend = self.add_state();
-                deadend
+                // Accepts nothing - create unreachable dead end
+                self.add_state()
             }
-            Regex::Epsilon => start, // Epsilon accepts empty string
+            Regex::Epsilon => start, // Accepts empty string
             Regex::Char(c) => {
                 let end = self.add_state();
                 self.add_transition(start, c, end);
@@ -118,7 +117,7 @@ impl NFA {
                 let sl = self.build_from_regex(*l, start); // left branch
                 let sr = self.build_from_regex(*r, start); // right branch
 
-                // unification
+                // Unification
                 let end = self.add_state();
                 self.add_epsilon(sl, end);
                 self.add_epsilon(sr, end);
@@ -134,22 +133,21 @@ impl NFA {
                            └►│..RIGHT..│┘
                              └─────────┘
                 */
-                let mid = self.build_from_regex(*l, start);
-                // wire toghether
-                let end = self.build_from_regex(*r, mid);
-                end
+                let m = self.build_from_regex(*l, start);
+                // Wire together
+                self.build_from_regex(*r, m)
             }
             Regex::Star(r) => {
                 /*
-                               ε
+                                ε
                        ┌─────┬────►┌──────────┐
                        │start│     │...LOOP...│
                        └─────┘◄────└──────────┘
-                               ε
+                                ε
                 */
-                let loop_end = self.build_from_regex(*r, start);
-                self.add_epsilon(start, loop_end);
-                self.add_epsilon(loop_end, start);
+                let end = self.build_from_regex(*r, start);
+                self.add_epsilon(start, end);
+                self.add_epsilon(end, start);
                 start
             }
             Regex::Range(s, l) => {
@@ -167,11 +165,13 @@ impl NFA {
                     │   s+1     │
                     └───────────┘
                          s
-                 */
+                */
 
                 let end = self.add_state();
-                for i in s..=l {
-                    self.add_transition(start, i, end);
+                for code in (s as u32)..=(l as u32) {
+                    if let Some(ch) = char::from_u32(code) {
+                        self.add_transition(start, ch, end);
+                    }
                 }
                 end
             }
