@@ -29,10 +29,6 @@ The specification follows the layered structure of the implementation:
 
 5. **Completion**: how the engine synthesizes and scores completion candidates, and how the beam synthesizer explores the space of completions.
 
-6. **Visualization**: the HTTP server and browser UI that expose the engine core interactively.
-
-7. **CLI Reference**: the `aufbau` command-line tool and its subcommands.
-
 ## Invariant
 
 The key correctness property that runs through every layer of the specification:
