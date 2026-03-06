@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Implementation Map - Aufbau Engine</title>
+        <title>Context - Aufbau Engine</title>
 
 
         <!-- Custom HTML head -->
@@ -12,26 +12,26 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-3865ffda.css">
-        <link rel="stylesheet" href="css/general-fc62be9c.css">
-        <link rel="stylesheet" href="css/chrome-c0e702bf.css">
-        <link rel="stylesheet" href="css/print-ad67d350.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-3865ffda.css">
+        <link rel="stylesheet" href="../css/general-fc62be9c.css">
+        <link rel="stylesheet" href="../css/chrome-c0e702bf.css">
+        <link rel="stylesheet" href="../css/print-ad67d350.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight-771e6289.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night-a1977727.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight-bb48bc81.css">
+        <link rel="stylesheet" id="highlight-css" href="../highlight-771e6289.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night-a1977727.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight-bb48bc81.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="theme/proofs-d864099c.css">
-        <link rel="stylesheet" href="theme/uncertainty-9fcb4263.css">
-        <link rel="stylesheet" href="theme/status-ee3768fd.css">
-        <link rel="stylesheet" href="theme/margin-b955fd61.css">
+        <link rel="stylesheet" href="../theme/proofs-d864099c.css">
+        <link rel="stylesheet" href="../theme/uncertainty-9fcb4263.css">
+        <link rel="stylesheet" href="../theme/status-ee3768fd.css">
+        <link rel="stylesheet" href="../theme/margin-b955fd61.css">
 
         <!-- MathJax 3 Configuration (must come BEFORE loading the script) -->
         <script>
@@ -46,13 +46,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-eb3f8ba3.js";
+            window.path_to_searchindex_js = "../searchindex-eb3f8ba3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-caa35add.js"></script>
+        <script src="../toc-caa35add.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -119,7 +119,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -154,7 +154,7 @@
                     <h1 class="menu-title">Aufbau Engine</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -188,56 +188,19 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="wip-implementation-map"><a class="header" href="#wip-implementation-map"><span class="status-badge wip">WIP</span> Implementation Map</a></h1>
-<p>This page maps the specification sections to source code modules.</p>
-<h2 id="module-structure"><a class="header" href="#module-structure">Module Structure</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="./spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
-<tr><td><a href="./parsing.html">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
-<tr><td><a href="./parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
-<tr><td>MetaParser (see <a href="./parsing.html">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
-<tr><td><a href="./concepts/binding.html">Binding Resolution</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>src/logic/binding/</code></a></td><td>Grammar path construction (compile-time)</td></tr>
-<tr><td><a href="./binding.html">Runtime Binding</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/binding.rs"><code>src/logic/typing/binding.rs</code></a></td><td>Tree path resolution (runtime)</td></tr>
-<tr><td><a href="./typing.html">Type Inference</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>src/logic/typing/</code></a></td><td>Typing engine, rule application, type cache</td></tr>
-<tr><td><a href="./typing/context.html">Context</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/core.rs"><code>src/logic/typing/core.rs</code></a></td><td>Typing context, lanes, no-propagate</td></tr>
-<tr><td><a href="./typing/premises.html">Premises</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Premise evaluation</td></tr>
-<tr><td><a href="./typing/conclusion.html">Conclusion</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Conclusion evaluation</td></tr>
-<tr><td><a href="./completion/synthesizer.html">Synthesizer</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td><td>Incremental typed extension interface</td></tr>
-<tr><td><a href="./completion/search.html">Search</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td><td>Best-first completion search</td></tr>
-<tr><td><a href="./completion/scoring.html">Scoring</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td><td>Heuristic scoring for search states</td></tr>
-<tr><td><a href="./verification/completability.html">Completability</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></td><td>Prefix soundness, completion checking</td></tr>
-<tr><td><a href="./verification/validation.html">Validation</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></td><td>Test harness, per-grammar test suites</td></tr>
-</tbody>
-</table>
-</div>
-<h2 id="auxiliary-modules"><a class="header" href="#auxiliary-modules">Auxiliary Modules</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Module</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></td><td>Custom regex engine with Brzozowski derivatives for <a href="https://unsuspicious.org/blog/completing-regex/">two-level completability</a></td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/ops.rs"><code>src/logic/typing/ops.rs</code></a></td><td>Type operations: unification, subtyping</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/syntax.rs"><code>src/logic/typing/syntax.rs</code></a></td><td>Type parsing from grammar spec strings</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td><td>Typing rule data structures</td></tr>
-</tbody>
-</table>
-</div>
+                        <h1 id="context"><a class="header" href="#context">Context</a></h1>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="verification/validation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../typing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="../typing/premises.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -245,10 +208,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="verification/validation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../typing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="../typing/premises.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>
@@ -267,18 +233,18 @@
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-831c6ebd.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-831c6ebd.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/collapse-examples-d81f197f.js"></script>
-        <script src="theme/margin-702b1e77.js"></script>
-        <script src="theme/synth-widget-4f038e0a.js"></script>
+        <script src="../theme/collapse-examples-d81f197f.js"></script>
+        <script src="../theme/margin-702b1e77.js"></script>
+        <script src="../theme/synth-widget-4f038e0a.js"></script>
 
 
 

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Implementation Map - Aufbau Engine</title>
+        <title>Scoring - Aufbau Engine</title>
 
 
         <!-- Custom HTML head -->
@@ -12,26 +12,26 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-3865ffda.css">
-        <link rel="stylesheet" href="css/general-fc62be9c.css">
-        <link rel="stylesheet" href="css/chrome-c0e702bf.css">
-        <link rel="stylesheet" href="css/print-ad67d350.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-3865ffda.css">
+        <link rel="stylesheet" href="../css/general-fc62be9c.css">
+        <link rel="stylesheet" href="../css/chrome-c0e702bf.css">
+        <link rel="stylesheet" href="../css/print-ad67d350.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight-771e6289.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night-a1977727.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight-bb48bc81.css">
+        <link rel="stylesheet" id="highlight-css" href="../highlight-771e6289.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night-a1977727.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight-bb48bc81.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="theme/proofs-d864099c.css">
-        <link rel="stylesheet" href="theme/uncertainty-9fcb4263.css">
-        <link rel="stylesheet" href="theme/status-ee3768fd.css">
-        <link rel="stylesheet" href="theme/margin-b955fd61.css">
+        <link rel="stylesheet" href="../theme/proofs-d864099c.css">
+        <link rel="stylesheet" href="../theme/uncertainty-9fcb4263.css">
+        <link rel="stylesheet" href="../theme/status-ee3768fd.css">
+        <link rel="stylesheet" href="../theme/margin-b955fd61.css">
 
         <!-- MathJax 3 Configuration (must come BEFORE loading the script) -->
         <script>
@@ -46,13 +46,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-eb3f8ba3.js";
+            window.path_to_searchindex_js = "../searchindex-eb3f8ba3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-caa35add.js"></script>
+        <script src="../toc-caa35add.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -119,7 +119,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -154,7 +154,7 @@
                     <h1 class="menu-title">Aufbau Engine</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -188,56 +188,124 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="wip-implementation-map"><a class="header" href="#wip-implementation-map"><span class="status-badge wip">WIP</span> Implementation Map</a></h1>
-<p>This page maps the specification sections to source code modules.</p>
-<h2 id="module-structure"><a class="header" href="#module-structure">Module Structure</a></h2>
+                        <h1 id="done-scoring"><a class="header" href="#done-scoring"><span class="status-badge done">DONE</span> Scoring</a></h1>
+<p>The scoring function $|\sigma|$ assigns a real-valued score to each search state, guiding the <a href="./search.html">best-first search</a> toward promising completions. This chapter documents only the numeric heuristic in <code>calculate_score()</code>. Deduplication, grounding preference, greedy completion, and beam truncation are search-policy details described in <a href="./search.html">Search</a>.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></p>
+<p>This chapter is meant to be read after <a href="./search.html">Search</a>.</p>
+<h2 id="score-tuple"><a class="header" href="#score-tuple">Score Tuple</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: State Score</div>
+
+<p>The <strong>state score</strong> is a 6-tuple:</p>
+<p>$$\sigma = (c, p, \ell, o, s, r) \in \mathbb{R}^6$$</p>
+<p>with overall score:</p>
+<p>$$|\sigma| = c + p + \ell + o + s + r$$</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
+<tr><th>Component</th><th>Name</th><th>Range</th><th>Direction</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="./spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
-<tr><td><a href="./parsing.html">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
-<tr><td><a href="./parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
-<tr><td>MetaParser (see <a href="./parsing.html">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
-<tr><td><a href="./concepts/binding.html">Binding Resolution</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>src/logic/binding/</code></a></td><td>Grammar path construction (compile-time)</td></tr>
-<tr><td><a href="./binding.html">Runtime Binding</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/binding.rs"><code>src/logic/typing/binding.rs</code></a></td><td>Tree path resolution (runtime)</td></tr>
-<tr><td><a href="./typing.html">Type Inference</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>src/logic/typing/</code></a></td><td>Typing engine, rule application, type cache</td></tr>
-<tr><td><a href="./typing/context.html">Context</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/core.rs"><code>src/logic/typing/core.rs</code></a></td><td>Typing context, lanes, no-propagate</td></tr>
-<tr><td><a href="./typing/premises.html">Premises</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Premise evaluation</td></tr>
-<tr><td><a href="./typing/conclusion.html">Conclusion</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Conclusion evaluation</td></tr>
-<tr><td><a href="./completion/synthesizer.html">Synthesizer</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td><td>Incremental typed extension interface</td></tr>
-<tr><td><a href="./completion/search.html">Search</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td><td>Best-first completion search</td></tr>
-<tr><td><a href="./completion/scoring.html">Scoring</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td><td>Heuristic scoring for search states</td></tr>
-<tr><td><a href="./verification/completability.html">Completability</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></td><td>Prefix soundness, completion checking</td></tr>
-<tr><td><a href="./verification/validation.html">Validation</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></td><td>Test harness, per-grammar test suites</td></tr>
+<tr><td>$c$</td><td>Completeness</td><td>$[0, 2]$</td><td>higher = more matched structure</td></tr>
+<tr><td>$p$</td><td>Production fullness</td><td>$[0, 1]$</td><td>higher = more RHS positions filled</td></tr>
+<tr><td>$\ell$</td><td>Token length bonus</td><td>slow-growing, non-negative</td><td>higher = more concrete terminals</td></tr>
+<tr><td>$o$</td><td>Open slots penalty</td><td>${0, -0.3, -0.6, \ldots}$</td><td>closer to 0 = fewer missing children</td></tr>
+<tr><td>$s$</td><td>Simplicity</td><td>$[0, 0.3]$</td><td>higher = shallower search depth</td></tr>
+<tr><td>$r$</td><td>Recursion penalty</td><td>$[-0.5, 0]$</td><td>closer to 0 = shallower tree</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="auxiliary-modules"><a class="header" href="#auxiliary-modules">Auxiliary Modules</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Module</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></td><td>Custom regex engine with Brzozowski derivatives for <a href="https://unsuspicious.org/blog/completing-regex/">two-level completability</a></td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/ops.rs"><code>src/logic/typing/ops.rs</code></a></td><td>Type operations: unification, subtyping</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/syntax.rs"><code>src/logic/typing/syntax.rs</code></a></td><td>Type parsing from grammar spec strings</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td><td>Typing rule data structures</td></tr>
-</tbody>
-</table>
 </div>
+
+<p>Several components choose the best or shallowest root among alternatives rather than averaging over all roots. This is intentional: one promising parse alternative should be able to dominate the score early instead of being drowned out by worse siblings.</p>
+<h2 id="sub-score-definitions"><a class="header" href="#sub-score-definitions">Sub-Score Definitions</a></h2>
+<h3 id="completeness"><a class="header" href="#completeness">Completeness</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Completeness Score</div>
+
+<p>For each root $u$, walk all nodes in the subtree. A complete terminal contributes $1$. A partial terminal whose current surface text has length $m$ contributes $\frac{0.5}{m+1}$. An expression node with no children contributes $0$.</p>
+<p>Let $S_u$ be the sum of those contributions and $N_u$ the total node count visited. The implementation computes</p>
+<p>$$c(u) = \min\left(2,\ 2 \cdot \frac{S_u}{N_u}\right), \qquad c = \max_u c(u).$$</p>
+</div>
+
+<p>Expression nodes with children do not add direct bonus here; they only contribute through their descendants while still increasing the denominator. So the score prefers states with more concrete material and fewer empty placeholders.</p>
+<h3 id="production-fullness"><a class="header" href="#production-fullness">Production Fullness</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Production Fullness Score</div>
+
+<p>For each expression node $v$ with expected right-hand side length $n_v &gt; 0$ and currently filled child count $k_v &gt; 0$, define its local fill ratio as $\frac{k_v}{n_v}$. For a root $u$, let $E_u$ be the set of such expression nodes.</p>
+<p>The implementation computes the RMS fill ratio</p>
+<p>$$p(u) = \sqrt{\frac{1}{|E_u|}\sum_{v \in E_u}\left(\frac{k_v}{n_v}\right)^2}, \qquad p = \max_u p(u),$$</p>
+<p>with $p = 0$ if $E_u$ is empty.</p>
+</div>
+
+<p>This rewards roots whose productions are already mostly filled, even if the tree is not yet complete.</p>
+<h3 id="token-length-bonus"><a class="header" href="#token-length-bonus">Token Length Bonus</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Token Length Bonus</div>
+
+<p>Let $L_u$ be the number of leaf terminals in root $u$. The implementation computes</p>
+<p>$$\ell = 0.25 \cdot \sqrt{\max_u L_u}.$$</p>
+<p>This is a small bonus for states that already contain more concrete terminal material. The square root keeps the signal mild.</p>
+</div>
+
+<h3 id="open-slots-penalty"><a class="header" href="#open-slots-penalty">Open Slots Penalty</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Open Slots Penalty</div>
+
+<p>For each root $u$, count open slots recursively:</p>
+<ul>
+<li>an expression node with no children contributes $1$</li>
+<li>an expression node with expected RHS length $n_v$ and $k_v$ filled children contributes $n_v - k_v$</li>
+<li>children are then counted recursively as well</li>
+</ul>
+<p>Let $O_u$ be the resulting count. The implementation uses the best (smallest) root:</p>
+<p>$$o = -0.3 \cdot \min_u O_u.$$</p>
+</div>
+
+<p>This is the dominant negative signal in practice: trees with fewer remaining holes tend to outrank structurally larger but more incomplete alternatives.</p>
+<h3 id="simplicity"><a class="header" href="#simplicity">Simplicity</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Simplicity Score</div>
+
+<p>The <strong>simplicity score</strong> rewards shallower search paths:</p>
+<p>$$s = 0.3 \cdot \left(1 - \frac{d}{d_{\max}}\right)$$</p>
+<p>where $d$ is the current search depth and $d_{\max}$ is the configured maximum depth.</p>
+</div>
+
+<h3 id="recursion-penalty"><a class="header" href="#recursion-penalty">Recursion Penalty</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Recursion Penalty</div>
+
+<p>Let $D_u$ be the maximum node depth of root $u$. The implementation takes the shallowest root among alternatives and applies a light quadratic penalty:</p>
+<p>$$r = -0.5 \cdot \left(\min\left(1, \frac{\min_u D_u}{d_{\max} + 1}\right)\right)^2.$$</p>
+<p>This discourages unnecessarily deep trees, but much more gently than the open-slots penalty discourages incomplete ones.</p>
+</div>
+
+<h2 id="ordering"><a class="header" href="#ordering">Ordering</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Score Use</div>
+
+<p>Search uses the numeric score in two places:</p>
+<ol>
+<li>heap priority for frontier states</li>
+<li>secondary ordering among children after expansion</li>
+</ol>
+<p>Before score comparison, <a href="./search.html">Search</a> may prefer children with grounded roots (<code>ty != Any</code>) and may truncate to a beam width. So score is important, but it is not the whole search policy.</p>
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="verification/validation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../completion/search.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="../verification/completability.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -245,10 +313,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="verification/validation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../completion/search.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="../verification/completability.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>
@@ -267,18 +338,18 @@
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-831c6ebd.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-831c6ebd.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/collapse-examples-d81f197f.js"></script>
-        <script src="theme/margin-702b1e77.js"></script>
-        <script src="theme/synth-widget-4f038e0a.js"></script>
+        <script src="../theme/collapse-examples-d81f197f.js"></script>
+        <script src="../theme/margin-702b1e77.js"></script>
+        <script src="../theme/synth-widget-4f038e0a.js"></script>
 
 
 

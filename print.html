@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Proposition 7: Truth by Construction</title>
+        <title>Aufbau Engine</title>
         <meta name="robots" content="noindex">
 
 
@@ -21,7 +21,7 @@
         <link rel="stylesheet" href="css/print-ad67d350.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
         <link rel="stylesheet" id="highlight-css" href="highlight-771e6289.css">
@@ -29,9 +29,10 @@
         <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight-bb48bc81.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="theme/proofs-35a8b21d.css">
+        <link rel="stylesheet" href="theme/proofs-d864099c.css">
         <link rel="stylesheet" href="theme/uncertainty-9fcb4263.css">
         <link rel="stylesheet" href="theme/status-ee3768fd.css">
+        <link rel="stylesheet" href="theme/margin-b955fd61.css">
 
         <!-- MathJax 3 Configuration (must come BEFORE loading the script) -->
         <script>
@@ -49,10 +50,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2a8142e8.js";
+            window.path_to_searchindex_js = "searchindex-eb3f8ba3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ea9c70a7.js"></script>
+        <script src="toc-caa35add.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -66,7 +67,7 @@
             </div>
         </div>
     </div>
-    <div id="body-container">
+    <div id="mdbook-body-container">
         <!-- Work around some values being stored in localStorage wrapped in quotes -->
         <script>
             try {
@@ -133,10 +134,10 @@
                 <div id="menu-bar" class="menu-bar sticky">
                     <div class="left-buttons">
                         <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
-                            <i class="fa fa-bars"></i>
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
                         </label>
                         <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
-                            <i class="fa fa-paint-brush"></i>
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
                         </button>
                         <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
                             <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
@@ -146,33 +147,33 @@
                             <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
                             <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
                         </ul>
-                        <button id="search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="searchbar">
-                            <i class="fa fa-search"></i>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-search-wrapper">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
                         </button>
                     </div>
 
-                    <h1 class="menu-title">Proposition 7: Truth by Construction</h1>
+                    <h1 class="menu-title">Aufbau Engine</h1>
 
                     <div class="right-buttons">
                         <a href="print.html" title="Print this book" aria-label="Print this book">
-                            <i id="print-button" class="fa fa-print"></i>
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
                     </div>
                 </div>
 
-                <div id="search-wrapper" class="hidden">
-                    <form id="searchbar-outer" class="searchbar-outer">
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
                         <div class="search-wrapper">
-                            <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
                             <div class="spinner-wrapper">
-                                <i class="fa fa-spinner fa-spin"></i>
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
                             </div>
                         </div>
                     </form>
-                    <div id="searchresults-outer" class="searchresults-outer hidden">
-                        <div id="searchresults-header" class="searchresults-header"></div>
-                        <ul id="searchresults">
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
                         </ul>
                     </div>
                 </div>
@@ -186,14 +187,56 @@
                     });
                 </script>
 
-                <div id="content" class="content">
+                <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="introduction"><a class="header" href="#introduction">Introduction</a></h1>
 <p>In the current context of a rapidly evolving research effort towards LLM-based formal reasoning and theorem proving, our aim is to contribute a novel approach that complements existing methods with a focus on formal guarantees of correctness.</p>
-<p>In this blog post <a href="https://unsuspicious.org/blog/proposition-7/">Proposition 7: Truth by Construction</a>, we introduced the core idea of our approach: guide LLMs to produce only tokens that are guaranteed to be part of a correct expression in a language. Such approaches already exist in various forms, but our contribution lies in the generalization of this idea to a larger and extensible class of formal languages, along with a concrete algorithm to achieve this goal.</p>
-<p>This document will serve as a formal specification of the theoretical foundations, as documentation of the algorithm and as a reference for future work building upon this approach.</p>
+<p>In this blog post <a href="https://unsuspicious.org/blog/proposition-7/">Proposition 7: Truth by Construction</a>,
+we introduced the core idea of our approach: guide LLMs to produce only tokens that are guaranteed to be part of a correct expression in a language.  Such approaches already exist in various forms, but our contribution lies in the generalization of this idea to a larger and extensible class of formal languages, along with a concrete algorithm to achieve this goal.</p>
+<p>This document serves as a formal specification of the theoretical foundations, as documentation of the algorithm, and as a reference for future work building
+upon this approach.</p>
+<h2 id="the-aufbau-engine"><a class="header" href="#the-aufbau-engine">The Aufbau Engine</a></h2>
+<p><strong>Aufbau</strong> is the grammar-driven completion engine powering the <em>Proposition 7</em> project.
+Given a <strong>grammar</strong> and a <strong>partial expression</strong> it computes the set of next tokens that can extend the expression toward a complete, well-typed program. The central guarantee is that every suggested token keeps the expression on a valid trajectory that can then be completed until it reaches a <strong>complete</strong> (a <em>word</em> in the language defined by the grammar)</p>
+<p>The name comes from the German word for “construction” or “build-up” from Carnap’s <em>Der logische Aufbau der Welt</em></p>
+<h2 id="structure"><a class="header" href="#structure">Structure</a></h2>
+<p>The specification follows the layered structure of the implementation:</p>
+<ol>
+<li>
+<p><strong>Basic Concepts</strong> : alphabets, Kleene closure, formal languages, and the completability set $\mathcal{C}_L(s)$ at the heart of the engine</p>
+</li>
+<li>
+<p><strong>Concepts</strong>: the more advanced theoretical framework</p>
+</li>
+<li>
+<p><strong>Parsing</strong>:  the chart parser, the segment model, the span cache and its invalidation strategy, and the meta-parser that reads grammar specifications.</p>
+</li>
+<li>
+<p><strong>Typing</strong>: the type system, the inference rules encoded in grammar specs, context propagation, and the typed AST overlay that is built on top of the partial parse forest.</p>
+</li>
+<li>
+<p><strong>Completion</strong>: how the engine synthesizes and scores completion candidates, and how the beam synthesizer explores the space of completions.</p>
+</li>
+<li>
+<p><strong>Visualization</strong>: the HTTP server and browser UI that expose the engine core interactively.</p>
+</li>
+<li>
+<p><strong>CLI Reference</strong>: the <code>aufbau</code> command-line tool and its subcommands.</p>
+</li>
+</ol>
+<h2 id="invariant"><a class="header" href="#invariant">Invariant</a></h2>
+<p>The key correctness property that runs through every layer of the specification:</p>
+<div class="theorem">
+<div class="theorem-title">Theorem: Completion Soundness</div>
+
+<p>For any partial expression $s$ and any token $a$ returned by the completion
+engine,</p>
+<p>$$s \cdot a \text{ is completable}$$</p>
+<p>That is, every suggested token keeps the expression on a path toward at least one complete, well-typed program. We’ll see better deinfiiotn of completability later on.</p>
+</div>
+
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="basic-concepts-and-notations"><a class="header" href="#basic-concepts-and-notations">Basic Concepts and Notations</a></h1>
+<h1 id="done-basic-concepts-and-notations"><a class="header" href="#done-basic-concepts-and-notations"><span class="status-badge done">DONE</span> Basic Concepts and Notations</a></h1>
 <p>First, we are going to establish some simple concepts of programming language theory, so that we can refer to them later in the specification.</p>
 <div class="definition">
 <div class="definition-title">Definition: Alphabet</div>
@@ -240,12 +283,12 @@ $$L \subset \Sigma^\ast$$</p>
 
 <h2 id="definitions-and-notations"><a class="header" href="#definitions-and-notations">Definitions and notations</a></h2>
 <p>Let $L$ be a <strong>formal language</strong> over an alphabet $\Sigma$.</p>
-<p>An <strong>expression</strong> $s \in \Sigma^\ast$ is said to be <strong>completable</strong> in $L$ if there exists some $s’ \in \Sigma^\ast$ such that $ss’ \in L$.</p>
+<p>An <strong>expression</strong> $s \in \Sigma^\ast$ is said to be <strong>completable</strong> in $L$ if there exists some $s’ \in \Sigma^\ast$ such that $ss’ \in L$</p>
 <div class="definition">
 <div class="definition-title">Definition: Completability Set</div>
 
-<p>For any expression $s \in \Sigma^\ast$, the <strong>completability set</strong> is:
-$$\mathcal{C}_L(s) = {a \in \Sigma : \exists s’ \in \Sigma^\ast : sas’ \in L}$$</p>
+<p>For any expression $s \in \Sigma^\ast$, the <strong>completability set</strong> in $L$ is:
+$$\mathcal{C}_L(s) = \{a \in \Sigma : \exists s’ \in \Sigma^\ast : sas’ \in L\}$$</p>
 </div>
 
 <p>The completability set is central to our formalism. We can use it to state an important equivalence:</p>
@@ -266,113 +309,91 @@ s\in L \iff \mathcal{C}_L(s) = \{\epsilon\}
 $$</p>
 </div>
 
-<h2 id="structure-of-this-specification"><a class="header" href="#structure-of-this-specification">Structure of this Specification</a></h2>
-<p>We will start by defining the theoretical foundations to our approach, and then mix it up with algorithmic and implementation details and actual references to the codebase.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="theoretical-foundation"><a class="header" href="#theoretical-foundation">Theoretical Foundation</a></h1>
-<p>This chapter lays out the formal foundations for our grammar-based parsing system with type annotations and binding resolution.</p>
-<h2 id="core-definitions"><a class="header" href="#core-definitions">Core Definitions</a></h2>
+<h1 id="done-theoretical-foundation"><a class="header" href="#done-theoretical-foundation"><span class="status-badge done">DONE</span> Theoretical Foundation</a></h1>
+<p>This chapter defines the formal structures underlying the Aufbau system: grammars, parse forests, partial trees, typing judgments, and the completability guarantee.</p>
+<p>Sources: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>, <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/structure.rs"><code>src/logic/partial/structure.rs</code></a>, <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/mod.rs"><code>src/logic/typing/mod.rs</code></a></p>
+<h2 id="grammar"><a class="header" href="#grammar">Grammar</a></h2>
 <div class="definition">
 <div class="definition-title">Definition: Grammar</div>
 
-<p>A <strong>grammar</strong> $G$ is a tuple $(N,T,P,S,\Theta,A)$ where:</p>
+<p>A <strong>grammar</strong> $G$ is a tuple $(N, T, P, S, \Theta, A)$ where:</p>
 <ul>
-<li>$N$ is the set of non-terminals</li>
-<li>$T$ is the set of terminals</li>
-<li>$P$ is the set of productions with binding annotations</li>
-<li>$S \in N$ is the start symbol</li>
-<li>$\Theta: P \to \theta \cup {\varepsilon}$ assigns an optional typing rule to each production</li>
-<li>$A: N \to P^*$ maps each non-terminal to its production alternatives</li>
+<li>$N$: finite set of non-terminals (strings).</li>
+<li>$T$: finite set of terminals, each a derivative regex over the input alphabet.</li>
+<li>$P$: set of productions. Each production is a pair $(\text{lhs} \in N,\ \text{rhs} \in (T \cup N)^*)$ with an optional typing rule name.</li>
+<li>$S \in N$: the distinguished start symbol.</li>
+<li>$\Theta$: a finite map from rule names to typing rules (may be empty).</li>
+<li>$A: N \to P^*$: the alternative map — for each non-terminal, the ordered list of its productions.</li>
 </ul>
+</div>
+
+<h3 id="symbol"><a class="header" href="#symbol">Symbol</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Symbol</div>
+
+<p>A <strong>symbol</strong> is either:</p>
+<ul>
+<li>A <strong>terminal</strong> <code>Symbol::Terminal { regex, binding }</code>: matches a segment of input via a derivative regex. Literal strings <code>'x'</code> and <code>"x"</code> compile to <code>Regex::literal(x)</code>; <code>/pattern/</code> compiles to a full regex.</li>
+<li>A <strong>non-terminal</strong> <code>Symbol::Nonterminal { name, binding }</code>: a reference to another production rule by name.</li>
+</ul>
+<p>Both variants carry an optional <strong>binding name</strong> used by the typing system to reference sub-trees.</p>
+</div>
+
+<h3 id="production"><a class="header" href="#production">Production</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Production</div>
+
+<p>A <strong>production</strong> is a sequence of symbols $\alpha_0[b_0],\alpha_1[b_1]\cdots\alpha_n[b_n]$ where each $\alpha_k \in T \cup N$ and each $b_k \in \mathcal{B} \cup {\varepsilon}$ is an optional binding name. Productions also carry an optional rule name string used to look up a typing rule in $\Theta$.</p>
 </div>
 
 <div class="remark">
-<div class="remark-title">Remark: Production</div>
+<div class="remark-title">Remark: Grammar Equality</div>
 
-<p>A <strong>production</strong> $p \in P$ is a sequence of length $n$:
-$$ \alpha_0[b_0] \alpha_1[b_1]\cdots \alpha_n[b_n] $$</p>
-<p>where:</p>
-<ul>
-<li>$\forall k \in [0;n], \alpha_k \in T \cup N$ (each element is a terminal or non-terminal)</li>
-<li>$\forall k \in [0;n], b_k \in \mathcal{B} \cup {\varepsilon}$ (each element may have a binding)</li>
-<li>$\mathcal{B}$ is the set of bindings and $\varepsilon$ denotes the empty binding</li>
-</ul>
-</div>
-
-<div class="definition">
-<div class="definition-title">Definition: Non-terminal Alternatives</div>
-
-<p>Each non-terminal $n \in N$ is associated with a set of production alternatives via function $A$. Using BNF notation:
-$$ n ::= p_1 \ |\ p_2 \ |\ \cdots \ |\ p_m $$</p>
-</div>
-
-<h2 id="goals"><a class="header" href="#goals">Goals</a></h2>
-<p>With these definitions in place, our goals in the project are to be able to procedurally build a parser $\Psi_L$ for any language $L$ defined by a grammar $G$.</p>
-<div class="definition">
-<div class="definition-title">Definition: Partial Parser</div>
-
-<p>With $\Sigma$ an alphabet and $L$ a language a <strong>partial parser</strong> for $L$ is a function
-$$
-\Phi_L : \Sigma^* \rightarrow \{\text{accept},\text{reject}\}
-$$
-defined as:
-$$
-\Phi_L(s) = \begin{cases}
-\text{accept} &amp;  \mathcal{C}_L(s) \neq \emptyset \\
-\text{reject} &amp; \text{otherwise}
-\end{cases}
-$$</p>
-</div>
-
-<p>Finally, we want to be able to resolve <strong>bindings</strong> in the parse trees produced by $\Psi_L$, and use the <strong>typing rules</strong> $\Theta$ to enforce type correctness during parsing.</p>
-<div class="remark">
-<div class="remark-title">Remark: Completability via Partial Parsing</div>
-
-<p>When $s$ is completable:</p>
-<ul>
-<li>$\Psi_L(s) \neq \text{reject}$</li>
-<li>$\mathcal{F} = \Psi_L(s)$ is <strong>not complete</strong></li>
-<li>$\mathcal{F}$ becomes complete by extension with some $s’ \in S’$</li>
-</ul>
+<p>Grammar equality (used for the meta-parser cache) compares <code>productions</code>, <code>special_tokens</code>, <code>delimiters</code>, and <code>start</code>. The <code>typing_rules</code> field is deliberately excluded because of indeterminate forms like the meta variables <code>?X</code> or the context calls.</p>
 </div>
 
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="partial-trees-and-forests"><a class="header" href="#partial-trees-and-forests">Partial Trees and Forests</a></h1>
+<h1 id="done-partial-trees-and-forests"><a class="header" href="#done-partial-trees-and-forests"><span class="status-badge done">DONE</span> Partial Trees and Forests</a></h1>
 <div class="definition">
 <div class="definition-title">Definition: Partial Tree</div>
 
-<p>A <strong>partial tree</strong> is a structure $t = (V, E,\lambda,\pi,\alpha,\text{root})$ where:</p>
+<p>A <strong>partial tree</strong> $t = (V, E,\lambda,\pi,\alpha,\text{root})$ is a structure where:</p>
 <ul>
-<li>$V$ is a finite set of nodes</li>
-<li>$E \subseteq V \times \mathbb{N} \times V$ is a finite set of directed, position-indexed edges</li>
-<li>$\lambda: V \to N \cup T$ assigns a label to each node</li>
-<li>$\pi: V \to P$ assigns the production used at each node</li>
-<li>$\alpha: V \to \mathbb{N}$ records the alternative index chosen at each non-terminal node</li>
-<li>$\text{root} \in V$ is the root node</li>
+<li>$V$: finite set of nodes.</li>
+<li>$E \subseteq V \times \mathbb{N} \times V$: position-indexed edges.</li>
+<li>$\lambda: V \to N \cup T$: node labels.</li>
+<li>$\pi: V \to P$: production associated with the node.</li>
+<li>$\alpha: V \to \mathbb{N}$: chosen alternative index.</li>
+<li>$\text{root} \in V$: the start node.</li>
 </ul>
-<p>Each partial tree corresponds to either a <strong>complete</strong> parse of input $s$, or a parse that can become complete by extending $s$. A partial tree <strong>must</strong> have consumed all input to be valid.</p>
 </div>
 
+<h2 id="parse-forest"><a class="header" href="#parse-forest">Parse Forest</a></h2>
 <div class="definition">
-<div class="definition-title">Definition: Partial Forest</div>
+<div class="definition-title">Definition: Partial Parse Forest</div>
 
-<p>The <strong>partial parse forest</strong> for input $s$ is the finite ordered set of all partial trees for $s$ produced by the parser. Trees in the forest differ by the alternatives chosen during parsing.</p>
+<p>For a <strong>completable</strong> input $s \in \Sigma^*$ and grammar $G$, the <strong>partial parse forest</strong> $\mathcal{F}(s)$ is the set of all rooted <strong>partial parse trees</strong> that match $s$.</p>
 </div>
 
-<div class="remark">
-<div class="remark-title">Remark: Forest Ordering</div>
+<p>In the implementation, partial parse forests are stored as Shared Packed Parse Forrects (SPPF) to save up space.</p>
+<h2 id="partial-parser"><a class="header" href="#partial-parser">Partial Parser</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Partial Parser</div>
 
-<p>Parsing a production $A = \alpha \ |\ \beta$ creates two trees: $A(\alpha)$ and $A(\beta)$. The forest is ordered by the definition order of alternatives in the grammar. The alternative index function $\alpha$ records which choice was made at each non-terminal—this is essential for binding resolution.</p>
+<p>A <strong>partial parser</strong> for grammar $G$ is a function:
+$$\Psi_G : \Sigma^* \to \{ \mathcal{F},\text{reject} \}$$
+Mapping each valid (<strong>completable</strong>) input to a partial parse forest and invalid inputs to $\text{reject}$.</p>
 </div>
 
-<p>We use the notation $x[i]$ to designate the node pointed at by the edge indexed at $i$ from node $x$.</p>
+<p>The parser is <em>sound</em> in the sense that every prefix of $s$ will be accepted by it and produce a forest.</p>
 <h3 id="tree-paths"><a class="header" href="#tree-paths">Tree Paths</a></h3>
 <div class="definition">
 <div class="definition-title">Definition: Tree Path</div>
 
-<p>The space of <strong>tree paths</strong> is $\mathcal{P} = \mathbb{N}^*$, where each coordinate is an edge index pointing to a specific child (similar to de Bruijn indexing). Every node $v \in V$ has a unique path $\text{path}(v)$ from the root:</p>
+<p>The space of <strong>tree paths</strong> is $\mathcal{P} = \mathbb{N}^*$, where each coordinate is an edge index pointing to a specific child. Every node $v \in V$ has a unique path $\text{path}(v)$ from the root:</p>
 <p>$$\text{path}(v) = \begin{cases}
-\varepsilon &amp; \text{if } v \text{ is root} \
+\varepsilon &amp; \text{if } v \text{ is root} \\
 \text{path}(v’) \cdot i &amp; \text{if } v’ \text{ is parent of } v \text{ and } v \text{ is its } i\text{-th child}
 \end{cases}$$</p>
 </div>
@@ -383,45 +404,51 @@ $$</p>
 <p>Paths are injective: $\text{path}_T(x_1) = \text{path}_T(x_2) \implies x_1 = x_2$.</p>
 </div>
 
-<p>We extend the notation with <em>relative paths</em> $p = i_0 \cdot i_1 \cdots i_n$ using $x[p] = (x[i_0])[i_1 \cdot i_2 \cdots i_n]$.</p>
-<h3 id="completeness-and-frontiers"><a class="header" href="#completeness-and-frontiers">Completeness and Frontiers</a></h3>
+<p>We use $x[i]$ for the child at index $i$, and extend this to relative paths $x[p]$.</p>
+<h3 id="terminal-status-and-extensibility"><a class="header" href="#terminal-status-and-extensibility">Terminal Status and Extensibility</a></h3>
+<p>A terminal node matching input $s$ has a status:</p>
+<ul>
+<li><strong>Complete</strong>: Matched a full token. It may carry an <strong>extension</strong> derivative $D_s(r)$ for further matching.</li>
+<li><strong>Partial</strong>: Matched only a prefix. It carries a <strong>remainder</strong> derivative for what must follow.</li>
+</ul>
 <div class="definition">
-<div class="definition-title">Definition: Satisfied Symbol</div>
+<div class="definition-title">Definition: Extensibility</div>
 
-<p>For non-terminal $v \in V$ with production $\pi(v) = \alpha_0 \cdots \alpha_n$, symbol $\alpha_s$ is <strong>satisfied</strong> if $v[s]$ exists and is complete.</p>
+<p>A terminal $v$ is <strong>extensible</strong> if its derivative with respect to its matched text is non-empty:
+$$\text{extensible}(v) \iff D_{\text{matched}(v)}(r_v) \neq \emptyset$$</p>
 </div>
 
-<div class="definition">
-<div class="definition-title">Definition: Complete Node</div>
-
+<p>A terminal can be <strong>both complete and extensible</strong>. For example, <code>/[a-z]+/</code> matching <code>foo</code> is complete but extensible by <code>bar</code>. Conversely, a terminal is incomplete and not extensible only if its remainder regex is $\emptyset$ (a parse error). This distinction is critical for <a href="#done-binding-resolution">binding resolution</a> where bindings to extensible terminals on the rightmost spine are treated as <code>Partial</code>.</p>
+<h3 id="completeness-and-frontiers"><a class="header" href="#completeness-and-frontiers">Completeness and Frontiers</a></h3>
 <p>A node is <strong>complete</strong> by induction:</p>
 <ul>
-<li>A terminal is complete if it matched the full input (we ignore the non-complete case, handled <a href="https://unsuspicious.org/blog/completing-regex/">here</a>)</li>
-<li>A non-terminal $v$ is complete $\iff$ all symbols $\alpha_0, \ldots, \alpha_n$ in $\pi(v)$ are satisfied</li>
+<li>A terminal is complete if it matched the full input.</li>
+<li>A non-terminal $v$ is complete $\iff$ all symbols in its production $\pi(v)$ are satisfied.</li>
 </ul>
-</div>
-
-<div class="remark">
-<div class="remark-title">Remark: Completeness and Language Membership</div>
-
-<p>Using a parser $\Psi_L$, saying “node $v$ is complete” is equivalent to saying “the expression node $v$ represents belongs in language $L$”.</p>
-</div>
-
 <div class="definition">
 <div class="definition-title">Definition: Frontier</div>
 
-<p>The <strong>frontier</strong> of a tree is the path to the incomplete node at the end of the tree. In a complete tree, there is no frontier. The frontier is unique.</p>
+<p>The <strong>frontier</strong> is the path to the unique incomplete node where parsing stopped. In a complete tree, there is no frontier.</p>
 </div>
 
+<p>Note that this is not extacly the same as extensibility. A (complete) tree will have no frontier, but can have extensible nodes.</p>
 <div class="definition">
 <div class="definition-title">Definition: Forest Completeness</div>
 
-<p>A partial forest $\mathcal{F} = {t_1,t_2,\cdots t_n}$ is <strong>complete</strong> if and only if:
-$$\exists k \ |\ t_k \text{ is complete}$$</p>
+<p>A forest is <strong>complete</strong> $\iff$ at least one tree in it is complete.</p>
 </div>
 
+<h3 id="monotonicity"><a class="header" href="#monotonicity">Monotonicity</a></h3>
+<p>For partial parses $\mathcal{F}(s)$ extending to $\mathcal{F}(s \cdot t)$, the frontier path length is monotonically non-decreasing.</p>
+<div class="lemma">
+<div class="lemma-title">Lemma: Frontier Monotonicity</div>
+
+<p>$\operatorname{front}(\mathcal{F}(s \cdot t)) \geq \operatorname{front}(\mathcal{F}(s))$</p>
+</div>
+
+<p>This property is a primary invariant for parser correctness; a decreasing frontier indicates an engine failure.</p>
 <div class="example">
-<div class="example-title">Example: Completing a Lambda Abstraction</div>
+<div class="example-title">Example: Lambda Completion</div>
 
 <p><strong>Input</strong>: <code>λx:Int.</code></p>
 <p><strong>Partial Tree</strong>:</p>
@@ -436,480 +463,740 @@ $$\exists k \ |\ t_k \text{ is complete}$$</p>
             ├─[4]→ "."
             └─[5]→ Expression  [Missing / End of Input]
 </code></pre>
-<p><strong>Frontier</strong>: path <code>[0, 5]</code>, where parsing stopped due to end of input.</p>
-<p>The tree is <strong>not complete</strong> but is <strong>completable</strong>. The completion set consists of all strings satisfying the <code>Expression</code> production, for example:</p>
-<ul>
-<li><code>Expression → AtomicExpression → Variable → Identifier → /[a-z][a-zA-Z0-9]*/</code></li>
-</ul>
-<p>Choosing <code>"x"</code> as a completion yields the complete tree:</p>
-<pre><code>T' = Expression
-      └─[0]→ Abstraction(abs)  [COMPLETE]
-             ├─[0]→ "λ"
-             ├─[1]→ Identifier("x")
-             ├─[2]→ ":"
-             ├─[3]→ Type
-             │      └─[0]→ AtomicType
-             │             └─[0]→ BaseType("Int")
-             ├─[4]→ "."
-             └─[5]→ Expression
-                    └─[0]→ AtomicExpression
-                           └─[0]→ Variable(dec)
-                                  └─[0]→ Identifier("x")
-</code></pre>
+<p><strong>Frontier</strong>: path <code>[0, 5]</code>. Choosing <code>"x"</code> as a completion yields a complete tree where the <code>Abstraction</code> node is satisfied.</p>
 </div>
 
-<div class="lemma">
-<div class="lemma-title">Lemma: Frontier Monotonicity</div>
+<p><span class="margin-anchor" data-margin="margin-i-1"></span></p>
+<div class="margin-interactive" data-margin="margin-i-1" data-label="build partial tree" data-steps="{&quot;label&quot;:&quot;parse: &#92;u03bbx:Int.&quot;,&quot;input&quot;:&quot;&quot;,&quot;steps&quot;:[{&quot;token&quot;:&quot;&#92;u03bb&quot;,&quot;tokens&quot;:[&quot;&#92;u03bb&quot;],&quot;display&quot;:&quot;Expression&#92;n &#92;u2514 Abstraction&#92;n   &#92;u251c [0] &#92;u03bb &#92;u2713&#92;n   &#92;u2514 [1..5] missing&#92;nfrontier: [0,1]&quot;},{&quot;token&quot;:&quot;x&quot;,&quot;tokens&quot;:[&quot;x&quot;],&quot;display&quot;:&quot;Expression&#92;n &#92;u2514 Abstraction&#92;n   &#92;u251c [0] &#92;u03bb &#92;u2713&#92;n   &#92;u251c [1] Ident(x) &#92;u2713&#92;n   &#92;u2514 [2..5] missing&#92;nfrontier: [0,2]&quot;},{&quot;token&quot;:&quot;:&quot;,&quot;tokens&quot;:[&quot;:&quot;],&quot;display&quot;:&quot;Expression&#92;n &#92;u2514 Abstraction&#92;n   &#92;u251c [0] &#92;u03bb &#92;u2713&#92;n   &#92;u251c [1] Ident(x) &#92;u2713&#92;n   &#92;u251c [2] : &#92;u2713&#92;n   &#92;u2514 [3..5] missing&#92;nfrontier: [0,3]&quot;},{&quot;token&quot;:&quot;Int&quot;,&quot;tokens&quot;:[&quot;Int&quot;,&quot;Bool&quot;],&quot;display&quot;:&quot;Expression&#92;n &#92;u2514 Abstraction&#92;n   &#92;u251c [0] &#92;u03bb &#92;u2713&#92;n   &#92;u251c [1] x &#92;u2713&#92;n   &#92;u251c [2] : &#92;u2713&#92;n   &#92;u251c [3] Type(Int) &#92;u2713&#92;n   &#92;u2514 [4..5] missing&#92;nfrontier: [0,4]&quot;},{&quot;token&quot;:&quot;.&quot;,&quot;tokens&quot;:[&quot;.&quot;],&quot;display&quot;:&quot;Expression&#92;n &#92;u2514 Abstraction&#92;n   &#92;u251c [0] &#92;u03bb &#92;u2713&#92;n   &#92;u251c [1] x &#92;u2713  [2] : &#92;u2713  [3] Int &#92;u2713&#92;n   &#92;u251c [4] . &#92;u2713&#92;n   &#92;u2514 [5] Expression  &#92;u2190 frontier&#92;nfrontier: [0,5]&quot;}]}"></div>
 
-<p>For partial parses $\mathcal{F}(s)$ extending to $\mathcal{F}(s \cdot t)$ with $t \in S’$:
-$$\operatorname{front}_{\mathcal{F}(s \cdot t)}(v) \gt \operatorname{front}_{\mathcal{F}(s)}(v)$$</p>
-</div>
-
-<div class="proof">
-<div class="proof-title">Proof: Frontier Monotonicity</div>
-
-<p>Trivial by definition of $S’$: any valid completion must advance the frontier.</p>
-</div>
-
-<div class="remark">
-<div class="remark-title">Remark: Monotonicity as a Debugging Tool</div>
-
-<p>This property is useful for verifying parser correctness as if the frontier ever decreases, something is wrong.</p>
-</div>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="binding-resolution"><a class="header" href="#binding-resolution">Binding Resolution</a></h1>
-<p>Given our grammar $G = (N, T, P, S, \Theta, A)$ with binding annotations, we construct a <strong>binding map</strong> $\beta: \mathcal{B} \times P \to \mathcal{P}^*$ that associates each binding identifier with a set of canonical <strong>grammar paths</strong> (not tree paths). These grammar paths include alternative annotations that serve as verification constraints during runtime binding resolution.</p>
-<h3 id="done-grammar-paths"><a class="header" href="#done-grammar-paths"><span class="status-badge done">DONE</span> Grammar Paths</a></h3>
+<h1 id="done-binding-resolution"><a class="header" href="#done-binding-resolution"><span class="status-badge done">DONE</span> Binding Resolution</a></h1>
+<p>Given grammar $G = (N, T, P, S, \Theta, A)$, we construct a <strong>binding map</strong> $\beta: \mathcal{B} \times P \to \mathcal{P}^*$ associating binding identifiers with <strong>grammar paths</strong>.</p>
 <div class="definition">
 <div class="definition-title">Definition: Grammar Path</div>
 
-<p>A <strong>grammar path</strong> is a sequence of non-terminals, indices in their productions, and alternative indices:
-$$
-p = x_1@a_1 \to x_2@a_2 \to … \to x_n@a_n
-$$</p>
-<p>Where for each step $X_i@A_i$:</p>
+<p>A <strong>grammar path</strong> is a sequence of non-terminals, production indices, and alternative indices:
+$$ p = x_1@a_1 \to x_2@a_2 \to \dots \to x_n@a_n $$
+where:</p>
 <ul>
-<li>$x_i \in \mathbb{N}$ is an index in the current production</li>
-<li>$a_i \in \mathbb{N}$ is the alternative index chosen for non-terminal $x_i$</li>
+<li>$x_i \in \mathbb{N}$: index in the production.</li>
+<li>$a_i \in \mathbb{N}$: alternative index chosen for non-terminal $x_i$.</li>
 </ul>
-<p>The path can be interpreted as navigating the grammar structure from one production to another, following specific alternatives at each non-terminal. A grammar path is always relative to a specific production non-terminal.</p>
 </div>
 
-<div class="example">
-<div class="example-title">Example: Grammar Path Interpretation</div>
-
-<p>The path $1@0 \to 3@0 \to 2@4$ means:</p>
-<ul>
-<li>Start at the $1$-th element of the $0$-th alternative of our start non-terminal (lets call it “A”)</li>
-<li>Go to the third element of the $0$-th alternative of “A”, which is “B”</li>
-<li>Go to the $4$-th element of the second production alternative for “C”.</li>
-</ul>
-<p>The produciton index is first, followed by the alternative index after the <code>@</code> symbol.</p>
-</div>
-
-<div class="remark">
-<div class="remark-title">Remark: Converting Grammar Paths to Tree Paths</div>
-
-<p>Grammar paths can be converted to tree paths if the tree respects the choice of alternatives specified in the path.</p>
-<p>We can intepret the alternative indices as constraints on the trees we might apply the grammar path to. When traversing a tree, we only follow a grammar path if at each non-terminal node, the alternative chosen matches the one specified in the grammar path.</p>
-</div>
-
-<h3 id="wip-regular-grammar-paths"><a class="header" href="#wip-regular-grammar-paths"><span class="status-badge wip">WIP</span> Regular Grammar Paths</a></h3>
+<p>Grammar paths navigate grammar structure relative to a production. Alternative indices act as constraints: we only follow a path if the tree node’s chosen alternative matches the path. This allows grammar paths to convert to tree paths at runtime while ensuring the tree respects the specified structure.</p>
+<h3 id="regular-grammar-paths"><a class="header" href="#regular-grammar-paths">Regular Grammar Paths</a></h3>
 <div class="definition">
 <div class="definition-title">Definition: Regular Grammar Path</div>
 
-<p>To handle recursive structures (like <code>Type ::= AtomicType | '(' Type ')'</code>), we define <strong>Regular Grammar Paths</strong> as regular expressions over $\Sigma = \mathbb{N} \times \mathbb{N}$. A symbol $i@k \in \Sigma$ represents traversing the $i$-th child of a node that selected alternative $k$.</p>
+<p>For recursive structures, <strong>Regular Grammar Paths</strong> are regular expressions over $\Sigma = \mathbb{N} \times \mathbb{N}$, where $i@k$ represents traversing the $i$-th child of a node selecting alternative $k$.</p>
 </div>
 
-<div class="example">
-<div class="example-title">Example: Binding Through Recursive Structure</div>
-
-<p>To bind <code>τ</code> at the <code>Abstraction</code> node through potentially nested parentheses:
-$$ \beta(\tau, \text{Abstraction}) = 3@0 \cdot (0@1 \cdot 1@0)^* \cdot 0@0 \cdot 0 $$
-This matches paths starting with edge 3 (alt 0), followed by any number of parenthesis wrappings, ending at <code>BaseType</code>.</p>
-</div>
-
+<p>Example: binding <code>τ</code> through nested parentheses:
+$$ \beta(\tau, \text{Abstraction}) = 3@0 \cdot (0@1 \cdot 1@0)^* \cdot 0@0 \cdot 0 $$</p>
 <h3 id="binding-map-construction"><a class="header" href="#binding-map-construction">Binding Map Construction</a></h3>
-<p>For each production $p \in P$ with associated typing rule $\Theta(p)$:</p>
+<p>For each production $p \in P$ with rule $\Theta(p)$:</p>
 <ol>
-<li>
-<p><strong>Binding extraction</strong>: Let $\mathcal{B}_\theta = {b_i \mid b_i \text{ mentioned in } \Theta(p)}$ be bindings referenced in its typing rule.</p>
-</li>
-<li>
-<p><strong>Grammar graph traversal</strong>: For each $b \in \mathcal{B}_\theta$, identify the first occurrence of $b$ in $p$ at position $k$. If $\alpha_k[b]$ is a non-terminal, recursively explore <strong>all</strong> of its production alternatives from $A(\alpha_k)$ until $b$ is found. Use breadth-first search. Graph traversal tracks:</p>
-<ul>
-<li>the index in the production (child position)</li>
-<li>the index in the alternative structure (which alternative of a non-terminal)</li>
-</ul>
-</li>
-<li>
-<p><strong>Path invariant extraction</strong>: Compute all acyclic <strong>grammar paths</strong> $\mathcal{P}_b^p = {p_1, p_2, \ldots, p_m}$ from the node associated with typing rule $\theta$ to nodes carrying binding $b$. Each path <strong>must</strong> include alternative annotations to avoid ambiguity. For cycles, use <em>regular grammar paths</em>.</p>
-</li>
-<li>
-<p><strong>Store</strong>: $\beta(b, p) = \mathcal{P}_b^p$</p>
-</li>
+<li><strong>Extraction</strong>: Let $\mathcal{B}_\theta$ be bindings mentioned in $\Theta(p)$.</li>
+<li><strong>Traversal</strong>: For $b \in \mathcal{B}_\theta$, find $b$ in $p$ at position $k$. If $\alpha_k[b]$ is a non-terminal, recursively explore alternatives in $A(\alpha_k)$ via BFS.</li>
+<li><strong>Invariant Extraction</strong>: Compute acyclic grammar paths $\mathcal{P}_b^p$ from rule $\theta$ to binding $b$. Paths must include alternative annotations. Use regular grammar paths for cycles.</li>
+<li><strong>Store</strong>: $\beta(b, p) = \mathcal{P}_b^p$.</li>
 </ol>
-<div class="remark">
-<div class="remark-title">Remark: Grammar Paths are Static</div>
-
-<p>These are <strong>grammar paths</strong>, not tree paths. They are computed once at grammar-load time and remain fixed. They guide the generation of tree paths at runtime.</p>
-</div>
-
-<div class="example">
-<div class="example-title">Example: Binding Map Construction</div>
-
-<p>We can construct a subset of the binding map $\beta$ for our STLC grammar step by step.</p>
-<p>Let’s choose a production we’ll call $p$:</p>
-<pre><code class="language-ebnf">Abstraction(abs) ::= 'λ' Identifier[x] ':' Type '.' Expression[e]
-</code></pre>
-<p>with rule $\theta$:</p>
-<pre><code>Γ[x:τ₁] ⊢ e : τ₂
------------------------ (abs)
-τ₁ → τ₂
-</code></pre>
-<ul>
-<li>$\mathcal{B}_\theta = {x, \tau_1, e, \tau_2}$</li>
-</ul>
-<p>We can then get our paths for each binding:</p>
-<ul>
-<li>$\beta(x, \text{Abstraction}) = {1}$</li>
-<li>$\beta(\tau_1, \text{Abstraction}) = {3@1 \cdot 0}$ (Abstraction@0:3 $\to$ Type@1:0 $\to$ FunctionType@0:0)</li>
-<li>$\beta(\tau_2, \text{Abstraction}) = {3@1 \cdot 2}$ (Abstraction@0:3 $\to$ Type@1:0 $\to$ FunctionType@0:2)</li>
-<li>$\beta(e, \text{Abstraction}) = {5}$</li>
-</ul>
-<p><strong>Note</strong>: Here we assume the typing rule binds to <code>Type</code> when it chooses the <code>FunctionType</code> alternative (alt 1). The paths $3@1 \cdot 0$ and $3@1 \cdot 2$ explicitly specify that we’re taking alternative 1 of <code>Type</code> (which is <code>FunctionType</code>), then accessing children 0 and 2 of that production respectively.</p>
-</div>
-
-<h4 id="binding-resolution-1"><a class="header" href="#binding-resolution-1">Binding Resolution</a></h4>
-<p>For a partial tree $T$,  binding $b$, and node $N$ we resolve nodes $V_b$ by matching tree paths against every grammar paths in $R_b = \beta(b, N)$.</p>
-<p>A tree node $v$ is in $V_b$ if and only if its path $p = e_1 \dots e_n$ matches $p’ \in R_b$. A match requires:</p>
+<p>Grammar paths are static; they are fixed at load time and guide tree path generation during evaluation.</p>
+<h3 id="binding-resolution"><a class="header" href="#binding-resolution">Binding Resolution</a></h3>
+<p>For tree $T$, binding $b$, and node $N$, we resolve nodes $V_b$ by matching tree paths against $R_b = \beta(b, N)$. A node $v$ matches if:</p>
 <ol>
-<li><strong>Edge Match</strong>: The sequence of edge indices from $N$ to $v$ matches the indices in $R_b$.</li>
-<li><strong>Alternative Verification</strong>: For every step $i@k$ in $R_b$, the corresponding tree node $u$ must have the alternative $k$.
-In practice, the <strong>edge match</strong> is ensured by following the <em>tree path</em> defined by the <em>grammar path</em> stripped of it’s alternative indications. Alternative consistency is checked in parralel.</li>
+<li><strong>Edge Match</strong>: The edge index sequence matches $R_b$.</li>
+<li><strong>Alternative Verification</strong>: For every step $i@k$, the tree node has alternative $k$.</li>
 </ol>
-<div class="remark">
-<div class="remark-title">Remark: Alternative Verification</div>
-
-<p>If edge match but alternative verification fails for every tree invariant the binding has, we assume something is wrong and reject the parse.</p>
-</div>
-
-<h3 id="correctness"><a class="header" href="#correctness">Correctness</a></h3>
-<p>In order for all of this to work we need to state a few theorems that shall remain invariant. Our main goal will be to prove them.</p>
+<p>If edge match succeeds but alternative verification fails for all invariants, the parse is rejected.</p>
+<h3 id="correctness-and-constraints"><a class="header" href="#correctness-and-constraints">Correctness and Constraints</a></h3>
 <div class="theorem">
 <div class="theorem-title">Theorem: Binding Invariance</div>
 
-<p>For any binding $b$ in production $p$, the set $\beta(b, p)$ is uniquely determined by the grammar structure and independent of input</p>
+<p>For any binding $b$ in production $p$, $\beta(b, p)$ is uniquely determined by the grammar structure and independent of input.</p>
 </div>
 
 <div class="assumption">
 <div class="assumption-title">Assumption: Binding Uniqueness</div>
 
-<p>If $|\beta(b, p)| &gt; 1$, then $b$ must be declared as tuple-typed in $\Theta(p)$ with the syntax <code>(b...)</code></p>
+<p>If $|\beta(b, p)| &gt; 1$, then $b$ must be declared as tuple-typed in $\Theta(p)$ as <code>(b...)</code>.</p>
 </div>
 
 <div class="remark">
-<div class="remark-title">Remark: Completeness</div>
+<div class="remark-title">Remark: Limitations</div>
 
-<p>This approach separates grammar analysis (compile-time invariants) from tree traversal (runtime binding), reducing parsing complexity while maintaining formal guarantees. Obviously regular tree paths create a lot more trouble, because we can’t determine $|\beta(b, p)|$ at grammar loading time.</p>
+<p>The construction algorithm enforces a limit: <code>MAX_RECURSION_DEPTH = 16</code>. Paths deeper than this are omitted. Consequently, $\beta(b, p)$ is an under-approximation for deeply recursive grammars, and bindings at extreme depths may fail to resolve.</p>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-type-system"><a class="header" href="#done-type-system"><span class="status-badge done">DONE</span> Type System</a></h1>
+<p>This chapter defines the type language, the typed tree and forest structures,
+the typing judgment, and the subtyping relation. Types in Aufbau are not
+information carriers in the classical sense: they are <strong>constraints on
+completability</strong>. A type describes what extensions of a partial expression
+<em>may become</em>.</p>
+<h2 id="the-typing-judgment"><a class="header" href="#the-typing-judgment">The Typing Judgment</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Typing Judgment</div>
+
+<p>The <strong>typing judgment</strong></p>
+<p>$$\Gamma \vdash_\Theta t : \mathcal{S}$$</p>
+<p>reads “under context $\Gamma$ and typing rules $\Theta$, tree $t$ has status
+$\mathcal{S}$.” When no external context is needed we write $\vdash_\Theta t :
+\mathcal{S}$ with an empty context.</p>
+</div>
+
+<h2 id="tree-status"><a class="header" href="#tree-status">Tree Status</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Tree Status</div>
+
+<p>The <strong>tree status</strong> lattice $\mathcal{S}$ classifies the result of typing a tree:</p>
+<p>$$\text{Valid}(\tau) \sqsupset \text{Partial}(\tau) \sqsupset \text{Invalid}$$</p>
+<ul>
+<li>$\text{Valid}(\tau)$: the tree is complete and fully satisfies the constraint $\tau$.</li>
+<li>$\text{Partial}(\tau)$: the constraint $\tau$ is consistent with the tree so far,
+but the tree is incomplete; the status may strengthen or fail as more input arrives.</li>
+<li>$\text{Invalid}$: the constraint is violated; the tree cannot be completed
+into any well-typed expression.</li>
+</ul>
+</div>
+
+<p>This lattice is <strong>monotone</strong>: status can only move from $\text{Partial}$ toward
+$\text{Valid}$ or $\text{Invalid}$, never in reverse.</p>
+<div class="definition">
+<div class="definition-title">Definition: Forest Status</div>
+
+<p>The <strong>status of a partial forest</strong> $\mathcal{F}$ under $\vdash_\Theta$ is the supremum of the statuses of its trees under the lattice $\mathcal{S}$:</p>
+<p>$$\Gamma \vdash_\Theta \mathcal{F} \;:=\; \bigsqcup_{t \,\in\, \mathcal{F}} \;\Gamma \vdash_\Theta t$$</p>
+<p>Concretely:</p>
+<p>$$\Gamma \vdash_\Theta \mathcal{F} = \begin{cases} \text{Valid}(\tau) &amp; \text{if some tree has status } \text{Valid}(\tau) \\
+\text{Partial}(\tau) &amp; \text{if no tree is valid but some is } \text{Partial}(\tau) \\
+\text{Invalid} &amp; \text{if every tree is } \text{Invalid} \end{cases}$$</p>
+</div>
+
+<p>The forest is $\text{Invalid}$ only when <em>all</em> of its trees have been rejected.</p>
+<div class="lemma">
+<div class="lemma-title">Lemma: Status Monotonicity</div>
+
+<p>For partial parses $\mathcal{F}(s)$ extending to $\mathcal{F}(s \cdot a)$:
+$$\Gamma \vdash_\Theta \mathcal{F}(s) = \text{Invalid}
+\implies
+\Gamma \vdash_\Theta \mathcal{F}(s \cdot a) = \text{Invalid}
+\quad \forall a$$</p>
+</div>
+
+<p>Monotonicity makes typed search efficient: once a state is $\text{Invalid}$,
+the entire subtree below it in the search space can be pruned without
+examination.</p>
+<h2 id="typed-trees-and-forests"><a class="header" href="#typed-trees-and-forests">Typed Trees and Forests</a></h2>
+<p>The typing engine $\vdash_\Theta$ maps a tree to either a status or rejection.
+This lifts trees and forests into <em>typed</em> counterparts.</p>
+<div class="definition">
+<div class="definition-title">Definition: Typed Tree</div>
+
+<p>A <strong>typed tree</strong> $\hat{t}$ is a pair $(t,\, \mathcal{T})$ where:</p>
+<ul>
+<li>$t$ is a partial tree, and</li>
+<li>$\mathcal{T} : V \to \tau \cup {\varepsilon}$ maps each node to its
+inferred type, or to $\varepsilon$ if not typable</li>
+</ul>
+<p>$\hat{t}$ exists whenever $\vdash_\Theta t \neq \text{Invalid}$, i.e. the
+tree carries status $\text{Partial}(\tau)$ or $\text{Valid}(\tau)$.</p>
+</div>
+
+<p>The typing engine thus acts as a constructor:</p>
+<p>$$
+\vdash_\Theta t =
+\begin{cases}
+\hat{t} &amp; \text{if } \vdash_\Theta t : \text{Valid}(\tau)
+\text{ or } \text{Partial}(\tau) \text{ for some } \tau \\
+\text{Invalid} &amp; \text{if the typing constraint is violated}
+\end{cases}
+$$</p>
+<div class="definition">
+<div class="definition-title">Definition: Typed Forest</div>
+
+<p>A <strong>typed forest</strong> $\hat{\mathcal{F}}$ is a forest in which every tree is
+either a typed tree $\hat{t}$ or has been individually rejected as
+$\text{Invalid}$.</p>
+</div>
+
+<p>Extending the engine to forests:</p>
+<p>$$
+\vdash_\Theta \mathcal{F} =
+\begin{cases}
+\hat{\mathcal{F}} &amp; \text{if at least one tree in } \mathcal{F}
+\text{ produces a typed tree} \\
+\text{Invalid} &amp; \text{if every tree in } \mathcal{F} \text{ is } \text{Invalid}
+\end{cases}
+$$</p>
+<p>A partial tree that is <strong>typedly invalid</strong> carries an inconsistency in its
+typing rules. It is <em>syntactically valid</em> but <em>semantically invalid</em></p>
+<h2 id="types-as-constraints-on-completability"><a class="header" href="#types-as-constraints-on-completability">Types as Constraints on Completability</a></h2>
+<p>Without typing, $\mathcal{C}_L(s)$ is the set of all syntactically valid
+extensions of a prefix $s$. The typed tree structure gives this a sharper
+interpretation: every type $\tau$ assigned to a node in $\hat{t}$ is a
+<strong>constraint</strong> asserting that any syntactic completion of that subtree must
+produce a value of type $\tau$, or the tree transitions to $\text{Invalid}$.</p>
+<p>Types therefore define a refinement of the completability set:</p>
+<p>$$
+\mathcal{C}_{L,\Theta}(s) = \{\, a \in \mathcal{C}_L(s) \mid \Gamma \vdash_\Theta \mathcal{F}(sa) \neq \text{Invalid} \,\}
+$$</p>
+<div class="lemma">
+<div class="lemma-title">Lemma: Typed Completability Refinement</div>
+
+<p>$$\mathcal{C}_{L,\Theta}(s) \subseteq \mathcal{C}_L(s)$$</p>
+</div>
+
+<p>Typing can only <strong>narrow</strong> the completability set, never widen it. This
+refinement is computed incrementally:</p>
+<ol>
+<li>The parser produces a partial forest $\mathcal{F}(s)$.</li>
+<li>$\vdash_\Theta$ evaluates each tree, yielding $\hat{\mathcal{F}}$ or
+$\text{Invalid}$ per tree.</li>
+<li>The synthesizer computes the grammar-level completion set $\mathcal{C}_L(s)$.</li>
+<li>Each candidate token $a$ is tested by extension: parse $s \cdot a$, apply
+$\vdash_\Theta$, and retain only those where some root remains
+non-$\text{Invalid}$.</li>
+</ol>
+<p>The type system acts as a <strong>filter</strong>, not a generator. It cannot propose
+completions the grammar does not support; it only rejects those that violate
+typing constraints.</p>
+<h2 id="type-language"><a class="header" href="#type-language">Type Language</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Type</div>
+
+<p>A <strong>type</strong> $\tau$ is defined inductively:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Form</th><th style="text-align: left">Notation</th><th style="text-align: left">Description</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left">Atom</td><td style="text-align: left">$\tau$</td><td style="text-align: left">Named type from binding resolution</td></tr>
+<tr><td style="text-align: left">Meta</td><td style="text-align: left">$?A$</td><td style="text-align: left">Unification variable (unknown type)</td></tr>
+<tr><td style="text-align: left">Raw</td><td style="text-align: left">$\text{‘int’}$</td><td style="text-align: left">Concrete type literal</td></tr>
+<tr><td style="text-align: left">Arrow</td><td style="text-align: left">$\tau_1 \to \tau_2$</td><td style="text-align: left">Function type</td></tr>
+<tr><td style="text-align: left">Union</td><td style="text-align: left">$\tau_1 \mid \tau_2$</td><td style="text-align: left">Union type</td></tr>
+<tr><td style="text-align: left">Not</td><td style="text-align: left">$\lnot\tau$</td><td style="text-align: left">Negation type</td></tr>
+<tr><td style="text-align: left">ContextCall</td><td style="text-align: left">$\Gamma(x)$</td><td style="text-align: left">Deferred context lookup</td></tr>
+<tr><td style="text-align: left">Any</td><td style="text-align: left">$\top$</td><td style="text-align: left">Top type (universal supertype)</td></tr>
+<tr><td style="text-align: left">None</td><td style="text-align: left">$\emptyset$</td><td style="text-align: left">Bottom type (empty type)</td></tr>
+<tr><td style="text-align: left">Path</td><td style="text-align: left">$\text{Path}(i_1@a_1 \cdot i_2@a_2 \cdots i_n@a_n)$</td><td style="text-align: left">Internal: unresolved binding at grammar path</td></tr>
+<tr><td style="text-align: left">PathOf</td><td style="text-align: left">$\text{PathOf}(\tau,; i_1@a_1 \cdots i_n@a_n)$</td><td style="text-align: left">Internal: type $\tau$ at unresolved grammar path</td></tr>
+<tr><td style="text-align: left">Indeterminate</td><td style="text-align: left">$\widetilde{\tau}$</td><td style="text-align: left">Internal: type inferred from an incomplete parse</td></tr>
+</tbody>
+</table>
+</div>
+<p>$\text{Path}(\cdots)$, $\text{PathOf}(\cdots)$, and $\widetilde{\tau}$ are markers
+of <strong>indeterminacy</strong>: the engine cannot yet produce a definitive type because
+the parse tree is incomplete. Their presence in a judgment forces the result
+to $\text{Partial}(\tau)$, propagating incompleteness upward without
+rejecting the tree.</p>
 </div>
 
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="implementation-details"><a class="header" href="#implementation-details">Implementation Details</a></h1>
-<p>Our module is structured as follows:</p>
-<ul>
-<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>grammar</code></a> where we define the grammar data structures and loading logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>partial</code></a> where we implement the partial parser $\Psi_L$ that interprets grammars to collect <strong>partial parse forests</strong> (see next section)</li>
-<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>bind</code></a> where we implement the binding resolution logic</li>
-<li><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>typing</code></a> where the core typing engine is implemented, used after parsing to validate well-typedness of parse trees in a forrest. It’s mainly used a filtering mechanism for completability.</li>
-</ul>
-<p>We also have auxiliary utils such as the <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/validation/"><code>validation</code></a> module which check <code>aufbau</code> for correctness and the complex custom regex engine <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>regex</code></a> that is used for completeability over <em>two-level languages</em> (see here: <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>).</p>
-<h1 id="proof-and-structured"><a class="header" href="#proof-and-structured">Proof and structured</a></h1>
-<p>In this document we will go through each algorithm in detail, and try to prove their correctness. We will also provide a structured overview of the implementation, including the data structures and algorithms used.</p>
+<h1 id="done-regex-engine"><a class="header" href="#done-regex-engine"><span class="status-badge done">DONE</span> Regex Engine</a></h1>
+<p>The regex engine underpins all terminal matching in the parser. It uses <strong>Brzozowski derivatives</strong> to match incrementally, a design that integrates naturally with partial parsing. The theoretical foundations (derivatives, two-level completability) are developed in <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>. This page covers only the implementation-specific choices.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></p>
+<h2 id="the-regex-type"><a class="header" href="#the-regex-type">The <code>Regex</code> Type</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Regex</div>
+
+<p>$$r ::= \emptyset \mid \varepsilon \mid c \mid [a\text{-}b] \mid r_1 \cdot r_2 \mid r_1 \mid r_2 \mid r^*$$</p>
+<p><code>Empty</code>, <code>Epsilon</code>, <code>Char</code>, <code>Range</code>, <code>Concat</code>, <code>Union</code>, <code>Star</code>. Grammar terminals written as <code>/[a-z]+/</code> are parsed into this representation at grammar load time. Common shorthands (<code>digit()</code>, <code>word()</code>, <code>alnum()</code>) are combinators over these primitives.</p>
+</div>
+
+<h2 id="prefix-matching"><a class="header" href="#prefix-matching">Prefix Matching</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: PrefixStatus</div>
+
+<p><code>prefix_match(r, s)</code> computes $d = \text{simplify}(\partial_s r)$ and classifies the result:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Outcome</th><th>Condition</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>NoMatch</code></td><td>$d = \emptyset$</td><td>$s$ is not a prefix of any string in $\mathcal{L}(r)$</td></tr>
+<tr><td><code>Extensible(d)</code></td><td>$\nu(d)$</td><td>$s \in \mathcal{L}(r)$ and $d$ accepts further characters</td></tr>
+<tr><td><code>Prefix(d)</code></td><td>$\lnot\nu(d)$, $d \neq \emptyset$</td><td>$s$ is a valid prefix but not yet a complete match</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<p>The parser maps these outcomes to terminal node status: <code>Extensible</code> produces a <code>Terminal::Complete</code> with a non-null extension derivative; <code>Prefix</code> produces a <code>Terminal::Partial</code> with a remainder derivative.</p>
+<p>Simplification (standard algebraic identities: $\emptyset \cdot r = \emptyset$, $\varepsilon \cdot r = r$, $r \mid r = r$, etc.) is applied after each derivative step to keep expression size bounded.</p>
+<h2 id="nfa-fallback"><a class="header" href="#nfa-fallback">NFA Fallback</a></h2>
+<p>For full-string matching (<code>matches</code>) and maximum-length prefix matching (<code>match_len</code>), the engine compiles to an NFA via Thompson construction rather than using derivatives. This avoids the expression-growth problem derivatives can exhibit on long inputs.</p>
+<h2 id="dfa-intersection"><a class="header" href="#dfa-intersection">DFA Intersection</a></h2>
+<p><code>has_intersection(r_1, r_2)</code> checks $\mathcal{L}(r_1) \cap \mathcal{L}(r_2) \neq \emptyset$ by product-DFA construction. Used by the typing engine to detect overlapping terminal patterns.</p>
+<h2 id="string-generation"><a class="header" href="#string-generation">String Generation</a></h2>
+<p><code>examples(n)</code> generates up to $n$ concrete strings in $\mathcal{L}(r)$. The <a href="#done-synthesizer">synthesizer</a> uses this to find token candidates when extending a partial tree with a regex terminal.</p>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="grammar-specification"><a class="header" href="#grammar-specification">Grammar Specification</a></h1>
-<p>The grammar is composed of a set of <strong>production rules</strong> with syntactic meaning, and attached <strong>typing rules</strong> conveying semantic information about the structure of the language.</p>
-<p>This document formally defines the grammar specification language as implemented in P7.</p>
-<p>The core data structures are defined in <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>.</p>
-<h2 id="overall-structure"><a class="header" href="#overall-structure">Overall Structure</a></h2>
-<p>Grammar files for P7 are written in a simple BNF-like format with human-readable, inference-style typing rules.</p>
-<p>The goal of this specification is to be able to define the grammar $G$ as presented in <a href="#theoretical-foundation">our conceptual framework</a> in a nice and human readable way. This spec is a <strong>data oriented</strong> view of our rules.</p>
-<h2 id="production-rules"><a class="header" href="#production-rules">Production Rules</a></h2>
-<p>Production rules define the syntactic structure of the language. Each rule maps a nonterminal to one or more alternative right-hand sides.</p>
+<h1 id="done-partial-parsing"><a class="header" href="#done-partial-parsing"><span class="status-badge done">DONE</span> Partial Parsing</a></h1>
+<p>The partial parser implements the theoretical framework of <a href="#done-theoretical-foundation">partial forests</a> as a memoized recursive-descent parser with regex-derivative terminal matching. Given an input $s \in \Sigma^*$, it produces a partial forest $\mathcal{F}$ containing all valid parse trees (complete and partial) consistent with the grammar $G$.</p>
+<p>Source: <a href="../src/logic/partial/parse.rs"><code>src/logic/partial/parse.rs</code></a></p>
+<h2 id="segmentation"><a class="header" href="#segmentation">Segmentation</a></h2>
+<p>The first stage of parsing tokenizes input into a sequence of <strong>segments</strong>.</p>
 <div class="definition">
-<div class="definition-title">Definition: Production Rule Syntax</div>
+<div class="definition-title">Definition: Segment</div>
 
-<pre><code>Nonterminal(rule_name) ::= symbol₁ symbol₂ ... | alternative₂ | ...
-</code></pre>
-<p>Where:</p>
+<p>A <strong>segment</strong> is a whitespace-delimited token carrying its byte span and a flag indicating whether it is a prefix of a special token. Formally, segmentation is a function:</p>
+<p>$$\text{tokenize}: \Sigma^* \to \text{Segment}^*$$</p>
+<p>Segments preserve positional information (byte offsets) and are the atomic unit of the span cache.</p>
+</div>
+
+<p>Special tokens (multi-character operators like <code>-&gt;</code>, <code>&lt;=</code>) are matched longest-first. If a segment at the end of input is a strict prefix of a special token (e.g., <code>-</code> when <code>-&gt;</code> exists in the grammar), it is marked as a <strong>partial special token</strong>. This flag disables caching for spans involving that segment, since the token’s identity is ambiguous until more input arrives.</p>
+<h2 id="recursive-descent-with-memoization"><a class="header" href="#recursive-descent-with-memoization">Recursive Descent with Memoization</a></h2>
+<p>The parser is a recursive-descent parser over segments, augmented with:</p>
+<ol>
+<li>A persistent <a href="parsing/cache.html">span cache</a> for cross-parse memoization</li>
+<li>Cycle detection for left-recursive grammars</li>
+<li>Depth-bounded recursion</li>
+</ol>
+<div class="definition">
+<div class="definition-title">Definition: Parse Entry</div>
+
+<p>The main entry point <code>partial(s)</code> produces a <code>PartialParseOutcome</code>:</p>
+<ol>
+<li>Tokenize $s$ into segments.</li>
+<li>Check cache validity: if the new segments extend the previous input’s segments (prefix match), reuse the cache; otherwise clear it.</li>
+<li>Parse from the start symbol $S$ at position 0 with a fresh <code>ParseState</code>.</li>
+<li>Filter roots to those consuming all segments.</li>
+<li>Return success (with possibly partial trees) or failure.</li>
+</ol>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Parse State</div>
+
+<p>A <strong>parse state</strong> tracks per-invocation mutable data:</p>
 <ul>
-<li><code>Nonterminal</code> is the name of the symbol being defined</li>
-<li><code>(rule_name)</code> is the optional name of the typing rule attached to this production</li>
-<li><code>::=</code> is the separator between left-hand side and right-hand side</li>
-<li><code>|</code> separates alternative productions</li>
-<li><code>symbols</code> is a sequence of terminals and nonterminals</li>
+<li>$\text{visited}: (N \times \mathbb{N}) \to \mathbb{N}$, mapping (nonterminal, position) to visit count for cycle detection.</li>
+<li>$\text{hit_depth_limit}: \text{bool}$, a sticky flag set when any branch exceeds the recursion bound. When true, no results from this parse invocation are cached.</li>
 </ul>
 </div>
 
-<div class="example">
-<div class="example-title">Example: Lambda Calculus Productions</div>
-
-<pre><code class="language-spec">Variable(var) ::= Identifier[x]
-Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
-Application(app) ::= BaseTerm[f] BaseTerm[e]
-Term ::= Application | BaseTerm
-</code></pre>
-</div>
-
-<div class="remark">
-<div class="remark-title">Remark: Start Symbol</div>
-
-<p>By default, the start symbol is the <strong>last declared nonterminal</strong> in the specification file.</p>
-</div>
-
-<h2 id="symbols"><a class="header" href="#symbols">Symbols</a></h2>
-<h3 id="terminals"><a class="header" href="#terminals">Terminals</a></h3>
+<h3 id="nonterminal-parsing"><a class="header" href="#nonterminal-parsing">Nonterminal Parsing</a></h3>
 <div class="definition">
-<div class="definition-title">Definition: Terminal Symbol</div>
+<div class="definition-title">Definition: Nonterminal Parse</div>
 
-<p>A <strong>terminal</strong> matches concrete input text. There are three forms:</p>
+<p>For nonterminal $A$ at position $i$ and depth $d$:</p>
+<ol>
+<li><strong>Depth guard</strong>: if $d &gt; d_{\max}$, abort and set $\text{hit_depth_limit} \leftarrow \text{true}$.</li>
+<li><strong>Cache lookup</strong>: if the <a href="parsing/cache.html">span cache</a> can answer for $(d_{\max}, A, i, \ell)$ for all relevant span lengths, return cached trees.</li>
+<li><strong>Cycle detection</strong>: track $(A, i)$ in visited. Allow up to $\min(d_{\max}, |\text{segments}| + 2)$ re-entries before aborting. This handles left-recursive productions like <code>Term ::= Term BaseTerm</code>.</li>
+<li><strong>Try all productions</strong>: iterate over productions for $A$ in rotated order (see below), calling $\text{parse_production}$ for each.</li>
+<li><strong>Cache results</strong>: if no depth limit was hit and segments do not end with a partial special token, store complete subtrees in the span cache grouped by consumed length.</li>
+</ol>
+</div>
+
+<h3 id="alternative-ordering"><a class="header" href="#alternative-ordering">Alternative Ordering</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Production Rotation</div>
+
+<p>Productions for a nonterminal are tried in a <strong>rotated order</strong> determined by recursion depth:</p>
+<p>$$\text{order}(n, d) = [(d \bmod n), (d+1 \bmod n), \ldots, (d-1 \bmod n)]$$</p>
+<p>where $n$ is the number of productions and $d$ is the current recursion depth.</p>
+</div>
+
+<p>This rotation distributes search effort across recursion depths, preventing systematic bias toward the first production. It is particularly important for left-recursive grammars where always trying the recursive alternative first would waste effort at shallow depths.</p>
+<h3 id="symbol-sequence-parsing"><a class="header" href="#symbol-sequence-parsing">Symbol Sequence Parsing</a></h3>
+<p>A production’s right-hand side is a sequence of symbols parsed left-to-right. For each successful parse of the first symbol, the parser attempts to parse the remaining symbols with the unconsumed segments.</p>
+<p>A critical invariant governs partial nodes: if a child node is partial (incomplete), it is accepted only if it consumed all remaining segments (i.e., it is at the frontier of the input). Partial nodes cannot appear in non-frontier positions.</p>
+<h2 id="partial-terminals"><a class="header" href="#partial-terminals">Partial Terminals</a></h2>
+<p>Terminals are regex patterns matched via Brzozowski derivatives (see <a href="https://unsuspicious.org/blog/completing-regex/">two-level language completability</a>). Matching a segment against a terminal regex yields one of four outcomes:</p>
+<div class="definition">
+<div class="definition-title">Definition: Terminal Match Outcomes</div>
+
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Form</th><th>Description</th><th>Example</th></tr>
+<tr><th style="text-align: left">Outcome</th><th style="text-align: left">Node Produced</th><th style="text-align: left">Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><code>'literal'</code></td><td>Single-quoted string literal</td><td><code>'λ'</code>, <code>'-&gt;'</code>, <code>'let'</code></td></tr>
-<tr><td><code>"literal"</code></td><td>Double-quoted string literal</td><td><code>"fn"</code>, <code>"=&gt;"</code></td></tr>
-<tr><td><code>/regex/</code></td><td>Regex pattern</td><td><code>/[0-9]+/</code>, <code>/[a-z][a-zA-Z0-9]*/</code></td></tr>
+<tr><td style="text-align: left">Complete</td><td style="text-align: left"><code>Terminal::Complete</code> (no extension)</td><td style="text-align: left">Segment fully matches the regex</td></tr>
+<tr><td style="text-align: left">Extensible</td><td style="text-align: left"><code>Terminal::Complete</code> (with extension derivative)</td><td style="text-align: left">Segment is a complete match AND a valid prefix of longer matches</td></tr>
+<tr><td style="text-align: left">Prefix</td><td style="text-align: left"><code>Terminal::Partial</code> (with remainder derivative)</td><td style="text-align: left">Segment is a valid prefix but not a complete match</td></tr>
+<tr><td style="text-align: left">NoMatch</td><td style="text-align: left">(none)</td><td style="text-align: left">Segment does not match</td></tr>
 </tbody>
 </table>
 </div>
 </div>
 
-<div class="example">
-<div class="example-title">Example: Terminal Forms</div>
-
-<pre><code class="language-spec">// String literals (single or double quotes)
-Keyword ::= 'let' | 'in' | "if" | "then" | "else"
-
-// Regex patterns
-Number ::= /[0-9]+/
-Identifier ::= /[A-Za-z_][A-Za-z0-9_]*/
-</code></pre>
-</div>
-
-<h3 id="nonterminals"><a class="header" href="#nonterminals">Nonterminals</a></h3>
-<p>A <strong>nonterminal</strong> is a reference to another production rule.</p>
-<div class="example">
-<div class="example-title">Example: Nonterminal References</div>
-
-<pre><code class="language-spec">Term ::= Variable | Lambda | Application
-Expression ::= Term '+' Term | Term
-</code></pre>
-</div>
-
-<h3 id="bindings"><a class="header" href="#bindings">Bindings</a></h3>
-<p>A <strong>binding</strong> attaches a name to a symbol using bracket notation <code>[name]</code>. Bindings are used to reference matched subtrees in typing rules. They are basically the link between the syntax and semantics of a laguage.</p>
-<div class="example">
-<div class="example-title">Example: Binding Syntax</div>
-
-<pre><code class="language-spec">Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ] '.' Term[e]
-</code></pre>
-<p>Here:</p>
+<p>At end-of-input (empty remaining segments), the parser produces a <code>Terminal::Partial</code> with the full regex as remainder. This enables downstream completion generation: the remainder derivative describes exactly which tokens could legally appear next.</p>
+<p>The distinction between <strong>extension</strong> and <strong>remainder</strong> is central to the completability analysis:</p>
 <ul>
-<li><code>[x]</code> binds the matched <code>Variable</code> node</li>
-<li><code>[τ]</code> binds the matched <code>Type</code> node</li>
-<li><code>[e]</code> binds the matched <code>Term</code> node</li>
+<li>An <strong>extension</strong> derivative on a complete terminal means the terminal could accept more characters (e.g., identifier <code>x</code> could become <code>xy</code>).</li>
+<li>A <strong>remainder</strong> derivative on a partial terminal describes what characters are needed to complete the match.</li>
 </ul>
-<p>These names can then be referenced in the <code>lambda</code> typing rule.</p>
-</div>
-
-<div class="remark">
-<div class="remark-title">Remark: Binding Resolution</div>
-
-<p>Bindings are resolved via <strong>grammar paths</strong> at type-checking time.</p>
-<p>See <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a> for the path construction algorithm.</p>
-</div>
-
-<h3 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h3>
-<p>We can represent an <strong>epsilon production</strong>, meaning an empty alternative,  with the symbol <code>ε</code>.</p>
-<div class="example">
-<div class="example-title">Example: Optional Tail Pattern</div>
-
-<pre><code class="language-spec">ProgramTail ::= Term ProgramTail | ε
-</code></pre>
-<p>This allows <code>ProgramTail</code> to match zero or more <code>Term</code>s.</p>
-</div>
-
-<h2 id="typing-rules"><a class="header" href="#typing-rules">Typing Rules</a></h2>
-<p>Typing rules attach semantic information to productions. They follow an inference-rule format.</p>
-<pre><code class="language-spec">premise₁, premise₂, ...
------------------------- (rule_name)
-conclusion
-</code></pre>
-<p>The rule name in parentheses must match a <code>(rule_name)</code> annotation on a production.</p>
-<h3 id="premises"><a class="header" href="#premises">Premises</a></h3>
-<p>We have several (hardcoded) premise types that can express conditions that must hold for the rule to apply:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Syntax</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td><code>Γ ⊢ e : τ</code></td><td>Term <code>e</code> has type <code>τ</code> in context <code>Γ</code> (inference)</td></tr>
-<tr><td><code>Γ ▷ e</code></td><td>Check that term <code>e</code> is well-typed in context <code>Γ</code> (checking)</td></tr>
-<tr><td><code>x ∈ Γ</code></td><td>Variable <code>x</code> is bound in context <code>Γ</code></td></tr>
-<tr><td><code>τ₁ = τ₂</code></td><td>Types must unify</td></tr>
-<tr><td><code>τ₁ ⊆ τ₂</code></td><td>Type <code>τ₁</code> is a subtype of <code>τ₂</code></td></tr>
-<tr><td><code>Γ[x:τ]</code></td><td>Extend context with binding <code>x:τ</code></td></tr>
-</tbody>
-</table>
-</div>
-<div class="example">
-<div class="example-title">Example: Premise Examples</div>
-
-<pre><code class="language-spec">// Check that f is a function and e matches its domain (inference)
-Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
-
-// Check that e is well-typed (checking mode)
-Γ ▷ e
-
-// Variable must be in scope
-x ∈ Γ
-
-// Type equality constraint
-τ₁ = τ₂
-</code></pre>
-</div>
-
-<h3 id="conclusions"><a class="header" href="#conclusions">Conclusions</a></h3>
+<h2 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h2>
+<p>An epsilon production (empty right-hand side, $\varepsilon$) matches zero segments and produces a nonterminal with no children. Such a nonterminal is considered complete.</p>
+<h2 id="recursion-limit"><a class="header" href="#recursion-limit">Recursion Limit</a></h2>
 <div class="definition">
-<div class="definition-title">Definition: Conclusion Types</div>
+<div class="definition-title">Definition: Default Recursion Depth</div>
 
-<p>Conclusions specify what the rule produces:</p>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Syntax</th><th>Meaning</th></tr>
-</thead>
-<tbody>
-<tr><td><code>τ</code></td><td>Return type <code>τ</code></td></tr>
-<tr><td><code>Γ(x)</code></td><td>Look up type of <code>x</code> in context and return it</td></tr>
-<tr><td><code>Γ → Γ[x:τ] ⊢ τ</code></td><td>Set type of <code>x</code> to <code>τ</code> in context and return <code>τ</code></td></tr>
-<tr><td><code>▷</code></td><td>Return void (checking mode)</td></tr>
-</tbody>
-</table>
-</div>
+<p>The default maximum recursion depth is $d_{\max} = 15$ (<code>DEFAULT_MAX_RECURSION_DEPTH</code>). This is overridable per-parser and is distinct from the typing depth limit of 50.</p>
 </div>
 
-<h3 id="meta-variables"><a class="header" href="#meta-variables">Meta-Variables</a></h3>
+<p>When the depth limit is hit, the parser returns a <code>DepthLimit</code> error. The <code>MetaParser</code> wrapper in <code>src/logic/partial/meta.rs</code> uses iterative deepening to find the minimum sufficient depth.</p>
+<h2 id="incremental-parsing"><a class="header" href="#incremental-parsing">Incremental Parsing</a></h2>
+<p>The parser supports incremental parsing across successive calls. When input $s$ is extended to $s \cdot t$:</p>
+<ol>
+<li>Normalize both segment sequences to position-independent keys.</li>
+<li>If the new segments start with the previous segments (prefix match), reuse the <a href="parsing/cache.html">span cache</a>.</li>
+<li>Otherwise, clear the cache entirely.</li>
+</ol>
+<p>This prefix-stability property ensures that typing a single character does not require re-parsing the entire input from scratch.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-tokenizer"><a class="header" href="#done-tokenizer"><span class="status-badge done">DONE</span> Tokenizer</a></h1>
+<p>The tokenizer converts a raw input string into a sequence of <strong>segments</strong>, the atomic units that the parser operates on. It is constructed once from a grammar’s special tokens and runs in a single linear pass over the input bytes.</p>
+<h2 id="segment"><a class="header" href="#segment">Segment</a></h2>
 <div class="definition">
-<div class="definition-title">Definition: Meta-Variable</div>
+<div class="definition-title">Definition: Segment</div>
 
-<p>A <strong>meta-variable</strong> (written <code>?A</code>, <code>?B</code>, etc.) is a placeholder that gets unified during type checking. Meta-variables allow typing rules to express polymorphic constraints.</p>
-</div>
-
-<div class="example">
-<div class="example-title">Example: Meta-Variable Usage</div>
-
-<pre><code class="language-spec">Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
--------------------------------- (app)
-?B
-</code></pre>
-<p>Here <code>?A</code> must unify with both the function’s domain and the argument’s type.</p>
-</div>
-
-<h3 id="context-operations"><a class="header" href="#context-operations">Context Operations</a></h3>
-<div class="definition">
-<div class="definition-title">Definition: Typing Context</div>
-
-<p>The typing context <code>Γ</code> is a mapping from variable names to types. Context operations include:</p>
+<p>A <strong>segment</strong> is a contiguous slice of the input string, carrying:</p>
 <ul>
-<li><code>Γ(x)</code> — Look up type of variable <code>x</code></li>
-<li><code>Γ[x:τ]</code> — Extend context with binding <code>x:τ</code></li>
-<li><code>x ∈ Γ</code> — Check if <code>x</code> is bound in context</li>
+<li><code>bytes</code>: the UTF-8 content</li>
+<li><code>start</code>, <code>end</code>: byte offsets into the original input</li>
+<li><code>index</code>: position in the token stream</li>
+<li><code>is_partial_special</code>: true when the segment is a strict prefix of some special token but is not itself a complete special token</li>
 </ul>
 </div>
 
-<h2 id="type-syntax"><a class="header" href="#type-syntax">Type Syntax</a></h2>
-<p>Types in typing rules follow this syntax:</p>
-<div class="definition">
-<div class="definition-title">Definition: Type Forms</div>
+<p>The <code>is_partial_special</code> flag has a specific consequence for the parser: any span whose last segment is a partial special is excluded from the span cache. The token’s identity is not yet determined — it may grow into a complete special with more input, or may be classified as a word token.</p>
+<h2 id="tokenizer-construction"><a class="header" href="#tokenizer-construction">Tokenizer Construction</a></h2>
+<p><code>Tokenizer::new(special_tokens, delimiters)</code> sorts the special token list by length descending, then alphabetically as a tiebreak, then deduplicates. Longest-match priority is structural: the first special that matches at a given position wins, and since longer specials come first, a two-character <code>-&gt;</code> takes priority over its one-character prefix <code>-</code>.</p>
+<p>Delimiters (default: space, newline, tab) are consumed and discarded — they produce no segment.</p>
+<h2 id="tokenization-algorithm"><a class="header" href="#tokenization-algorithm">Tokenization Algorithm</a></h2>
+<p>The tokenizer scans left to right, applying three cases at each position in order:</p>
+<ol>
+<li>
+<p>If any special token matches exactly at the current position, emit it as a segment and advance by its length. Because the list is sorted longest-first, this is always the longest possible special match.</p>
+</li>
+<li>
+<p>If the entire remaining suffix is a strict prefix of some special token (but does not match any completely), emit it as a single segment with <code>is_partial_special = true</code> and stop. This case only fires when we are at the end of input, since otherwise there would be more characters to determine whether the match completes.</p>
+</li>
+<li>
+<p>Consume characters one by one into a word token, stopping when:</p>
+<ul>
+<li>a delimiter is reached</li>
+<li>a complete special match starts at the current character</li>
+<li>a partial-special prefix starts at the current character <strong>and</strong> there is a character-class transition from the previous character (word↔non-word boundary).</li>
+</ul>
+</li>
+</ol>
+<p>The character-class condition in case 3 is the critical subtlety.</p>
+<div class="example">
+<div class="example-title">Example: Tokenization example</div>
 
+<p>For the fun grammar with specials <code>["-&gt;", "λ", ":", ".", "=", "let", "in", "if", "then", "else", "true", "false", "(", ")"]</code> and delimiters <code>[' ', '\n', '\t']</code>:</p>
+<p>Input <code>"λx:Int"</code> produces four segments:</p>
+<ul>
+<li><code>λ</code> (special)</li>
+<li><code>x</code> (word)</li>
+<li><code>:</code> (special)</li>
+<li><code>Int</code> (word, none partial).</li>
+</ul>
+<p>The trailing <code>t</code> of <code>Int</code> is a prefix of <code>then</code> and <code>true</code>, but since <code>t</code> and <code>n</code> are both word characters, the word-boundary rule suppresses the split.</p>
+<p>Input <code>"λx:Int-"</code> produces five segments, the last being <code>-</code> with <code>is_partial_special = true</code>, because <code>-</code> is a strict prefix of <code>-&gt;</code> and there is a word↔non-word boundary between <code>t</code> and <code>-</code>.</p>
+<p>Input <code>"le"</code> at end of input produces one segment, <code>le</code>, with <code>is_partial_special = true</code> (strict prefix of <code>let</code>).</p>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-type-inference"><a class="header" href="#done-type-inference"><span class="status-badge done">DONE</span> Type Inference</a></h1>
+<p>As we already explored, yhe type inference engine evaluates partial trees against the typing rules $\Theta$ attached to grammar productions.</p>
+<p>The central judgment is $\Gamma \vdash_\Theta t : \mathcal{S}$, where $\mathcal{S}$ is a <a href="#done-type-system">tree status</a> in the lattice
+$$\{\text{Valid}(\tau), \text{Partial}(\tau), \text{TooDeep}, \text{Malformed}\}$$</p>
+<h2 id="dispatch"><a class="header" href="#dispatch">Dispatch</a></h2>
+<p>Type checking is dispatched top-down from the root of the partial tree.</p>
+<div class="definition">
+<div class="definition-title">Definition: Evaluation Dispatch</div>
+
+<p>Given a tree reference $t$ at depth $d$ in context $\Gamma$:</p>
+<ol>
+<li><strong>Depth guard</strong>: if $d &gt; 50$, return $\text{TooDeep}$.</li>
+<li><strong>Cache lookup</strong>: if the type cache contains an entry for $t$’s path, return $\text{Valid}(\text{cached})$.</li>
+<li><strong>Terminal</strong>: if $t$ is a terminal node:
+<ul>
+<li>Complete terminal: $\text{Valid}(\top)$.</li>
+<li>Partial terminal: $\text{Partial}(\top)$.</li>
+</ul>
+</li>
+<li><strong>Non-terminal with rule</strong>: if $t$’s production has a typing rule $\theta \in \Theta$, <strong>apply</strong> the rule.</li>
+<li><strong>Non-terminal without rule</strong>: apply the drilling wrapper.</li>
+</ol>
+</div>
+
+<h3 id="completeness-promotion"><a class="header" href="#completeness-promotion">Completeness Promotion</a></h3>
+<div class="lemma">
+<div class="lemma-title">Lemma: Partial-to-Malformed Promotion</div>
+
+<p>If a non-terminal $t$ is complete (all children present and complete) and not extensible, but the typing result is $\text{Partial}$ we return $\text{Malformed}$ because its weird.</p>
+</div>
+
+<p>This prevents permanently indeterminate states on finished subtrees. A complete, non-extensible subtree that cannot be assigned a definite type has definitively failed type checking.</p>
+<h2 id="rule-application"><a class="header" href="#rule-application">Rule Application</a></h2>
+<p>When a non-terminal has an associated typing rule $\theta = (\text{premises}, \text{conclusion})$we can apply the following algorithm to resolve it.</p>
+<ol>
+<li>
+<p><strong>Resolve bindings</strong>: compute $B = \text{resolve}(t, \theta)$ via <a href="binding.html">runtime binding</a>. Return $\text{Partial}$ if the target is at the frontier; return $\text{Malformed}$ if the structure is invalid.</p>
+</li>
+<li>
+<p><strong>Create unifier</strong>: initialize a unifier $U$ for meta-variable resolution.</p>
+</li>
+<li>
+<p><strong>Initialize context lanes</strong>: create named context maps. The primary lane is set by the conclusion’s context input, the first premise’s setting, or defaults to $\Gamma$.</p>
+</li>
+<li>
+<p><strong>Evaluate premises</strong> (in order): for each $p_i$, compute $\text{check_premise}(p_i)$:</p>
+<ul>
+<li><code>Ok(G')</code> updates the relevant context lane</li>
+<li><code>Fail</code> immediately returns <code>Malformed</code></li>
+<li><code>Partial</code> sets a flag but <strong>evaluation continues</strong> since a later premise may still fail</li>
+</ul>
+</li>
+<li>
+<p><strong>If any premise was Partial</strong>: return $\text{Partial}(\top)$.</p>
+</li>
+<li>
+<p><strong>Evaluate conclusion</strong>: resolve the output type via the unifier and bindings, return $\text{Valid}(\tau)$.</p>
+</li>
+<li>
+<p><strong>Extract context transform</strong>: if the conclusion specifies $\Gamma \to \Gamma[x:\tau]$, build the extended context for sibling propagation.</p>
+</li>
+</ol>
+<p>The non-short-circuiting behavior on Partial premises (step 4) is deliberate: a Partial followed by a Fail should yield Malformed, not Partial.</p>
+<h2 id="transparent-wrapper"><a class="header" href="#transparent-wrapper">Transparent Wrapper</a></h2>
+<p>Productions without typing rules are “transparent” to their child if they only have one, else they fail. This is done for convenience when writting grammars.</p>
+<div class="definition">
+<div class="definition-title">Definition: Transparent Wrapper</div>
+
+<p>For a non-terminal without a typing rule:</p>
+<ul>
+<li><strong>1 non-terminal child</strong>: recurse into that child. The parent inherits the child’s type and output context unchanged.</li>
+<li><strong>0 non-terminal children</strong> (terminals only): if at the frontier, $\text{Partial}(\top)$; otherwise $\text{Valid}(\top)$.</li>
+<li><strong>2+ non-terminal children</strong>: $\text{malformed}$</li>
+</ul>
+</div>
+
+<h2 id="type-cache"><a class="header" href="#type-cache">Type Cache</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Type Cache</div>
+
+<p>The type cache is a map $\text{cache}: \mathcal{P} \to \tau$ from tree paths to types, created fresh per <code>check_tree</code> invocation and threaded through all recursive calls. Only $\text{Valid}$ results are cached. $\text{Partial}$, $\text{Malformed}$, and $\text{TooDeep}$ results are not cached because they may change as the tree evolves.</p>
+</div>
+
+<p>The cache is controlled by a thread-local flag (<code>TYPE_CACHE_ENABLED</code>, default true). Disabling it is useful for debugging but has significant performance cost on deep trees.</p>
+<h2 id="meta-variable-resolution"><a class="header" href="#meta-variable-resolution">Meta-Variable Resolution</a></h2>
+<p>Meta-variables ($?A$, $?B$, etc.) are resolved via Hindley-Milner unification. The unifier maintains a substitution $\sigma: \text{MetaVar} \to \tau$ with the following invariants:</p>
+<ul>
+<li><strong>Occurs check</strong>: $?X$ must not appear in $\tau$ before binding $?X := \tau$.</li>
+<li><strong>Idempotent substitution</strong>: $\sigma(\sigma(\tau)) = \sigma(\tau)$.</li>
+</ul>
+<div class="definition">
+<div class="definition-title">Definition: Unification</div>
+
+<p>Unification of types $\tau_1$ and $\tau_2$ produces a three-valued result:</p>
+<ul>
+<li><strong>Ok</strong>: types are structurally compatible; meta-variable bindings are recorded.</li>
+<li><strong>Fail</strong>: types are structurally incompatible (e.g., $\text{Raw}(\text{int})$ vs $\text{Raw}(\text{bool})$).</li>
+<li><strong>Indeterminate</strong>: one or both sides contain unresolved components ($\top$, $\text{Path}(i_1@a_1 \cdots i_n@a_n)$, $\Gamma(x)$); cannot determine compatibility yet.</li>
+</ul>
+</div>
+
+<p>$\top$ is treated as indeterminate in unification (not unified with concrete types), which is consistent with its role as “not yet determined” rather than “accepts everything.”</p>
+<h2 id="resolution-pipeline"><a class="header" href="#resolution-pipeline">Resolution Pipeline</a></h2>
+<p>Type expressions undergo a two-stage resolution before use:</p>
+<ol>
+<li><strong>Meta resolution</strong> ($\text{solve_meta}$): substitute all bound meta-variables from the unifier’s substitution map.</li>
+<li><strong>Binding resolution</strong> ($\text{solve_binding}$): substitute all $\text{Atom}(x)$ variables with values read from the tree via the <a href="binding.html">runtime binding</a> system.</li>
+</ol>
+<h2 id="subtyping"><a class="header" href="#subtyping">Subtyping</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Subtyping Rules</div>
+
+<p>The subtyping relation $\tau_1 \subseteq \tau_2$ is defined by:</p>
+<ul>
+<li>$\bot \subseteq \tau$ for all $\tau$ (bottom is subtype of everything).</li>
+<li>$\tau \subseteq \top$ for all $\tau$ (everything is subtype of top).</li>
+<li>$\tau \subseteq \tau$ (reflexivity, via structural equality).</li>
+<li>$(\tau_1 \to \tau_2) \subseteq (\tau_3 \to \tau_4)$ iff $\tau_3 \subseteq \tau_1$ and $\tau_2 \subseteq \tau_4$ (contravariant in domain, covariant in codomain).</li>
+<li>$(\tau_1 \mid \ldots \mid \tau_n) \subseteq \tau$ iff $\tau_i \subseteq \tau$ for all $i$.</li>
+<li>$\tau \subseteq (\tau_1 \mid \ldots \mid \tau_n)$ iff $\tau \subseteq \tau_i$ for some $i$.</li>
+</ul>
+</div>
+
+<p>Equality is three-valued: $\text{equal}(\tau_1, \tau_2) \in \{\text{true}, \text{false}, \text{indeterminate}\}$. Indeterminate arises when either side contains $\top$, $\text{Path}(\cdots)$, or $\Gamma(x)$.</p>
+<h2 id="depth-limit"><a class="header" href="#depth-limit">Depth Limit</a></h2>
+<p>The typing depth limit of 50 prevents infinite recursion on grammars with cyclic typing dependencies. It is bad design.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="context"><a class="header" href="#context">Context</a></h1>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="wip-premises"><a class="header" href="#wip-premises"><span class="status-badge wip">WIP</span> Premises</a></h1>
+<p>Premises are conditions above the line in a typing rule, evaluated left-to-right to thread the typing <a href="#context">context</a>.</p>
+<h3 id="premise-result"><a class="header" href="#premise-result">Premise Result</a></h3>
+<p>Evaluating a premise yields a <strong>three-valued result</strong>:</p>
+<ul>
+<li>$\text{Ok}(\Gamma’)$: the premise holds. $\Gamma’$ is the modified context.</li>
+<li>$\text{Fail}$: the premise is definitively violated.</li>
+<li>$\text{Partial}$: the premise is undecided due to incomplete information.</li>
+</ul>
+<p>This mirrors the <a href="#done-type-system">tree status lattice</a>. Typing constraints are deferred when information is missing.</p>
+<h2 id="premise-types"><a class="header" href="#premise-types">Premise Types</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Ascription (Inference)</div>
+
+<p>$\Gamma \vdash e : \tau$ infers the type of $e$ in context $\Gamma$ and unifies with $\tau$.</p>
+<ol>
+<li>Resolve binding $e$ to a tree node.</li>
+<li>Recursively type-check the subtree.</li>
+<li>Unify the inferred type with $\tau$.</li>
+</ol>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Check</div>
+
+<p>$\Gamma \triangleright e$ asserts that $e$ is well-typed in $\Gamma$ without constraining its type.</p>
+<ol>
+<li>Resolve binding $e$.</li>
+<li>Type-check the subtree.</li>
+<li>Succeed if status is $\text{Valid}$ or $\text{Partial}$; fail if $\text{Invalid}$.</li>
+</ol>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Membership</div>
+
+<p>$x \in \Gamma$ asserts that $x$ is bound in context $\Gamma$.</p>
+<ol>
+<li>Resolve binding $x$ to its text value.</li>
+<li>Look up text in $\Gamma$.</li>
+<li>Succeed if found; fail if not; return $\text{Partial}$ if $x$ is incomplete.</li>
+</ol>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Context Extension</div>
+
+<p>$\Gamma[x:\tau]$ extends the context with binding $x:\tau$.</p>
+<ol>
+<li>Resolve $x$ and $\tau$.</li>
+<li>Call $\Gamma.\text{extend}(x, \tau)$.</li>
+<li>Succeed with $\Gamma’ = \Gamma[x:\tau]$; fail if $x$ exists in $\Gamma$.</li>
+</ol>
+</div>
+
+<h3 id="operation-equality--subtyping"><a class="header" href="#operation-equality--subtyping">Operation (Equality / Subtyping)</a></h3>
+<p>$\tau_1\ \text{op}\ \tau_2$ where $\text{op} \in \{=, \subseteq\}$.</p>
+<ul>
+<li>$\tau_1 = \tau_2$: unify the two types.</li>
+<li>$\tau_1 \subseteq \tau_2$: check the subtype relation.</li>
+</ul>
+<p>Both use three-valued logic, returning $\text{Ok}$, $\text{Fail}$, or $\text{Partial}$.</p>
+<h3 id="evaluation-order"><a class="header" href="#evaluation-order">Evaluation Order</a></h3>
+<p>Premises evaluate strictly left-to-right. The context from premise $i$ is input to $i+1$, unless in <a href="#context">no-propagate mode</a>. Premise ordering is semantically significant: reordering changes binding availability.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="wip-conclusion"><a class="header" href="#wip-conclusion"><span class="status-badge wip">WIP</span> Conclusion</a></h1>
+<p>The conclusion determines the rule’s result type and any modifications to the context $\Gamma$.</p>
+<p>Source: <a href="../src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a>, <a href="../src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></p>
+<h2 id="conclusion-kinds"><a class="header" href="#conclusion-kinds">Conclusion Kinds</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Conclusion Kinds</div>
+
+<p>A conclusion has one of the following forms:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Syntax</th><th>Description</th></tr>
+<tr><th style="text-align: left">Form</th><th style="text-align: left">Syntax</th><th style="text-align: left">Result</th></tr>
 </thead>
 <tbody>
-<tr><td><code>τ</code></td><td>Type variable (from binding)</td></tr>
-<tr><td><code>!τ</code></td><td>Not Type</td></tr>
-<tr><td><code>?A</code></td><td>Meta-variable (unified during checking)</td></tr>
-<tr><td><code>'int'</code></td><td>Raw/concrete type literal</td></tr>
-<tr><td><code>τ₁ → τ₂</code></td><td>Function type</td></tr>
-<tr><td><code>Γ(x)</code></td><td>Context lookup</td></tr>
+<tr><td style="text-align: left"><strong>Type</strong></td><td style="text-align: left">$\tau$</td><td style="text-align: left">Return type $\tau$</td></tr>
+<tr><td style="text-align: left"><strong>Lookup</strong></td><td style="text-align: left">$\Gamma(x)$</td><td style="text-align: left">Type of $x$ in $\Gamma$</td></tr>
+<tr><td style="text-align: left"><strong>Transform</strong></td><td style="text-align: left">$\Gamma \to \Gamma[x:\tau] \vdash \tau’$</td><td style="text-align: left">Extend $\Gamma$ with $x:\tau$, return type $\tau’$</td></tr>
 </tbody>
 </table>
 </div>
 </div>
 
-<div class="example">
-<div class="example-title">Example: Function Type</div>
+<p>Checking mode (void) is initiated by the <a href="#wip-premises">Check premise</a> $\Gamma \triangleright e$, not by a conclusion. All conclusions must return a type.</p>
+<h3 id="type-conclusion"><a class="header" href="#type-conclusion">Type Conclusion</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Type Conclusion</div>
 
-<pre><code class="language-spec">τ → ?B
-</code></pre>
-<p>Represents a function from type <code>τ</code> to type <code>?B</code>.</p>
+<p>A conclusion $\tau$ evaluates directly to type $\tau$. Any meta-variables in $\tau$ must be bound by premises; unbound meta-variables yield an indeterminate type.</p>
 </div>
 
-<h2 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h2>
-<div class="example">
-<div class="example-title">Example: Simply-Typed Lambda Calculus</div>
+<h3 id="context-lookup"><a class="header" href="#context-lookup">Context Lookup</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Context Lookup</div>
 
-<p>A complete specification for STLC from <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/examples/stlc.auf"><code>examples/stlc.auf</code></a>:</p>
-<pre><code class="language-spec">// Identifier (supports Unicode)
-Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
-
-// Variables with var typing rule
-Variable(var) ::= Identifier[x]
-
-TypeName ::= /[A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]+/
-
-// Base types (parentheses are literals, hence quoted)
-BaseType ::= TypeName | '(' Type ')'
-
-// Function types (right-associative)
-AtomicType ::= BaseType | '(' Type ')'
-FunctionType ::= AtomicType '-&gt;' Type
-Type ::= AtomicType | FunctionType
-
-// Lambda abstraction (dot is a literal)
-Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
-
-// Atomic expressions
-AtomicExpression ::= Variable | '(' Expression ')' | Lambda
-
-// Applications (left-associative via iteration)
-Application(app) ::= AtomicExpression[l] Expression[r]
-
-// Expressions (start symbol)
-Expression ::= AtomicExpression |  Application
-
-// Typing Rules
-x ∈ Γ
------------ (var)
-Γ(x)
-
-Γ[a:τ] ⊢ e : ?B
---------------------------- (lambda)
-τ → ?B
-
-Γ ⊢ l : ?A → ?B, Γ ⊢ r : ?A
---------------------------------- (app)
-?B
-</code></pre>
+<p>A conclusion $\Gamma(x)$ resolves the binding $x$ in context $\Gamma$.</p>
+<ul>
+<li>If $x$ is not fully parsed: $\text{Partial}$.</li>
+<li>If $x$ is not in $\Gamma$: $\text{Invalid}$.</li>
+<li>Otherwise: The type associated with $x$.</li>
+</ul>
 </div>
 
+<h3 id="context-transform"><a class="header" href="#context-transform">Context Transform</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Context Transform</div>
+
+<p>A conclusion $\Gamma \to \Gamma[x:\tau] \vdash \tau’$ extends context $\Gamma$ for sibling nodes.</p>
+<ol>
+<li>Evaluate $x$ and $\tau$ to concrete values.</li>
+<li>$\Gamma’ = \Gamma \cup \{x:\tau\}$.</li>
+<li>The result type is $\tau’$.</li>
+<li>The output context is $\Gamma’$.</li>
+</ol>
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-completion"><a class="header" href="#done-completion"><span class="status-badge done">DONE</span> Completion</a></h1>
+<p>The <strong>completion</strong> pipeline takes a partial input string $s$ and produces a complete, well-typed expression in the language $L$ defined by grammar $G$. It is the core synthesis loop of Aufbau, the mechanism by which partial expressions are extended into valid programs.</p>
+<p>The theoretical foundation for completability over two-level languages (where the grammar alphabet is itself a regular language over bytes) is developed in <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>.</p>
+<p>This page is the roadmap for the completion subsection of the book. It is meant to be read linearly with the next three chapters in order: <a href="#done-synthesizer">Synthesizer</a>, <a href="#done-search">Search</a>, then <a href="#done-scoring">Scoring</a>. To avoid duplication, those chapters focus on one stage each instead of re-explaining the whole pipeline.</p>
+<h2 id="pipeline-overview"><a class="header" href="#pipeline-overview">Pipeline Overview</a></h2>
+<p>The completion pipeline composes three components:</p>
+<ol>
+<li>
+<p><strong>Synthesizer</strong> $\Sigma_s$: maintains incremental parsing state and exposes typed extension operations. Given input $s$ and a typing context $\Gamma$, it produces the set of type-valid next tokens.</p>
+</li>
+<li>
+<p><strong>Search</strong>: explores the space of token sequences that extend $s$ to a complete expression. The current implementation tries a greedy fast path first, then falls back to a priority-queue frontier.</p>
+</li>
+<li>
+<p><strong>Scoring</strong>: a heuristic function $|\sigma|: Q \to \mathbb{R}$ that ranks search states by estimated proximity to a valid completion. Guides the search toward promising branches.</p>
+</li>
+</ol>
+<p>The composition is:</p>
+<p>$$\text{complete}(G, s, \Gamma) = \text{Search}(\Sigma_s(G, s), |\sigma|, \Gamma)$$</p>
+<p>where $\Gamma$ is an optional external typing context.</p>
+<h2 id="typed-completability"><a class="header" href="#typed-completability">Typed Completability</a></h2>
+<p>Recall from <a href="#done-basic-concepts-and-notations">Basic Concepts</a> that the completability set $\mathcal{C}_L(s) = \{a \in \Sigma : \exists s’ \in \Sigma^*, sas’ \in L\}$ is the set of valid next symbols. The completion pipeline computes a refined version:</p>
+<p>$$\mathcal{C}_{L,\Theta}(s) = \{a \in \mathcal{C}_L(s) : \Gamma \vdash_\Theta \mathcal{F}(sa) \neq \text{Invalid}\}$$</p>
+<p>This is the <strong>typed completability set</strong>, the set of next tokens that are both syntactically valid and consistent with all typing constraints. The <a href="#done-type-system">type system</a> explains why this refinement is always a subset of the syntactic completability set.</p>
+<h2 id="data-flow"><a class="header" href="#data-flow">Data Flow</a></h2>
+<pre><code>Input s ──→ Synthesizer ──→ completions_ctx ──→ Search loop
+                │                                      │
+                │            extend_with_regex ←───────┘
+                │                   │
+                └───────────────────┘
+                        │
+                  find_valid_completion ──→ Success / Exhausted
+</code></pre>
+<p>This diagram is intentionally high-level. The current implementation’s greedy fast path, beam-style child truncation, and local grounding preference are search-policy details described in <a href="#done-search">Search</a>.</p>
+<p>Each iteration of the search loop:</p>
+<ol>
+<li>Pops the highest-scored state from the priority queue</li>
+<li>Checks whether the current typed forest already contains a complete root</li>
+<li>If not, asks the synthesizer for <code>completions_ctx</code> at the current state</li>
+<li>Extends the state with candidate tokens, scores and prunes the children, and pushes the survivors onto the queue</li>
+</ol>
+<p>For the formal definition of completability over two-level languages (where terminals include regex patterns over $\Sigma_\text{vocab}$), including the Brzozowski derivative mechanism for partial token validation, see <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>.</p>
 <h2 id="source-files"><a class="header" href="#source-files">Source Files</a></h2>
 <div class="table-wrapper">
 <table>
@@ -917,21 +1204,528 @@ x ∈ Γ
 <tr><th>Component</th><th>Path</th></tr>
 </thead>
 <tbody>
-<tr><td>Grammar structures</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/mod.rs</code></a></td></tr>
-<tr><td>Spec file loading</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/load.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/load.rs</code></a></td></tr>
-<tr><td>Typing rules</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs</code></a></td></tr>
-<tr><td>Type definitions</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/mod.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/mod.rs</code></a></td></tr>
-<tr><td>Binding map</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs"><code>https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/grammar.rs</code></a></td></tr>
+<tr><td>Synthesizer</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td></tr>
+<tr><td>Search</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td></tr>
+<tr><td>Scoring</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td></tr>
 </tbody>
 </table>
 </div>
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="partial-parsing"><a class="header" href="#partial-parsing">Partial Parsing</a></h1>
-<p>The idea of a <strong>partial parser</strong> is central to the design of our system. Here, we are gonna explain the actual implementation of the idea developed in the <a href="#theoretical-foundation">previous section</a>.</p>
+<h1 id="done-synthesizer"><a class="header" href="#done-synthesizer"><span class="status-badge done">DONE</span> Synthesizer</a></h1>
+<p>The <strong>synthesizer</strong> is the stateful interface between the parser and the search engine. It wraps incremental parsing with type-filtered extension operations, providing the search with a clean abstraction: <em>given the current input, what are the valid next tokens?</em></p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></p>
+<p>This chapter is meant to be read before <a href="#done-search">Search</a>. It only covers token generation and input extension; frontier management is described in <a href="#done-search">Search</a>, and numeric ranking is described in <a href="#done-scoring">Scoring</a>.</p>
+<h2 id="definition"><a class="header" href="#definition">Definition</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Synthesizer</div>
+
+<p>A <strong>synthesizer</strong> is a stateful triple:</p>
+<p>$$\Sigma_s = (G, \mathcal{M}, s)$$</p>
+<p>where:</p>
+<ul>
+<li>$G$ is a grammar</li>
+<li>$\mathcal{M}$ is a <code>MetaParser</code> instance layered on top of the <a href="#done-partial-parsing">partial parser</a>, with cached depth state</li>
+<li>$s \in \Sigma^*$ is the current input string</li>
+</ul>
+</div>
+
+<p>The synthesizer exposes the following operations:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Operation</th><th>Signature</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>partial</code></td><td><code>partial(&amp;mut self) -&gt; Result&lt;PartialAST, String&gt;</code></td><td>Parse current input into a partial forest</td></tr>
+<tr><td><code>completions</code></td><td><code>completions(&amp;mut self) -&gt; CompletionSet</code></td><td>Type-filtered completion set under the empty context</td></tr>
+<tr><td><code>completions_ctx</code></td><td><code>completions_ctx(&amp;mut self, ctx: &amp;Context) -&gt; CompletionSet</code></td><td>Type-filtered completion set in context $\Gamma$</td></tr>
+<tr><td><code>try_extend</code></td><td><code>try_extend(&amp;mut self, token: &amp;str, ctx: &amp;Context) -&gt; Result&lt;(TypedAST, String), String&gt;</code></td><td>Parse $s \cdot t$, return the typed result without mutation</td></tr>
+<tr><td><code>extend</code></td><td><code>extend(&amp;mut self, token: &amp;str, ctx: &amp;Context) -&gt; Result&lt;TypedAST, String&gt;</code></td><td>Parse $s \cdot t$ and commit to the new input</td></tr>
+<tr><td><code>extend_with_regex</code></td><td><code>extend_with_regex(&amp;mut self, token: &amp;DerivativeRegex, ctx: &amp;Context) -&gt; Option&lt;(TypedAST, String)&gt;</code></td><td>Extend with a regex token, returning the first valid candidate</td></tr>
+<tr><td><code>extend_all_with_regex</code></td><td><code>extend_all_with_regex(&amp;mut self, token: &amp;DerivativeRegex, ctx: &amp;Context, max_examples: usize) -&gt; Vec&lt;(TypedAST, String)&gt;</code></td><td>Extend with a regex token, returning up to <code>max_examples</code> valid candidates</td></tr>
+<tr><td><code>complete</code></td><td><code>complete(&amp;mut self) -&gt; Option&lt;TypedNode&gt;</code></td><td>Return a complete typed root when one exists</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="extension-semantics"><a class="header" href="#extension-semantics">Extension Semantics</a></h2>
+<h3 id="token-extension"><a class="header" href="#token-extension">Token Extension</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Parse Extension</div>
+
+<p>Given input $s$ and candidate token $t$, the <strong>parse extension</strong> function attempts three concatenations in order:</p>
+<ol>
+<li>$s \cdot_\text{auto} t$: with automatic separator insertion (see below)</li>
+<li>$s \cdot t$: direct concatenation</li>
+<li>$s \cdot \text{’ ’} \cdot t$: with explicit space</li>
+</ol>
+<p>The first successful parse is returned.</p>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Automatic Separator</div>
+
+<p>The <strong>automatic separator heuristic</strong> inserts a space between $s$ and $t$ when:</p>
+<p>$$\text{last}(s) \in \mathcal{W} \land \text{first}(t) \in \mathcal{W}$$</p>
+<p>where $\mathcal{W} = \{a\text{-}z, A\text{-}Z, 0\text{-}9, _\}$ is the set of word characters.</p>
+</div>
+
+<p>The auto-separator is a <strong>syntactic heuristic</strong>, not a grammatical guarantee. It handles the common case where two adjacent identifiers or keywords require whitespace separation. The fallback to direct concatenation and explicit space ensures no valid extension is missed; at worst, the heuristic wastes one parse attempt.</p>
+<h3 id="regex-extension"><a class="header" href="#regex-extension">Regex Extension</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Regex Extension</div>
+
+<p>When the next token is a <code>DerivativeRegex</code> $r$ (a regex that can still match more input), the synthesizer cannot directly concatenate $r$ as a string. Instead, it gathers <strong>concrete candidate strings</strong> and tries each:</p>
+<ol>
+<li><strong>Grammar seeds</strong>: word-like special tokens and raw types collected from the grammar</li>
+<li><strong>Primary example</strong>: $r.\text{example}()$, the canonical example string of the regex</li>
+<li><strong>Tree terminals</strong>: collect terminal text from the current typed tree</li>
+</ol>
+<p>Candidates are tried in this order via <code>try_extend</code>. <code>extend_with_regex</code> returns the first valid extension; <code>extend_all_with_regex</code> keeps distinct successful extensions up to the requested bound.</p>
+</div>
+
+<p>The candidate ordering is intentional: reusing grammar-derived literals and already-seen terminals tends to produce more coherent completions than inventing arbitrary new text. This is a heuristic for <strong>quality</strong>, not correctness; any valid candidate would produce a correct completion.</p>
+<h2 id="step-by-step-building-an-expression-token-by-token"><a class="header" href="#step-by-step-building-an-expression-token-by-token">Step-by-step: building an expression token by token</a></h2>
+<p>This section traces exactly what the synthesizer does when the search engine calls <code>extend</code> repeatedly to build the expression <code>let x = 1</code> from an empty input. The grammar assumed is a simple expression language where a <code>let</code>-binding has the form <code>let &lt;ident&gt; = &lt;expr&gt;</code>.</p>
+<p><span class="margin-anchor" data-margin="margin-n-1"></span></p>
+<div class="margin-note" data-margin="margin-n-1"><span class="margin-note-title">why this example?</span>
+`let x = 1` hits all three extension modes: keyword (no separator needed before `let`), identifier (`x`, chosen from `completions_ctx`), punctuation (`=`), and a literal. Four tokens, four calls to `extend`.</div>
+
+<p><strong>Initial state.</strong> The synthesizer starts with $s = \varepsilon$ (the empty string). <code>partial()</code> returns an empty forest; every nonterminal in $G$ is a candidate root. <code>completions_ctx</code> with any context will return the set of tokens that can begin a valid expression — including <code>let</code>.</p>
+<p><strong>Step 1: extend with <code>let</code>.</strong> The search engine calls <code>extend(\texttt{"let"}, \Gamma)</code>. The auto-separator check sees $\text{last}(\varepsilon)$ is undefined so no separator is inserted. The MetaParser parses <code>"let"</code> and returns a partial forest with one active parse: a <code>let</code>-binding with three remaining holes (<code>&lt;ident&gt;</code>, <code>=</code>, <code>&lt;expr&gt;</code>). The synthesizer commits: $s \leftarrow \texttt{“let”}$.</p>
+<p>After this step, <code>completions_ctx</code> returns only tokens that can extend <code>"let"</code> to a syntactically and type-valid string. In a well-designed grammar, that set consists entirely of identifiers matching <code>[a-z][a-z0-9_]*</code>.</p>
+<p><strong>Step 2: extend with <code>x</code>.</strong> The auto-separator check: $\text{last}(\texttt{“let”}) = \texttt{t} \in \mathcal{W}$ and $\text{first}(\texttt{“x”}) = \texttt{x} \in \mathcal{W}$, so a space is automatically inserted. The MetaParser parses <code>"let x"</code>. The partial forest now has the <code>&lt;ident&gt;</code> hole filled; the remaining holes are <code>=</code> and <code>&lt;expr&gt;</code>. The synthesizer commits: $s \leftarrow \texttt{“let x”}$.</p>
+<p><code>completions_ctx</code> now returns only <code>=</code>, since that is the only token that can advance the <code>let</code>-binding parse.</p>
+<p><strong>Step 3: extend with <code>=</code>.</strong> $\text{last}(\texttt{“let x”}) = \texttt{x} \in \mathcal{W}$, $\text{first}(\texttt{“=”}) = \texttt{=} \notin \mathcal{W}$, so no auto-separator. The MetaParser parses <code>"let x ="</code>. The partial forest has one hole remaining: <code>&lt;expr&gt;</code>. The synthesizer commits: $s \leftarrow \texttt{“let x =”}$.</p>
+<p><code>completions_ctx</code> with a typing context $\Gamma$ now filters: any token that begins a valid expression <em>and</em> whose eventual type is compatible with the binding context. Numeric literals (<code>1</code>, <code>2</code>, …) and any bound variable in $\Gamma$ are valid.</p>
+<p><strong>Step 4: extend with <code>1</code>.</strong> $\text{last}(\texttt{“let x =”}) = \texttt{=} \notin \mathcal{W}$, no auto-separator. The MetaParser parses <code>"let x = 1"</code>. The partial forest now contains a complete parse rooted at the <code>let</code>-binding nonterminal. <code>complete()</code> returns <code>Some(root)</code>. The search engine can now stop on this state.</p>
+<p>The display in the widget mirrors what the synthesizer’s internal state looks like at each step: the accumulated string $s$, which holes in the parse tree have been filled, and what remains. Clicking any offered token fires a Web Audio blip and advances the state exactly as <code>extend</code> would.</p>
+<h2 id="depth-retry"><a class="header" href="#depth-retry">Depth Retry</a></h2>
+<p><span class="margin-anchor" data-margin="margin-n-2"></span></p>
+<div class="margin-note" data-margin="margin-n-2"><span class="margin-note-title">bounded retry</span>
+retry is intentionally local: nearby states should have nearby depths (e.g. 10 -&gt; 11/12, not 41)</div>
+
+<div class="remark">
+<div class="remark-title">Remark: Depth-Differential Retry</div>
+
+<p>When completion filtering fails on the first pass, the synthesizer retries with a fresh <code>MetaParser</code> in a <strong>bounded local window</strong>:</p>
+<p>$$d_\text{start} = d + 1, \quad d_\text{max} = d + 2$$</p>
+<p>where $d$ is the depth used by the initial parse.</p>
+<p>This makes sure the parsing gathers anough trees to produce a typed alternative. It’s a heuristics, and is faillible. Bad design but works enough.</p>
+</div>
+
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="binding"><a class="header" href="#binding">Binding</a></h1>
+<h1 id="done-search"><a class="header" href="#done-search"><span class="status-badge done">DONE</span> Search</a></h1>
+<p>The search engine explores the space of token-level extensions to find a complete, well-typed expression. It uses a priority queue ordered by a heuristic <a href="#done-scoring">scoring function</a>.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></p>
+<p>This chapter is meant to be read after the <a href="#done-completion">completion overview</a> and <a href="#done-synthesizer">synthesizer</a> chapters. It only describes search-side control flow: frontier management, pruning, and stopping conditions. Token generation lives in <a href="#done-synthesizer">Synthesizer</a>; the numeric heuristic itself lives in <a href="#done-scoring">Scoring</a>.</p>
+<h2 id="operational-shape"><a class="header" href="#operational-shape">Operational Shape</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Search Shape</div>
+
+<p>The current implementation has two phases:</p>
+<ol>
+<li>A <strong>greedy fast path</strong> (<code>try_greedy_complete</code>) that repeatedly takes the locally best child and returns immediately if it reaches a complete root.</li>
+<li>A <strong>best-first frontier search</strong> (<code>search_complete</code>) that uses a <code>BinaryHeap</code> once greedy completion stalls.</li>
+</ol>
+<p>Both phases use the same synthesizer operations and the same <code>SearchConfig</code> budgets.</p>
+</div>
+
+<h2 id="search-space"><a class="header" href="#search-space">Search Space</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Search Space</div>
+
+<p>The <strong>search space</strong> is operationally an exploration over typed states $(T, \pi, d)$ where:</p>
+<ul>
+<li>$Q$ is the set of all such typed states</li>
+<li>$T$ is the current typed parse forest (<code>TypedAST</code>)</li>
+<li>$\pi \in \Sigma_t^*$ is the sequence of regex completion tokens chosen so far</li>
+<li>$d \in \mathbb{N}$ is the search depth</li>
+<li>$q_0 = (T_0, [], 0)$ is the initial state, where $T_0$ is the typed parse of the original input</li>
+<li>$F \subseteq Q$ is the set of states whose typed forest contains a complete root</li>
+</ul>
+<p>Let $\Sigma_t$ be the set of regex completion tokens produced by <code>completions_ctx</code>. For a state $q$ and token $t \in \Sigma_t$, the search asks the <a href="#done-synthesizer">synthesizer</a> to try up to $n_{\max}$ concrete witnesses for $t$, producing a finite child set $\Delta(q, t) \subseteq Q$.</p>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Search State</div>
+
+<p>A <strong>search state</strong> $q = (T, \pi, d)$ consists of:</p>
+<ul>
+<li>$T$: a typed parse forest (the current <code>TypedAST</code>)</li>
+<li>$\pi$: the regex-token completion path. This records completion tokens, not the concrete witness strings tried for regex expansion.</li>
+<li>$d$: the number of successful extensions applied since $q_0$</li>
+</ul>
+</div>
+
+<h2 id="algorithm"><a class="header" href="#algorithm">Algorithm</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Search Algorithm</div>
+
+<p>The current implementation uses two phases over the same state representation:</p>
+<ol>
+<li>Build a <code>Synthesizer</code> for $s_0$ and parse the initial typed forest $T_0 = \text{partial_typed_ctx}(s_0, \Gamma)$. Reject with <code>Invalid</code> if this fails.</li>
+<li>Seed the visited set with <code>T_0.text()</code>.</li>
+<li>Run a <strong>greedy fast path</strong> (<code>try_greedy_complete</code>) for up to $d_{\max}$ steps:
+<ul>
+<li>ask the synthesizer for <code>completions_ctx(\Gamma)</code></li>
+<li>expand each regex token using up to $n_{\max}$ concrete witnesses</li>
+<li>keep the locally best child (grounding first, then open slots, then score)</li>
+<li>return immediately if a complete root is reached</li>
+</ul>
+</li>
+<li>If greedy completion stalls, initialize a max-heap $H$ with $q_0 = (T_0, [], 0)$ scored by <a href="#done-scoring">Scoring</a>.</li>
+<li><strong>Loop</strong>: pop the highest-scored state $q = (T, \pi, d)$ from $H$.
+<ul>
+<li>If $T$ has a complete root, return <code>Success</code>.</li>
+<li>If $d \geq d_{\max}$, skip expansion.</li>
+<li>If the total explored-state budget $s_{\max}$ has been hit, stop and return <code>Exhausted</code>.</li>
+<li>Otherwise, set the synthesizer input to <code>T.text()</code>, compute <code>completions_ctx(\Gamma)</code>, and expand each token via <code>extend_all_with_regex_candidates(..., n_{\max})</code>.</li>
+<li>Discard children whose typed forest is empty or whose <code>text()</code> has already been visited.</li>
+<li>If any child has a grounded root (<code>ty != Any</code>), discard children whose roots are all <code>Any</code>.</li>
+<li>Sort remaining children by grounded-root count, then score, keep only the top $b_{\max}$, and push them onto $H$.</li>
+</ul>
+</li>
+<li>If $H$ becomes empty, return <code>Exhausted</code>.</li>
+</ol>
+</div>
+
+<p>The module is documented as “Priority-guided DFS search.” This name is historical and relative: the predecessor algorithm was <strong>pure BFS</strong>, expanding every completion at every depth level before proceeding to the next. The current algorithm replaced that with a <code>BinaryHeap</code> (max-heap), making it structurally more depth-oriented in practice since high-scoring deep states are preferred over low-scoring shallow ones. This label applies to the heap-driven second phase; the greedy fast path runs before any frontier is built.</p>
+<p>However, it is <strong>not true DFS</strong>. True DFS uses a stack (LIFO) and commits to fully exploring one branch before backtracking. This algorithm uses a <strong>priority queue</strong>: the next state popped is always the <em>globally highest-scored</em> state, regardless of which branch produced it. It freely interleaves exploration across branches whenever a state from a different branch scores higher than the current branch’s frontier. The depth bound $d_{\max}$ is a safety cutoff, not a stack discipline.</p>
+<p>Concretely: if branch $A$ at depth 3 scores $2.1$ and branch $B$ at depth 1 scores $2.3$, the algorithm explores $B$ next. True DFS would continue with $A$. The algorithm makes no commitment to a single branch.</p>
+<p>Formally, this is <strong>best-first search (BeFS)</strong> with scoring function $|\sigma|$. The “DFS” label reflects the intent (explore depth before breadth, relative to the predecessor) not the mechanism.</p>
+<h2 id="configuration"><a class="header" href="#configuration">Configuration</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Search Configuration</div>
+
+<p>The <strong>search configuration</strong> $\kappa = (d_{\max}, n_{\max}, s_{\max}, b_{\max})$ in <code>SearchConfig::default()</code> currently consists of:</p>
+<ul>
+<li>$d_{\max} = 10$: maximum search depth (number of token extensions from the initial state)</li>
+<li>$n_{\max} = 1$: maximum number of concrete examples to try per regex token during regex expansion</li>
+<li>$s_{\max} = 96$: total explored-state budget before returning <code>Exhausted</code></li>
+<li>$b_{\max} = 12$: beam width per expanded state after local sorting</li>
+</ul>
+</div>
+
+<h2 id="result"><a class="header" href="#result">Result</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Search Result</div>
+
+<p>The search returns one of three outcomes:</p>
+<ul>
+<li>$\text{Success}(s’, T, \pi, d)$: a complete input $s’$, the first complete typed root $T$, the regex-token completion path $\pi$, and the depth $d$</li>
+<li>$\text{Exhausted}(d_{\max}, n, V)$: the frontier emptied or the state budget was hit after exploring $n$ states; $V$ is the list of deduplicated reconstructed inputs visited so far</li>
+<li>$\text{Invalid}(m)$: the initial input $s_0$ could not be partially typed; $m$ is a diagnostic message</li>
+</ul>
+</div>
+
+<h2 id="search-side-checks"><a class="header" href="#search-side-checks">Search-Side Checks</a></h2>
+<p>The search code itself performs only lightweight checks. The meaning of the attached types comes from earlier chapters and from <code>partial_typed_ctx</code>; this chapter only documents what the search layer does with those typed forests.</p>
+<div class="definition">
+<div class="definition-title">Definition: Expansion Filter</div>
+
+<p>A child produced during expansion is kept only if:</p>
+<ol>
+<li>regex expansion produced a non-empty <code>TypedAST</code></li>
+<li>its reconstructed input <code>text()</code> has not been visited before</li>
+<li>after the local grounding preference, it survives the beam-width cutoff</li>
+</ol>
+<p>Search does not run a separate <code>Valid</code>/<code>Partial</code>/<code>Invalid</code> predicate here; it relies on the synthesizer to produce typed child forests in the first place.</p>
+</div>
+
+<div class="lemma">
+<div class="lemma-title">Lemma: Grounding Preference</div>
+
+<p>During one expansion step, if any child has at least one root whose type is not <code>Any</code>, the implementation drops children whose roots are all <code>Any</code> before score ordering. This is a local search policy, not part of the numeric <a href="#done-scoring">scoring</a> function.</p>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Success Condition</div>
+
+<p>A state is accepted as soon as its <code>TypedAST</code> contains a complete root (<code>TypedNode::is_complete()</code>). In normal use this corresponds to a complete parse from the grammar start symbol, because the parser roots are generated from the grammar entry point.</p>
+</div>
+
+<h2 id="state-deduplication"><a class="header" href="#state-deduplication">State Deduplication</a></h2>
+<p>The search maintains a <code>HashSet&lt;String&gt;</code> keyed by the reconstructed surface input <code>tree.text()</code> of each state. Two states with identical reconstructed inputs are considered equivalent, even if they arrived via different token paths. This prevents re-exploration of states that parse the same surface string.</p>
+<p>For how the surviving states are numerically ranked, continue to <a href="#done-scoring">Scoring</a>.</p>
+<p><span class="margin-anchor" data-margin="margin-i-1"></span></p>
+<div class="margin-interactive" data-margin="margin-i-1" data-label="search trace" data-steps="{&quot;label&quot;:&quot;search: complete &#92;u03bbx:&quot;,&quot;input&quot;:&quot;&#92;u03bbx:&quot;,&quot;steps&quot;:[{&quot;token&quot;:&quot;pop&quot;,&quot;tokens&quot;:[&quot;pop&quot;],&quot;display&quot;:&quot;H = [(&#92;u03bbx:, 2.1)]&#92;npop best: s = &#92;u03bbx:&#92;nroots: Abstraction (incomplete)&#92;nno valid completion, expand&quot;},{&quot;token&quot;:&quot;Int&quot;,&quot;tokens&quot;:[&quot;Int&quot;,&quot;Bool&quot;,&quot;A&quot;],&quot;display&quot;:&quot;extend with Int&#92;ns = &#92;u03bbx:Int&#92;nscore(&#92;u03bbx:Int) = 1.8&#92;nH = [(&#92;u03bbx:Int, 1.8), (&#92;u03bbx:Bool, 1.6)]&quot;},{&quot;token&quot;:&quot;pop&quot;,&quot;tokens&quot;:[&quot;pop&quot;],&quot;display&quot;:&quot;pop best: s = &#92;u03bbx:Int&#92;nroots: Abstraction (incomplete)&#92;nno valid completion, expand&quot;},{&quot;token&quot;:&quot;.&quot;,&quot;tokens&quot;:[&quot;.&quot;],&quot;display&quot;:&quot;extend with .&#92;ns = &#92;u03bbx:Int.&#92;nH = [(&#92;u03bbx:Int., 1.5)]&quot;},{&quot;token&quot;:&quot;pop&quot;,&quot;tokens&quot;:[&quot;pop&quot;],&quot;display&quot;:&quot;pop best: s = &#92;u03bbx:Int.&#92;nexpand with completions_ctx&quot;},{&quot;token&quot;:&quot;x&quot;,&quot;tokens&quot;:[&quot;x&quot;,&quot;1&quot;,&quot;true&quot;],&quot;display&quot;:&quot;extend with x&#92;ns = &#92;u03bbx:Int.x&#92;nroot: complete &#92;u2713, Valid(Int)&#92;naccept!&quot;}]}"></div>
+
 <div style="break-before: page; page-break-before: always;"></div>
-<h1 id="type-inference"><a class="header" href="#type-inference">Type Inference</a></h1>
+<h1 id="done-scoring"><a class="header" href="#done-scoring"><span class="status-badge done">DONE</span> Scoring</a></h1>
+<p>The scoring function $|\sigma|$ assigns a real-valued score to each search state, guiding the <a href="#done-search">best-first search</a> toward promising completions. This chapter documents only the numeric heuristic in <code>calculate_score()</code>. Deduplication, grounding preference, greedy completion, and beam truncation are search-policy details described in <a href="#done-search">Search</a>.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></p>
+<p>This chapter is meant to be read after <a href="#done-search">Search</a>.</p>
+<h2 id="score-tuple"><a class="header" href="#score-tuple">Score Tuple</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: State Score</div>
+
+<p>The <strong>state score</strong> is a 6-tuple:</p>
+<p>$$\sigma = (c, p, \ell, o, s, r) \in \mathbb{R}^6$$</p>
+<p>with overall score:</p>
+<p>$$|\sigma| = c + p + \ell + o + s + r$$</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Component</th><th>Name</th><th>Range</th><th>Direction</th></tr>
+</thead>
+<tbody>
+<tr><td>$c$</td><td>Completeness</td><td>$[0, 2]$</td><td>higher = more matched structure</td></tr>
+<tr><td>$p$</td><td>Production fullness</td><td>$[0, 1]$</td><td>higher = more RHS positions filled</td></tr>
+<tr><td>$\ell$</td><td>Token length bonus</td><td>slow-growing, non-negative</td><td>higher = more concrete terminals</td></tr>
+<tr><td>$o$</td><td>Open slots penalty</td><td>${0, -0.3, -0.6, \ldots}$</td><td>closer to 0 = fewer missing children</td></tr>
+<tr><td>$s$</td><td>Simplicity</td><td>$[0, 0.3]$</td><td>higher = shallower search depth</td></tr>
+<tr><td>$r$</td><td>Recursion penalty</td><td>$[-0.5, 0]$</td><td>closer to 0 = shallower tree</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<p>Several components choose the best or shallowest root among alternatives rather than averaging over all roots. This is intentional: one promising parse alternative should be able to dominate the score early instead of being drowned out by worse siblings.</p>
+<h2 id="sub-score-definitions"><a class="header" href="#sub-score-definitions">Sub-Score Definitions</a></h2>
+<h3 id="completeness"><a class="header" href="#completeness">Completeness</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Completeness Score</div>
+
+<p>For each root $u$, walk all nodes in the subtree. A complete terminal contributes $1$. A partial terminal whose current surface text has length $m$ contributes $\frac{0.5}{m+1}$. An expression node with no children contributes $0$.</p>
+<p>Let $S_u$ be the sum of those contributions and $N_u$ the total node count visited. The implementation computes</p>
+<p>$$c(u) = \min\left(2,\ 2 \cdot \frac{S_u}{N_u}\right), \qquad c = \max_u c(u).$$</p>
+</div>
+
+<p>Expression nodes with children do not add direct bonus here; they only contribute through their descendants while still increasing the denominator. So the score prefers states with more concrete material and fewer empty placeholders.</p>
+<h3 id="production-fullness"><a class="header" href="#production-fullness">Production Fullness</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Production Fullness Score</div>
+
+<p>For each expression node $v$ with expected right-hand side length $n_v &gt; 0$ and currently filled child count $k_v &gt; 0$, define its local fill ratio as $\frac{k_v}{n_v}$. For a root $u$, let $E_u$ be the set of such expression nodes.</p>
+<p>The implementation computes the RMS fill ratio</p>
+<p>$$p(u) = \sqrt{\frac{1}{|E_u|}\sum_{v \in E_u}\left(\frac{k_v}{n_v}\right)^2}, \qquad p = \max_u p(u),$$</p>
+<p>with $p = 0$ if $E_u$ is empty.</p>
+</div>
+
+<p>This rewards roots whose productions are already mostly filled, even if the tree is not yet complete.</p>
+<h3 id="token-length-bonus"><a class="header" href="#token-length-bonus">Token Length Bonus</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Token Length Bonus</div>
+
+<p>Let $L_u$ be the number of leaf terminals in root $u$. The implementation computes</p>
+<p>$$\ell = 0.25 \cdot \sqrt{\max_u L_u}.$$</p>
+<p>This is a small bonus for states that already contain more concrete terminal material. The square root keeps the signal mild.</p>
+</div>
+
+<h3 id="open-slots-penalty"><a class="header" href="#open-slots-penalty">Open Slots Penalty</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Open Slots Penalty</div>
+
+<p>For each root $u$, count open slots recursively:</p>
+<ul>
+<li>an expression node with no children contributes $1$</li>
+<li>an expression node with expected RHS length $n_v$ and $k_v$ filled children contributes $n_v - k_v$</li>
+<li>children are then counted recursively as well</li>
+</ul>
+<p>Let $O_u$ be the resulting count. The implementation uses the best (smallest) root:</p>
+<p>$$o = -0.3 \cdot \min_u O_u.$$</p>
+</div>
+
+<p>This is the dominant negative signal in practice: trees with fewer remaining holes tend to outrank structurally larger but more incomplete alternatives.</p>
+<h3 id="simplicity"><a class="header" href="#simplicity">Simplicity</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Simplicity Score</div>
+
+<p>The <strong>simplicity score</strong> rewards shallower search paths:</p>
+<p>$$s = 0.3 \cdot \left(1 - \frac{d}{d_{\max}}\right)$$</p>
+<p>where $d$ is the current search depth and $d_{\max}$ is the configured maximum depth.</p>
+</div>
+
+<h3 id="recursion-penalty"><a class="header" href="#recursion-penalty">Recursion Penalty</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Recursion Penalty</div>
+
+<p>Let $D_u$ be the maximum node depth of root $u$. The implementation takes the shallowest root among alternatives and applies a light quadratic penalty:</p>
+<p>$$r = -0.5 \cdot \left(\min\left(1, \frac{\min_u D_u}{d_{\max} + 1}\right)\right)^2.$$</p>
+<p>This discourages unnecessarily deep trees, but much more gently than the open-slots penalty discourages incomplete ones.</p>
+</div>
+
+<h2 id="ordering"><a class="header" href="#ordering">Ordering</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Score Use</div>
+
+<p>Search uses the numeric score in two places:</p>
+<ol>
+<li>heap priority for frontier states</li>
+<li>secondary ordering among children after expansion</li>
+</ol>
+<p>Before score comparison, <a href="#done-search">Search</a> may prefer children with grounded roots (<code>ty != Any</code>) and may truncate to a beam width. So score is important, but it is not the whole search policy.</p>
+</div>
+
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-completability"><a class="header" href="#done-completability"><span class="status-badge done">DONE</span> Completability</a></h1>
+<p>This chapter formalizes the completability properties that Aufbau guarantees, connecting the theoretical definitions from <a href="#done-basic-concepts-and-notations">Basic Concepts</a> to the algorithmic implementation.</p>
+<p>For the treatment of completability over two-level languages, where the grammar alphabet $\Sigma$ is itself a regular language over a byte alphabet $\Sigma_\text{vocab}$, see <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></p>
+<h2 id="typed-completability-1"><a class="header" href="#typed-completability-1">Typed Completability</a></h2>
+<p>Recall from <a href="#done-basic-concepts-and-notations">Basic Concepts</a> that a string $s$ is completable in $L$ if $\mathcal{C}_L(s) \neq \emptyset$. The typing engine (see <a href="#done-type-system">Type System</a>) refines this:</p>
+<div class="definition">
+<div class="definition-title">Definition: Typed Completability</div>
+
+<p>A string $s$ is <strong>typed-completable</strong> in $(L, \Theta, \Gamma)$ if:</p>
+<p>$$\mathcal{C}_{L,\Theta}(s) = \{a \in \mathcal{C}_L(s) : \Gamma \vdash_\Theta \mathcal{F}(sa) \neq \text{Invalid}\} \neq \emptyset$$</p>
+<p>That is, there exists at least one next token that is both syntactically valid and does not violate any typing constraint.</p>
+</div>
+
+<h2 id="completion"><a class="header" href="#completion">Completion</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Completion</div>
+
+<p>$\text{complete}(G, s, d_{\max}, \Gamma)$ performs a depth-bounded <a href="#done-search">search</a> for a complete, well-typed expression extending input $s$:</p>
+<p>$$\text{complete}(G, s, d_{\max}, \Gamma) = \begin{cases}
+\text{Success}(s’, T) &amp; \text{if finds a valid completion } s’ \text{ with tree } T \\
+\text{Exhausted} &amp; \text{if explores all states within } d_{\max} \text{ without success} \\
+\text{Invalid} &amp; \text{if } s \text{ cannot be parsed}
+\end{cases}$$</p>
+</div>
+
+<h2 id="prefix-soundness"><a class="header" href="#prefix-soundness">Prefix Soundness</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Prefix Soundness</div>
+
+<p>A string $s$ is <strong>prefix-sound</strong> in $(G, \Theta, \Gamma)$ if every prefix of $s$ is typed-completable:</p>
+<p>$$\text{sound}(G, s, \Gamma) \iff \forall i \in [0, |s|] : \text{prefix_ok}(G, s[0..i], \Gamma)$$</p>
+<p>where whitespace-only prefixes (except the empty prefix) are excluded from checking.</p>
+</div>
+
+<div class="definition">
+<div class="definition-title">Definition: Prefix OK</div>
+
+<p>A prefix $s’$ satisfies $\text{prefix_ok}(G, s’, \Gamma)$ if either:</p>
+<ol>
+<li>$\mathcal{C}_{L,\Theta}(s’) \neq \emptyset$: there exist typed completions (the input is not a dead end), <strong>or</strong></li>
+<li>$\exists r \in \mathcal{F}(s’) : \Gamma \vdash_\Theta r \in \{\text{Valid}(\tau), \text{Partial}(\tau)\}$: some parse tree root is currently valid or indeterminate</li>
+</ol>
+</div>
+
+<p>Condition 1 alone is insufficient. Consider an input like <code>let x : int in</code>. The body expression has not started, so the typed completion set may depend on the body’s grammar structure, which is complex to compute from scratch. But the partial tree itself is still consistent: the let-binding is well-formed so far, and the body is simply missing. Condition 2 catches these cases by checking the <em>current</em> tree status rather than demanding that forward extensions exist.</p>
+<div class="lemma">
+<div class="lemma-title">Lemma: Prefix Soundness as a Safety Guarantee</div>
+
+<p>If $\text{sound}(G, s, \Gamma)$ holds, then for any prefix $s’$ of $s$, the system is never in a state where no forward progress is possible. The user (or LLM) could have stopped producing tokens at any intermediate point, and the system would still have been able to find a valid completion.</p>
+<p>This is the key usability property: <strong>the system never traps the input</strong>.</p>
+</div>
+
+<div class="theorem">
+<div class="theorem-title">Theorem: Sound Completion</div>
+
+<p>$\text{sound_complete}(G, s, \Gamma)$ holds if and only if:</p>
+<ol>
+<li>$\text{sound}(G, s, \Gamma)$: all prefixes are OK</li>
+<li>$\text{complete}(G, s, d_{\max}, \Gamma) = \text{Success}(s’, T)$: the full input has a valid completion</li>
+</ol>
+<p>Together, these ensure that the input $s$ can be completed into a valid expression <em>and</em> that the system was never stuck at any intermediate point during the production of $s$.</p>
+</div>
+
+<h2 id="two-level-completability"><a class="header" href="#two-level-completability">Two-Level Completability</a></h2>
+<p>The grammar alphabet $\Sigma$ contains elements that are themselves languages over a finer alphabet. String literals match single strings, but regex patterns like <code>/[a-z][a-zA-Z0-9]*/</code> match sets of strings. This creates a <strong>two-level language</strong> structure:</p>
+<p>$$L \subseteq \Sigma^* \quad \text{where} \quad \Sigma \subseteq \Sigma_\text{vocab}^*$$</p>
+<p>The partial parser $\Phi_L$ operates at the $\Sigma$ level, but the actual input arrives at the $\Sigma_\text{vocab}$ level (bytes, characters, or model vocabulary tokens). A partial input may be in the <em>middle</em> of a token: the string <code>bi</code> is a prefix of the token <code>/b(u|o|i)p/</code> but is not itself a token.</p>
+<p>The Brzozowski derivative $D_s(r)$ resolves this: given a regex $r$ and a partial string $s$, the derivative $D_s(r)$ is a new regex matching exactly the valid suffixes of $s$ in $L(r)$. If $D_s(r) \neq \emptyset$, then $s$ is a valid prefix of some string in $L(r)$.</p>
+<p>This is formalized in detail in <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>. The implementation lives in the custom regex engine at <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a>.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-validation"><a class="header" href="#done-validation"><span class="status-badge done">DONE</span> Validation</a></h1>
+<p>The <strong>validation</strong> system verifies that Aufbau’s engines produce correct results. It is the empirical counterpart to the formal properties defined in <a href="#done-completability">Completability</a>: where the spec defines <em>what</em> must hold, the validation system checks <em>that</em> it holds on concrete grammars and inputs.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></p>
+<h2 id="architecture"><a class="header" href="#architecture">Architecture</a></h2>
+<p>The validation system has three layers:</p>
+<pre><code>Layer 3: Test Suites (per-grammar: arithmetic, stlc, fun, imp, ...)
+    │
+    ▼
+Layer 2: Test Harness (typed completion test runner, timeout, profiling)
+    │
+    ▼
+Layer 1: Core Algorithms (completability.rs → search → scoring)
+</code></pre>
+<p><strong>Layer 1</strong> is the <a href="#done-completion">completion pipeline</a> and the <a href="#done-completability">completability checker</a>, i.e., the same algorithms used in production. The validation system does not use separate “test” algorithms; it validates the real pipeline.</p>
+<p><strong>Layer 2</strong> is a test harness that wraps Layer 1 with:</p>
+<ul>
+<li>Per-test configuration (depth budget, initial context, expected pass/fail)</li>
+<li>Timeout enforcement (default: 300 seconds per test)</li>
+<li>Prefix soundness checking (verifying <em>all</em> prefixes, not just the final input)</li>
+<li>Profiling metadata (timing, states explored, visited states)</li>
+</ul>
+<p><strong>Layer 3</strong> is a collection of test suites, each targeting a specific grammar from <code>examples/*.auf</code>.</p>
+<h2 id="what-is-validated"><a class="header" href="#what-is-validated">What is Validated</a></h2>
+<h3 id="prefix-soundness-1"><a class="header" href="#prefix-soundness-1">Prefix Soundness</a></h3>
+<p>The primary property validated is <a href="#done-completability">prefix soundness</a>: for a given input $s$ and grammar $G$, <em>every prefix</em> of $s$ must be typed-completable. This is checked by <code>sound_complete</code>, which:</p>
+<ol>
+<li>Enumerates all non-whitespace prefixes of $s$</li>
+<li>For each proper prefix: parses it, computes typed completions, and calls <code>prefix_ok</code></li>
+<li>For the full input: runs the complete search to find a valid completion</li>
+<li>Reports the first failing prefix (if any)</li>
+</ol>
+<p>A completion system that can find completions for <code>let x : int in x</code> but <em>not</em> for <code>let x : int in</code> is broken: the system would accept a token that leads to a dead end. Prefix soundness catches this class of bugs by testing every intermediate state.</p>
+<h3 id="expected-failures"><a class="header" href="#expected-failures">Expected Failures</a></h3>
+<p>Tests can be marked <code>xfail</code> (expected to fail completion). This is used for inputs that are <em>intentionally</em> outside the grammar’s typed language. An <code>xfail</code> test passes if completion fails, and fails if completion unexpectedly succeeds.</p>
+<h3 id="timeout-enforcement"><a class="header" href="#timeout-enforcement">Timeout Enforcement</a></h3>
+<p>Each test runs in a dedicated thread with a configurable timeout. This catches performance regressions and infinite loops in the search: if the search cannot find a completion within the time budget, the test fails with a timeout diagnostic.</p>
+<h2 id="test-structure"><a class="header" href="#test-structure">Test Structure</a></h2>
+<p>Each grammar has a dedicated test module:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Grammar</th><th>Description</th><th>Key Properties Tested</th></tr>
+</thead>
+<tbody>
+<tr><td><code>arithmetic</code></td><td>Integer arithmetic with <code>+</code>, <code>*</code>, parentheses</td><td>Basic completability, operator precedence</td></tr>
+<tr><td><code>stlc</code></td><td>Simply-typed lambda calculus</td><td>Variable binding, function application, type inference</td></tr>
+<tr><td><code>fun</code></td><td>Let-bindings, if-then-else, functions</td><td>Context extension, nested scopes, keyword separators</td></tr>
+<tr><td><code>imp</code></td><td>Imperative language (assignments, while loops)</td><td>Statement sequencing, mutable state</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="parseability-checking"><a class="header" href="#parseability-checking">Parseability Checking</a></h2>
+<p>A separate, faster validation layer checks <strong>parseability</strong>: whether all prefixes of an input can be parsed at all (without completion search). This runs in $O(n^2)$ time (one parse per prefix) and catches parser bugs independently of the type system.</p>
+<h2 id="complexity-analysis"><a class="header" href="#complexity-analysis">Complexity Analysis</a></h2>
+<p>The validation system includes an empirical complexity measurement module that determines the parse-time exponent $k$ in $O(n^k)$ via log-log linear regression over increasing input sizes. This is used to detect performance regressions and to empirically verify that the parser operates within expected complexity bounds.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="wip-implementation-map"><a class="header" href="#wip-implementation-map"><span class="status-badge wip">WIP</span> Implementation Map</a></h1>
+<p>This page maps the specification sections to source code modules.</p>
+<h2 id="module-structure"><a class="header" href="#module-structure">Module Structure</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
+<tr><td><a href="#done-partial-parsing">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
+<tr><td><a href="parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
+<tr><td>MetaParser (see <a href="#done-partial-parsing">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
+<tr><td><a href="#done-binding-resolution">Binding Resolution</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>src/logic/binding/</code></a></td><td>Grammar path construction (compile-time)</td></tr>
+<tr><td><a href="binding.html">Runtime Binding</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/binding.rs"><code>src/logic/typing/binding.rs</code></a></td><td>Tree path resolution (runtime)</td></tr>
+<tr><td><a href="#done-type-inference">Type Inference</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>src/logic/typing/</code></a></td><td>Typing engine, rule application, type cache</td></tr>
+<tr><td><a href="#context">Context</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/core.rs"><code>src/logic/typing/core.rs</code></a></td><td>Typing context, lanes, no-propagate</td></tr>
+<tr><td><a href="#wip-premises">Premises</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Premise evaluation</td></tr>
+<tr><td><a href="#wip-conclusion">Conclusion</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Conclusion evaluation</td></tr>
+<tr><td><a href="#done-synthesizer">Synthesizer</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td><td>Incremental typed extension interface</td></tr>
+<tr><td><a href="#done-search">Search</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td><td>Best-first completion search</td></tr>
+<tr><td><a href="#done-scoring">Scoring</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td><td>Heuristic scoring for search states</td></tr>
+<tr><td><a href="#done-completability">Completability</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></td><td>Prefix soundness, completion checking</td></tr>
+<tr><td><a href="#done-validation">Validation</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></td><td>Test harness, per-grammar test suites</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="auxiliary-modules"><a class="header" href="#auxiliary-modules">Auxiliary Modules</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Module</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></td><td>Custom regex engine with Brzozowski derivatives for <a href="https://unsuspicious.org/blog/completing-regex/">two-level completability</a></td></tr>
+<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/ops.rs"><code>src/logic/typing/ops.rs</code></a></td><td>Type operations: unification, subtyping</td></tr>
+<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/syntax.rs"><code>src/logic/typing/syntax.rs</code></a></td><td>Type parsing from grammar spec strings</td></tr>
+<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td><td>Typing rule data structures</td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 
@@ -949,6 +1743,12 @@ x ∈ Γ
             </nav>
 
         </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
 
 
 
@@ -968,12 +1768,12 @@ x ∈ Γ
 
         <!-- Custom JS scripts -->
         <script src="theme/collapse-examples-d81f197f.js"></script>
+        <script src="theme/margin-702b1e77.js"></script>
+        <script src="theme/synth-widget-4f038e0a.js"></script>
 
         <script>
         window.addEventListener('load', function() {
-            MathJax.Hub.Register.StartupHook('End', function() {
-                window.setTimeout(window.print, 100);
-            });
+            window.setTimeout(window.print, 100);
         });
         </script>
 

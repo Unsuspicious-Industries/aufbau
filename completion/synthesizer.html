@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Implementation Map - Aufbau Engine</title>
+        <title>Synthesizer - Aufbau Engine</title>
 
 
         <!-- Custom HTML head -->
@@ -12,26 +12,26 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="favicon-8114d1fc.png">
-        <link rel="stylesheet" href="css/variables-3865ffda.css">
-        <link rel="stylesheet" href="css/general-fc62be9c.css">
-        <link rel="stylesheet" href="css/chrome-c0e702bf.css">
-        <link rel="stylesheet" href="css/print-ad67d350.css" media="print">
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-3865ffda.css">
+        <link rel="stylesheet" href="../css/general-fc62be9c.css">
+        <link rel="stylesheet" href="../css/chrome-c0e702bf.css">
+        <link rel="stylesheet" href="../css/print-ad67d350.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="highlight-771e6289.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night-a1977727.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight-bb48bc81.css">
+        <link rel="stylesheet" id="highlight-css" href="../highlight-771e6289.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night-a1977727.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight-bb48bc81.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="theme/proofs-d864099c.css">
-        <link rel="stylesheet" href="theme/uncertainty-9fcb4263.css">
-        <link rel="stylesheet" href="theme/status-ee3768fd.css">
-        <link rel="stylesheet" href="theme/margin-b955fd61.css">
+        <link rel="stylesheet" href="../theme/proofs-d864099c.css">
+        <link rel="stylesheet" href="../theme/uncertainty-9fcb4263.css">
+        <link rel="stylesheet" href="../theme/status-ee3768fd.css">
+        <link rel="stylesheet" href="../theme/margin-b955fd61.css">
 
         <!-- MathJax 3 Configuration (must come BEFORE loading the script) -->
         <script>
@@ -46,13 +46,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "";
+            const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-eb3f8ba3.js";
+            window.path_to_searchindex_js = "../searchindex-eb3f8ba3.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-caa35add.js"></script>
+        <script src="../toc-caa35add.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -119,7 +119,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -154,7 +154,7 @@
                     <h1 class="menu-title">Aufbau Engine</h1>
 
                     <div class="right-buttons">
-                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -188,56 +188,120 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="wip-implementation-map"><a class="header" href="#wip-implementation-map"><span class="status-badge wip">WIP</span> Implementation Map</a></h1>
-<p>This page maps the specification sections to source code modules.</p>
-<h2 id="module-structure"><a class="header" href="#module-structure">Module Structure</a></h2>
+                        <h1 id="done-synthesizer"><a class="header" href="#done-synthesizer"><span class="status-badge done">DONE</span> Synthesizer</a></h1>
+<p>The <strong>synthesizer</strong> is the stateful interface between the parser and the search engine. It wraps incremental parsing with type-filtered extension operations, providing the search with a clean abstraction: <em>given the current input, what are the valid next tokens?</em></p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></p>
+<p>This chapter is meant to be read before <a href="./search.html">Search</a>. It only covers token generation and input extension; frontier management is described in <a href="./search.html">Search</a>, and numeric ranking is described in <a href="./scoring.html">Scoring</a>.</p>
+<h2 id="definition"><a class="header" href="#definition">Definition</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Synthesizer</div>
+
+<p>A <strong>synthesizer</strong> is a stateful triple:</p>
+<p>$$\Sigma_s = (G, \mathcal{M}, s)$$</p>
+<p>where:</p>
+<ul>
+<li>$G$ is a grammar</li>
+<li>$\mathcal{M}$ is a <code>MetaParser</code> instance layered on top of the <a href="../parsing.html">partial parser</a>, with cached depth state</li>
+<li>$s \in \Sigma^*$ is the current input string</li>
+</ul>
+</div>
+
+<p>The synthesizer exposes the following operations:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
+<tr><th>Operation</th><th>Signature</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="./spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
-<tr><td><a href="./parsing.html">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
-<tr><td><a href="./parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
-<tr><td>MetaParser (see <a href="./parsing.html">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
-<tr><td><a href="./concepts/binding.html">Binding Resolution</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>src/logic/binding/</code></a></td><td>Grammar path construction (compile-time)</td></tr>
-<tr><td><a href="./binding.html">Runtime Binding</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/binding.rs"><code>src/logic/typing/binding.rs</code></a></td><td>Tree path resolution (runtime)</td></tr>
-<tr><td><a href="./typing.html">Type Inference</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>src/logic/typing/</code></a></td><td>Typing engine, rule application, type cache</td></tr>
-<tr><td><a href="./typing/context.html">Context</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/core.rs"><code>src/logic/typing/core.rs</code></a></td><td>Typing context, lanes, no-propagate</td></tr>
-<tr><td><a href="./typing/premises.html">Premises</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Premise evaluation</td></tr>
-<tr><td><a href="./typing/conclusion.html">Conclusion</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Conclusion evaluation</td></tr>
-<tr><td><a href="./completion/synthesizer.html">Synthesizer</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td><td>Incremental typed extension interface</td></tr>
-<tr><td><a href="./completion/search.html">Search</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td><td>Best-first completion search</td></tr>
-<tr><td><a href="./completion/scoring.html">Scoring</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td><td>Heuristic scoring for search states</td></tr>
-<tr><td><a href="./verification/completability.html">Completability</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></td><td>Prefix soundness, completion checking</td></tr>
-<tr><td><a href="./verification/validation.html">Validation</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></td><td>Test harness, per-grammar test suites</td></tr>
+<tr><td><code>partial</code></td><td><code>partial(&amp;mut self) -&gt; Result&lt;PartialAST, String&gt;</code></td><td>Parse current input into a partial forest</td></tr>
+<tr><td><code>completions</code></td><td><code>completions(&amp;mut self) -&gt; CompletionSet</code></td><td>Type-filtered completion set under the empty context</td></tr>
+<tr><td><code>completions_ctx</code></td><td><code>completions_ctx(&amp;mut self, ctx: &amp;Context) -&gt; CompletionSet</code></td><td>Type-filtered completion set in context $\Gamma$</td></tr>
+<tr><td><code>try_extend</code></td><td><code>try_extend(&amp;mut self, token: &amp;str, ctx: &amp;Context) -&gt; Result&lt;(TypedAST, String), String&gt;</code></td><td>Parse $s \cdot t$, return the typed result without mutation</td></tr>
+<tr><td><code>extend</code></td><td><code>extend(&amp;mut self, token: &amp;str, ctx: &amp;Context) -&gt; Result&lt;TypedAST, String&gt;</code></td><td>Parse $s \cdot t$ and commit to the new input</td></tr>
+<tr><td><code>extend_with_regex</code></td><td><code>extend_with_regex(&amp;mut self, token: &amp;DerivativeRegex, ctx: &amp;Context) -&gt; Option&lt;(TypedAST, String)&gt;</code></td><td>Extend with a regex token, returning the first valid candidate</td></tr>
+<tr><td><code>extend_all_with_regex</code></td><td><code>extend_all_with_regex(&amp;mut self, token: &amp;DerivativeRegex, ctx: &amp;Context, max_examples: usize) -&gt; Vec&lt;(TypedAST, String)&gt;</code></td><td>Extend with a regex token, returning up to <code>max_examples</code> valid candidates</td></tr>
+<tr><td><code>complete</code></td><td><code>complete(&amp;mut self) -&gt; Option&lt;TypedNode&gt;</code></td><td>Return a complete typed root when one exists</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="auxiliary-modules"><a class="header" href="#auxiliary-modules">Auxiliary Modules</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Module</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></td><td>Custom regex engine with Brzozowski derivatives for <a href="https://unsuspicious.org/blog/completing-regex/">two-level completability</a></td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/ops.rs"><code>src/logic/typing/ops.rs</code></a></td><td>Type operations: unification, subtyping</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/syntax.rs"><code>src/logic/typing/syntax.rs</code></a></td><td>Type parsing from grammar spec strings</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td><td>Typing rule data structures</td></tr>
-</tbody>
-</table>
+<h2 id="extension-semantics"><a class="header" href="#extension-semantics">Extension Semantics</a></h2>
+<h3 id="token-extension"><a class="header" href="#token-extension">Token Extension</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Parse Extension</div>
+
+<p>Given input $s$ and candidate token $t$, the <strong>parse extension</strong> function attempts three concatenations in order:</p>
+<ol>
+<li>$s \cdot_\text{auto} t$: with automatic separator insertion (see below)</li>
+<li>$s \cdot t$: direct concatenation</li>
+<li>$s \cdot \text{’ ’} \cdot t$: with explicit space</li>
+</ol>
+<p>The first successful parse is returned.</p>
 </div>
+
+<div class="definition">
+<div class="definition-title">Definition: Automatic Separator</div>
+
+<p>The <strong>automatic separator heuristic</strong> inserts a space between $s$ and $t$ when:</p>
+<p>$$\text{last}(s) \in \mathcal{W} \land \text{first}(t) \in \mathcal{W}$$</p>
+<p>where $\mathcal{W} = \{a\text{-}z, A\text{-}Z, 0\text{-}9, _\}$ is the set of word characters.</p>
+</div>
+
+<p>The auto-separator is a <strong>syntactic heuristic</strong>, not a grammatical guarantee. It handles the common case where two adjacent identifiers or keywords require whitespace separation. The fallback to direct concatenation and explicit space ensures no valid extension is missed; at worst, the heuristic wastes one parse attempt.</p>
+<h3 id="regex-extension"><a class="header" href="#regex-extension">Regex Extension</a></h3>
+<div class="definition">
+<div class="definition-title">Definition: Regex Extension</div>
+
+<p>When the next token is a <code>DerivativeRegex</code> $r$ (a regex that can still match more input), the synthesizer cannot directly concatenate $r$ as a string. Instead, it gathers <strong>concrete candidate strings</strong> and tries each:</p>
+<ol>
+<li><strong>Grammar seeds</strong>: word-like special tokens and raw types collected from the grammar</li>
+<li><strong>Primary example</strong>: $r.\text{example}()$, the canonical example string of the regex</li>
+<li><strong>Tree terminals</strong>: collect terminal text from the current typed tree</li>
+</ol>
+<p>Candidates are tried in this order via <code>try_extend</code>. <code>extend_with_regex</code> returns the first valid extension; <code>extend_all_with_regex</code> keeps distinct successful extensions up to the requested bound.</p>
+</div>
+
+<p>The candidate ordering is intentional: reusing grammar-derived literals and already-seen terminals tends to produce more coherent completions than inventing arbitrary new text. This is a heuristic for <strong>quality</strong>, not correctness; any valid candidate would produce a correct completion.</p>
+<h2 id="step-by-step-building-an-expression-token-by-token"><a class="header" href="#step-by-step-building-an-expression-token-by-token">Step-by-step: building an expression token by token</a></h2>
+<p>This section traces exactly what the synthesizer does when the search engine calls <code>extend</code> repeatedly to build the expression <code>let x = 1</code> from an empty input. The grammar assumed is a simple expression language where a <code>let</code>-binding has the form <code>let &lt;ident&gt; = &lt;expr&gt;</code>.</p>
+<p><span class="margin-anchor" data-margin="margin-n-1"></span></p>
+<div class="margin-note" data-margin="margin-n-1"><span class="margin-note-title">why this example?</span>
+`let x = 1` hits all three extension modes: keyword (no separator needed before `let`), identifier (`x`, chosen from `completions_ctx`), punctuation (`=`), and a literal. Four tokens, four calls to `extend`.</div>
+
+<p><strong>Initial state.</strong> The synthesizer starts with $s = \varepsilon$ (the empty string). <code>partial()</code> returns an empty forest; every nonterminal in $G$ is a candidate root. <code>completions_ctx</code> with any context will return the set of tokens that can begin a valid expression — including <code>let</code>.</p>
+<p><strong>Step 1: extend with <code>let</code>.</strong> The search engine calls <code>extend(\texttt{"let"}, \Gamma)</code>. The auto-separator check sees $\text{last}(\varepsilon)$ is undefined so no separator is inserted. The MetaParser parses <code>"let"</code> and returns a partial forest with one active parse: a <code>let</code>-binding with three remaining holes (<code>&lt;ident&gt;</code>, <code>=</code>, <code>&lt;expr&gt;</code>). The synthesizer commits: $s \leftarrow \texttt{“let”}$.</p>
+<p>After this step, <code>completions_ctx</code> returns only tokens that can extend <code>"let"</code> to a syntactically and type-valid string. In a well-designed grammar, that set consists entirely of identifiers matching <code>[a-z][a-z0-9_]*</code>.</p>
+<p><strong>Step 2: extend with <code>x</code>.</strong> The auto-separator check: $\text{last}(\texttt{“let”}) = \texttt{t} \in \mathcal{W}$ and $\text{first}(\texttt{“x”}) = \texttt{x} \in \mathcal{W}$, so a space is automatically inserted. The MetaParser parses <code>"let x"</code>. The partial forest now has the <code>&lt;ident&gt;</code> hole filled; the remaining holes are <code>=</code> and <code>&lt;expr&gt;</code>. The synthesizer commits: $s \leftarrow \texttt{“let x”}$.</p>
+<p><code>completions_ctx</code> now returns only <code>=</code>, since that is the only token that can advance the <code>let</code>-binding parse.</p>
+<p><strong>Step 3: extend with <code>=</code>.</strong> $\text{last}(\texttt{“let x”}) = \texttt{x} \in \mathcal{W}$, $\text{first}(\texttt{“=”}) = \texttt{=} \notin \mathcal{W}$, so no auto-separator. The MetaParser parses <code>"let x ="</code>. The partial forest has one hole remaining: <code>&lt;expr&gt;</code>. The synthesizer commits: $s \leftarrow \texttt{“let x =”}$.</p>
+<p><code>completions_ctx</code> with a typing context $\Gamma$ now filters: any token that begins a valid expression <em>and</em> whose eventual type is compatible with the binding context. Numeric literals (<code>1</code>, <code>2</code>, …) and any bound variable in $\Gamma$ are valid.</p>
+<p><strong>Step 4: extend with <code>1</code>.</strong> $\text{last}(\texttt{“let x =”}) = \texttt{=} \notin \mathcal{W}$, no auto-separator. The MetaParser parses <code>"let x = 1"</code>. The partial forest now contains a complete parse rooted at the <code>let</code>-binding nonterminal. <code>complete()</code> returns <code>Some(root)</code>. The search engine can now stop on this state.</p>
+<p>The display in the widget mirrors what the synthesizer’s internal state looks like at each step: the accumulated string $s$, which holes in the parse tree have been filled, and what remains. Clicking any offered token fires a Web Audio blip and advances the state exactly as <code>extend</code> would.</p>
+<h2 id="depth-retry"><a class="header" href="#depth-retry">Depth Retry</a></h2>
+<p><span class="margin-anchor" data-margin="margin-n-2"></span></p>
+<div class="margin-note" data-margin="margin-n-2"><span class="margin-note-title">bounded retry</span>
+retry is intentionally local: nearby states should have nearby depths (e.g. 10 -&gt; 11/12, not 41)</div>
+
+<div class="remark">
+<div class="remark-title">Remark: Depth-Differential Retry</div>
+
+<p>When completion filtering fails on the first pass, the synthesizer retries with a fresh <code>MetaParser</code> in a <strong>bounded local window</strong>:</p>
+<p>$$d_\text{start} = d + 1, \quad d_\text{max} = d + 2$$</p>
+<p>where $d$ is the depth used by the initial parse.</p>
+<p>This makes sure the parsing gathers anough trees to produce a typed alternative. It’s a heuristics, and is faillible. Bad design but works enough.</p>
+</div>
+
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="verification/validation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../completion.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="../completion/search.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -245,10 +309,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="verification/validation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../completion.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="../completion/search.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>
@@ -267,18 +334,18 @@
         </script>
 
 
-        <script src="elasticlunr-ef4e11c1.min.js"></script>
-        <script src="mark-09e88c2c.min.js"></script>
-        <script src="searcher-c2a407aa.js"></script>
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-c2a407aa.js"></script>
 
-        <script src="clipboard-1626706a.min.js"></script>
-        <script src="highlight-abc7f01d.js"></script>
-        <script src="book-831c6ebd.js"></script>
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-abc7f01d.js"></script>
+        <script src="../book-831c6ebd.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="theme/collapse-examples-d81f197f.js"></script>
-        <script src="theme/margin-702b1e77.js"></script>
-        <script src="theme/synth-widget-4f038e0a.js"></script>
+        <script src="../theme/collapse-examples-d81f197f.js"></script>
+        <script src="../theme/margin-702b1e77.js"></script>
+        <script src="../theme/synth-widget-4f038e0a.js"></script>
 
 
 

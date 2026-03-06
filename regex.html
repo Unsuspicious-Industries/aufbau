@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Implementation Map - Aufbau Engine</title>
+        <title>Regex Engine - Aufbau Engine</title>
 
 
         <!-- Custom HTML head -->
@@ -188,56 +188,56 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="wip-implementation-map"><a class="header" href="#wip-implementation-map"><span class="status-badge wip">WIP</span> Implementation Map</a></h1>
-<p>This page maps the specification sections to source code modules.</p>
-<h2 id="module-structure"><a class="header" href="#module-structure">Module Structure</a></h2>
+                        <h1 id="done-regex-engine"><a class="header" href="#done-regex-engine"><span class="status-badge done">DONE</span> Regex Engine</a></h1>
+<p>The regex engine underpins all terminal matching in the parser. It uses <strong>Brzozowski derivatives</strong> to match incrementally, a design that integrates naturally with partial parsing. The theoretical foundations (derivatives, two-level completability) are developed in <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>. This page covers only the implementation-specific choices.</p>
+<p>Source: <a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></p>
+<h2 id="the-regex-type"><a class="header" href="#the-regex-type">The <code>Regex</code> Type</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: Regex</div>
+
+<p>$$r ::= \emptyset \mid \varepsilon \mid c \mid [a\text{-}b] \mid r_1 \cdot r_2 \mid r_1 \mid r_2 \mid r^*$$</p>
+<p><code>Empty</code>, <code>Epsilon</code>, <code>Char</code>, <code>Range</code>, <code>Concat</code>, <code>Union</code>, <code>Star</code>. Grammar terminals written as <code>/[a-z]+/</code> are parsed into this representation at grammar load time. Common shorthands (<code>digit()</code>, <code>word()</code>, <code>alnum()</code>) are combinators over these primitives.</p>
+</div>
+
+<h2 id="prefix-matching"><a class="header" href="#prefix-matching">Prefix Matching</a></h2>
+<div class="definition">
+<div class="definition-title">Definition: PrefixStatus</div>
+
+<p><code>prefix_match(r, s)</code> computes $d = \text{simplify}(\partial_s r)$ and classifies the result:</p>
 <div class="table-wrapper">
 <table>
 <thead>
-<tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
+<tr><th>Outcome</th><th>Condition</th><th>Meaning</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="./spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
-<tr><td><a href="./parsing.html">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
-<tr><td><a href="./parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
-<tr><td>MetaParser (see <a href="./parsing.html">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
-<tr><td><a href="./concepts/binding.html">Binding Resolution</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/binding/"><code>src/logic/binding/</code></a></td><td>Grammar path construction (compile-time)</td></tr>
-<tr><td><a href="./binding.html">Runtime Binding</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/binding.rs"><code>src/logic/typing/binding.rs</code></a></td><td>Tree path resolution (runtime)</td></tr>
-<tr><td><a href="./typing.html">Type Inference</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/"><code>src/logic/typing/</code></a></td><td>Typing engine, rule application, type cache</td></tr>
-<tr><td><a href="./typing/context.html">Context</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/core.rs"><code>src/logic/typing/core.rs</code></a></td><td>Typing context, lanes, no-propagate</td></tr>
-<tr><td><a href="./typing/premises.html">Premises</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Premise evaluation</td></tr>
-<tr><td><a href="./typing/conclusion.html">Conclusion</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/eval.rs"><code>src/logic/typing/eval.rs</code></a></td><td>Conclusion evaluation</td></tr>
-<tr><td><a href="./completion/synthesizer.html">Synthesizer</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/synth.rs"><code>src/logic/partial/synth.rs</code></a></td><td>Incremental typed extension interface</td></tr>
-<tr><td><a href="./completion/search.html">Search</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/mod.rs"><code>src/logic/search/mod.rs</code></a></td><td>Best-first completion search</td></tr>
-<tr><td><a href="./completion/scoring.html">Scoring</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/search/scoring.rs"><code>src/logic/search/scoring.rs</code></a></td><td>Heuristic scoring for search states</td></tr>
-<tr><td><a href="./verification/completability.html">Completability</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/completability.rs"><code>src/validation/completability.rs</code></a></td><td>Prefix soundness, completion checking</td></tr>
-<tr><td><a href="./verification/validation.html">Validation</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/validation/"><code>src/validation/</code></a></td><td>Test harness, per-grammar test suites</td></tr>
+<tr><td><code>NoMatch</code></td><td>$d = \emptyset$</td><td>$s$ is not a prefix of any string in $\mathcal{L}(r)$</td></tr>
+<tr><td><code>Extensible(d)</code></td><td>$\nu(d)$</td><td>$s \in \mathcal{L}(r)$ and $d$ accepts further characters</td></tr>
+<tr><td><code>Prefix(d)</code></td><td>$\lnot\nu(d)$, $d \neq \emptyset$</td><td>$s$ is a valid prefix but not yet a complete match</td></tr>
 </tbody>
 </table>
 </div>
-<h2 id="auxiliary-modules"><a class="header" href="#auxiliary-modules">Auxiliary Modules</a></h2>
-<div class="table-wrapper">
-<table>
-<thead>
-<tr><th>Module</th><th>Description</th></tr>
-</thead>
-<tbody>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/regex/"><code>src/regex/</code></a></td><td>Custom regex engine with Brzozowski derivatives for <a href="https://unsuspicious.org/blog/completing-regex/">two-level completability</a></td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/ops.rs"><code>src/logic/typing/ops.rs</code></a></td><td>Type operations: unification, subtyping</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/syntax.rs"><code>src/logic/typing/syntax.rs</code></a></td><td>Type parsing from grammar spec strings</td></tr>
-<tr><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td><td>Typing rule data structures</td></tr>
-</tbody>
-</table>
 </div>
+
+<p>The parser maps these outcomes to terminal node status: <code>Extensible</code> produces a <code>Terminal::Complete</code> with a non-null extension derivative; <code>Prefix</code> produces a <code>Terminal::Partial</code> with a remainder derivative.</p>
+<p>Simplification (standard algebraic identities: $\emptyset \cdot r = \emptyset$, $\varepsilon \cdot r = r$, $r \mid r = r$, etc.) is applied after each derivative step to keep expression size bounded.</p>
+<h2 id="nfa-fallback"><a class="header" href="#nfa-fallback">NFA Fallback</a></h2>
+<p>For full-string matching (<code>matches</code>) and maximum-length prefix matching (<code>match_len</code>), the engine compiles to an NFA via Thompson construction rather than using derivatives. This avoids the expression-growth problem derivatives can exhibit on long inputs.</p>
+<h2 id="dfa-intersection"><a class="header" href="#dfa-intersection">DFA Intersection</a></h2>
+<p><code>has_intersection(r_1, r_2)</code> checks $\mathcal{L}(r_1) \cap \mathcal{L}(r_2) \neq \emptyset$ by product-DFA construction. Used by the typing engine to detect overlapping terminal patterns.</p>
+<h2 id="string-generation"><a class="header" href="#string-generation">String Generation</a></h2>
+<p><code>examples(n)</code> generates up to $n$ concrete strings in $\mathcal{L}(r)$. The <a href="./completion/synthesizer.html">synthesizer</a> uses this to find token candidates when extending a partial tree with a regex terminal.</p>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="verification/validation.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="concepts/typing_system.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
+                            <a rel="next prefetch" href="parsing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
 
                         <div style="clear: both"></div>
                     </nav>
@@ -245,10 +245,13 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="verification/validation.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="concepts/typing_system.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
+                    <a rel="next prefetch" href="parsing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
             </nav>
 
         </div>
