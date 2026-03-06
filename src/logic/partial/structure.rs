@@ -1,47 +1,357 @@
 use crate::logic::grammar::Production;
 use crate::logic::segment::SegmentRange;
 use crate::regex::Regex as DerivativeRegex;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-/// Top-level partial AST result
+pub type SppfNodeId = usize;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct PartialAST {
-    pub roots: Vec<NonTerminal>,
+pub enum SppfChild {
+    Node(SppfNodeId),
+    Terminal(Terminal),
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct PackedAlternative {
+    pub alternative_index: usize,
+    pub production: Arc<Production>,
+    pub children: Vec<SppfChild>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SppfNode {
+    pub name: String,
+    pub binding: Option<String>,
+    pub abs_pos: usize,
+    pub consumed_segments: usize,
+    pub alternatives: Vec<PackedAlternative>,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub struct SppfNodeKey {
+    pub name: String,
+    pub binding: Option<String>,
+    pub abs_pos: usize,
+    pub consumed_segments: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SppfForest {
+    nodes: Vec<SppfNode>,
+    node_lookup: HashMap<SppfNodeKey, SppfNodeId>,
+}
+
+impl SppfForest {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn intern_node(&mut self, key: SppfNodeKey) -> SppfNodeId {
+        if let Some(existing) = self.node_lookup.get(&key) {
+            return *existing;
+        }
+
+        let id = self.nodes.len();
+        self.nodes.push(SppfNode {
+            name: key.name.clone(),
+            binding: key.binding.clone(),
+            abs_pos: key.abs_pos,
+            consumed_segments: key.consumed_segments,
+            alternatives: Vec::new(),
+        });
+        self.node_lookup.insert(key, id);
+        id
+    }
+
+    pub fn add_alternative(&mut self, node_id: SppfNodeId, alt: PackedAlternative) {
+        if let Some(node) = self.nodes.get_mut(node_id) {
+            if !node.alternatives.contains(&alt) {
+                node.alternatives.push(alt);
+            }
+        }
+    }
+
+    pub fn consumed_segments(&self, node_id: SppfNodeId) -> usize {
+        self.nodes
+            .get(node_id)
+            .map(|n| n.consumed_segments)
+            .unwrap_or(0)
+    }
+
+    pub fn node_is_complete(&self, node_id: SppfNodeId) -> bool {
+        fn rec(
+            forest: &SppfForest,
+            id: SppfNodeId,
+            memo: &mut HashMap<SppfNodeId, bool>,
+            seen: &mut HashSet<SppfNodeId>,
+        ) -> bool {
+            if let Some(v) = memo.get(&id) {
+                return *v;
+            }
+            if !seen.insert(id) {
+                return false;
+            }
+
+            let complete = forest.nodes.get(id).is_some_and(|node| {
+                node.alternatives.iter().any(|alt| {
+                    alt.children.iter().all(|c| match c {
+                        SppfChild::Terminal(Terminal::Complete { .. }) => true,
+                        SppfChild::Terminal(Terminal::Partial { .. }) => false,
+                        SppfChild::Node(child_id) => rec(forest, *child_id, memo, seen),
+                    })
+                })
+            });
+
+            seen.remove(&id);
+            memo.insert(id, complete);
+            complete
+        }
+
+        rec(self, node_id, &mut HashMap::new(), &mut HashSet::new())
+    }
+
+    pub fn merge_from(&mut self, other: &SppfForest) -> Vec<SppfNodeId> {
+        let mut id_map = vec![0; other.nodes.len()];
+
+        for (old_id, node) in other.nodes.iter().enumerate() {
+            let key = SppfNodeKey {
+                name: node.name.clone(),
+                binding: node.binding.clone(),
+                abs_pos: node.abs_pos,
+                consumed_segments: node.consumed_segments,
+            };
+            id_map[old_id] = self.intern_node(key);
+        }
+
+        for (old_id, node) in other.nodes.iter().enumerate() {
+            let new_id = id_map[old_id];
+            for alt in &node.alternatives {
+                let children = alt
+                    .children
+                    .iter()
+                    .map(|c| match c {
+                        SppfChild::Terminal(t) => SppfChild::Terminal(t.clone()),
+                        SppfChild::Node(cid) => SppfChild::Node(id_map[*cid]),
+                    })
+                    .collect();
+                self.add_alternative(
+                    new_id,
+                    PackedAlternative {
+                        alternative_index: alt.alternative_index,
+                        production: Arc::clone(&alt.production),
+                        children,
+                    },
+                );
+            }
+        }
+
+        id_map
+    }
+
+    pub fn materialize_roots(&self, root_ids: &[SppfNodeId]) -> Vec<NonTerminal> {
+        let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
+        let mut seen: HashSet<SppfNodeId> = HashSet::new();
+        let mut out = Vec::new();
+        for root_id in root_ids {
+            out.extend(self.materialize_node(*root_id, &mut memo, &mut seen));
+        }
+        out
+    }
+
+    pub fn materialize_root(&self, root_id: SppfNodeId) -> Vec<NonTerminal> {
+        let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
+        let mut seen: HashSet<SppfNodeId> = HashSet::new();
+        self.materialize_node(root_id, &mut memo, &mut seen)
+    }
+
+    fn materialize_node(
+        &self,
+        node_id: SppfNodeId,
+        memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
+        seen: &mut HashSet<SppfNodeId>,
+    ) -> Vec<NonTerminal> {
+        if let Some(v) = memo.get(&node_id) {
+            return v.clone();
+        }
+        if !seen.insert(node_id) {
+            return Vec::new();
+        }
+
+        let Some(node) = self.nodes.get(node_id) else {
+            seen.remove(&node_id);
+            return Vec::new();
+        };
+
+        let mut trees = Vec::new();
+        for packed in &node.alternatives {
+            let child_sequences = self.materialize_children(&packed.children, memo, seen);
+            for children in child_sequences {
+                trees.push(NonTerminal::new(
+                    node.name.clone(),
+                    Arc::clone(&packed.production),
+                    packed.alternative_index,
+                    children,
+                    node.binding.clone(),
+                    node.consumed_segments,
+                ));
+            }
+        }
+
+        seen.remove(&node_id);
+        memo.insert(node_id, trees.clone());
+        trees
+    }
+
+    fn materialize_children(
+        &self,
+        children: &[SppfChild],
+        memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
+        seen: &mut HashSet<SppfNodeId>,
+    ) -> Vec<Vec<Node>> {
+        let mut sequences: Vec<Vec<Node>> = vec![Vec::new()];
+
+        for child in children {
+            let choices: Vec<Node> = match child {
+                SppfChild::Terminal(t) => vec![Node::Terminal(t.clone())],
+                SppfChild::Node(id) => self
+                    .materialize_node(*id, memo, seen)
+                    .into_iter()
+                    .map(Node::NonTerminal)
+                    .collect(),
+            };
+
+            if choices.is_empty() {
+                return Vec::new();
+            }
+
+            let mut next = Vec::new();
+            for base in &sequences {
+                for choice in &choices {
+                    let mut seq = base.clone();
+                    seq.push(choice.clone());
+                    next.push(seq);
+                }
+            }
+            sequences = next;
+        }
+
+        sequences
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Sppf {
+    forest: Arc<SppfForest>,
+    root_ids: Vec<SppfNodeId>,
     pub input: String,
 }
 
-impl PartialAST {
-    pub fn new(roots: Vec<NonTerminal>, input: String) -> Self {
-        Self { roots, input }
+pub type PartialAST = Sppf;
+
+impl Sppf {
+    pub(crate) fn from_trees(roots: Vec<NonTerminal>, input: String) -> Self {
+        let mut forest = SppfForest::new();
+        let mut root_ids = Vec::new();
+
+        for root in roots {
+            root_ids.push(Self::insert_nt(&mut forest, root, 0));
+        }
+
+        Self {
+            forest: Arc::new(forest),
+            root_ids,
+            input,
+        }
     }
 
-    pub fn roots(&self) -> &[NonTerminal] {
-        &self.roots
+    pub fn from_forest(forest: SppfForest, root_ids: Vec<SppfNodeId>, input: String) -> Self {
+        Self {
+            forest: Arc::new(forest),
+            root_ids,
+            input,
+        }
+    }
+
+    fn insert_nt(forest: &mut SppfForest, nt: NonTerminal, abs_pos: usize) -> SppfNodeId {
+        let key = SppfNodeKey {
+            name: nt.name.clone(),
+            binding: nt.binding.clone(),
+            abs_pos,
+            consumed_segments: nt.consumed_segments,
+        };
+        let node_id = forest.intern_node(key);
+
+        let mut offset = abs_pos;
+        let mut packed_children = Vec::with_capacity(nt.children.len());
+        for child in nt.children {
+            match child {
+                Node::Terminal(t) => {
+                    if matches!(t, Terminal::Complete { .. } | Terminal::Partial { .. }) {
+                        offset += 1;
+                    }
+                    packed_children.push(SppfChild::Terminal(t));
+                }
+                Node::NonTerminal(child_nt) => {
+                    let consumed = child_nt.consumed_segments;
+                    let child_id = Self::insert_nt(forest, child_nt, offset);
+                    offset += consumed;
+                    packed_children.push(SppfChild::Node(child_id));
+                }
+            }
+        }
+
+        forest.add_alternative(
+            node_id,
+            PackedAlternative {
+                alternative_index: nt.alternative_index,
+                production: Arc::clone(&nt.production),
+                children: packed_children,
+            },
+        );
+
+        node_id
+    }
+
+    pub fn roots(&self) -> Vec<NonTerminal> {
+        self.forest.materialize_roots(self.root_ids.as_slice())
+    }
+
+    pub fn forest(&self) -> &SppfForest {
+        self.forest.as_ref()
+    }
+
+    pub fn root_ids(&self) -> &[SppfNodeId] {
+        self.root_ids.as_slice()
+    }
+
+    pub fn root_count(&self) -> usize {
+        self.root_ids.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.root_ids.is_empty()
     }
 
     pub fn input(&self) -> &str {
         &self.input
     }
-    /// Check if the AST is complete (has at least one complete tree)
-    /// returns the first complete tree if it exists
+
     pub fn complete(&self) -> Option<NonTerminal> {
-        self.roots
-            .iter()
-            .filter(|root| root.is_complete())
-            .next()
-            .cloned()
+        self.roots().into_iter().find(|root| root.is_complete())
     }
 
     pub fn completes(&self) -> Vec<NonTerminal> {
-        self.roots
-            .iter()
+        self.roots()
+            .into_iter()
             .filter(|root| root.is_complete())
-            .cloned()
             .collect()
     }
 
     pub fn is_complete(&self) -> bool {
-        self.complete().is_some()
+        self.root_ids
+            .iter()
+            .any(|root_id| self.forest.node_is_complete(*root_id))
     }
 }
 
@@ -77,13 +387,13 @@ pub enum Terminal {
 }
 
 impl Terminal {
-    /// Get the length (in bytes) that this terminal matches.
     pub fn len(&self) -> usize {
         match self {
             Terminal::Complete { value, .. } => value.len(),
             Terminal::Partial { value, .. } => value.len(),
         }
     }
+
     pub fn value(&self) -> &str {
         match self {
             Terminal::Complete { value, .. } => value,
@@ -112,27 +422,16 @@ impl NonTerminal {
     }
 
     pub fn is_complete(&self) -> bool {
-        // Empty productions (epsilon) are complete by definition
         if self.production.rhs.is_empty() {
             return true;
         }
-
-        // Must have exactly as many children as the RHS expects
         if self.children.len() != self.production.rhs.len() {
             return false;
         }
-
-        // All children must themselves be complete terminals or non-terminals.
-        // (Checking only the last child is unsound: earlier children could still be partial.)
-        self.children.iter().all(|child| match child {
-            Node::NonTerminal(nt) => nt.is_complete(),
-            Node::Terminal(Terminal::Complete { .. }) => true,
-            Node::Terminal(Terminal::Partial { .. }) => false,
-        })
+        self.children.iter().all(|child| child.is_complete())
     }
 
     pub fn is_extensible(&self) -> bool {
-        // A nonterminal is extensible if it is not complete or if its last child is extensible
         if !self.is_complete() {
             return true;
         }
@@ -140,18 +439,14 @@ impl NonTerminal {
             Some(Node::NonTerminal(nt)) => nt.is_extensible(),
             Some(Node::Terminal(Terminal::Complete { extension: e, .. })) => e.is_some(),
             Some(Node::Terminal(Terminal::Partial { .. })) => true,
-            None => false, // No children means it's complete and not extensible
+            None => false,
         }
     }
 
-    // max parsed len
-    // idx of the partial node
     pub fn frontier(&self) -> Option<usize> {
         if self.is_complete() {
             None
         } else {
-            // simple but should work
-            // Assuming parser correctness
             Some(self.children.len())
         }
     }
@@ -164,9 +459,6 @@ impl NonTerminal {
         self.consumed_segments
     }
 
-    /// Get the segment range covered by this nonterminal.
-    /// Ugly code
-    /// Might need to be replaced or optimized
     pub fn complete_len(
         &self,
         segments: &[crate::logic::grammar::Segment],
@@ -212,12 +504,6 @@ impl NonTerminal {
         self.frontier_child_index() == Some(index)
     }
 
-    /// Return the child index where the unique frontier advances, if any.
-    ///
-    /// Frontier is defined from incompleteness, not from extensibility.
-    /// - Complete nodes have no frontier.
-    /// - If this node is missing children, frontier is the next expected child.
-    /// - Otherwise frontier is the rightmost incomplete child.
     pub fn frontier_child_index(&self) -> Option<usize> {
         if self.is_complete() {
             return None;
@@ -265,14 +551,11 @@ impl NonTerminal {
         }
         self.children
             .get(path[0])
-            .and_then(|child| Some(child.path_exists(&path[1..])))
+            .map(|child| child.path_exists(&path[1..]))
             .unwrap_or(false)
     }
 
     pub fn text(&self) -> Option<String> {
-        // Beware this returns some String
-        // Only if all strings are some
-        // weird rustycity
         self.children.iter().map(|child| child.text()).collect()
     }
 
@@ -323,8 +606,7 @@ impl Node {
     pub fn size(&self) -> usize {
         match self {
             Node::NonTerminal(nt) => nt.size(),
-            Node::Terminal(Terminal::Complete { .. }) => 1,
-            Node::Terminal(Terminal::Partial { .. }) => 1,
+            Node::Terminal(_) => 1,
         }
     }
 
@@ -370,6 +652,7 @@ impl PartialOrd for Node {
         Some(self.size().cmp(&other.size()))
     }
 }
+
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.size().cmp(&other.size())

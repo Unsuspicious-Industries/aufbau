@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
-use crate::logic::partial::{Node, NonTerminal, PartialAST, Terminal};
+use crate::logic::partial::structure::{
+    PackedAlternative, PartialAST, SppfChild, SppfForest, SppfNodeId, SppfNodeKey, Terminal,
+};
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 
@@ -53,25 +55,15 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
  * With memoization, the first Term->Application expansion is cached,
  * so subsequent attempts reuse the cached result.
  *
- * ## Cache Reuse Across Parses
+ * ## Within-Call Memoization
  *
- * The parser maintains a persistent memoization cache that survives across
- * multiple `partial()` calls on the same `Parser` instance. This enables
- * incremental parsing scenarios where you parse progressively longer prefixes:
+ * Each call to `partial()` creates a fresh `ParseState` with its own memo
+ * table. The memo is keyed by `(nt_name, abs_pos, segments_len)` and prevents
+ * exponential recomputation of the same subproblem within a single parse.
  *
- * ```text
- * parser.partial("x")        // Parses and caches results for "x"
- * parser.partial("x t")      // Reuses cache for "x", only parses " t"
- * parser.partial("x t +")    // Reuses cache for "x" and "x t", only parses " +"
- * ```
- *
- * This optimization is crucial for completion generation where we iteratively
- * extend partial inputs. The cache is span-keyed by
- * (nonterminal, start_segment_index, span_len, depth), and tracks how far a
- * given (nonterminal, start) has been fully computed for a prefix.
- *
- * To reset the cache (e.g., when switching to a completely different input),
- * use `clear_cache()` or create a new `Parser` instance.
+ * The memo does NOT persist across separate `partial()` calls — every
+ * invocation starts from scratch. `clear_cache()` is a no-op kept for API
+ * compatibility.
  */
 
 /// Default maximum recursion depth for left-recursive grammars.
@@ -122,7 +114,7 @@ impl std::error::Error for ParseError {}
 impl PartialParseOutcome {
     pub fn is_complete(&self) -> bool {
         match self {
-            Self::Success { ast } => ast.roots.iter().any(|r| r.is_complete()),
+            Self::Success { ast } => ast.is_complete(),
             _ => false,
         }
     }
@@ -136,7 +128,7 @@ impl PartialParseOutcome {
 
     pub fn into_result(self) -> Result<PartialAST, ParseError> {
         match self {
-            Self::Success { ast } if !ast.roots.is_empty() => Ok(ast),
+            Self::Success { ast } if !ast.is_empty() => Ok(ast),
             Self::Success { .. } => Err(ParseError::NoValidParse),
             Self::Failure(e) => Err(e),
         }
@@ -151,7 +143,7 @@ impl PartialParseOutcome {
 
     pub fn unwrap(self) -> PartialAST {
         match self {
-            Self::Success { ast } if !ast.roots.is_empty() => ast,
+            Self::Success { ast } if !ast.is_empty() => ast,
             Self::Success { .. } => panic!("Called unwrap on Success with 0 roots"),
             Self::Failure(e) => panic!("Called unwrap on Failure: {}", e),
         }
@@ -159,7 +151,7 @@ impl PartialParseOutcome {
 
     pub fn expect(self, msg: &str) -> PartialAST {
         match self {
-            Self::Success { ast } if !ast.roots.is_empty() => ast,
+            Self::Success { ast } if !ast.is_empty() => ast,
             _ => panic!("{}", msg),
         }
     }
@@ -191,11 +183,25 @@ struct ParseState {
     /// Within-call memo: (nt_name, abs_pos, segments_len) -> trees
     /// Keyed by segments_len (= how many tokens are available from abs_pos),
     /// so entries from different call sites never collide.
-    memo: HashMap<(String, usize, usize), Vec<NonTerminal>>,
+    memo: HashMap<(String, usize, usize), Vec<ParsedNt>>,
     /// Tracks which memo_keys are currently being computed (on the call stack).
     /// Memo lookup is only skipped for keys that are actively in-progress,
     /// not for all keys sharing the same (nt, pos) visited entry.
     in_progress: HashSet<(String, usize, usize)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ParsedNt {
+    node_id: SppfNodeId,
+    consumed: usize,
+    complete: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedChild {
+    child: SppfChild,
+    consumed: usize,
+    complete: bool,
 }
 
 impl ParseState {
@@ -219,6 +225,9 @@ impl Segment {
 
 pub struct Parser {
     pub(crate) grammar: Grammar,
+    /// Precomputed reserved literal tokens (keywords/operators) for O(1) checks
+    /// during regex terminal matching.
+    reserved_tokens: HashSet<String>,
     /// Maximum recursion depth for left-recursive patterns like `Expr Expr`
     max_recursion: usize,
     /// Whether the last parse hit the depth limit
@@ -227,10 +236,10 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
-        let mut specials = grammar.special_tokens.clone();
-        specials.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        let reserved_tokens: HashSet<String> = grammar.special_tokens.iter().cloned().collect();
         Self {
             grammar,
+            reserved_tokens,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
             last_hit_depth_limit: false,
         }
@@ -252,9 +261,10 @@ impl Parser {
         self.last_hit_depth_limit
     }
 
-    pub fn clear_cache(&mut self) {
-        // no-op: cache removed
-    }
+    /// No-op. The memoization cache is local to each `partial()` call and
+    /// is discarded automatically when the call returns. Kept for API
+    /// compatibility.
+    pub fn clear_cache(&mut self) {}
 
     /// Parse input and return a complete AST (simple interface).
     ///
@@ -270,13 +280,12 @@ impl Parser {
                 let segments = self.tokenize(input).map_err(|e| e.to_string())?;
                 let total_segments = segments.len();
 
-                // Find a complete tree that consumed all segments
-                let complete_root = ast
-                    .roots
-                    .iter()
-                    .find(|r| r.is_complete() && r.consumed_segments == total_segments);
+                let complete_root = ast.root_ids().iter().any(|root_id| {
+                    ast.forest().consumed_segments(*root_id) == total_segments
+                        && ast.forest().node_is_complete(*root_id)
+                });
 
-                if complete_root.is_some() {
+                if complete_root {
                     Ok(ast)
                 } else {
                     Err(format!(
@@ -309,21 +318,30 @@ impl Parser {
             debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
             let mut parse_state = ParseState::new();
-            let roots =
-                match self.parse_nonterminal(&segments, &start_nt, None, 0, 0, &mut parse_state) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        return PartialParseOutcome::Failure(ParseError::Tokenization(e));
-                    }
-                };
+            let mut forest = SppfForest::new();
+            let roots = match self.parse_nonterminal(
+                &segments,
+                &start_nt,
+                None,
+                0,
+                0,
+                &mut parse_state,
+                &mut forest,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    return PartialParseOutcome::Failure(ParseError::Tokenization(e));
+                }
+            };
 
             let total_segments = segments.len();
             let depth_limited = parse_state.hit_depth_limit;
             self.last_hit_depth_limit = depth_limited;
 
-            let valid_roots: Vec<NonTerminal> = roots
+            let valid_roots: Vec<SppfNodeId> = roots
                 .into_iter()
-                .filter(|r| r.consumed_segments == total_segments)
+                .filter(|r| r.consumed == total_segments)
+                .map(|r| r.node_id)
                 .collect();
 
             if valid_roots.is_empty() {
@@ -334,7 +352,7 @@ impl Parser {
             }
 
             PartialParseOutcome::Success {
-                ast: PartialAST::new(valid_roots, input.to_string()),
+                ast: PartialAST::from_forest(forest, valid_roots, input.to_string()),
             }
         })();
         outcome
@@ -345,25 +363,6 @@ impl Parser {
         self.grammar.tokenize(input)
     }
 
-    /// Parse a nonterminal: try all productions, return all valid trees
-    ///
-    /// ## Algorithm
-    /// - Check memoization cache first (O(1) lookup)
-    /// - Check for recursion cycles
-    /// - Try each production in order
-    /// - Cache successful complete results
-    ///
-    /// ## Time Complexity
-    /// O(p * s) where p = number of productions, s = number of symbols in RHS
-    /// Memoizations makes it O(1)
-    ///
-    /// ## Parameters
-    /// - `segments`: The remaining input segments to parse
-    /// - `nt_name`: The nonterminal to parse
-    /// - `binding`: Optional binding name for the nonterminal
-    /// - `abs_pos`: Absolute position in the original input (for cache keys)
-    /// - `level`: Recursion depth (for debugging)
-    /// - `parse_state`: Per-parse state for cycle detection
     fn parse_nonterminal(
         &mut self,
         segments: &[Segment],
@@ -372,7 +371,8 @@ impl Parser {
         abs_pos: usize,
         level: usize,
         parse_state: &mut ParseState,
-    ) -> Result<Vec<NonTerminal>, String> {
+        forest: &mut SppfForest,
+    ) -> Result<Vec<ParsedNt>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
             "parser2      ",
@@ -419,7 +419,11 @@ impl Parser {
             }
         }
         if let Some(count) = parse_state.visited.get(&key) {
-            let local_limit = self.max_recursion.min(segments.len().saturating_add(2));
+            // Empty/near-empty suffixes in left-recursive grammars still need a
+            // few recursive expansions to reach non-left-recursive alternatives.
+            // A +2 budget is too tight and causes false "NoValidParse" on
+            // operator-tail prefixes like "x +".
+            let local_limit = self.max_recursion.min(segments.len().saturating_add(8));
             debug_trace!(
                 "parser2      ",
                 "{}[L{}] Recursion detected for '{}' at abs_pos {} depth {}",
@@ -480,6 +484,7 @@ impl Parser {
         let shuffled_indices = prng_shuffle(productions_len, level);
 
         let mut outcomes = Vec::new();
+        let mut seen = HashSet::new();
 
         for &alt_idx in &shuffled_indices {
             let prod = self
@@ -510,7 +515,7 @@ impl Parser {
                     .join(" ")
             );
 
-            match self.parse_production(segments, &prod_ref, abs_pos, level, parse_state) {
+            match self.parse_production(segments, &prod_ref, abs_pos, level, parse_state, forest) {
                 Ok(prod_outcomes) => {
                     if prod_outcomes.is_empty() {
                         debug_trace!(
@@ -534,15 +539,31 @@ impl Parser {
                         );
                         for children in prod_outcomes {
                             let consumed = self.count_consumed_segments(&children);
-                            let nt = NonTerminal::new(
-                                nt_name.to_string(),
-                                Arc::clone(&prod_ref),
-                                alt_idx,
-                                children,
-                                binding.clone(),
-                                consumed,
+                            let complete =
+                                self.children_are_complete(&children, prod_ref.rhs.len());
+                            let key = SppfNodeKey {
+                                name: nt_name.to_string(),
+                                binding: binding.clone(),
+                                abs_pos,
+                                consumed_segments: consumed,
+                            };
+                            let node_id = forest.intern_node(key);
+                            forest.add_alternative(
+                                node_id,
+                                PackedAlternative {
+                                    alternative_index: alt_idx,
+                                    production: Arc::clone(&prod_ref),
+                                    children: children.into_iter().map(|c| c.child).collect(),
+                                },
                             );
-                            outcomes.push(nt);
+                            let out = ParsedNt {
+                                node_id,
+                                consumed,
+                                complete,
+                            };
+                            if seen.insert(out.clone()) {
+                                outcomes.push(out);
+                            }
                         }
                     }
                 }
@@ -573,10 +594,12 @@ impl Parser {
         );
 
         // Store in within-call memo so sibling productions don't recompute this.
-        // We always store — the depth limit is a uniform cap across all calls in
-        // this parse, so the result for (nt, pos, len) is deterministic regardless
-        // of which call path reaches it first.
-        parse_state.memo.insert(memo_key, outcomes.clone());
+        // If any branch hit a recursion/depth cutoff, avoid memoizing potentially
+        // truncated results: they can otherwise poison later non-recursive paths
+        // for the same (nt, pos, len) triple.
+        if !parse_state.hit_depth_limit {
+            parse_state.memo.insert(memo_key, outcomes.clone());
+        }
 
         Ok(outcomes)
     }
@@ -597,7 +620,8 @@ impl Parser {
         abs_pos: usize,
         level: usize,
         parse_state: &mut ParseState,
-    ) -> Result<Vec<Vec<Node>>, String> {
+        forest: &mut SppfForest,
+    ) -> Result<Vec<Vec<ParsedChild>>, String> {
         let indent = "  ".repeat(level);
         debug_trace!(
             "parser2.prod ",
@@ -618,7 +642,7 @@ impl Parser {
             return Ok(vec![vec![]]);
         }
 
-        self.parse_symbols(segments, &prod.rhs, abs_pos, level, parse_state)
+        self.parse_symbols(segments, &prod.rhs, abs_pos, level, parse_state, forest)
     }
 
     /// Parse a sequence of symbols
@@ -640,7 +664,8 @@ impl Parser {
         abs_pos: usize,
         level: usize,
         parse_state: &mut ParseState,
-    ) -> Result<Vec<Vec<Node>>, String> {
+        forest: &mut SppfForest,
+    ) -> Result<Vec<Vec<ParsedChild>>, String> {
         // Base case: empty symbol list
         if symbols.is_empty() {
             return Ok(vec![vec![]]);
@@ -649,7 +674,8 @@ impl Parser {
         let first_sym = &symbols[0];
         let rest_syms = &symbols[1..];
 
-        let first_parses = self.parse_symbol(segments, first_sym, abs_pos, level, parse_state)?;
+        let first_parses =
+            self.parse_symbol(segments, first_sym, abs_pos, level, parse_state, forest)?;
 
         // If no parses for first symbol, this production fails
         // ensure early exit
@@ -658,16 +684,16 @@ impl Parser {
         }
 
         let mut outcomes = Vec::with_capacity(first_parses.len());
-        let mut rest_cache: HashMap<usize, Vec<Vec<Node>>> = HashMap::new();
+        let mut rest_cache: HashMap<usize, Vec<Vec<ParsedChild>>> = HashMap::new();
 
         for node in first_parses {
             // Calculate remaining input after consuming this node
-            let consumed: usize = self.node_consumed(&node);
+            let consumed: usize = node.consumed;
 
             // Optimization:
             //  - if node is partial, we can't continue this production
             // This prevents wasted work on incomplete prefixes
-            if !node.is_complete() {
+            if !node.complete {
                 // store result on full consumption only
                 if consumed == segments.len() {
                     outcomes.push(vec![node]);
@@ -688,6 +714,7 @@ impl Parser {
                     new_abs_pos,
                     level,
                     parse_state,
+                    forest,
                 )?;
                 rest_cache.insert(consumed, parsed.clone());
                 parsed
@@ -712,22 +739,12 @@ impl Parser {
     ///
     /// ## Time Complexity
     /// idk but could be costly
-    fn node_consumed(&self, node: &Node) -> usize {
-        match node {
-            Node::Terminal(Terminal::Complete { .. }) => 1,
-            Node::Terminal(Terminal::Partial { value, .. }) => {
-                if !value.is_empty() {
-                    1
-                } else {
-                    0
-                }
-            }
-            Node::NonTerminal(nt) => nt.consumed_segments,
-        }
+    fn count_consumed_segments(&self, nodes: &[ParsedChild]) -> usize {
+        nodes.iter().map(|n| n.consumed).sum()
     }
 
-    fn count_consumed_segments(&self, nodes: &[Node]) -> usize {
-        nodes.iter().map(|n| self.node_consumed(n)).sum()
+    fn children_are_complete(&self, nodes: &[ParsedChild], rhs_len: usize) -> bool {
+        nodes.len() == rhs_len && nodes.iter().all(|n| n.complete)
     }
 
     /// Parse a symbol (expression or regex)
@@ -749,7 +766,8 @@ impl Parser {
         abs_pos: usize,
         level: usize,
         parse_state: &mut ParseState,
-    ) -> Result<Vec<Node>, String> {
+        forest: &mut SppfForest,
+    ) -> Result<Vec<ParsedChild>, String> {
         let res = match symbol {
             Symbol::Terminal { regex, binding } => {
                 self.parse_regex(segments, regex, binding.clone(), level)
@@ -762,8 +780,16 @@ impl Parser {
                     abs_pos,
                     level + 1,
                     parse_state,
+                    forest,
                 )?;
-                Ok(nts.into_iter().map(Node::NonTerminal).collect())
+                Ok(nts
+                    .into_iter()
+                    .map(|nt| ParsedChild {
+                        child: SppfChild::Node(nt.node_id),
+                        consumed: nt.consumed,
+                        complete: nt.complete,
+                    })
+                    .collect())
             }
         };
         res
@@ -786,7 +812,7 @@ impl Parser {
         re: &DerivativeRegex,
         binding: Option<String>,
         level: usize,
-    ) -> Result<Vec<Node>, String> {
+    ) -> Result<Vec<ParsedChild>, String> {
         // /!\ Important design choice
         // produce remaining prods on end
         // This means easier completion generation
@@ -797,16 +823,24 @@ impl Parser {
                 "  ".repeat(level),
                 level
             );
-            let node = Node::Terminal(Terminal::Partial {
-                value: String::new(),
-                binding: binding.clone(),
-                remainder: Some(re.clone()),
-            });
+            let node = ParsedChild {
+                child: SppfChild::Terminal(Terminal::Partial {
+                    value: String::new(),
+                    binding: binding.clone(),
+                    remainder: Some(re.clone()),
+                }),
+                consumed: 0,
+                complete: false,
+            };
             return Ok(vec![node]);
         }
 
         let seg = &segments[0];
         let seg_text = seg.as_str();
+        if self.reserved_tokens.contains(seg_text) && !re.equiv(&DerivativeRegex::literal(seg_text))
+        {
+            return Ok(vec![]);
+        }
         let indent = "  ".repeat(level);
         debug_trace!(
             "parser2.regex",
@@ -826,11 +860,15 @@ impl Parser {
                     level,
                     seg_text
                 );
-                Some(Node::Terminal(Terminal::Complete {
-                    value: seg_text.to_string(),
-                    binding: binding.clone(),
-                    extension: None,
-                }))
+                Some(ParsedChild {
+                    child: SppfChild::Terminal(Terminal::Complete {
+                        value: seg_text.to_string(),
+                        binding: binding.clone(),
+                        extension: None,
+                    }),
+                    consumed: 1,
+                    complete: true,
+                })
             }
             PrefixStatus::Prefix(derivative) => {
                 debug_trace!(
@@ -840,11 +878,15 @@ impl Parser {
                     level,
                     seg_text
                 );
-                Some(Node::Terminal(Terminal::Partial {
-                    value: seg_text.to_string(),
-                    binding: binding.clone(),
-                    remainder: Some(derivative.clone()),
-                }))
+                Some(ParsedChild {
+                    child: SppfChild::Terminal(Terminal::Partial {
+                        value: seg_text.to_string(),
+                        binding: binding.clone(),
+                        remainder: Some(derivative.clone()),
+                    }),
+                    consumed: 1,
+                    complete: false,
+                })
             }
             PrefixStatus::Extensible(derivative) => {
                 debug_trace!(
@@ -854,11 +896,15 @@ impl Parser {
                     level,
                     seg_text
                 );
-                Some(Node::Terminal(Terminal::Complete {
-                    value: seg_text.to_string(),
-                    binding: binding.clone(),
-                    extension: Some(derivative.clone()),
-                }))
+                Some(ParsedChild {
+                    child: SppfChild::Terminal(Terminal::Complete {
+                        value: seg_text.to_string(),
+                        binding: binding.clone(),
+                        extension: Some(derivative.clone()),
+                    }),
+                    consumed: 1,
+                    complete: true,
+                })
             }
             PrefixStatus::NoMatch => {
                 debug_trace!(

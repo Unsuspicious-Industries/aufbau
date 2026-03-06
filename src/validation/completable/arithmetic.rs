@@ -90,11 +90,11 @@ fn debug_arith_completions() {
     println!(
         "First parse: depth={} roots={} last_used={:?}",
         depth1,
-        partial1.roots.len(),
+        partial1.roots().len(),
         meta.last_used_depth()
     );
 
-    let typed1 = partial1.filter_typed_ctx(&grammar, &ctx).unwrap();
+    let typed1 = partial1.typed_ctx(&grammar, &ctx).unwrap();
     let comps1 = typed1.completions(&grammar);
     println!(
         "Completions1: {:?}",
@@ -112,9 +112,9 @@ fn debug_arith_completions() {
             println!(
                 "Second parse OK: depth={} roots={}",
                 depth2,
-                partial2.roots.len()
+                partial2.roots().len()
             );
-            match partial2.filter_typed_ctx(&grammar, &ctx) {
+            match partial2.typed_ctx(&grammar, &ctx) {
                 Ok(typed2) => {
                     let comps2 = typed2.completions(&grammar);
                     println!(
@@ -122,14 +122,14 @@ fn debug_arith_completions() {
                         comps2.iter().map(|t| t.to_string()).collect::<Vec<_>>()
                     );
                 }
-                Err(e) => println!("filter_typed_ctx2 FAILED: {}", e),
+                Err(e) => println!("typed_ctx2 FAILED: {}", e),
             }
         }
         Err(e) => {
             println!("Second parse FAILED: {}", e);
             for d in floor..=ceil {
                 match meta.partial_with_bounds(input, d, d) {
-                    Ok((p, dep)) => println!("  depth={} OK: roots={}", dep, p.roots.len()),
+                    Ok((p, dep)) => println!("  depth={} OK: roots={}", dep, p.roots().len()),
                     Err(e2) => println!("  depth={} FAILED: {}", d, e2),
                 }
             }
@@ -154,7 +154,7 @@ fn debug_arith_cache_poisoning() {
         println!(
             "Fresh meta, bounds [5,5]: {}",
             match &r {
-                Ok((a, d)) => format!("OK roots={} depth={}", a.roots.len(), d),
+                Ok((a, d)) => format!("OK roots={} depth={}", a.roots().len(), d),
                 Err(e) => format!("FAIL: {}", e),
             }
         );
@@ -172,7 +172,7 @@ fn debug_arith_cache_poisoning() {
         println!(
             "  result: {}",
             match &r2 {
-                Ok((a, d)) => format!("OK roots={} depth={}", a.roots.len(), d),
+                Ok((a, d)) => format!("OK roots={} depth={}", a.roots().len(), d),
                 Err(e) => format!("FAIL: {}", e),
             }
         );
@@ -187,7 +187,7 @@ fn debug_arith_cache_poisoning() {
         println!(
             "After clear_cache, bounds [5,5]: {}",
             match &r2 {
-                Ok((a, d)) => format!("OK roots={} depth={}", a.roots.len(), d),
+                Ok((a, d)) => format!("OK roots={} depth={}", a.roots().len(), d),
                 Err(e) => format!("FAIL: {}", e),
             }
         );

@@ -89,13 +89,25 @@ pub fn resolve_bindings(
                             name,
                             path
                         );
-                        bound.partial.insert(name.to_string(), path.idxs());
+                        // Keep partial only when no full binding exists.
+                        bound
+                            .partial
+                            .entry(name.to_string())
+                            .or_insert_with(|| path.idxs());
                     } else {
-                        bound.full.insert(name.to_string(), path.idxs());
+                        // Prefer concrete/full bindings over partial ones.
+                        let key = name.to_string();
+                        if !bound.full.contains_key(&key) {
+                            bound.full.insert(key.clone(), path.idxs());
+                        }
+                        bound.partial.remove(&key);
                     }
                 }
                 PathValidationResult::Partial => {
-                    bound.partial.insert(name.to_string(), path.idxs());
+                    let key = name.to_string();
+                    if !bound.full.contains_key(&key) {
+                        bound.partial.entry(key).or_insert_with(|| path.idxs());
+                    }
                 }
                 PathValidationResult::Invalid => {
                     // skip invalid paths

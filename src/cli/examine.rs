@@ -60,34 +60,18 @@ pub struct ExamineCmd {
 
 fn dump_completions(grammar: &Grammar, input: &str, ctx: &Context) {
     let mut synth = Synthesizer::new(grammar.clone(), input);
-    match synth.partial() {
-        Ok(partial) => {
-            let raw = partial.completions(grammar);
-            println!("\n-- completions (raw) --");
-            for (i, token) in raw.iter().enumerate() {
-                println!(
-                    "  [{}] token='{}' example={:?}",
-                    i,
-                    token.to_pattern(),
-                    token.example()
-                );
-            }
-
-            let typed = synth.typed_completions(ctx);
-            println!("\n-- completions (typed) --");
-            for (i, token) in typed.iter().enumerate() {
-                println!(
-                    "  [{}] token='{}' example={:?}",
-                    i,
-                    token.to_pattern(),
-                    token.example()
-                );
-            }
-        }
-        Err(e) => {
-            println!("\n-- completions (raw) --");
-            println!("  partial parse failed: {}", e);
-        }
+    let typed = synth.completions_ctx(ctx);
+    println!("\n-- completions --");
+    for (i, token) in typed.iter().enumerate() {
+        println!(
+            "  [{}] token='{}' example={:?}",
+            i,
+            token.to_pattern(),
+            token.example()
+        );
+    }
+    if typed.is_empty() {
+        println!("  (no completions)");
     }
 }
 

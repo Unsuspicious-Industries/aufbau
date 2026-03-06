@@ -86,10 +86,10 @@ fn bare_identifier_has_assignment_completion_path() {
 
     let grammar = imp_grammar();
     let mut synth = Synthesizer::new(grammar.clone(), "{ x");
-    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("x".to_string(), Type::Raw("Int".to_string()));
+    let completions = synth.completions_ctx(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")
@@ -120,7 +120,7 @@ fn union_decl_partial_true_is_well_typed() {
 
     let mut saw_partial_true = false;
     for root in partial.roots() {
-        for term in gather_terminal_nodes(root) {
+        for term in gather_terminal_nodes(&root) {
             if let Terminal::Partial {
                 value, remainder, ..
             } = term
@@ -153,10 +153,10 @@ fn identifier_in_block_has_assignment_completion_only() {
 
     let grammar = imp_grammar();
     let mut synth = Synthesizer::new(grammar.clone(), "{a");
-    let completions = synth.completions();
 
     let mut ctx = Context::new();
     ctx.add("a".to_string(), Type::Raw("Int".to_string()));
+    let completions = synth.completions_ctx(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")

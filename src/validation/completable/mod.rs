@@ -18,7 +18,6 @@ use crate::validation::completability::{
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use serde_json::json;
-use std::thread;
 use std::time::{Duration, Instant};
 
 fn batch_worker_count(cases_len: usize) -> usize {
@@ -31,11 +30,9 @@ fn batch_worker_count(cases_len: usize) -> usize {
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|n| *n > 0);
 
-    let base = env_jobs.unwrap_or_else(|| {
-        thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(1)
-    });
+    // Default to a small worker pool to avoid severe oversubscription when
+    // many validation tests run concurrently under `cargo test`.
+    let base = env_jobs.unwrap_or(2);
 
     base.min(cases_len).max(1)
 }

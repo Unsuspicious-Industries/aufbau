@@ -34,6 +34,21 @@ use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
 const DEPTH_BASE: usize = 10;
+const META_START_DEPTH: usize = 5;
+const META_DEPTH_FACTOR: f64 = 1.5;
+
+fn snap_meta_depth(target: usize) -> usize {
+    if target <= META_START_DEPTH {
+        return META_START_DEPTH;
+    }
+
+    let mut d = META_START_DEPTH;
+    while d < target {
+        let next = ((d as f64) * META_DEPTH_FACTOR).ceil() as usize;
+        d = if next <= d { d + 1 } else { next };
+    }
+    d
+}
 
 /// Compute a bounded max-depth for **valid** test cases based on input complexity.
 ///
@@ -201,47 +216,79 @@ pub fn check_all_prefixes_parseable(
     parse_max_depth: Option<usize>,
 ) -> ParseResult {
     let start = Instant::now();
-    let chars: Vec<char> = input.chars().collect();
-
-    // Collect all prefixes including the full input, skipping whitespace-only
-    // prefixes after the empty one.
-    let prefixes: Vec<(usize, String)> = (0..=chars.len())
-        .map(|len| (len, chars[..len].iter().collect::<String>()))
-        .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-        .collect();
-
-    // Check all prefixes (including full input) in parallel. Each item returns
-    // `Option<String>` where `Some(err)` indicates a parse error, `None` success.
-    let results: Vec<Option<String>> = prefixes
-        .par_iter()
-        .map(|(_len, prefix)| {
-            // Scale depth budget to the prefix length: short prefixes need
-            // shallow depth, only the full input needs the full budget.
-            // Cap at the case's parse_max_depth when one is set.
-            let prefix_depth = valid_depth_for(prefix);
-            let depth = match parse_max_depth {
-                Some(d) => prefix_depth.min(d),
-                None => prefix_depth,
-            };
-            let mut parser = MetaParser::new(grammar.clone()).with_max_depth(depth);
-            let res = if check_typing {
-                parser.partial_typed_ctx(prefix, ctx)
-            } else {
-                parser.partial(prefix)
-            };
-            match res {
-                Ok(_) => None,
-                Err(e) => Some(e),
+    // Prefer token-boundary prefixes when tokenization succeeds. This keeps
+    // parseability checks representative while avoiding quadratic character-level
+    // blowups on long/ambiguous inputs.
+    let prefixes: Vec<(usize, String)> = match grammar.tokenize(input) {
+        Ok(segments) => {
+            let mut cuts = vec![0usize];
+            cuts.extend(segments.iter().map(|s| s.end));
+            if !cuts.contains(&input.len()) {
+                cuts.push(input.len());
             }
-        })
-        .collect();
+            cuts.sort_unstable();
+            cuts.dedup();
+            cuts.into_iter()
+                .map(|byte_end| {
+                    let p = input[..byte_end].to_string();
+                    (p.chars().count(), p)
+                })
+                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+                .collect()
+        }
+        Err(_) => {
+            let chars: Vec<char> = input.chars().collect();
+            (0..=chars.len())
+                .map(|len| (len, chars[..len].iter().collect::<String>()))
+                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+                .collect()
+        }
+    };
+
+    let parse_prefix = |prefix: &str| {
+        // IMPORTANT: Use the test-case max depth for all prefixes when provided.
+        // Several left-recursive grammars (notably STLC/Fun) require deep bounds
+        // even for short prefixes; scaling down by prefix length causes false
+        // negatives in parseability checks.
+        let depth = match parse_max_depth {
+            Some(d) => snap_meta_depth(d),
+            None => snap_meta_depth(valid_depth_for(prefix)),
+        };
+        let mut parser = MetaParser::new(grammar.clone()).with_max_depth(depth);
+        let res: Result<(), String> = if check_typing {
+            parser.partial_typed_ctx(prefix, ctx).map(|_| ())
+        } else {
+            parser.partial(prefix).map(|_| ())
+        };
+        match res {
+            Ok(_) => None,
+            Err(e) => Some((e, depth)),
+        }
+    };
+
+    // High-depth prefix checks can consume too much memory when fully parallelized.
+    // Fall back to sequential execution for deep budgets to avoid OOM/SIGKILL.
+    let deep_budget = parse_max_depth.is_some_and(|d| snap_meta_depth(d) >= 41);
+    let results: Vec<Option<(String, usize)>> = if deep_budget {
+        prefixes
+            .iter()
+            .map(|(_, prefix)| parse_prefix(prefix))
+            .collect()
+    } else {
+        prefixes
+            .par_iter()
+            .map(|(_, prefix)| parse_prefix(prefix))
+            .collect()
+    };
+
+    let prefix_count = prefixes.len();
 
     // Re-assemble results in original order and return the first failing prefix, if any
     for ((len, prefix), opt_err) in prefixes.into_iter().zip(results.into_iter()) {
-        if let Some(e) = opt_err {
+        if let Some((e, depth)) = opt_err {
             return ParseResult::Fail {
                 failing_prefix: prefix,
-                error: e,
+                error: format!("{} (depth={})", e, depth),
                 prefix_index: len,
             };
         }
@@ -249,7 +296,7 @@ pub fn check_all_prefixes_parseable(
 
     ParseResult::Pass {
         duration: start.elapsed(),
-        prefix_count: chars.len() + 1,
+        prefix_count,
     }
 }
 
@@ -534,4 +581,19 @@ pub fn load_example_grammar(name: &str) -> Grammar {
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     Grammar::load(&content).unwrap_or_else(|e| panic!("Failed to load {}: {}", name, e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snap_meta_depth;
+
+    #[test]
+    fn snap_depth_uses_meta_rungs() {
+        assert_eq!(snap_meta_depth(1), 5);
+        assert_eq!(snap_meta_depth(5), 5);
+        assert_eq!(snap_meta_depth(6), 8);
+        assert_eq!(snap_meta_depth(10), 12);
+        assert_eq!(snap_meta_depth(23), 27);
+        assert_eq!(snap_meta_depth(40), 41);
+    }
 }

@@ -445,7 +445,7 @@ mod tests {
         let result = parser.parse("helloworld").unwrap();
 
         assert!(result.is_complete());
-        let tree = &result.roots[0];
+        let tree = &result.roots()[0];
 
         // Encode
         let compact = CompactTree::encode(tree, &grammar).unwrap();
@@ -471,7 +471,7 @@ mod tests {
         let result = parser.parse("x").unwrap();
 
         assert!(result.is_complete());
-        let tree = &result.roots[0];
+        let tree = &result.roots()[0];
 
         // Encode
         let compact = CompactTree::encode(tree, &grammar).unwrap();
@@ -501,7 +501,7 @@ mod tests {
         let result = parser.parse("λx:A.x").unwrap();
 
         assert!(result.is_complete());
-        let tree = &result.roots[0];
+        let tree = &result.roots()[0];
 
         // Encode
         let compact = CompactTree::encode(tree, &grammar).unwrap();
@@ -531,7 +531,7 @@ mod tests {
         let result = parser.parse("f x y").unwrap();
 
         assert!(result.is_complete());
-        let tree = &result.roots[0];
+        let tree = &result.roots()[0];
 
         // Encode
         let compact = CompactTree::encode(tree, &grammar).unwrap();

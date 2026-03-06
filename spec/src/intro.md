@@ -1,4 +1,4 @@
-#[D] Introduction
+# Introduction
 
 In the current context of a rapidly evolving research effort towards LLM-based formal reasoning and theorem proving, our aim is to contribute a novel approach that complements existing methods with a focus on formal guarantees of correctness.
 
@@ -41,7 +41,7 @@ The key correctness property that runs through every layer of the specification:
 For any partial expression $s$ and any token $a$ returned by the completion
 engine,
 
-$$s \cdot a \text{ is completable in } \mathcal{C}_{L,\Theta}$$
+$$s \cdot a \text{ is completable}$$
 
-That is, every suggested token keeps the expression on a path toward at least one complete, well-typed program.
+That is, every suggested token keeps the expression on a path toward at least one complete, well-typed program. We'll see better deinfiiotn of completability later on.
 <

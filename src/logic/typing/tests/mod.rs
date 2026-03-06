@@ -5,12 +5,12 @@ Main tests + submodules
 
 mod contradiction;
 mod fun;
+mod fx;
 mod imp;
 mod lc;
-mod redeclaration;
-mod fx;
 mod parse;
-
+mod redeclaration;
+mod tree;
 
 use super::*;
 use crate::logic::grammar::Grammar;
@@ -189,7 +189,7 @@ fn evaluate_typing_frontier_aware() {
     let mut parser = Parser::new(grammar.clone());
     let partial = parser.partial("a").expect("partial parse succeeds");
     assert!(
-        evaluate_typing(partial.roots(), &grammar),
+        evaluate_typing(&partial.roots(), &grammar),
         "partial tree with frontier bindings should be valid"
     );
 
@@ -197,7 +197,7 @@ fn evaluate_typing_frontier_aware() {
     let mut parser = Parser::new(grammar.clone());
     let complete = parser.partial("a b").expect("complete parse succeeds");
     assert!(
-        evaluate_typing(complete.roots(), &grammar),
+        evaluate_typing(&complete.roots(), &grammar),
         "complete tree with all bindings should be valid"
     );
 }
@@ -219,7 +219,7 @@ fn evaluate_typing_rejects_malformed() {
     let mut parser = Parser::new(grammar.clone());
     let result = parser.partial("x").expect("parse succeeds");
     assert!(
-        evaluate_typing(result.roots(), &grammar),
+        evaluate_typing(&result.roots(), &grammar),
         "should have at least one valid tree"
     );
 }

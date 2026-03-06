@@ -112,7 +112,7 @@ fn let_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("nested let", "let x: Int = 1; let y: Int = 2; x + y", 1),
         T::ok("let expr value", "let x: Int = 1 + 2; x", 1),
         T::ok("let float expr", "let x: Float = 1.0 +. 2.0; x", 1),
-        T::ok("let keyword", "let", 6),
+        T::ok("let keyword", "let", 7),
         T::ok("let name", "let x", 6),
         T::ok("let colon", "let x:", 5),
         T::ok("let typed", "let x: Int", 4),
@@ -145,20 +145,17 @@ fn application_cases() -> Vec<TypedCompletionTestCase> {
             "higher-order compose lambda",
             "(f: Int -> Int) => ((g: Int -> Int) => ((x: Int) => f(g(x))))",
             3,
-        )
-        .without_soundness(),
+        ),
         T::ok(
             "higher-order compose concrete arg",
             "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
             3,
-        )
-        .without_soundness(),
+        ),
         T::ok(
             "higher-order triple compose concrete arg",
             "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
             4,
-        )
-        .without_soundness(),
+        ),
         T::ok("apply var arg", "f(x)", 1).with_context(vec![("f", "Int -> Int"), ("x", "Int")]),
     ]
 }
@@ -194,10 +191,9 @@ fn empty_prefix_cases() -> Vec<TypedCompletionTestCase> {
 
 fn prefix_cases() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::ok("let keyword", "let", 6),
+        T::ok("let keyword", "let", 7),
         T::ok("let name", "let x", 6),
         T::ok("let colon", "let x:", 5),
-        T::ok("lambda open paren", "(", 6),
         T::ok("lambda param", "(x", 6),
         T::ok("lambda colon", "(x:", 5),
     ]

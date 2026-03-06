@@ -2,7 +2,7 @@
 authors = ["pkd"]
 language = "en"
 src = "src"
-title = "Proposition 7: Truth by Construction"
+title = "Aufbau Engine"
 
 [output.html]
 mathjax-support = true

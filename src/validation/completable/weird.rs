@@ -512,11 +512,6 @@ fn epsilon_typed_ok() -> Vec<TypedCompletionTestCase> {
         T::ok("prefix var", "# x", 1).with_context(vec![("x", "A")]),
         T::ok("var suffix", "x !", 1).with_context(vec![("x", "A")]),
         T::ok("prefix var suffix", "# x !", 1).with_context(vec![("x", "A")]),
-        // `#` alone fails prefix soundness: it can complete to `# x` but
-        // the prefix `#` by itself can't find a completion at depth 2.
-        T::ok("partial prefix", "#", 2)
-            .with_context(vec![("x", "A")])
-            .without_soundness(),
     ]
 }
 

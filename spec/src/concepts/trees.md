@@ -10,6 +10,27 @@ A **partial tree** $t = (V, E,\lambda,\pi,\alpha,\text{root})$ is a structure wh
 - $\text{root} \in V$: the start node.
 <
 
+
+## Parse Forest
+
+
+>D Partial Parse Forest
+For a **completable** input $s \in \Sigma^*$ and grammar $G$, the **partial parse forest** $\mathcal{F}(s)$ is the set of all rooted **partial parse trees** that match $s$. 
+<
+
+In the implementation, partial parse forests are stored as Shared Packed Parse Forrects (SPPF) to save up space.
+
+
+## Partial Parser
+
+>D Partial Parser
+A **partial parser** for grammar $G$ is a function:
+$$\Psi_G : \Sigma^* \to \\{ \mathcal{F},\text{reject} \\}$$
+Mapping each valid (**completable**) input to a partial parse forest and invalid inputs to $\text{reject}$.
+<
+
+The parser is *sound* in the sense that every prefix of $s$ will be accepted by it and produce a forest.
+
 ### Tree Paths
 
 >D Tree Path
@@ -50,9 +71,7 @@ A node is **complete** by induction:
 The **frontier** is the path to the unique incomplete node where parsing stopped. In a complete tree, there is no frontier.
 <
 
->D Partial Forest
-The **partial forest** for input $s$ is the finite ordered set of all partial trees. Trees differ by the alternatives chosen; the forest is ordered by the grammar's definition order.
-<
+Note that this is not extacly the same as extensibility. A (complete) tree will have no frontier, but can have extensible nodes.
 
 >D Forest Completeness
 A forest is **complete** $\iff$ at least one tree in it is complete.

@@ -188,16 +188,13 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
 
     // Parse partial input
     let mut parser = Parser::new(grammar.clone());
-    let past = match parser.partial(&input).into_result() {
-        Ok(p) => p,
+    let completions = match parser.partial_typed(&input) {
+        Ok(typed) => typed.completions(&grammar),
         Err(e) => {
-            eprintln!("parse error: {}", e);
+            eprintln!("parse/typing error: {}", e);
             std::process::exit(1);
         }
     };
-
-    // Get completions
-    let completions = past.completions(&grammar);
     let mut candidates = completions.tokens.clone();
 
     // Apply max limit if specified

@@ -6,6 +6,10 @@
 
 use super::*;
 
+// Empirical bound for STLC parseability prefixes. This intentionally over-approximates
+// to stay on the safe side for left-recursive lambda/application prefixes.
+const STLC_PARSE_MAX_DEPTH: usize = 62;
+
 /// Note: These tests focus on parsing only, not type checking.
 /// For type checking tests, see the typing module tests.
 ///
@@ -18,7 +22,7 @@ fn stlc_grammar() -> Grammar {
 }
 
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
-    vec![
+    let cases = vec![
         // === Simple partial cases ===
         ParseTestCase::valid("empty lambda", "λ"),
         ParseTestCase::valid("lambda var", "λx"),
@@ -56,7 +60,12 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::structural("paren app", "(f x)"),
         ParseTestCase::structural("paren double app", "((f x) y)"),
         ParseTestCase::structural("paren nested app", "x t y u r"),
-    ]
+    ];
+
+    cases
+        .into_iter()
+        .map(|c| c.with_parse_max_depth(STLC_PARSE_MAX_DEPTH))
+        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
@@ -100,7 +109,7 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
 }
 
 pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
-    vec![
+    let cases = vec![
         // === Test left-associative application parsing ===
         // Each application step adds ~2 recursion levels in the left-recursive grammar,
         // so we set depth = 10 + 2 * num_args as a safe budget.
@@ -124,7 +133,12 @@ pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
         // === Test in lambda contexts ===
         ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y")
             .with_parse_max_depth(30),
-    ]
+    ];
+
+    cases
+        .into_iter()
+        .map(|c| c.with_parse_max_depth(STLC_PARSE_MAX_DEPTH))
+        .collect()
 }
 
 #[test]

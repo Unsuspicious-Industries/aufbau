@@ -93,6 +93,7 @@ pub struct TypingRuleInfo {
 }
 
 pub fn build_graph(ast: &PartialAST, grammar: &Grammar) -> GraphData {
+    let roots = ast.roots();
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
     let mut trees: Vec<TreeInfo> = Vec::new();
@@ -102,7 +103,7 @@ pub fn build_graph(ast: &PartialAST, grammar: &Grammar) -> GraphData {
     let root_id = "root";
     nodes.push(GraphNode {
         id: root_id.to_string(),
-        label: format!("Forest ({})", ast.roots.len()),
+        label: format!("Forest ({})", roots.len()),
         status: if ast.is_complete() {
             "complete"
         } else {
@@ -123,7 +124,7 @@ pub fn build_graph(ast: &PartialAST, grammar: &Grammar) -> GraphData {
         },
     });
 
-    for (i, root) in ast.roots.iter().enumerate() {
+    for (i, root) in roots.iter().enumerate() {
         let child_id = format!("t{}", i);
         let tree_complete = root.is_complete();
         let node_count_before = nodes.len();

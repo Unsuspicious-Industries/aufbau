@@ -50,4 +50,6 @@ For any binding $b$ in production $p$, $\beta(b, p)$ is uniquely determined by t
 If $|\beta(b, p)| > 1$, then $b$ must be declared as tuple-typed in $\Theta(p)$ as `(b...)`.
 <
 
+>R Limitations
 The construction algorithm enforces a limit: `MAX_RECURSION_DEPTH = 16`. Paths deeper than this are omitted. Consequently, $\beta(b, p)$ is an under-approximation for deeply recursive grammars, and bindings at extreme depths may fail to resolve.
+<

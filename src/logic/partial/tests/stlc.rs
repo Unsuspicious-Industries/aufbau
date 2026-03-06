@@ -1,4 +1,3 @@
-use super::Parser;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::MetaParser;
 use crate::testing::*;
@@ -17,7 +16,7 @@ fn assert_stlc_parse_matches(input: &str, expected_serialized: &str) {
 #[test]
 fn test_stlc_simple_variable() {
     let g = stlc_grammar();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
     let ast = p.parse("x").unwrap();
     assert!(ast.is_complete());
@@ -93,7 +92,7 @@ fn test_stlc_identity_lambda_with_serialization() {
 #[test]
 fn test_stlc_parenthesized_variable() {
     let g = stlc_grammar();
-    let mut p = Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
     let ast = p.parse("(x)").unwrap();
     assert!(ast.is_complete());
@@ -112,7 +111,7 @@ fn test_stlc_parenthesized_variable() {
 #[test]
 fn test_stlc_simple_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Identity function - NO SPACES
     let ast = p.parse("λx:A.x").unwrap();
@@ -122,7 +121,7 @@ fn test_stlc_simple_lambda() {
 #[test]
 fn test_stlc_lambda_with_function_type() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Lambda with function type annotation
     let ast = p.parse("λf:A->B.f").unwrap();
@@ -136,7 +135,7 @@ fn test_stlc_lambda_with_function_type() {
 #[test]
 fn test_stlc_nested_lambdas() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Curried function: λx. λy. x
     let ast = p.parse("λx:A.λy:B.x").unwrap();
@@ -150,7 +149,7 @@ fn test_stlc_nested_lambdas() {
 #[test]
 fn test_stlc_lambda_with_parenthesized_type() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.parse("λ x : ( A -> B ) . x").unwrap();
     assert!(ast.is_complete());
@@ -166,7 +165,7 @@ fn test_stlc_lambda_with_parenthesized_type() {
 #[test]
 fn test_stlc_simple_function_type() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Simple function type in lambda annotation
     let ast = p.parse("λ x : A -> B . x").unwrap();
@@ -176,7 +175,7 @@ fn test_stlc_simple_function_type() {
 #[test]
 fn test_stlc_function_type_right_associative() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // A -> B -> C should parse as A -> (B -> C) (right-associative)
     let ast = p.parse("λ x : A -> B -> C . x").unwrap();
@@ -190,7 +189,7 @@ fn test_stlc_function_type_right_associative() {
 #[test]
 fn test_stlc_function_type_with_parens() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // (A -> B) -> C  (different from A -> B -> C)
     let ast = p.parse("λ x : ( A -> B ) -> C . x").unwrap();
@@ -204,7 +203,7 @@ fn test_stlc_function_type_with_parens() {
 #[test]
 fn test_stlc_complex_nested_types() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // ((A -> B) -> C) -> D
     let ast = p.parse("λ x : ( ( A -> B ) -> C ) -> D . x").unwrap();
@@ -224,7 +223,7 @@ fn test_stlc_complex_nested_types() {
 #[test]
 fn test_stlc_simple_application() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // f x
     let ast = p.parse("f x").unwrap();
@@ -234,7 +233,7 @@ fn test_stlc_simple_application() {
 #[test]
 fn test_stlc_chained_application() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // f x y should parse as (f x) y (left-associative)
     let ast = p.parse("f x y").unwrap();
@@ -248,7 +247,7 @@ fn test_stlc_chained_application() {
 #[test]
 fn test_stlc_application_long_chain() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Long application chain - stress test left recursion handling
     let ast = p.parse("f a b c d e").unwrap();
@@ -258,7 +257,7 @@ fn test_stlc_application_long_chain() {
 #[test]
 fn test_stlc_application_with_parentheses() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // (f x) y - explicit left assoc
     let ast = p.parse("( f x ) y").unwrap();
@@ -272,7 +271,7 @@ fn test_stlc_application_with_parentheses() {
 #[test]
 fn test_stlc_nested_parenthesized_applications() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // ((f x) y) z
     let ast = p.parse("( ( f x ) y ) z").unwrap();
@@ -290,7 +289,7 @@ fn test_stlc_nested_parenthesized_applications() {
 #[test]
 fn test_stlc_apply_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Apply a lambda to an argument
     let ast = p.parse("( λ x : A . x ) y").unwrap();
@@ -300,7 +299,7 @@ fn test_stlc_apply_lambda() {
 #[test]
 fn test_stlc_lambda_with_application_body() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Lambda whose body is an application
     let ast = p.parse("λ f : A -> B . f x").unwrap();
@@ -314,7 +313,7 @@ fn test_stlc_lambda_with_application_body() {
 #[test]
 fn test_stlc_apply_lambda_to_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Apply lambda to lambda
     let ast = p.parse("( λ x : A . x ) ( λ y : B . y )").unwrap();
@@ -324,7 +323,7 @@ fn test_stlc_apply_lambda_to_lambda() {
 #[test]
 fn test_stlc_lambda_returning_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Curried function that returns a lambda
     let ast = p.parse("λ x : A . λ y : B . x").unwrap();
@@ -334,7 +333,7 @@ fn test_stlc_lambda_returning_lambda() {
 #[test]
 fn test_stlc_nested_lambda_application() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Apply nested lambda
     let ast = p.parse("( λ x : A . λ y : B . x ) a b").unwrap();
@@ -348,7 +347,7 @@ fn test_stlc_nested_lambda_application() {
 #[test]
 fn test_stlc_identity() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Identity function: λx.x
     let ast = p.parse("λ x : A . x").unwrap();
@@ -358,7 +357,7 @@ fn test_stlc_identity() {
 #[test]
 fn test_stlc_const() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Const: λx.λy.x
     let ast = p.parse("λ x : A . λ y : B . x").unwrap();
@@ -368,7 +367,7 @@ fn test_stlc_const() {
 #[test]
 fn test_stlc_apply() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Apply: λf.λx.f x
     let ast = p.parse("λ f : A -> B . λ x : A . f x").unwrap();
@@ -390,7 +389,7 @@ fn test_stlc_flip() {
 #[test]
 fn test_stlc_compose() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Compose: λf.λg.λx.f (g x)
     let ast = p
@@ -418,23 +417,23 @@ fn test_stlc_s_combinator() {
 #[test]
 fn test_stlc_partial_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Incomplete lambda
     let ast = p.partial("λ x :").unwrap();
-    assert!(!ast.is_complete());
+    assert!(ast.roots().iter().any(|r| !r.is_complete()));
 
     let ast = p.partial("λ x : A").unwrap();
-    assert!(!ast.is_complete());
+    assert!(ast.roots().iter().any(|r| !r.is_complete()));
 
     let ast = p.partial("λ x : A .").unwrap();
-    assert!(!ast.is_complete());
+    assert!(ast.roots().iter().any(|r| !r.is_complete()));
 }
 
 #[test]
 fn test_stlc_application() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Partial application (might be complete as single var, or partial as application)
     let ast = p.partial("f").unwrap();
@@ -445,20 +444,20 @@ fn test_stlc_application() {
 #[test]
 fn test_stlc_partial_type() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Incomplete function type
     let ast = p.partial("λ x : A ->").unwrap();
-    assert!(!ast.is_complete());
+    assert!(ast.roots().iter().any(|r| !r.is_complete()));
 }
 
 #[test]
 fn test_stlc_partial_nested_parens() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.partial("( ( x").unwrap();
-    assert!(!ast.is_complete());
+    assert!(ast.roots().iter().any(|r| !r.is_complete()));
 
     let ast = p.partial("( x )").unwrap();
     assert!(ast.is_complete());
@@ -473,7 +472,7 @@ fn test_stlc_deep_nested_lambdas() {
     let g = stlc_grammar().clone();
     let mut p = crate::logic::partial::MetaParser::new(g);
 
-    // Very deep lambda nesting - needs MetaParser for adaptive depth
+    // Very deep lambda nesting - needs  MetaParser for adaptive depth
     let ast = p
         .parse("λ a : A . λ b : B . λ c : C . λ d : D . λ e : E . a")
         .unwrap();
@@ -497,7 +496,7 @@ fn test_stlc_long_application_chain() {
     let g = stlc_grammar().clone();
     let mut p = crate::logic::partial::MetaParser::new(g);
 
-    // Long application chain - needs MetaParser for adaptive depth
+    // Long application chain - needs  MetaParser for adaptive depth
     let ast = p.parse("f a b c d e f g h").unwrap();
     assert!(ast.is_complete());
 }
@@ -505,7 +504,7 @@ fn test_stlc_long_application_chain() {
 #[test]
 fn test_stlc_complex_mixed_expression() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Complex expression mixing all features
     let ast = p
@@ -517,7 +516,7 @@ fn test_stlc_complex_mixed_expression() {
 #[test]
 fn test_stlc_deeply_nested_application_in_lambda() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Lambda with deeply nested application body
     let ast = p.parse("λ f : A -> B -> C -> D . f x y z").unwrap();
@@ -531,7 +530,7 @@ fn test_stlc_deeply_nested_application_in_lambda() {
 #[test]
 fn test_stlc_single_char_identifiers() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.parse("x").unwrap();
     assert!(ast.is_complete());
@@ -543,7 +542,7 @@ fn test_stlc_single_char_identifiers() {
 #[test]
 fn test_stlc_underscore_identifiers() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.parse("_x").unwrap();
     assert!(ast.is_complete());
@@ -555,7 +554,7 @@ fn test_stlc_underscore_identifiers() {
 #[test]
 fn test_stlc_application_of_parenthesized_expr() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Apply parenthesized expression
     let ast = p.parse("( x ) y").unwrap();
@@ -568,7 +567,7 @@ fn test_stlc_application_of_parenthesized_expr() {
 #[test]
 fn test_stlc_multiple_parens_in_type() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.parse("λ x : ( ( ( A ) ) ) . x").unwrap();
     assert!(ast.is_complete());
@@ -581,7 +580,7 @@ fn test_stlc_multiple_parens_in_type() {
 #[test]
 fn test_stlc_app_vs_lambda_ambiguity() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Lambda should extend as far right as possible
     // λx.f x means λx.(f x), not (λx.f) x
@@ -592,7 +591,7 @@ fn test_stlc_app_vs_lambda_ambiguity() {
 #[test]
 fn test_stlc_type_arrow_vs_expr() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Arrow in type position
     let ast = p.parse("λ x : A -> B . x").unwrap();
@@ -602,7 +601,7 @@ fn test_stlc_type_arrow_vs_expr() {
 #[test]
 fn test_stlc_consecutive_lambdas_applied() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Two lambdas in application
     let ast = p.parse("( λ x : A . x ) ( λ y : B . y ) z").unwrap();
@@ -612,7 +611,7 @@ fn test_stlc_consecutive_lambdas_applied() {
 #[test]
 fn test_stlc_lambda_in_application_chain() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     // Lambda as argument in chain
     let ast = p.parse("f ( λ x : A . x ) y").unwrap();
@@ -624,7 +623,7 @@ fn test_stlc_lambda_in_application_chain() {
 #[test]
 fn test_stlc_partial_application() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
     // Partial application
     let ast = p.partial("(f ").unwrap();
     println!("Partial AST: {}", ast);
@@ -633,7 +632,7 @@ fn test_stlc_partial_application() {
 #[test]
 fn test_partial_typing() {
     let g = stlc_grammar().clone();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
     // Partial type annotation
     let ast = p.partial("λ x : A -> ").unwrap();
     println!("Partial AST: {}", ast);

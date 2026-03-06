@@ -47,7 +47,9 @@ fn fun_int() {
         (AtomicExpression @1 $func #1
           (Integer @0 #1
             (T "42")))
-        (T~ "")))))"#,
+        (T~ "")))
+    (IntOp @0 $op #0
+      (T~ ""))))"#,
     );
 }
 
@@ -80,7 +82,10 @@ fn fun_lambda() {
                       (Identifier @0 $x #1
                         (T "x")))))
                 (FloatOp @0 $op #0
-                  (T~ "")))))))))"#,
+                  (T~ ""))))))
+        (T~ "")))
+    (IntOp @2 $op #0
+      (T~ ""))))"#,
     );
 }
 
@@ -129,14 +134,12 @@ fn custom_left_rec() {
         "1 + 2",
         r#"(start @0 #3
   (Expr @0 #3
-    (Expr @0 #3
-      (Expr @1 #1
-        (Num @0 #1
-          (T "1")))
-      (T "+")
+    (Expr @1 #1
       (Num @0 #1
-        (T "2")))
-    (T~ "")))"#,
+        (T "1")))
+    (T "+")
+    (Num @0 #1
+      (T "2"))))"#,
     );
 }
 

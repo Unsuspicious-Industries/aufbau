@@ -9,7 +9,7 @@ This page maps the specification sections to source code modules.
 | [Grammar Specification](./spec.md) | [`src/logic/grammar/`](~/src/logic/grammar/) | Grammar data structures and `.auf` file loading |
 | [Partial Parsing](./parsing.md) | [`src/logic/partial/`](~/src/logic/partial/) | Chart parser, segment handling, partial trees |
 | [Span Cache](./parsing/cache.md) | [`src/logic/partial/cache.rs`](~/src/logic/partial/cache.rs) | 4D memoization table for parse results |
-| [Meta-Parser](./parsing/meta_parser.md) | [`src/logic/partial/meta.rs`](~/src/logic/partial/meta.rs) | Adaptive depth search, grammar-scope caching |
+| MetaParser (see [Partial Parsing](./parsing.md)) | [`src/logic/partial/meta.rs`](~/src/logic/partial/meta.rs) | Adaptive depth search, grammar-scope caching |
 | [Binding Resolution](./concepts/binding.md) | [`src/logic/binding/`](~/src/logic/binding/) | Grammar path construction (compile-time) |
 | [Runtime Binding](./binding.md) | [`src/logic/typing/binding.rs`](~/src/logic/typing/binding.rs) | Tree path resolution (runtime) |
 | [Type Inference](./typing.md) | [`src/logic/typing/`](~/src/logic/typing/) | Typing engine, rule application, type cache |

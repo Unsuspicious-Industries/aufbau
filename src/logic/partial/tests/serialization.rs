@@ -86,7 +86,7 @@ fn test_partial_ast_serialization() {
         1,
     );
 
-    let ast = PartialAST::new(vec![root], "hel".to_string());
+    let ast = PartialAST::from_trees(vec![root], "hel".to_string());
     let sexpr = ast_to_sexpr(&ast);
     let s = sexpr_to_string(&sexpr);
 
@@ -96,7 +96,7 @@ fn test_partial_ast_serialization() {
     let parsed_sexpr = parse_sexpr(&s).unwrap();
     let roundtrip = sexpr_to_ast(&parsed_sexpr, &grammar, "hel".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), roundtrip.roots.len());
+    assert_eq!(ast.roots().len(), roundtrip.roots().len());
 }
 
 #[test]
@@ -253,7 +253,7 @@ fn test_load_partial_ast_single_root() {
     let sexpr = parse_sexpr(s).unwrap();
     let ast = sexpr_to_ast(&sexpr, &grammar, "hel".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), 1);
+    assert_eq!(ast.roots().len(), 1);
     assert!(!ast.is_complete());
     assert_eq!(ast.input(), "hel");
 }
@@ -275,9 +275,9 @@ fn test_load_partial_ast_multiple_roots() {
     let sexpr = parse_sexpr(s).unwrap();
     let ast = sexpr_to_ast(&sexpr, &grammar, "input".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), 2);
-    assert_eq!(ast.roots[0].name, "start");
-    assert_eq!(ast.roots[1].name, "other");
+    assert_eq!(ast.roots().len(), 2);
+    assert_eq!(ast.roots()[0].name, "start");
+    assert_eq!(ast.roots()[1].name, "other");
 }
 
 #[test]
@@ -375,7 +375,7 @@ fn test_roundtrip_complex_tree() {
         1,
     );
 
-    let ast = PartialAST::new(vec![start], "x+y".to_string());
+    let ast = PartialAST::from_trees(vec![start], "x+y".to_string());
 
     // Serialize and deserialize
     let sexpr = ast_to_sexpr(&ast);
@@ -386,8 +386,8 @@ fn test_roundtrip_complex_tree() {
     let parsed_sexpr = parse_sexpr(&s).unwrap();
     let roundtrip = sexpr_to_ast(&parsed_sexpr, &grammar, "x+y".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), roundtrip.roots.len());
-    assert_eq!(ast.roots[0].name, roundtrip.roots[0].name);
+    assert_eq!(ast.roots().len(), roundtrip.roots().len());
+    assert_eq!(ast.roots()[0].name, roundtrip.roots()[0].name);
     assert!(roundtrip.is_complete());
 }
 
@@ -540,7 +540,7 @@ fn test_complete_roundtrip_no_information_loss() {
         10,
     );
 
-    let ast = PartialAST::new(vec![start.clone()], "x+y".to_string());
+    let ast = PartialAST::from_trees(vec![start.clone()], "x+y".to_string());
 
     // Serialize and deserialize
     let sexpr = ast_to_sexpr(&ast);
@@ -552,12 +552,12 @@ fn test_complete_roundtrip_no_information_loss() {
     let roundtrip = sexpr_to_ast(&parsed_sexpr, &grammar, "x+y".to_string()).unwrap();
 
     // Verify ALL fields match
-    assert_eq!(ast.roots.len(), roundtrip.roots.len());
+    assert_eq!(ast.roots().len(), roundtrip.roots().len());
     assert_eq!(ast.input(), roundtrip.input());
 
     // Check root
-    let original_root = &ast.roots[0];
-    let roundtrip_root = &roundtrip.roots[0];
+    let original_root = &ast.roots()[0];
+    let roundtrip_root = &roundtrip.roots()[0];
     assert_eq!(original_root.name, roundtrip_root.name);
     assert_eq!(
         original_root.alternative_index,
@@ -640,7 +640,7 @@ fn test_partial_ast_serialize_method() {
         2,
     );
 
-    let ast = PartialAST::new(vec![root], "hellowor".to_string());
+    let ast = PartialAST::from_trees(vec![root], "hellowor".to_string());
 
     // Use the convenient serialize method
     let serialized = ast.serialize();
@@ -650,7 +650,7 @@ fn test_partial_ast_serialize_method() {
     let deserialized =
         PartialAST::deserialize(&serialized, &grammar, "hellowor".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), deserialized.roots.len());
+    assert_eq!(ast.roots().len(), deserialized.roots().len());
     assert_eq!(ast.input(), deserialized.input());
 }
 
@@ -798,8 +798,8 @@ fn test_serialize_with_comments() {
     "#;
 
     let ast = PartialAST::deserialize(s_with_comments, &grammar, "hello".to_string()).unwrap();
-    assert_eq!(ast.roots.len(), 1);
-    assert_eq!(ast.roots[0].name, "start");
+    assert_eq!(ast.roots().len(), 1);
+    assert_eq!(ast.roots()[0].name, "start");
 }
 
 #[test]
@@ -826,8 +826,8 @@ fn test_new_symbol_format() {
     let parsed = parse_sexpr(s).unwrap();
     let ast = sexpr_to_ast(&parsed, &grammar, "12345".to_string()).unwrap();
 
-    assert_eq!(ast.roots.len(), 1);
-    let root = &ast.roots[0];
+    assert_eq!(ast.roots().len(), 1);
+    let root = &ast.roots()[0];
     assert_eq!(root.name, "start");
     assert_eq!(root.alternative_index, 1);
     assert_eq!(root.binding, Some("result".to_string()));

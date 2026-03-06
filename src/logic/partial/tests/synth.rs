@@ -34,7 +34,7 @@ fn typed_completions_for_def_after_equals() {
     let grammar = Grammar::load(SCOPED_TYPED_SPEC).unwrap();
     let ctx = Context::new();
     let mut synth = Synthesizer::new(grammar.clone(), "def a : X =");
-    let tokens = synth.typed_completions(&ctx);
+    let tokens = synth.completions_ctx(&ctx);
     assert!(
         !tokens.is_empty(),
         "should have typed completions for 'def a : X ='"

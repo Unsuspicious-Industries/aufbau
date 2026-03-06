@@ -15,5 +15,3 @@ mod serialization;
 mod stlc;
 #[cfg(test)]
 mod synth;
-
-pub use crate::logic::partial::Parser;

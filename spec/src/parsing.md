@@ -102,7 +102,7 @@ An epsilon production (empty right-hand side, $\varepsilon$) matches zero segmen
 The default maximum recursion depth is $d_{\max} = 15$ (`DEFAULT_MAX_RECURSION_DEPTH`). This is overridable per-parser and is distinct from the typing depth limit of 50.
 <
 
-When the depth limit is hit, the parser returns a `DepthLimit` error. The [meta-parser](parsing/meta_parser.md) uses iterative deepening to find the minimum sufficient depth.
+When the depth limit is hit, the parser returns a `DepthLimit` error. The `MetaParser` wrapper in `src/logic/partial/meta.rs` uses iterative deepening to find the minimum sufficient depth.
 
 ## Incremental Parsing
 

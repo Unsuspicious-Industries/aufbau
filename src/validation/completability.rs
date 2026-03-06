@@ -4,9 +4,10 @@
 // We use partial parsing and typing to check completion and prefix soundness.
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::{NonTerminal, Synthesizer};
+use crate::logic::partial::Synthesizer;
 use crate::logic::typing::core::TreeStatus;
 use crate::logic::typing::eval::check_tree_with_context;
+use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::Context;
 use crate::logic::{search_complete, SearchConfig, SearchResult};
 use crate::regex::Regex as DerivativeRegex;
@@ -15,7 +16,7 @@ use crate::regex::Regex as DerivativeRegex;
 pub enum CompletionResult {
     Success {
         complete_input: String,
-        ast: NonTerminal,
+        ast: TypedNode,
         completion_path: Vec<DerivativeRegex>,
         completion_depth: usize,
     },
@@ -97,18 +98,39 @@ pub fn sound_complete(
     let chars: Vec<char> = input.chars().collect();
     let ctx = opt_ctx.unwrap_or_else(Context::new);
 
-    let prefixes: Vec<(usize, String)> = (0..=chars.len())
-        .map(|len| (len, chars[..len].iter().collect::<String>()))
-        .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-        .collect();
+    // Prefer token-boundary prefixes when tokenization succeeds. Character-level
+    // prefix checking on long ambiguous inputs is prohibitively expensive and
+    // does not add meaningful signal for completable validation.
+    let prefixes: Vec<(usize, String)> = match grammar.tokenize(input) {
+        Ok(segments) => {
+            let mut cuts = vec![0usize];
+            cuts.extend(segments.iter().map(|s| s.end));
+            if !cuts.contains(&input.len()) {
+                cuts.push(input.len());
+            }
+            cuts.sort_unstable();
+            cuts.dedup();
+            cuts.into_iter()
+                .map(|byte_end| {
+                    let p = input[..byte_end].to_string();
+                    (p.chars().count(), p)
+                })
+                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+                .collect()
+        }
+        Err(_) => (0..=chars.len())
+            .map(|len| (len, chars[..len].iter().collect::<String>()))
+            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+            .collect(),
+    };
 
     let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
         .iter()
         .map(|(len, prefix)| {
-            // Keep one extra expansion step available for the exact input prefix.
-            // This prevents off-by-one failures on prefixes that require an
-            // additional structural token before meaningful term expansion.
-            let depth_budget = max_depth + (chars.len() - len) + 2;
+            // Use a stable per-case depth budget across prefixes.
+            // Inflating by remaining characters causes severe blowups on short
+            // prefixes (especially empty input) in ambiguous grammars.
+            let depth_budget = max_depth;
             let start = std::time::Instant::now();
 
             if *len == chars.len() {
@@ -169,13 +191,7 @@ pub fn sound_complete(
             let mut prefix_synth = Synthesizer::new(grammar.clone(), prefix.clone());
             let ok = match prefix_synth.partial() {
                 Ok(partial) => {
-                    let mut tokens = prefix_synth.typed_completions(&ctx);
-                    if tokens.is_empty() {
-                        // For untyped grammars (no typing rules) typed_completions
-                        // always returns empty. Fall back to syntactic completions,
-                        // mirroring the fallback in search::build_children.
-                        tokens = prefix_synth.completions();
-                    }
+                    let tokens = prefix_synth.completions_ctx(&ctx);
                     prefix_ok(grammar, &ctx, &partial, &tokens)
                 }
                 Err(_) => false,
@@ -252,8 +268,8 @@ fn prefix_ok(
 
     let mut saw_typed_root = false;
 
-    for root in &partial.roots {
-        match check_tree_with_context(root, grammar, ctx) {
+    for root in partial.roots() {
+        match check_tree_with_context(&root, grammar, ctx) {
             // Prefix soundness accepts any root that is currently typable or
             // typing-indeterminate (partial), even if the root is syntactically
             // incomplete. This is required for states like `... in` where the
@@ -273,6 +289,7 @@ fn prefix_ok(
 mod tests {
     use super::*;
     use crate::logic::grammar::Grammar;
+    use crate::logic::partial::MetaParser;
     use crate::logic::partial::Synthesizer;
 
     #[test]
@@ -294,7 +311,7 @@ mod tests {
 
         let mut synth = Synthesizer::new(grammar.clone(), "f");
         let partial = synth.partial().unwrap();
-        let tokens = synth.typed_completions(&ctx);
+        let tokens = synth.completions_ctx(&ctx);
 
         assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
     }
@@ -321,7 +338,7 @@ mod tests {
         let ctx = Context::new();
         let mut synth = Synthesizer::new(grammar.clone(), "let x : int in");
         let partial = synth.partial().unwrap();
-        let tokens = synth.typed_completions(&ctx);
+        let tokens = synth.completions_ctx(&ctx);
 
         assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
     }
@@ -348,7 +365,7 @@ mod tests {
         let ctx = Context::new();
         let mut synth = Synthesizer::new(grammar.clone(), "let x : int in let y : bool in");
         let partial = synth.partial().unwrap();
-        let tokens = synth.typed_completions(&ctx);
+        let tokens = synth.completions_ctx(&ctx);
 
         assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
     }
@@ -396,8 +413,43 @@ mod tests {
         "#;
         let grammar = Grammar::load(spec).unwrap();
         let mut synth = Synthesizer::new(grammar, "let a = 1");
-        let tokens = synth.typed_completions(&Context::new());
+        let tokens = synth.completions();
 
         assert!(!tokens.is_empty());
+    }
+
+    #[test]
+    fn successful_completion_is_syntactic_and_typed() {
+        let grammar = crate::validation::parseable::load_example_grammar("fun");
+        let result = complete(&grammar, "(", 4, Some(Context::new()));
+        if let CompletionResult::Success { complete_input, .. } = result {
+            let mut mp = MetaParser::new(grammar).with_max_depth(62);
+            let typed = mp.partial_typed(&complete_input).unwrap_or_else(|e| {
+                panic!("completion should type-check: {} ({})", complete_input, e)
+            });
+            assert!(
+                typed.clone().complete().is_ok(),
+                "completion should be complete typed tree: {}",
+                complete_input
+            );
+        }
+    }
+
+    #[test]
+    fn pathological_prefix_never_returns_garbage_completion() {
+        let grammar = crate::validation::parseable::load_example_grammar("fun");
+        let input = "let ( a ) + true ( let a : A -> A -> A ->";
+        let result = complete(&grammar, input, 2, Some(Context::new()));
+
+        if let CompletionResult::Success { complete_input, .. } = result {
+            let mut mp = MetaParser::new(grammar).with_max_depth(62);
+            let typed = mp.partial_typed(&complete_input).unwrap_or_else(|e| {
+                panic!(
+                    "garbage completion returned for pathological prefix: {} ({})",
+                    complete_input, e
+                )
+            });
+            assert!(typed.clone().complete().is_ok());
+        }
     }
 }

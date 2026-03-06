@@ -1,12 +1,15 @@
 use super::*;
 
+// Empirical bound for IMP parseability prefixes under left-recursive arithmetic.
+const IMP_PARSE_MAX_DEPTH: usize = 41;
+
 #[cfg(test)]
 fn imp_grammar() -> Grammar {
     load_example_grammar("imp")
 }
 
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
-    vec![
+    let cases = vec![
         ParseTestCase::valid("assign int", "{ let x:Int=5; }"),
         ParseTestCase::valid("assign int negative", "{ let x:Int=0-5; }"),
         ParseTestCase::valid("assign arithmetic", "{ let x:Int=1+2; }"),
@@ -21,7 +24,12 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
             "{ if (1==1) { let x:Int=1; } else { let x:Int=2; } }",
         ),
         ParseTestCase::valid("while expression", "{ while (1==1) { let x:Int=1; } }"),
-    ]
+    ];
+
+    cases
+        .into_iter()
+        .map(|c| c.with_parse_max_depth(IMP_PARSE_MAX_DEPTH))
+        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {

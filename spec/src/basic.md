@@ -42,11 +42,11 @@ The **empty input** is denoted by $\epsilon$.
 
 Let $L$ be a **formal language** over an alphabet $\Sigma$.
 
-An **expression** $s \in \Sigma^\ast$ is said to be **completable** in $L$ if there exists some $s' \in \Sigma^\ast$ such that $ss' \in L$.
+An **expression** $s \in \Sigma^\ast$ is said to be **completable** in $L$ if there exists some $s' \in \Sigma^\ast$ such that $ss' \in L$
 
 
 >D Completability Set
-For any expression $s \in \Sigma^\ast$, the **completability set** is:
+For any expression $s \in \Sigma^\ast$, the **completability set** in $L$ is:
 $$\mathcal{C}_L(s) = \\{a \in \Sigma : \exists s' \in \Sigma^\ast : sas' \in L\\}$$
 <
 

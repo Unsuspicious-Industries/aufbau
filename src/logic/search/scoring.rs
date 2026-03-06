@@ -1,5 +1,4 @@
-use crate::logic::partial::Node;
-use crate::logic::PartialAST;
+use crate::logic::typing::tree::{TypedAST, TypedNode};
 
 // heuristics for nice program synthesis / completion ranking
 // allows for efficient completability checking by prioritizing promising paths
@@ -45,7 +44,7 @@ impl StateScore {
     }
 }
 
-pub fn calculate_score(tree: &PartialAST, depth: usize, max_depth: usize) -> StateScore {
+pub fn calculate_score(tree: &TypedAST, depth: usize, max_depth: usize) -> StateScore {
     let completeness = estimate_completeness(tree);
     let production_fullness = estimate_production_fullness(tree);
     let token_length = estimate_token_length_bonus(tree);
@@ -64,13 +63,13 @@ pub fn calculate_score(tree: &PartialAST, depth: usize, max_depth: usize) -> Sta
 
 /// Fraction of nodes that are fully matched terminals, weighted 2x.
 /// Evaluated on the best root (highest score) since roots are alternatives.
-pub fn estimate_completeness(tree: &PartialAST) -> f64 {
+pub fn estimate_completeness(tree: &TypedAST) -> f64 {
     tree.roots
         .iter()
         .map(|root| {
             let mut score = 0.0;
             let mut total = 0;
-            count_completeness(&Node::NonTerminal(root.clone()), &mut score, &mut total);
+            count_completeness(root, &mut score, &mut total);
             if total == 0 {
                 0.0
             } else {
@@ -80,25 +79,22 @@ pub fn estimate_completeness(tree: &PartialAST) -> f64 {
         .fold(0.0_f64, f64::max)
 }
 
-fn count_completeness(node: &Node, score: &mut f64, total: &mut usize) {
+fn count_completeness(node: &TypedNode, score: &mut f64, total: &mut usize) {
     *total += 1;
-
     match node {
-        Node::Terminal(t) => match t {
-            crate::logic::partial::Terminal::Complete { .. } => {
-                *score += 1.0;
-            }
-            crate::logic::partial::Terminal::Partial { value, .. } => {
-                let partial_len = value.len();
+        TypedNode::Term { remainder, val, .. } => {
+            if remainder.is_none() {
+                *score += 1.0; // complete terminal
+            } else {
+                let partial_len = val.len();
                 *score += 0.5 * (1.0 / (partial_len as f64 + 1.0));
             }
-        },
-        Node::NonTerminal(nt) => {
-            if nt.children.is_empty() {
-                // unexpanded — not counted as complete at all
-                *score += 0.0;
+        }
+        TypedNode::Expr { children, .. } => {
+            if children.is_empty() {
+                *score += 0.0; // unexpanded
             } else {
-                for child in &nt.children {
+                for child in children {
                     count_completeness(child, score, total);
                 }
             }
@@ -107,13 +103,13 @@ fn count_completeness(node: &Node, score: &mut f64, total: &mut usize) {
 }
 
 /// RMS of per-production fill ratios for the best (most filled) root.
-pub fn estimate_production_fullness(tree: &PartialAST) -> f64 {
+pub fn estimate_production_fullness(tree: &TypedAST) -> f64 {
     tree.roots
         .iter()
         .map(|root| {
             let mut sum_sq = 0.0;
             let mut count = 0;
-            collect_fullness(&Node::NonTerminal(root.clone()), &mut sum_sq, &mut count);
+            collect_fullness(root, &mut sum_sq, &mut count);
             if count == 0 {
                 0.0
             } else {
@@ -123,48 +119,53 @@ pub fn estimate_production_fullness(tree: &PartialAST) -> f64 {
         .fold(0.0_f64, f64::max)
 }
 
-fn collect_fullness(node: &Node, sum_sq: &mut f64, count: &mut usize) {
-    if let Node::NonTerminal(nt) = node {
-        let expected = nt.production.rhs.len();
-        if expected > 0 && !nt.children.is_empty() {
-            let filled = nt.children.len().min(expected);
+fn collect_fullness(node: &TypedNode, sum_sq: &mut f64, count: &mut usize) {
+    if let TypedNode::Expr {
+        children, rhs_len, ..
+    } = node
+    {
+        let expected = *rhs_len;
+        if expected > 0 && !children.is_empty() {
+            let filled = children.len().min(expected);
             let ratio = filled as f64 / expected as f64;
             *sum_sq += ratio * ratio;
             *count += 1;
         }
-        for child in &nt.children {
+        for child in children {
             collect_fullness(child, sum_sq, count);
         }
     }
 }
 
-/// Bonus for tokens consumed by the best root.
-/// sqrt scale: 1 token→0.25, 4→0.5, 9→0.75, 16→1.0.
-pub fn estimate_token_length_bonus(tree: &PartialAST) -> f64 {
+/// Bonus for tokens consumed — approximated by counting complete leaf terminals.
+pub fn estimate_token_length_bonus(tree: &TypedAST) -> f64 {
     let max_tokens = tree
         .roots
         .iter()
-        .map(|root| root.consumed_segments)
+        .map(|root| count_leaf_terminals(root))
         .max()
         .unwrap_or(0);
-
     if max_tokens == 0 {
         return 0.0;
     }
-
     (max_tokens as f64).sqrt() * 0.25
 }
 
+fn count_leaf_terminals(node: &TypedNode) -> usize {
+    match node {
+        TypedNode::Term { .. } => 1,
+        TypedNode::Expr { children, .. } => children.iter().map(count_leaf_terminals).sum(),
+    }
+}
+
 /// THE key signal: open slots on the BEST root (min open slots = most complete alternative).
-/// Each unfilled slot = one required future step. -0.3 per slot, uncapped so spread is real.
-/// A state 1 step away beats one 10 steps away by 2.7 points.
-pub fn estimate_open_slots_penalty(tree: &PartialAST) -> f64 {
+pub fn estimate_open_slots_penalty(tree: &TypedAST) -> f64 {
     let min_open = tree
         .roots
         .iter()
         .map(|root| {
             let mut open = 0usize;
-            count_open_slots(&Node::NonTerminal(root.clone()), &mut open);
+            count_open_slots(root, &mut open);
             open
         })
         .min()
@@ -172,17 +173,18 @@ pub fn estimate_open_slots_penalty(tree: &PartialAST) -> f64 {
     -(min_open as f64 * 0.3)
 }
 
-fn count_open_slots(node: &Node, open: &mut usize) {
-    if let Node::NonTerminal(nt) = node {
-        if nt.children.is_empty() {
-            // unexpanded placeholder — this is an open slot
-            *open += 1;
+fn count_open_slots(node: &TypedNode, open: &mut usize) {
+    if let TypedNode::Expr {
+        children, rhs_len, ..
+    } = node
+    {
+        if children.is_empty() {
+            *open += 1; // unexpanded placeholder
         } else {
-            // count unfilled rhs positions as open
-            let expected = nt.production.rhs.len();
-            let filled = nt.children.len().min(expected);
+            let expected = *rhs_len;
+            let filled = children.len().min(expected);
             *open += expected.saturating_sub(filled);
-            for child in &nt.children {
+            for child in children {
                 count_open_slots(child, open);
             }
         }
@@ -195,12 +197,12 @@ pub fn estimate_simplicity(depth: usize, max_depth: usize) -> f64 {
     (1.0 - normalized_depth) * 0.3
 }
 
-/// Light recursion penalty on the shallowest root — open_slots already discourages deep nesting.
-pub fn estimate_recursion_penalty(tree: &PartialAST, max_depth: usize) -> f64 {
+/// Light recursion penalty on the shallowest root.
+pub fn estimate_recursion_penalty(tree: &TypedAST, max_depth: usize) -> f64 {
     let min_tree_depth = tree
         .roots
         .iter()
-        .map(|root| max_depth_in_node(&Node::NonTerminal(root.clone()), 0))
+        .map(|root| max_depth_in_node(root, 0))
         .min()
         .unwrap_or(0);
     if min_tree_depth == 0 {
@@ -210,15 +212,15 @@ pub fn estimate_recursion_penalty(tree: &PartialAST, max_depth: usize) -> f64 {
     -0.5 * normalized * normalized
 }
 
-fn max_depth_in_node(node: &Node, depth: usize) -> usize {
+fn max_depth_in_node(node: &TypedNode, depth: usize) -> usize {
     match node {
-        Node::Terminal(_) => depth + 1,
-        Node::NonTerminal(nt) => {
+        TypedNode::Term { .. } => depth + 1,
+        TypedNode::Expr { children, .. } => {
             let mut max_child = depth + 1;
-            for child in &nt.children {
-                let child_depth = max_depth_in_node(child, depth + 1);
-                if child_depth > max_child {
-                    max_child = child_depth;
+            for child in children {
+                let d = max_depth_in_node(child, depth + 1);
+                if d > max_child {
+                    max_child = d;
                 }
             }
             max_child

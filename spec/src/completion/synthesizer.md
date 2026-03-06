@@ -4,6 +4,8 @@ The **synthesizer** is the stateful interface between the parser and the search 
 
 Source: [`src/logic/partial/synth.rs`](~/src/logic/partial/synth.rs)
 
+This chapter is meant to be read before [Search](./search.md). It only covers token generation and input extension; frontier management is described in [Search](./search.md), and numeric ranking is described in [Scoring](./scoring.md).
+
 ## Definition
 
 >D Synthesizer
@@ -13,7 +15,7 @@ $$\Sigma_s = (G, \mathcal{M}, s)$$
 
 where:
 - $G$ is a grammar
-- $\mathcal{M}$ is a `MetaParser` instance (see [Meta-Parser](../parsing/meta_parser.md)) with cached depth state
+- $\mathcal{M}$ is a `MetaParser` instance layered on top of the [partial parser](../parsing.md), with cached depth state
 - $s \in \Sigma^*$ is the current input string
 <
 
@@ -21,13 +23,14 @@ The synthesizer exposes the following operations:
 
 | Operation | Signature | Description |
 |-----------|-----------|-------------|
-| `partial` | $\Sigma_s \to \mathcal{F}$ | Parse current input into a partial forest |
-| `completions` | $\Sigma_s \to \mathcal{C}$ | Grammar-level (untyped) completion set |
-| `typed_completions` | $\Sigma_s \times \Gamma \to \mathcal{C}_\tau$ | Type-filtered completion set |
-| `try_extend` | $\Sigma_s \times t \times \Gamma \to (\mathcal{F}, s')$ | Parse $s \cdot t$, return result without mutation |
-| `extend` | $\Sigma_s \times t \times \Gamma \to (\mathcal{F}, s')$ | Parse $s \cdot t$ and commit to new input |
-| `extend_with_regex` | $\Sigma_s \times r \times \Gamma \times n \to (\mathcal{F}, s')$ | Extend with a regex token by trying concrete candidates |
-| `complete` | $\Sigma_s \to \text{bool}$ | Check if the current parse is already complete |
+| `partial` | `partial(&mut self) -> Result<PartialAST, String>` | Parse current input into a partial forest |
+| `completions` | `completions(&mut self) -> CompletionSet` | Type-filtered completion set under the empty context |
+| `completions_ctx` | `completions_ctx(&mut self, ctx: &Context) -> CompletionSet` | Type-filtered completion set in context $\Gamma$ |
+| `try_extend` | `try_extend(&mut self, token: &str, ctx: &Context) -> Result<(TypedAST, String), String>` | Parse $s \cdot t$, return the typed result without mutation |
+| `extend` | `extend(&mut self, token: &str, ctx: &Context) -> Result<TypedAST, String>` | Parse $s \cdot t$ and commit to the new input |
+| `extend_with_regex` | `extend_with_regex(&mut self, token: &DerivativeRegex, ctx: &Context) -> Option<(TypedAST, String)>` | Extend with a regex token, returning the first valid candidate |
+| `extend_all_with_regex` | `extend_all_with_regex(&mut self, token: &DerivativeRegex, ctx: &Context, max_examples: usize) -> Vec<(TypedAST, String)>` | Extend with a regex token, returning up to `max_examples` valid candidates |
+| `complete` | `complete(&mut self) -> Option<TypedNode>` | Return a complete typed root when one exists |
 
 ## Extension Semantics
 
@@ -58,42 +61,40 @@ The auto-separator is a **syntactic heuristic**, not a grammatical guarantee. It
 >D Regex Extension
 When the next token is a `DerivativeRegex` $r$ (a regex that can still match more input), the synthesizer cannot directly concatenate $r$ as a string. Instead, it gathers **concrete candidate strings** and tries each:
 
-1. **Tree terminals**: collect all terminal text from the current partial forest via `gather_terminals`
+1. **Grammar seeds**: word-like special tokens and raw types collected from the grammar
 2. **Primary example**: $r.\text{example}()$, the canonical example string of the regex
-3. **Additional examples**: $r.\text{examples}(n)$, up to $n$ additional examples
+3. **Tree terminals**: collect terminal text from the current typed tree
 
-Candidates are tried in this order via `try_extend`. The first valid extension wins.
+Candidates are tried in this order via `try_extend`. `extend_with_regex` returns the first valid extension; `extend_all_with_regex` keeps distinct successful extensions up to the requested bound.
 <
 
-The tree-terminal-first ordering is intentional: reusing identifiers and literals already present in the partial tree produces more coherent completions (e.g., reusing a bound variable name rather than inventing a new one). This is a heuristic for **quality**, not correctness; any valid candidate would produce a correct completion.
+The candidate ordering is intentional: reusing grammar-derived literals and already-seen terminals tends to produce more coherent completions than inventing arbitrary new text. This is a heuristic for **quality**, not correctness; any valid candidate would produce a correct completion.
 
 ## Step-by-step: building an expression token by token
 
 This section traces exactly what the synthesizer does when the search engine calls `extend` repeatedly to build the expression `let x = 1` from an empty input. The grammar assumed is a simple expression language where a `let`-binding has the form `let <ident> = <expr>`.
 
 >N why this example?
-`let x = 1` hits all three extension modes: keyword (no separator needed before `let`), identifier (`x`, chosen from typed completions), punctuation (`=`), and a literal. Four tokens, four calls to `extend`.
+`let x = 1` hits all three extension modes: keyword (no separator needed before `let`), identifier (`x`, chosen from `completions_ctx`), punctuation (`=`), and a literal. Four tokens, four calls to `extend`.
 <
 
-**Initial state.** The synthesizer starts with $s = \varepsilon$ (the empty string). `partial()` returns an empty forest; every nonterminal in $G$ is a candidate root. `typed_completions` with any context will return the set of tokens that can begin a valid expression — including `let`.
+**Initial state.** The synthesizer starts with $s = \varepsilon$ (the empty string). `partial()` returns an empty forest; every nonterminal in $G$ is a candidate root. `completions_ctx` with any context will return the set of tokens that can begin a valid expression — including `let`.
 
-**Step 1: extend with `let`.** The search engine calls `extend(s, \texttt{"let"}, \Gamma)`. The auto-separator check sees $\text{last}(\varepsilon)$ is undefined so no separator is inserted. The MetaParser parses `"let"` and returns a partial forest with one active parse: a `let`-binding with three remaining holes (`<ident>`, `=`, `<expr>`). The synthesizer commits: $s \leftarrow \texttt{"let"}$.
+**Step 1: extend with `let`.** The search engine calls `extend(\texttt{"let"}, \Gamma)`. The auto-separator check sees $\text{last}(\varepsilon)$ is undefined so no separator is inserted. The MetaParser parses `"let"` and returns a partial forest with one active parse: a `let`-binding with three remaining holes (`<ident>`, `=`, `<expr>`). The synthesizer commits: $s \leftarrow \texttt{"let"}$.
 
-After this step, `typed_completions` returns only tokens that can extend `"let"` to a syntactically and type-valid string. In a well-designed grammar, that set consists entirely of identifiers matching `[a-z][a-z0-9_]*`.
+After this step, `completions_ctx` returns only tokens that can extend `"let"` to a syntactically and type-valid string. In a well-designed grammar, that set consists entirely of identifiers matching `[a-z][a-z0-9_]*`.
 
 **Step 2: extend with `x`.** The auto-separator check: $\text{last}(\texttt{"let"}) = \texttt{t} \in \mathcal{W}$ and $\text{first}(\texttt{"x"}) = \texttt{x} \in \mathcal{W}$, so a space is automatically inserted. The MetaParser parses `"let x"`. The partial forest now has the `<ident>` hole filled; the remaining holes are `=` and `<expr>`. The synthesizer commits: $s \leftarrow \texttt{"let x"}$.
 
-`typed_completions` now returns only `=`, since that is the only token that can advance the `let`-binding parse.
+`completions_ctx` now returns only `=`, since that is the only token that can advance the `let`-binding parse.
 
 **Step 3: extend with `=`.** $\text{last}(\texttt{"let x"}) = \texttt{x} \in \mathcal{W}$, $\text{first}(\texttt{"="}) = \texttt{=} \notin \mathcal{W}$, so no auto-separator. The MetaParser parses `"let x ="`. The partial forest has one hole remaining: `<expr>`. The synthesizer commits: $s \leftarrow \texttt{"let x ="}$.
 
-`typed_completions` with a typing context $\Gamma$ now filters: any token that begins a valid expression *and* whose eventual type is compatible with the binding context. Numeric literals (`1`, `2`, ...) and any bound variable in $\Gamma$ are valid.
+`completions_ctx` with a typing context $\Gamma$ now filters: any token that begins a valid expression *and* whose eventual type is compatible with the binding context. Numeric literals (`1`, `2`, ...) and any bound variable in $\Gamma$ are valid.
 
-**Step 4: extend with `1`.** $\text{last}(\texttt{"let x ="}) = \texttt{=} \notin \mathcal{W}$, no auto-separator. The MetaParser parses `"let x = 1"`. The partial forest now contains a complete parse rooted at the `let`-binding nonterminal. `complete()` returns true. The search engine accepts this state as a valid completion.
+**Step 4: extend with `1`.** $\text{last}(\texttt{"let x ="}) = \texttt{=} \notin \mathcal{W}$, no auto-separator. The MetaParser parses `"let x = 1"`. The partial forest now contains a complete parse rooted at the `let`-binding nonterminal. `complete()` returns `Some(root)`. The search engine can now stop on this state.
 
->I step through it
-{"label":"extend: let x = 1","input":"","steps":[{"token":"let","tokens":["let"],"display":"s = \"let\"\nactive: let <ident> = <expr>"},{"token":"x","tokens":["x","y","z","n"],"display":"s = \"let x\"\nfilled: <ident> = x\nremaining: = <expr>"},{"token":"=","tokens":["="],"display":"s = \"let x =\"\nfilled: = \nremaining: <expr>"},{"token":"1","tokens":["1","2","42","x"],"display":"s = \"let x = 1\"\ncomplete \u2713\nroot: let-binding"}]}
-<
+
 
 The display in the widget mirrors what the synthesizer's internal state looks like at each step: the accumulated string $s$, which holes in the parse tree have been filled, and what remains. Clicking any offered token fires a Web Audio blip and advances the state exactly as `extend` would.
 
@@ -103,12 +104,12 @@ The display in the widget mirrors what the synthesizer's internal state looks li
 retry is intentionally local: nearby states should have nearby depths (e.g. 10 -> 11/12, not 41)
 <
 
->W Depth-Differential Retry
-When `typed_completions` fails type filtering on the first pass, the synthesizer retries with a fresh `MetaParser` in a **bounded local window**:
+>R Depth-Differential Retry
+When completion filtering fails on the first pass, the synthesizer retries with a fresh `MetaParser` in a **bounded local window**:
 
 $$d_\text{start} = d + 1, \quad d_\text{max} = d + 2$$
 
 where $d$ is the depth used by the initial parse.
 
-This keeps depth changes smooth across similar synthesizer states and avoids large jumps that harm predictability and cache locality.
+This makes sure the parsing gathers anough trees to produce a typed alternative. It's a heuristics, and is faillible. Bad design but works enough.
 <

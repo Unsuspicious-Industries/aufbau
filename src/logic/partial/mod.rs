@@ -74,8 +74,8 @@ fn test_complete_len() {
     let segments = g.tokenize(input).unwrap();
 
     // Get the complete alternative's segment range
-    let root = ast
-        .roots
+    let roots = ast.roots();
+    let root = roots
         .iter()
         .find(|r| r.is_complete())
         .expect("Expected a complete root");
@@ -115,14 +115,15 @@ fn test_complete_len_partial() {
 
     // The AST may have partial alternatives
     // Check if any root claims to be complete (should be none)
-    let complete_root = ast.roots.iter().find(|r| r.is_complete());
+    let roots = ast.roots();
+    let complete_root = roots.iter().find(|r| r.is_complete());
     assert!(
         complete_root.is_none(),
         "Partial parse should not have complete root"
     );
 
     // Even if we check complete_len on a partial root, it should return None
-    if let Some(root) = ast.roots.first() {
+    if let Some(root) = roots.first() {
         let range = root.complete_len(&segments);
         assert_eq!(
             range, None,
@@ -153,8 +154,8 @@ fn test_complete_len_nested() {
     // Safety: Tokenization must succeed for valid test input.
     let segments = g.tokenize(input).unwrap();
 
-    let root = ast
-        .roots
+    let roots = ast.roots();
+    let root = roots
         .iter()
         .find(|r| r.is_complete())
         .expect("Expected a complete root");
@@ -181,7 +182,7 @@ fn serialize_complex_stlc() {
 
     // Safety: Grammar loading must succeed for static test specification.
     let g = crate::logic::grammar::Grammar::load(spec).unwrap();
-    let mut p = crate::logic::partial::Parser::new(g.clone());
+    let mut p = MetaParser::new(g.clone());
 
     let input = "λ f : A -> B -> C -> D . f x y z";
     // Safety: Parse must succeed for valid test input.

@@ -1,8 +1,10 @@
 #[D] Type Inference
 
-The type inference engine evaluates partial trees against the typing rules $\Theta$ attached to grammar productions. The central judgment is $\Gamma \vdash\_\Theta t : \mathcal{S}$, where $\mathcal{S}$ is a [tree status](concepts/typing_system.md) in the lattice $\\{\text{Valid}(\tau), \text{Partial}(\tau), \text{TooDeep}, \text{Malformed}\\}$.
+As we already explored, yhe type inference engine evaluates partial trees against the typing rules $\Theta$ attached to grammar productions. 
 
-Source: [`src/logic/typing/eval.rs`](../src/logic/typing/eval.rs)
+The central judgment is $\Gamma \vdash\_\Theta t : \mathcal{S}$, where $\mathcal{S}$ is a [tree status](concepts/typing_system.md) in the lattice 
+$$\\{\text{Valid}(\tau), \text{Partial}(\tau), \text{TooDeep}, \text{Malformed}\\}$$
+
 
 ## Dispatch
 
@@ -16,54 +18,55 @@ Given a tree reference $t$ at depth $d$ in context $\Gamma$:
 3. **Terminal**: if $t$ is a terminal node:
    - Complete terminal: $\text{Valid}(\top)$.
    - Partial terminal: $\text{Partial}(\top)$.
-4. **Non-terminal with rule**: if $t$'s production has a typing rule $\theta \in \Theta$, apply the rule (see below).
-5. **Non-terminal without rule**: apply the transparent wrapper (see below).
+4. **Non-terminal with rule**: if $t$'s production has a typing rule $\theta \in \Theta$, **apply** the rule.
+5. **Non-terminal without rule**: apply the drilling wrapper.
 <
 
 ### Completeness Promotion
 
 >L Partial-to-Malformed Promotion
-If a non-terminal $t$ is complete (all children present and complete) and not extensible, but the typing result is $\text{Partial}$, the result is promoted to $\text{Malformed}$.
+If a non-terminal $t$ is complete (all children present and complete) and not extensible, but the typing result is $\text{Partial}$ we return $\text{Malformed}$ because its weird.
 <
 
 This prevents permanently indeterminate states on finished subtrees. A complete, non-extensible subtree that cannot be assigned a definite type has definitively failed type checking.
 
 ## Rule Application
 
-When a non-terminal has an associated typing rule $\theta = (\text{premises}, \text{conclusion})$:
+When a non-terminal has an associated typing rule $\theta = (\text{premises}, \text{conclusion})$we can apply the following algorithm to resolve it.
 
->D Rule Application
-1. **Resolve bindings**: compute $B = \text{resolve}(t, \theta)$ via [runtime binding](binding.md). If the binding target is at the frontier, return $\text{Partial}$. If the binding structure is malformed, return $\text{Malformed}$.
-2. **Create unifier**: initialize a fresh Hindley-Milner unifier $U$ for meta-variable resolution.
-3. **Initialize context lanes**: create named context maps. The primary lane is determined by the conclusion's context input, or the first premise's setting, or defaults to $\Gamma$.
-4. **Evaluate premises** (in order): for each premise $p_i$, compute $\text{check\_premise}(p_i)$:
-   - $\text{Ok}(\Gamma')$: update the relevant context lane.
-   - $\text{Fail}$: immediately return $\text{Malformed}$.
-   - $\text{Partial}$: set a flag but **continue evaluating remaining premises** (a later premise may Fail).
+1. **Resolve bindings**: compute $B = \text{resolve}(t, \theta)$ via [runtime binding](binding.md). Return $\text{Partial}$ if the target is at the frontier; return $\text{Malformed}$ if the structure is invalid.
+
+2. **Create unifier**: initialize a unifier $U$ for meta-variable resolution.
+
+3. **Initialize context lanes**: create named context maps. The primary lane is set by the conclusion's context input, the first premise's setting, or defaults to $\Gamma$.
+
+4. **Evaluate premises** (in order): for each $p_i$, compute $\text{check\_premise}(p_i)$:
+   - `Ok(G')` updates the relevant context lane
+   - `Fail` immediately returns `Malformed`
+   - `Partial` sets a flag but **evaluation continues** since a later premise may still fail
+
 5. **If any premise was Partial**: return $\text{Partial}(\top)$.
+
 6. **Evaluate conclusion**: resolve the output type via the unifier and bindings, return $\text{Valid}(\tau)$.
+
 7. **Extract context transform**: if the conclusion specifies $\Gamma \to \Gamma[x:\tau]$, build the extended context for sibling propagation.
-<
 
 The non-short-circuiting behavior on Partial premises (step 4) is deliberate: a Partial followed by a Fail should yield Malformed, not Partial.
 
->I type check
-{"label":"typecheck: \u03bbx:Int.x","input":"","steps":[{"token":"resolve","tokens":["resolve"],"display":"node: Abstraction(\u03bbx:Int.x)\nrule: abs\nbindings: {param=x, ty=Int, body=x}"},{"token":"premise 1","tokens":["premise 1"],"display":"\u0393 \u22a2 ty : ?A\nresolve ty \u2192 Int\ninfer: Valid(Raw(Int))\nunify ?A := Raw(Int) \u2713"},{"token":"premise 2","tokens":["premise 2"],"display":"\u0393[x:Int] \u22a2 body : ?B\nextend context: x \u2192 Int\nresolve body \u2192 x\nlookup x in \u0393' \u2192 Int\nunify ?B := Raw(Int) \u2713"},{"token":"conclusion","tokens":["conclusion"],"display":"conclusion: ?A \u2192 ?B\nsubstitute: Int \u2192 Int\nresult: Valid(Int \u2192 Int)"}]}
-<
+
 
 ## Transparent Wrapper
 
-Productions without typing rules are "transparent": they do not constrain types but propagate results from their children.
+Productions without typing rules are "transparent" to their child if they only have one, else they fail. This is done for convenience when writting grammars. 
 
 >D Transparent Wrapper
 For a non-terminal without a typing rule:
 
 - **1 non-terminal child**: recurse into that child. The parent inherits the child's type and output context unchanged.
 - **0 non-terminal children** (terminals only): if at the frontier, $\text{Partial}(\top)$; otherwise $\text{Valid}(\top)$.
-- **2+ non-terminal children**: evaluate children left-to-right, threading context updates through successive siblings. If any child is $\text{Malformed}$, short-circuit. If any is $\text{Partial}$, the result is $\text{Partial}(\top)$. Otherwise $\text{Valid}(\top)$.
+- **2+ non-terminal children**: $\text{malformed}$
 <
 
-The left-to-right context threading in the multi-child case is what enables statement sequences: a `let x = 5` declaration extends the context so that subsequent statements see the binding for `x`.
 
 ## Type Cache
 
@@ -114,8 +117,4 @@ Equality is three-valued: $\text{equal}(\tau_1, \tau_2) \in \\{\text{true}, \tex
 
 ## Depth Limit
 
-The typing depth limit of 50 prevents infinite recursion on grammars with cyclic typing dependencies. At depth 50, the checker returns $\text{TooDeep}$, which is treated as "ok" by `evaluate_typing` (i.e., $\text{TooDeep}$ trees are not rejected). This is a conservative choice: a tree that exceeds the depth limit is assumed to be potentially valid rather than definitively malformed.
-
->W TooDeep Is Not Malformed
-$\text{TooDeep}$ returns `is_ok() = true`, meaning `evaluate_typing` accepts forests containing only TooDeep trees. This could cause false positives: a tree that would be $\text{Malformed}$ at depth 51 is instead accepted as $\text{TooDeep}$ at depth 50. The depth limit of 50 is empirically sufficient for all current grammars, but it is a soundness approximation, not a guarantee.
-<
+The typing depth limit of 50 prevents infinite recursion on grammars with cyclic typing dependencies. It is bad design. 
