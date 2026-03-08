@@ -52,3 +52,35 @@ fn try_extend_def_after_equals_with_number() {
         "should extend 'def a : X =' with '1'"
     );
 }
+
+#[test]
+fn extend_commits_input_and_tree() {
+    let grammar = Grammar::load(SCOPED_TYPED_SPEC).unwrap();
+    let ctx = Context::new();
+    let mut synth = Synthesizer::new(grammar, "def a : X =");
+
+    let typed = synth.extend("1", &ctx).expect("extend should succeed");
+
+    assert_eq!(synth.input(), "def a : X = 1");
+    assert_eq!(synth.tree().unwrap().text(), typed.text());
+}
+
+#[test]
+fn extend_with_regex_commits_input_and_tree() {
+    let grammar = Grammar::load(SCOPED_TYPED_SPEC).unwrap();
+    let ctx = Context::new();
+    let mut synth = Synthesizer::new(grammar, "def a : X =");
+    let token = synth
+        .completions_ctx(&ctx)
+        .iter()
+        .next()
+        .cloned()
+        .expect("expected at least one completion token");
+
+    let (typed, extended) = synth
+        .extend_with_regex(&token, &ctx)
+        .expect("regex extension should succeed");
+
+    assert_eq!(synth.input(), extended);
+    assert_eq!(synth.tree().unwrap().text(), typed.text());
+}

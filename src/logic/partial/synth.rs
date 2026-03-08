@@ -154,6 +154,7 @@ impl Synthesizer {
     pub fn extend(&mut self, token: &str, ctx: &Context) -> Result<TypedAST, String> {
         let (typed, extended) = self.try_extend(token, ctx)?;
         self.input = extended;
+        self.tree = Some(typed.clone());
         Ok(typed)
     }
 
@@ -162,7 +163,10 @@ impl Synthesizer {
         token: &DerivativeRegex,
         ctx: &Context,
     ) -> Option<(TypedAST, String)> {
-        self.extend_greedy_with_regex(token, ctx).into_iter().next()
+        let (typed, extended) = self.extend_greedy_with_regex(token, ctx)?;
+        self.input = extended.clone();
+        self.tree = Some(typed.clone());
+        Some((typed, extended))
     }
 
     pub fn extend_all_with_regex(

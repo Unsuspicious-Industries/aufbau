@@ -21,7 +21,6 @@ mod tests {
                 let comp = cset.iter().choose(&mut rng).unwrap();
                 if let Some(comp) = synthesizer.extend_with_regex(comp, &ctx) {
                     println!("Adding completion: '{}'", comp.1);
-                    synthesizer.set_input(comp.1);
                     break;
                 } else {
                     println!("Failed to extend with completion: '{}'", comp);
@@ -60,7 +59,6 @@ mod tests {
                     comp.1,
                     start_extend.elapsed()
                 );
-                synthesizer = Synthesizer::new(grammar.clone(), comp.1);
             }
             println!(
                 "Iteration {}: found {} completions for input '{}'",
@@ -124,10 +122,9 @@ mod tests {
             let comp = cset.iter().choose(&mut rng);
             match comp {
                 Some(comp) => {
-                    if let Some(extended) =
+                    if let Some(_extended) =
                         synthesizer.extend_with_regex(comp, &ctx)
                     {
-                        synthesizer = Synthesizer::new(grammar.clone(), extended.1);
                         println!("Extended to '{}'", synthesizer.input());
                     } else {
                         println!("Could not extend at depth {depth}, stopping early.");
