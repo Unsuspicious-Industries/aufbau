@@ -8,6 +8,7 @@ CONTEXT.md
 
 # Virtual environments
 .venv
+.env
 
 # Temporary files
 tmp
