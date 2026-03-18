@@ -1,0 +1,173 @@
+//! `check` — type-check a program (or partial program) from stdin.
+//!
+//! Reads a grammar specification from `--spec` and a program from stdin,
+//! then runs the partial type-checker. For complete programs it prints the
+//! inferred type; for partial programs it prints every candidate partial
+//! type so the caller can see what completions are still possible.
+//!
+//! Exit codes
+//! ----------
+//! 0  At least one well-typed root was found (complete **or** partial).
+//! 1  The input could not be parsed / typed at all.
+//! 2  Usage / I/O error (bad spec file, missing flag, …).
+
+use clap::Args;
+use std::io::{self, Read};
+use std::path::PathBuf;
+
+use aufbau::logic::grammar::Grammar;
+use aufbau::logic::partial::MetaParser;
+use aufbau::logic::typing::Type;
+
+/// Type-check a program (or partial program) read from stdin.
+///
+/// The checker uses the incremental partial parser so even incomplete
+/// programs produce meaningful output: every surviving parse candidate
+/// is shown together with its (possibly partial) type.
+///
+/// Examples
+/// --------
+///
+///   echo "let x : Int = 1 ; x" | aufbau check -s examples/fun.auf
+///
+///   echo "let x" | aufbau check -s examples/fun.auf
+#[derive(Args, Debug, Clone)]
+pub struct CheckCmd {
+    /// Path to the grammar / typing-rules specification file (.auf)
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec: PathBuf,
+
+    /// Print the full AST tree for every root, not just the top-level type
+    #[arg(long = "ast", action = clap::ArgAction::SetTrue)]
+    pub ast: bool,
+
+    /// Show all ambiguous parse candidates, even when a unique complete
+    /// root exists (by default only the best / complete root is shown)
+    #[arg(long = "all", action = clap::ArgAction::SetTrue)]
+    pub all: bool,
+}
+
+pub fn run(args: &CheckCmd) {
+    // ── 1. Load grammar ──────────────────────────────────────────────────
+    let spec_src = match std::fs::read_to_string(&args.spec) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read spec '{}': {}", args.spec.display(), e);
+            std::process::exit(2);
+        }
+    };
+    let grammar = match Grammar::load(&spec_src) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("error: failed to load grammar: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    // ── 2. Read program from stdin ───────────────────────────────────────
+    let mut input = String::new();
+    if let Err(e) = io::stdin().read_to_string(&mut input) {
+        eprintln!("error: failed to read stdin: {}", e);
+        std::process::exit(2);
+    }
+    let input = input.trim_end_matches('\n');
+
+    // ── 3. Partial type-check ────────────────────────────────────────────
+    let mut mp = MetaParser::new(grammar);
+    let typed = match mp.partial_typed(input) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if typed.is_empty() {
+        eprintln!("error: no parse found for input");
+        std::process::exit(1);
+    }
+
+    // ── 4. Choose which roots to display ────────────────────────────────
+    //
+    // Preference order:
+    //   a) complete, well-typed roots  (type is not Any / not a meta var)
+    //   b) complete roots with Any type
+    //   c) all remaining partial roots (when nothing complete exists)
+    //
+    // Unless --all is given we collapse multiple identical types into one.
+
+    let complete_roots: Vec<_> = typed.roots.iter().filter(|r| r.is_complete()).collect();
+    let partial_roots: Vec<_> = typed.roots.iter().filter(|r| !r.is_complete()).collect();
+
+    let is_partial = complete_roots.is_empty();
+
+    let display_roots: Vec<_> = if args.all {
+        typed.roots.iter().collect()
+    } else if !complete_roots.is_empty() {
+        // Prefer well-typed complete roots; fall back to any-typed ones.
+        let well_typed: Vec<_> = complete_roots
+            .iter()
+            .copied()
+            .filter(|r| !matches!(r.ty(), Type::Any | Type::Meta(_)))
+            .collect();
+        if !well_typed.is_empty() {
+            well_typed
+        } else {
+            complete_roots
+        }
+    } else {
+        partial_roots
+    };
+
+    // Deduplicate by type string when not showing all.
+    let mut seen_types: Vec<String> = Vec::new();
+    let mut unique_roots = Vec::new();
+    for root in &display_roots {
+        let ty_s = format!("{}", root.ty());
+        if args.all || !seen_types.contains(&ty_s) {
+            seen_types.push(ty_s);
+            unique_roots.push(*root);
+        }
+    }
+
+    // ── 5. Print results ─────────────────────────────────────────────────
+    if is_partial {
+        println!("partial  \"{}\"", input);
+        println!();
+        if unique_roots.len() == 1 {
+            let root = unique_roots[0];
+            let ty = root.ty();
+            println!("type : {}", ty);
+        } else {
+            println!("{} candidate type(s):", unique_roots.len());
+            for (i, root) in unique_roots.iter().enumerate() {
+                println!("  [{}] : {}", i + 1, root.ty());
+            }
+        }
+    } else {
+        // Complete parse
+        if unique_roots.len() == 1 {
+            let root = unique_roots[0];
+            println!("{} : {}", input, root.ty());
+            if args.ast {
+                println!();
+                print!("{}", root);
+            }
+        } else {
+            // Ambiguous — show all candidates
+            println!("\"{}\"", input);
+            println!();
+            println!("{} type(s) (ambiguous parse):", unique_roots.len());
+            for (i, root) in unique_roots.iter().enumerate() {
+                println!("  [{}] : {}", i + 1, root.ty());
+                if args.ast {
+                    println!();
+                    print!("{}", root);
+                    println!();
+                }
+            }
+        }
+    }
+
+    std::process::exit(0);
+}

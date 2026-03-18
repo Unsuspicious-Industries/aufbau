@@ -35,6 +35,10 @@ impl MetaParser {
         }
     }
 
+    pub fn max_depth(&self) -> usize {
+        self.max_depth
+    }
+
     pub fn from_parser(parser: Parser) -> Self {
         Self {
             parser,

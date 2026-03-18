@@ -1,6 +1,7 @@
 # Build artifacts
 target
 examine_*.ast
+verification/_build/
 
 CONTEXT_DUMP.md
 CONTEXT.md 
@@ -24,6 +25,7 @@ flamegraph.svg
 *.swp
 *.swo
 .opencode
+.code-workspace
 
 # Python
 __pycache__/

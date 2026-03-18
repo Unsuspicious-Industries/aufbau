@@ -24,6 +24,8 @@
           ];
         };
 
+        rocqPkgs = pkgs.rocqPackages;
+
 
         devTools = with pkgs; [
           # Rust tools
@@ -53,6 +55,13 @@
           clang
           mold
 
+          # proving
+          coq
+          rocqPkgs.vsrocq-language-server
+          dune_3
+          ocaml
+
+
           # Libraries
           openssl
           pkg-config
@@ -73,14 +82,10 @@
           ] ++ devTools ++ lspServers;
 
           shellHook = ''
-            echo "Proposition 7 Dev Environment"
-            echo "----------------------------"
-
             export RUST_BACKTRACE=1
             export RUST_LOG=info
             export CARGO_BUILD_JOBS=8
             export LEAN_PATH="${pkgs.lean4}/lib/lean"
-            export COQLIB="${pkgs.coq_8_18}/lib/coq"
 
             # Linker fixes for NixOS
             export LD=$(which clang)
@@ -94,16 +99,6 @@
             export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
             export LIBRARY_PATH="${pkgs.openssl.out}/lib:$LIBRARY_PATH"
 
-            # Show versions
-            echo "Rust:     $(rustc --version)"
-            echo "Cargo:    $(cargo --version)"
-            echo "Python:   $(python --version)"
-            echo "VSCodium available: codium ."
-            echo ""
-            echo "Quick commands:"
-            echo "  cargo watch -x check    # Auto-check on save"
-            echo "  cargo nextest run       # Run tests fast"
-            echo "  cargo flamegraph        # Profile with flamegraph"
           '';
         };
 
@@ -111,4 +106,3 @@
       }
     );
 }
-

@@ -1,0 +1,122 @@
+imp|{
+imp|{ }
+
+imp|{ let
+imp|{ let x
+imp|{ let x :
+imp|{ let x : Int
+imp|{ let x : Int =
+imp|{ let x : Int = 0
+imp|{ let x : Int = 0 ;
+imp|{ let x : Int = 0 ; }
+
+imp|{ let b
+imp|{ let b : Bool
+imp|{ let b : Bool =
+imp|{ let b : Bool = true
+imp|{ let b : Bool = true ;
+imp|{ let b : Bool = true ; }
+
+imp|{ let x : Int = 0 ; x
+imp|{ let x : Int = 0 ; x =
+imp|{ let x : Int = 0 ; x = 1
+imp|{ let x : Int = 0 ; x = 1 ;
+imp|{ let x : Int = 0 ; x = 1 ; }
+
+imp|{ let x : Int = 0 ; x = x
+imp|{ let x : Int = 0 ; x = x +
+imp|{ let x : Int = 0 ; x = x + 1
+imp|{ let x : Int = 0 ; x = x + 1 ;
+imp|{ let x : Int = 0 ; x = x + 1 ; }
+
+imp|{ if
+imp|{ if (
+imp|{ if ( true
+imp|{ if ( true )
+imp|{ if ( true ) {
+imp|{ if ( true ) { }
+imp|{ if ( true ) { } }
+
+imp|{ if ( 0 ==
+imp|{ if ( 0 == 0
+imp|{ if ( 0 == 0 )
+imp|{ if ( 0 == 0 ) {
+imp|{ if ( 0 == 0 ) { }
+imp|{ if ( 0 == 0 ) { } }
+
+imp|{ if ( true ) { } else
+imp|{ if ( true ) { } else {
+imp|{ if ( true ) { } else { }
+imp|{ if ( true ) { } else { } }
+
+imp|{ while
+imp|{ while (
+imp|{ while ( true
+imp|{ while ( true )
+imp|{ while ( true ) {
+imp|{ while ( true ) { }
+imp|{ while ( true ) { } }
+
+imp|{ while ( x ==
+imp|{ let x : Int = 0 ; while ( x ==
+imp|{ let x : Int = 0 ; while ( x == 0
+imp|{ let x : Int = 0 ; while ( x == 0 )
+imp|{ let x : Int = 0 ; while ( x == 0 ) {
+imp|{ let x : Int = 0 ; while ( x == 0 ) { x = x + 1 ;
+imp|{ let x : Int = 0 ; while ( x == 0 ) { x = x + 1 ; }
+imp|{ let x : Int = 0 ; while ( x == 0 ) { x = x + 1 ; } }
+
+imp|{ let x : Int = 0 ; if ( x < 1 ) {
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ;
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ; }
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ; } else {
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ; } else { x = 2 ;
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ; } else { x = 2 ; }
+imp|{ let x : Int = 0 ; if ( x < 1 ) { x = 1 ; } else { x = 2 ; } }
+
+imp|{ let x : Int = 0 ; let y : Int =
+imp|{ let x : Int = 0 ; let y : Int = 1 ;
+imp|{ let x : Int = 0 ; let y : Int = 1 ; y =
+imp|{ let x : Int = 0 ; let y : Int = 1 ; y = y +
+imp|{ let x : Int = 0 ; let y : Int = 1 ; y = y + 1 ;
+imp|{ let x : Int = 0 ; let y : Int = 1 ; y = y + 1 ; }
+
+imp|{ let x : Int = 0 ; let y : Int = 1 ; if ( x < y ) {
+imp|{ let x : Int = 0 ; let y : Int = 1 ; if ( x < y ) { x = y ;
+imp|{ let x : Int = 0 ; let y : Int = 1 ; if ( x < y ) { x = y ; } else {
+imp|{ let x : Int = 0 ; let y : Int = 1 ; if ( x < y ) { x = y ; } else { y = x ;
+imp|{ let x : Int = 0 ; let y : Int = 1 ; if ( x < y ) { x = y ; } else { y = x ; } }
+
+imp|{ let b : Bool = true ; if ( b ) {
+imp|{ let b : Bool = true ; if ( b ) { }
+imp|{ let b : Bool = true ; if ( b ) { } else {
+imp|{ let b : Bool = true ; if ( b ) { } else { }
+imp|{ let b : Bool = true ; if ( b ) { } else { } }
+
+imp|{ let x : Int = 0 ; let done : Bool = false ; while ( done ) {
+imp|{ let x : Int = 0 ; let done : Bool = false ; while ( done ) { x = x + 1 ;
+imp|{ let x : Int = 0 ; let done : Bool = false ; while ( done ) { x = x + 1 ; }
+imp|{ let x : Int = 0 ; let done : Bool = false ; while ( done ) { x = x + 1 ; } }
+
+imp|{ let n : Int = 3 ; while ( n > 0 ) {
+imp|{ let n : Int = 3 ; while ( n > 0 ) { n = n - 1 ;
+imp|{ let n : Int = 3 ; while ( n > 0 ) { n = n - 1 ; }
+imp|{ let n : Int = 3 ; while ( n > 0 ) { n = n - 1 ; } }
+
+imp|{ let u : Int | Bool =
+imp|{ let u : Int | Bool = true ;
+imp|{ let u : Int | Bool = true ; }
+imp|{ let v : Int | Bool = 0 ;
+imp|{ let v : Int | Bool = 0 ; }
+
+imp|{ let x : Int = 0 ; if ( x == 0 ) {
+imp|{ let x : Int = 0 ; if ( x == 0 ) { while ( x < 2 ) {
+imp|{ let x : Int = 0 ; if ( x == 0 ) { while ( x < 2 ) { x = x + 1 ;
+imp|{ let x : Int = 0 ; if ( x == 0 ) { while ( x < 2 ) { x = x + 1 ; } }
+imp|{ let x : Int = 0 ; if ( x == 0 ) { while ( x < 2 ) { x = x + 1 ; } } }
+
+imp|{ let x : Int = 0 ; let y : Int = 10 ; while ( x < y ) {
+imp|{ let x : Int = 0 ; let y : Int = 10 ; while ( x < y ) { x = x + 1 ;
+imp|{ let x : Int = 0 ; let y : Int = 10 ; while ( x < y ) { x = x + 1 ; y = y - 1 ;
+imp|{ let x : Int = 0 ; let y : Int = 10 ; while ( x < y ) { x = x + 1 ; y = y - 1 ; }
+imp|{ let x : Int = 0 ; let y : Int = 10 ; while ( x < y ) { x = x + 1 ; y = y - 1 ; } }

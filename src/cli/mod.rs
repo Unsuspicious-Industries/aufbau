@@ -1,7 +1,10 @@
-
+pub mod check;
+pub mod complete;
+pub mod complete_k;
 pub mod examine;
 pub mod logic;
 pub mod validate;
+pub mod verify;
 
 use clap::{ArgAction, Parser, Subcommand};
 use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
@@ -32,17 +35,46 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Logic-related commands
+    /// Type-check a program (or partial program) read from stdin.
+    ///
+    /// Reads a grammar spec from --spec and the program from stdin, then
+    /// runs the partial type-checker.  For complete programs the inferred
+    /// type is printed; for partial programs every surviving candidate type
+    /// is shown so callers can see what completions remain possible.
+    ///
+    /// Exit codes: 0 = typed OK (complete or partial), 1 = parse/type error,
+    /// 2 = usage/I-O error.
+    Check(self::check::CheckCmd),
+
+    /// Complete a partial program read from stdin using the type-aware synthesizer.
+    ///
+    /// Reads a grammar spec from --spec and a partial program from stdin,
+    /// then runs a priority-guided search to find the shortest well-typed
+    /// completion.  The completed program is written to stdout.
+    ///
+    /// Exit codes: 0 = completion found (output on stdout), 1 = no completion
+    /// found within budget, 2 = usage/I-O error.
+    Complete(self::complete::CompleteCmd),
+
+    /// Return up to k complete programs extending a partial prefix
+    CompleteK(self::complete_k::CompleteKCmd),
+
+    /// Logic-related commands (viz, completions)
     Logic(self::logic::LogicCmd),
+
     /// Run validation test suites with progress and report
     Validate(self::validate::ValidateCmd),
+
+    /// Complete a prefix and validate it against the Coq verifier
+    Verify(self::verify::VerifyCmd),
+
     /// Quick helper to examine completability for an input or test-case
     Examine(self::examine::ExamineCmd),
-
 }
 
 pub fn run() {
     let cli = Cli::parse();
+
     // Wire verbosity to debug level, with --trace overriding verbose count
     let level = if cli.trace {
         DebugLevel::Trace
@@ -64,13 +96,16 @@ pub fn run() {
     }
 
     if cli.with_input {
-        // leave actual input empty for now; specific commands may set the input string
         set_debug_input(None);
     }
 
     match &cli.command {
+        Commands::Check(args) => self::check::run(args),
+        Commands::Complete(args) => self::complete::run(args),
+        Commands::CompleteK(args) => self::complete_k::run(args),
         Commands::Logic(_) => self::logic::dispatch(&cli),
         Commands::Validate(args) => self::validate::run(args),
+        Commands::Verify(args) => self::verify::run(args),
         Commands::Examine(args) => self::examine::run(args),
     }
 }

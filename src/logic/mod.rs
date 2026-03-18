@@ -12,4 +12,4 @@ pub mod binding;
 pub use grammar::{Segment, Tokenizer};
 pub use partial::{Parser, PartialAST};
 
-pub use search::{search_complete, SearchConfig, SearchResult};
+pub use search::{search_complete, search_k, SearchConfig, SearchResult};

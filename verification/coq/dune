@@ -1,0 +1,33 @@
+(rule
+ (targets Common.vo)
+ (deps Common.v)
+ (action
+  (run coqc -Q . verification.coq -noglob -o Common.vo %{dep:Common.v})))
+
+(rule
+ (targets STLC.vo)
+ (deps STLC.v Common.vo)
+ (action
+  (run coqc -Q . verification.coq -noglob -o STLC.vo %{dep:STLC.v})))
+
+(rule
+ (targets Fun.vo)
+ (deps Fun.v Common.vo)
+ (action
+  (run coqc -Q . verification.coq -noglob -o Fun.vo %{dep:Fun.v})))
+
+(rule
+ (targets Imp.vo)
+ (deps Imp.v Common.vo)
+ (action
+  (run coqc -Q . verification.coq -noglob -o Imp.vo %{dep:Imp.v})))
+
+(rule
+ (targets Extract.vo)
+ (deps Extract.v STLC.vo Fun.vo Imp.vo)
+ (action
+  (run coqc -Q . verification.coq -noglob -o Extract.vo %{dep:Extract.v})))
+
+(alias
+ (name coq)
+ (deps Common.vo STLC.vo Fun.vo Imp.vo Extract.vo))
