@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Premises - Aufbau Engine</title>
+        <title>Grammar files format - Aufbau Engine</title>
 
 
         <!-- Custom HTML head -->
@@ -12,26 +12,26 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="theme-color" content="#ffffff">
 
-        <link rel="icon" href="../favicon-de23e50b.svg">
-        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
-        <link rel="stylesheet" href="../css/variables-3865ffda.css">
-        <link rel="stylesheet" href="../css/general-fc62be9c.css">
-        <link rel="stylesheet" href="../css/chrome-c0e702bf.css">
-        <link rel="stylesheet" href="../css/print-ad67d350.css" media="print">
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-3865ffda.css">
+        <link rel="stylesheet" href="css/general-fc62be9c.css">
+        <link rel="stylesheet" href="css/chrome-c0e702bf.css">
+        <link rel="stylesheet" href="css/print-ad67d350.css" media="print">
 
         <!-- Fonts -->
-        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
 
         <!-- Highlight.js Stylesheets -->
-        <link rel="stylesheet" id="highlight-css" href="../highlight-771e6289.css">
-        <link rel="stylesheet" id="tomorrow-night-css" href="../tomorrow-night-a1977727.css">
-        <link rel="stylesheet" id="ayu-highlight-css" href="../ayu-highlight-bb48bc81.css">
+        <link rel="stylesheet" id="highlight-css" href="highlight-771e6289.css">
+        <link rel="stylesheet" id="tomorrow-night-css" href="tomorrow-night-a1977727.css">
+        <link rel="stylesheet" id="ayu-highlight-css" href="ayu-highlight-bb48bc81.css">
 
         <!-- Custom theme stylesheets -->
-        <link rel="stylesheet" href="../theme/proofs-d864099c.css">
-        <link rel="stylesheet" href="../theme/uncertainty-9fcb4263.css">
-        <link rel="stylesheet" href="../theme/status-ee3768fd.css">
-        <link rel="stylesheet" href="../theme/margin-b955fd61.css">
+        <link rel="stylesheet" href="theme/proofs-d864099c.css">
+        <link rel="stylesheet" href="theme/uncertainty-9fcb4263.css">
+        <link rel="stylesheet" href="theme/status-ee3768fd.css">
+        <link rel="stylesheet" href="theme/margin-b955fd61.css">
 
         <!-- MathJax 3 Configuration (must come BEFORE loading the script) -->
         <script>
@@ -46,13 +46,13 @@
 
         <!-- Provide site root and default themes to javascript -->
         <script>
-            const path_to_root = "../";
+            const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-679ab674.js";
+            window.path_to_searchindex_js = "searchindex-679ab674.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-9d63ff89.js"></script>
+        <script src="toc-9d63ff89.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -119,7 +119,7 @@
             <!-- populated by js -->
             <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
             <noscript>
-                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
             </noscript>
             <div id="sidebar-resize-handle" class="sidebar-resize-handle">
                 <div class="sidebar-resize-indicator"></div>
@@ -154,7 +154,7 @@
                     <h1 class="menu-title">Aufbau Engine</h1>
 
                     <div class="right-buttons">
-                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
                             <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
                         </a>
 
@@ -188,80 +188,172 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="wip-premises"><a class="header" href="#wip-premises"><span class="status-badge wip">WIP</span> Premises</a></h1>
-<p>Premises are conditions above the line in a typing rule, evaluated left-to-right to thread the typing <a href="./context.html">context</a>.</p>
-<h3 id="premise-result"><a class="header" href="#premise-result">Premise Result</a></h3>
-<p>Evaluating a premise yields a <strong>three-valued result</strong>:</p>
+                        <h1 id="done-grammar-specification"><a class="header" href="#done-grammar-specification"><span class="status-badge done">DONE</span> Grammar Specification</a></h1>
+<p>The grammar is composed of production rules with syntactic meaning and attached typing rules conveying semantic information about the language.</p>
+<p>The core data structures are defined in <a href="../../src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>.</p>
+<h2 id="production-rules"><a class="header" href="#production-rules">Production Rules</a></h2>
+<p>Production rules define the syntactic structure of the language. Each rule maps a nonterminal to one or more alternative right-hand sides.</p>
+<div class="definition">
+<div class="definition-title">Definition: Production Rule Syntax</div>
+
+<pre><code class="language-spec">Nonterminal(rule_name) ::= symbol₁ symbol₂ ... | alternative₂ | ...
+</code></pre>
 <ul>
-<li>$\text{Ok}(\Gamma’)$: the premise holds. $\Gamma’$ is the modified context.</li>
-<li>$\text{Fail}$: the premise is definitively violated.</li>
-<li>$\text{Partial}$: the premise is undecided due to incomplete information.</li>
+<li><code>Nonterminal</code>: symbol being defined.</li>
+<li><code>(rule_name)</code>: optional typing rule name.</li>
+<li><code>::=</code>: separator.</li>
+<li><code>|</code>: alternative separator.</li>
+<li><code>symbols</code>: sequence of terminals and nonterminals.</li>
 </ul>
-<p>This mirrors the <a href="../concepts/typing_system.html">tree status lattice</a>. Typing constraints are deferred when information is missing.</p>
-<h2 id="premise-types"><a class="header" href="#premise-types">Premise Types</a></h2>
-<div class="definition">
-<div class="definition-title">Definition: Ascription (Inference)</div>
-
-<p>$\Gamma \vdash e : \tau$ infers the type of $e$ in context $\Gamma$ and unifies with $\tau$.</p>
-<ol>
-<li>Resolve binding $e$ to a tree node.</li>
-<li>Recursively type-check the subtree.</li>
-<li>Unify the inferred type with $\tau$.</li>
-</ol>
 </div>
 
-<div class="definition">
-<div class="definition-title">Definition: Check</div>
-
-<p>$\Gamma \triangleright e$ asserts that $e$ is well-typed in $\Gamma$ without constraining its type.</p>
-<ol>
-<li>Resolve binding $e$.</li>
-<li>Type-check the subtree.</li>
-<li>Succeed if status is $\text{Valid}$ or $\text{Partial}$; fail if $\text{Invalid}$.</li>
-</ol>
+<p>Bindings are resolved via <strong>grammar paths</strong> during type-checking. See <a href="../../src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a> for the path construction algorithm.</p>
+<h3 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h3>
+<p>An epsilon production represents an empty alternative, written as <code>ε</code>.</p>
+<pre><code class="language-spec">// Optional tail matching zero or more Terms
+ProgramTail ::= Term ProgramTail | ε
+</code></pre>
+<h2 id="typing-rules"><a class="header" href="#typing-rules">Typing Rules</a></h2>
+<p>Typing rules attach semantic information to productions using an inference-rule format.</p>
+<pre><code class="language-spec">premise₁, premise₂, ...
+------------------------ (rule_name)
+conclusion
+</code></pre>
+<p>The rule name in parentheses must match a <code>(rule_name)</code> annotation on a production.</p>
+<h3 id="premises"><a class="header" href="#premises">Premises</a></h3>
+<p>Premises express conditions for rule application.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>Γ ⊢ e : τ</code></td><td style="text-align: left">Term <code>e</code> has type <code>τ</code> in context <code>Γ</code> (inference)</td></tr>
+<tr><td style="text-align: left"><code>Γ ▷ e</code></td><td style="text-align: left">Check that term <code>e</code> is well-typed in context <code>Γ</code> (checking)</td></tr>
+<tr><td style="text-align: left"><code>x ∈ Γ</code></td><td style="text-align: left">Variable <code>x</code> is bound in context <code>Γ</code></td></tr>
+<tr><td style="text-align: left"><code>τ₁ = τ₂</code></td><td style="text-align: left">Types must unify</td></tr>
+<tr><td style="text-align: left"><code>τ₁ ⊆ τ₂</code></td><td style="text-align: left">Type <code>τ₁</code> is a subtype of <code>τ₂</code></td></tr>
+<tr><td style="text-align: left"><code>Γ[x:τ]</code></td><td style="text-align: left">Extend context with binding <code>x:τ</code></td></tr>
+</tbody>
+</table>
 </div>
-
-<div class="definition">
-<div class="definition-title">Definition: Membership</div>
-
-<p>$x \in \Gamma$ asserts that $x$ is bound in context $\Gamma$.</p>
-<ol>
-<li>Resolve binding $x$ to its text value.</li>
-<li>Look up text in $\Gamma$.</li>
-<li>Succeed if found; fail if not; return $\text{Partial}$ if $x$ is incomplete.</li>
-</ol>
+<h3 id="conclusions"><a class="header" href="#conclusions">Conclusions</a></h3>
+<p>Conclusions specify the rule’s result:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>τ</code></td><td style="text-align: left">Return type <code>τ</code></td></tr>
+<tr><td style="text-align: left"><code>Γ(x)</code></td><td style="text-align: left">Look up type of <code>x</code> in context</td></tr>
+<tr><td style="text-align: left"><code>Γ → Γ[x:τ] ⊢ τ</code></td><td style="text-align: left">Set type of <code>x</code> in context and return <code>τ</code></td></tr>
+</tbody>
+</table>
 </div>
-
-<div class="definition">
-<div class="definition-title">Definition: Context Extension</div>
-
-<p>$\Gamma[x:\tau]$ extends the context with binding $x:\tau$.</p>
-<ol>
-<li>Resolve $x$ and $\tau$.</li>
-<li>Call $\Gamma.\text{extend}(x, \tau)$.</li>
-<li>Succeed with $\Gamma’ = \Gamma[x:\tau]$; fail if $x$ exists in $\Gamma$.</li>
-</ol>
-</div>
-
-<h3 id="operation-equality--subtyping"><a class="header" href="#operation-equality--subtyping">Operation (Equality / Subtyping)</a></h3>
-<p>$\tau_1\ \text{op}\ \tau_2$ where $\text{op} \in \{=, \subseteq\}$.</p>
+<p>Checking mode (<code>▷</code>) is not implemented as a conclusion; use the check premise <code>Γ ▷ e</code> instead.</p>
+<h3 id="meta-variables"><a class="header" href="#meta-variables">Meta-Variables</a></h3>
+<p>A <strong>meta-variable</strong> (written <code>?A</code>, <code>?B</code>, etc.) is a placeholder unified during type checking, allowing rules to express polymorphic constraints.</p>
+<pre><code class="language-spec">// ?A must unify with both the function's domain and the argument's type.
+Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
+-------------------------------- (app)
+?B
+</code></pre>
+<h3 id="context-operations"><a class="header" href="#context-operations">Context Operations</a></h3>
+<p>The typing context <code>Γ</code> maps variable names to types:</p>
 <ul>
-<li>$\tau_1 = \tau_2$: unify the two types.</li>
-<li>$\tau_1 \subseteq \tau_2$: check the subtype relation.</li>
+<li><code>Γ(x)</code>: Look up type of variable <code>x</code>.</li>
+<li><code>Γ[x:τ]</code>: Extend context with binding <code>x:τ</code>.</li>
+<li><code>x ∈ Γ</code>: Check if <code>x</code> is bound in context.</li>
 </ul>
-<p>Both use three-valued logic, returning $\text{Ok}$, $\text{Fail}$, or $\text{Partial}$.</p>
-<h3 id="evaluation-order"><a class="header" href="#evaluation-order">Evaluation Order</a></h3>
-<p>Premises evaluate strictly left-to-right. The context from premise $i$ is input to $i+1$, unless in <a href="./context.html">no-propagate mode</a>. Premise ordering is semantically significant: reordering changes binding availability.</p>
+<h2 id="type-syntax"><a class="header" href="#type-syntax">Type Syntax</a></h2>
+<p>Types in typing rules follow this syntax:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Description</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>τ</code></td><td style="text-align: left">Type variable (from binding)</td></tr>
+<tr><td style="text-align: left"><code>!τ</code></td><td style="text-align: left">Not Type</td></tr>
+<tr><td style="text-align: left"><code>?A</code></td><td style="text-align: left">Meta-variable (unified during checking)</td></tr>
+<tr><td style="text-align: left"><code>'int'</code></td><td style="text-align: left">Raw/concrete type literal</td></tr>
+<tr><td style="text-align: left"><code>τ₁ → τ₂</code></td><td style="text-align: left">Function type</td></tr>
+<tr><td style="text-align: left"><code>τ₁ | τ₂</code></td><td style="text-align: left">Union type</td></tr>
+<tr><td style="text-align: left"><code>⊤</code></td><td style="text-align: left">Top type (any)</td></tr>
+<tr><td style="text-align: left"><code>∅</code></td><td style="text-align: left">Bottom type (none)</td></tr>
+<tr><td style="text-align: left"><code>Γ(x)</code></td><td style="text-align: left">Context lookup</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="example-simply-typed-lambda-calculus"><a class="header" href="#example-simply-typed-lambda-calculus">Example: Simply-Typed Lambda Calculus</a></h2>
+<p>A complete specification for STLC from <a href="../../examples/stlc.auf"><code>examples/stlc.auf</code></a>:</p>
+<pre><code class="language-spec">// Identifier (supports Unicode)
+Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
+
+// Variables with var typing rule
+Variable(var) ::= Identifier[x]
+
+TypeName ::= /[A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]+/
+
+// Base types (parentheses are literals, hence quoted)
+BaseType ::= TypeName | '(' Type ')'
+
+// Function types (right-associative)
+AtomicType ::= BaseType | '(' Type ')'
+FunctionType ::= AtomicType '-&gt;' Type
+Type ::= AtomicType | FunctionType
+
+// Lambda abstraction (dot is a literal)
+Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
+
+// Atomic expressions
+AtomicExpression ::= Variable | '(' Expression ')' | Lambda
+
+// Applications (left-associative)
+Application(app) ::= Expression[l] AtomicExpression[r]
+
+// Expressions (start symbol)
+Expression ::= AtomicExpression |  Application
+
+// Typing Rules
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+Γ[a:τ] ⊢ e : ?B
+--------------------------- (lambda)
+τ → ?B
+
+Γ ⊢ l : ?A → ?B, Γ ⊢ r : ?A
+--------------------------------- (app)
+?B
+</code></pre>
+<h2 id="source-files"><a class="header" href="#source-files">Source Files</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Component</th><th style="text-align: left">Path</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left">Grammar structures</td><td style="text-align: left"><a href="../../src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a></td></tr>
+<tr><td style="text-align: left">Spec file loading</td><td style="text-align: left"><a href="../../src/logic/grammar/load.rs"><code>src/logic/grammar/load.rs</code></a></td></tr>
+<tr><td style="text-align: left">Typing rules</td><td style="text-align: left"><a href="../../src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td></tr>
+<tr><td style="text-align: left">Type definitions</td><td style="text-align: left"><a href="../../src/logic/typing/mod.rs"><code>src/logic/typing/mod.rs</code></a></td></tr>
+<tr><td style="text-align: left">Binding map</td><td style="text-align: left"><a href="../../src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a></td></tr>
+</tbody>
+</table>
+</div>
 
                     </main>
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../typing/context.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="regex.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../typing/conclusion.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="parsing.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -271,11 +363,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../typing/context.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="regex.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../typing/conclusion.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="parsing.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
@@ -296,18 +388,18 @@
         </script>
 
 
-        <script src="../elasticlunr-ef4e11c1.min.js"></script>
-        <script src="../mark-09e88c2c.min.js"></script>
-        <script src="../searcher-c2a407aa.js"></script>
+        <script src="elasticlunr-ef4e11c1.min.js"></script>
+        <script src="mark-09e88c2c.min.js"></script>
+        <script src="searcher-c2a407aa.js"></script>
 
-        <script src="../clipboard-1626706a.min.js"></script>
-        <script src="../highlight-abc7f01d.js"></script>
-        <script src="../book-831c6ebd.js"></script>
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-831c6ebd.js"></script>
 
         <!-- Custom JS scripts -->
-        <script src="../theme/collapse-examples-d81f197f.js"></script>
-        <script src="../theme/margin-702b1e77.js"></script>
-        <script src="../theme/synth-widget-4f038e0a.js"></script>
+        <script src="theme/collapse-examples-d81f197f.js"></script>
+        <script src="theme/margin-702b1e77.js"></script>
+        <script src="theme/synth-widget-4f038e0a.js"></script>
 
 
 

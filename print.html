@@ -50,10 +50,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c7416da4.js";
+            window.path_to_searchindex_js = "searchindex-679ab674.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-caa35add.js"></script>
+        <script src="toc-9d63ff89.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -729,6 +729,163 @@ rejecting the tree.</p>
 <h2 id="string-generation"><a class="header" href="#string-generation">String Generation</a></h2>
 <p><code>examples(n)</code> generates up to $n$ concrete strings in $\mathcal{L}(r)$. The <a href="#done-synthesizer">synthesizer</a> uses this to find token candidates when extending a partial tree with a regex terminal.</p>
 <div style="break-before: page; page-break-before: always;"></div>
+<h1 id="done-grammar-specification"><a class="header" href="#done-grammar-specification"><span class="status-badge done">DONE</span> Grammar Specification</a></h1>
+<p>The grammar is composed of production rules with syntactic meaning and attached typing rules conveying semantic information about the language.</p>
+<p>The core data structures are defined in <a href="../../src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a>.</p>
+<h2 id="production-rules"><a class="header" href="#production-rules">Production Rules</a></h2>
+<p>Production rules define the syntactic structure of the language. Each rule maps a nonterminal to one or more alternative right-hand sides.</p>
+<div class="definition">
+<div class="definition-title">Definition: Production Rule Syntax</div>
+
+<pre><code class="language-spec">Nonterminal(rule_name) ::= symbol₁ symbol₂ ... | alternative₂ | ...
+</code></pre>
+<ul>
+<li><code>Nonterminal</code>: symbol being defined.</li>
+<li><code>(rule_name)</code>: optional typing rule name.</li>
+<li><code>::=</code>: separator.</li>
+<li><code>|</code>: alternative separator.</li>
+<li><code>symbols</code>: sequence of terminals and nonterminals.</li>
+</ul>
+</div>
+
+<p>Bindings are resolved via <strong>grammar paths</strong> during type-checking. See <a href="../../src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a> for the path construction algorithm.</p>
+<h3 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h3>
+<p>An epsilon production represents an empty alternative, written as <code>ε</code>.</p>
+<pre><code class="language-spec">// Optional tail matching zero or more Terms
+ProgramTail ::= Term ProgramTail | ε
+</code></pre>
+<h2 id="typing-rules"><a class="header" href="#typing-rules">Typing Rules</a></h2>
+<p>Typing rules attach semantic information to productions using an inference-rule format.</p>
+<pre><code class="language-spec">premise₁, premise₂, ...
+------------------------ (rule_name)
+conclusion
+</code></pre>
+<p>The rule name in parentheses must match a <code>(rule_name)</code> annotation on a production.</p>
+<h3 id="premises"><a class="header" href="#premises">Premises</a></h3>
+<p>Premises express conditions for rule application.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>Γ ⊢ e : τ</code></td><td style="text-align: left">Term <code>e</code> has type <code>τ</code> in context <code>Γ</code> (inference)</td></tr>
+<tr><td style="text-align: left"><code>Γ ▷ e</code></td><td style="text-align: left">Check that term <code>e</code> is well-typed in context <code>Γ</code> (checking)</td></tr>
+<tr><td style="text-align: left"><code>x ∈ Γ</code></td><td style="text-align: left">Variable <code>x</code> is bound in context <code>Γ</code></td></tr>
+<tr><td style="text-align: left"><code>τ₁ = τ₂</code></td><td style="text-align: left">Types must unify</td></tr>
+<tr><td style="text-align: left"><code>τ₁ ⊆ τ₂</code></td><td style="text-align: left">Type <code>τ₁</code> is a subtype of <code>τ₂</code></td></tr>
+<tr><td style="text-align: left"><code>Γ[x:τ]</code></td><td style="text-align: left">Extend context with binding <code>x:τ</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="conclusions"><a class="header" href="#conclusions">Conclusions</a></h3>
+<p>Conclusions specify the rule’s result:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>τ</code></td><td style="text-align: left">Return type <code>τ</code></td></tr>
+<tr><td style="text-align: left"><code>Γ(x)</code></td><td style="text-align: left">Look up type of <code>x</code> in context</td></tr>
+<tr><td style="text-align: left"><code>Γ → Γ[x:τ] ⊢ τ</code></td><td style="text-align: left">Set type of <code>x</code> in context and return <code>τ</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Checking mode (<code>▷</code>) is not implemented as a conclusion; use the check premise <code>Γ ▷ e</code> instead.</p>
+<h3 id="meta-variables"><a class="header" href="#meta-variables">Meta-Variables</a></h3>
+<p>A <strong>meta-variable</strong> (written <code>?A</code>, <code>?B</code>, etc.) is a placeholder unified during type checking, allowing rules to express polymorphic constraints.</p>
+<pre><code class="language-spec">// ?A must unify with both the function's domain and the argument's type.
+Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
+-------------------------------- (app)
+?B
+</code></pre>
+<h3 id="context-operations"><a class="header" href="#context-operations">Context Operations</a></h3>
+<p>The typing context <code>Γ</code> maps variable names to types:</p>
+<ul>
+<li><code>Γ(x)</code>: Look up type of variable <code>x</code>.</li>
+<li><code>Γ[x:τ]</code>: Extend context with binding <code>x:τ</code>.</li>
+<li><code>x ∈ Γ</code>: Check if <code>x</code> is bound in context.</li>
+</ul>
+<h2 id="type-syntax"><a class="header" href="#type-syntax">Type Syntax</a></h2>
+<p>Types in typing rules follow this syntax:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Syntax</th><th style="text-align: left">Description</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left"><code>τ</code></td><td style="text-align: left">Type variable (from binding)</td></tr>
+<tr><td style="text-align: left"><code>!τ</code></td><td style="text-align: left">Not Type</td></tr>
+<tr><td style="text-align: left"><code>?A</code></td><td style="text-align: left">Meta-variable (unified during checking)</td></tr>
+<tr><td style="text-align: left"><code>'int'</code></td><td style="text-align: left">Raw/concrete type literal</td></tr>
+<tr><td style="text-align: left"><code>τ₁ → τ₂</code></td><td style="text-align: left">Function type</td></tr>
+<tr><td style="text-align: left"><code>τ₁ | τ₂</code></td><td style="text-align: left">Union type</td></tr>
+<tr><td style="text-align: left"><code>⊤</code></td><td style="text-align: left">Top type (any)</td></tr>
+<tr><td style="text-align: left"><code>∅</code></td><td style="text-align: left">Bottom type (none)</td></tr>
+<tr><td style="text-align: left"><code>Γ(x)</code></td><td style="text-align: left">Context lookup</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="example-simply-typed-lambda-calculus"><a class="header" href="#example-simply-typed-lambda-calculus">Example: Simply-Typed Lambda Calculus</a></h2>
+<p>A complete specification for STLC from <a href="../../examples/stlc.auf"><code>examples/stlc.auf</code></a>:</p>
+<pre><code class="language-spec">// Identifier (supports Unicode)
+Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
+
+// Variables with var typing rule
+Variable(var) ::= Identifier[x]
+
+TypeName ::= /[A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]+/
+
+// Base types (parentheses are literals, hence quoted)
+BaseType ::= TypeName | '(' Type ')'
+
+// Function types (right-associative)
+AtomicType ::= BaseType | '(' Type ')'
+FunctionType ::= AtomicType '-&gt;' Type
+Type ::= AtomicType | FunctionType
+
+// Lambda abstraction (dot is a literal)
+Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
+
+// Atomic expressions
+AtomicExpression ::= Variable | '(' Expression ')' | Lambda
+
+// Applications (left-associative)
+Application(app) ::= Expression[l] AtomicExpression[r]
+
+// Expressions (start symbol)
+Expression ::= AtomicExpression |  Application
+
+// Typing Rules
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+Γ[a:τ] ⊢ e : ?B
+--------------------------- (lambda)
+τ → ?B
+
+Γ ⊢ l : ?A → ?B, Γ ⊢ r : ?A
+--------------------------------- (app)
+?B
+</code></pre>
+<h2 id="source-files"><a class="header" href="#source-files">Source Files</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th style="text-align: left">Component</th><th style="text-align: left">Path</th></tr>
+</thead>
+<tbody>
+<tr><td style="text-align: left">Grammar structures</td><td style="text-align: left"><a href="../../src/logic/grammar/mod.rs"><code>src/logic/grammar/mod.rs</code></a></td></tr>
+<tr><td style="text-align: left">Spec file loading</td><td style="text-align: left"><a href="../../src/logic/grammar/load.rs"><code>src/logic/grammar/load.rs</code></a></td></tr>
+<tr><td style="text-align: left">Typing rules</td><td style="text-align: left"><a href="../../src/logic/typing/rule.rs"><code>src/logic/typing/rule.rs</code></a></td></tr>
+<tr><td style="text-align: left">Type definitions</td><td style="text-align: left"><a href="../../src/logic/typing/mod.rs"><code>src/logic/typing/mod.rs</code></a></td></tr>
+<tr><td style="text-align: left">Binding map</td><td style="text-align: left"><a href="../../src/logic/binding/grammar.rs"><code>src/logic/binding/grammar.rs</code></a></td></tr>
+</tbody>
+</table>
+</div>
+<div style="break-before: page; page-break-before: always;"></div>
 <h1 id="done-partial-parsing"><a class="header" href="#done-partial-parsing"><span class="status-badge done">DONE</span> Partial Parsing</a></h1>
 <p>The partial parser implements the theoretical framework of <a href="#done-theoretical-foundation">partial forests</a> as a memoized recursive-descent parser with regex-derivative terminal matching. Given an input $s \in \Sigma^*$, it produces a partial forest $\mathcal{F}$ containing all valid parse trees (complete and partial) consistent with the grammar $G$.</p>
 <p>Source: <a href="../src/logic/partial/parse.rs"><code>src/logic/partial/parse.rs</code></a></p>
@@ -826,7 +983,7 @@ rejecting the tree.</p>
 <li>An <strong>extension</strong> derivative on a complete terminal means the terminal could accept more characters (e.g., identifier <code>x</code> could become <code>xy</code>).</li>
 <li>A <strong>remainder</strong> derivative on a partial terminal describes what characters are needed to complete the match.</li>
 </ul>
-<h2 id="epsilon-productions"><a class="header" href="#epsilon-productions">Epsilon Productions</a></h2>
+<h2 id="epsilon-productions-1"><a class="header" href="#epsilon-productions-1">Epsilon Productions</a></h2>
 <p>An epsilon production (empty right-hand side, $\varepsilon$) matches zero segments and produces a nonterminal with no children. Such a nonterminal is considered complete.</p>
 <h2 id="recursion-limit"><a class="header" href="#recursion-limit">Recursion Limit</a></h2>
 <div class="definition">
@@ -1191,7 +1348,7 @@ $$\{\text{Valid}(\tau), \text{Partial}(\tau), \text{TooDeep}, \text{Malformed}\}
 <li>Extends the state with candidate tokens, scores and prunes the children, and pushes the survivors onto the queue</li>
 </ol>
 <p>For the formal definition of completability over two-level languages (where terminals include regex patterns over $\Sigma_\text{vocab}$), including the Brzozowski derivative mechanism for partial token validation, see <a href="https://unsuspicious.org/blog/completing-regex/">Completability and Regular Expressions</a>.</p>
-<h2 id="source-files"><a class="header" href="#source-files">Source Files</a></h2>
+<h2 id="source-files-1"><a class="header" href="#source-files-1">Source Files</a></h2>
 <div class="table-wrapper">
 <table>
 <thead>
@@ -1688,7 +1845,7 @@ Layer 1: Core Algorithms (completability.rs → search → scoring)
 <tr><th>Spec Section</th><th>Source Module</th><th>Description</th></tr>
 </thead>
 <tbody>
-<tr><td><a href="spec.html">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
+<tr><td><a href="#done-grammar-specification">Grammar Specification</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/grammar/"><code>src/logic/grammar/</code></a></td><td>Grammar data structures and <code>.auf</code> file loading</td></tr>
 <tr><td><a href="#done-partial-parsing">Partial Parsing</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/"><code>src/logic/partial/</code></a></td><td>Chart parser, segment handling, partial trees</td></tr>
 <tr><td><a href="parsing/cache.html">Span Cache</a></td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/cache.rs"><code>src/logic/partial/cache.rs</code></a></td><td>4D memoization table for parse results</td></tr>
 <tr><td>MetaParser (see <a href="#done-partial-parsing">Partial Parsing</a>)</td><td><a href="https://github.com/Unsuspicious-Industries/aufbau/blob/main/src/logic/partial/meta.rs"><code>src/logic/partial/meta.rs</code></a></td><td>Adaptive depth search, grammar-scope caching</td></tr>
