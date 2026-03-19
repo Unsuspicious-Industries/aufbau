@@ -10,6 +10,7 @@
 - [Binding Resolution](./concepts/binding.md)
 - [Type System](./concepts/typing_system.md)
 - [Regex Engine](./regex.md)
+- [Grammar files format](./spec.md)
 
 # Parsing
 
