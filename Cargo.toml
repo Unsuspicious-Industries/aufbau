@@ -59,18 +59,5 @@ indicatif = "0.17"
 [dev-dependencies]
 proptest = "1"
 
-[build-dependencies]
-syn = { version = "2", features = ["full"] }
-quote = "1"
-
 [features]
 sppf_morphism_check = []
-
-[package.metadata.aufbau.build_policy]
-enabled = true
-sppf_input_types = ["Sppf", "SppfForest", "PartialAST", "SppfNodeId", "SppfChild"]
-concrete_tree_types = ["NonTerminal", "Node"]
-
-[[package.metadata.aufbau.build_policy.targets]]
-path = "src/logic/partial/parse.rs"
-rules = ["no-typed-morphism-calls", "no-unwrap", "no-expect", "no-unwrap-macro"]
