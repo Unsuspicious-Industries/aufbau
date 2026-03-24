@@ -1,5 +1,3 @@
-use scaffold_macros::allow_copying;
-
 use crate::debug_debug;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::completion::CompletionSet;
@@ -37,7 +35,6 @@ pub struct Synthesizer {
 }
 
 impl Synthesizer {
-    #[allow_copying]
     pub fn new(grammar: Grammar, input: impl Into<String>) -> Self {
         let meta = MetaParser::new(grammar.clone());
         let input = input.into();
@@ -54,7 +51,6 @@ impl Synthesizer {
         }
     }
 
-    #[allow_copying]
     pub fn new_with_max_depth(
         grammar: Grammar,
         input: impl Into<String>,
@@ -129,7 +125,6 @@ impl Synthesizer {
         &self.input
     }
 
-    #[allow_copying]
     pub fn tree(&self) -> Option<TypedAST> {
         self.tree.clone()
     }
@@ -372,7 +367,6 @@ impl Synthesizer {
     }
 
     // copying a string
-    #[allow_copying]
     fn cached_partial_ref(&mut self, input: &str) -> Result<Arc<PartialAST>, String> {
         // First check cross-parse memo to avoid re-parsing identical inputs.
         if let Some(cached) = self.parse_memo.borrow().get(input) {
@@ -443,7 +437,6 @@ fn context_cache_key(ctx: &Context) -> String {
     format!("b:{};u:{}", b, u)
 }
 
-#[allow_copying]
 fn collect_regex_seed_candidates(grammar: &Grammar) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();

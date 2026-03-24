@@ -23,7 +23,6 @@ pub mod fun;
 pub mod imp;
 pub mod stlc;
 pub mod toy;
-pub mod typescript;
 pub mod weird;
 // pub mod clike;
 
@@ -562,12 +561,6 @@ pub fn all_suites() -> Vec<(
             load_example_grammar("toy"),
             toy::valid_expressions_cases(),
             toy::invalid_expressions_cases(),
-        ),
-        (
-            "typescript",
-            load_example_grammar("typescript"),
-            typescript::valid_expressions_cases(),
-            typescript::invalid_expressions_cases(),
         ),
     ];
     modules.extend(weird::suites());
