@@ -13,6 +13,7 @@ CONTEXT.md
 # Temporary files
 tmp
 proptest
+/validation/
 
 # Profiling data
 perf.data*
