@@ -12,6 +12,7 @@ use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
 use crate::logic::typing::core::TreePath;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum BindError {
     AtFrontier,
     Malformed,
@@ -21,6 +22,8 @@ pub enum BindError {
 pub struct Bindings {
     full: HashMap<String, TreePath>,
     partial: HashMap<String, TreePath>,
+    full_grouped: HashMap<String, Vec<TreePath>>,
+    partial_grouped: HashMap<String, Vec<TreePath>>,
 }
 
 pub enum Binding {
@@ -34,6 +37,8 @@ impl Bindings {
         Bindings {
             full: HashMap::new(),
             partial: HashMap::new(),
+            full_grouped: HashMap::new(),
+            partial_grouped: HashMap::new(),
         }
     }
 
@@ -64,6 +69,53 @@ impl Bindings {
     pub fn iter_partial(&self) -> impl Iterator<Item = (&String, &TreePath)> {
         self.partial.iter()
     }
+
+    /// All concrete/full paths for a binding name.
+    pub fn get_full_group(&self, name: &str) -> Option<&[TreePath]> {
+        self.full_grouped.get(name).map(|paths| paths.as_slice())
+    }
+
+    /// All frontier/partial paths for a binding name.
+    pub fn get_partial_group(&self, name: &str) -> Option<&[TreePath]> {
+        self.partial_grouped.get(name).map(|paths| paths.as_slice())
+    }
+
+    pub fn iter_full_grouped(&self) -> impl Iterator<Item = (&String, &[TreePath])> {
+        self.full_grouped
+            .iter()
+            .map(|(name, paths)| (name, paths.as_slice()))
+    }
+
+    pub fn iter_partial_grouped(&self) -> impl Iterator<Item = (&String, &[TreePath])> {
+        self.partial_grouped
+            .iter()
+            .map(|(name, paths)| (name, paths.as_slice()))
+    }
+
+    fn push_full(&mut self, name: &str, path: TreePath) {
+        let key = name.to_string();
+        let paths = self.full_grouped.entry(key.clone()).or_default();
+        if !paths.contains(&path) {
+            paths.push(path.clone());
+        }
+        if !self.full.contains_key(&key) {
+            self.full.insert(key.clone(), path);
+        }
+        self.partial.remove(&key);
+        self.partial_grouped.remove(&key);
+    }
+
+    fn push_partial(&mut self, name: &str, path: TreePath) {
+        let key = name.to_string();
+        if self.full.contains_key(&key) {
+            return;
+        }
+        let paths = self.partial_grouped.entry(key.clone()).or_default();
+        if !paths.contains(&path) {
+            paths.push(path.clone());
+        }
+        self.partial.entry(key).or_insert(path);
+    }
 }
 
 pub fn resolve_bindings(
@@ -90,24 +142,14 @@ pub fn resolve_bindings(
                             path
                         );
                         // Keep partial only when no full binding exists.
-                        bound
-                            .partial
-                            .entry(name.to_string())
-                            .or_insert_with(|| path.idxs());
+                        bound.push_partial(name, path.idxs());
                     } else {
                         // Prefer concrete/full bindings over partial ones.
-                        let key = name.to_string();
-                        if !bound.full.contains_key(&key) {
-                            bound.full.insert(key.clone(), path.idxs());
-                        }
-                        bound.partial.remove(&key);
+                        bound.push_full(name, path.idxs());
                     }
                 }
                 PathValidationResult::Partial => {
-                    let key = name.to_string();
-                    if !bound.full.contains_key(&key) {
-                        bound.partial.entry(key).or_insert_with(|| path.idxs());
-                    }
+                    bound.push_partial(name, path.idxs());
                 }
                 PathValidationResult::Invalid => {
                     // skip invalid paths
@@ -196,5 +238,38 @@ pub fn is_extensible_path(nt: &NonTerminal, p: &TreePath) -> bool {
             }
         }
         None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::logic::partial::Parser;
+
+    #[test]
+    fn resolve_bindings_keeps_grouped_matches() {
+        let spec = r#"
+        Number(num) ::= /[0-9]+/
+        Pair(pair) ::= Number[x] ',' Number[x] ';'
+
+        Γ ⊢ x : 'number'
+        ----------------- (pair)
+        'number'
+        "#;
+
+        let grammar = Grammar::load(spec).expect("load pair grammar");
+        let mut parser = Parser::new(grammar.clone());
+        let ast = parser.parse("1 , 2 ;").expect("parse pair");
+        let root = ast.complete().expect("complete pair root");
+
+        let bindings = resolve_bindings(&root, "pair", &grammar).expect("resolve bindings");
+        let grouped = bindings
+            .get_full_group("x")
+            .expect("grouped full bindings for x");
+
+        assert_eq!(grouped.len(), 2);
+        assert_eq!(grouped[0], vec![0]);
+        assert_eq!(grouped[1], vec![2]);
+        assert_eq!(bindings.get_full("x"), Some(&vec![0]));
     }
 }

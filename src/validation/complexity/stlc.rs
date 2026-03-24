@@ -3,7 +3,9 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::MetaParser;
-use crate::validation::complexity::{determine_complexity_exponent, ComplexityData};
+use crate::validation::complexity::{
+    determine_complexity_exponent, determine_height_complexity_exponent, ComplexityData,
+};
 use std::time::Instant;
 
 fn stlc_grammar() -> Grammar {
@@ -161,8 +163,10 @@ fn stlc_app_chain_complexity() {
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Expected: O(n^2) for left-recursive grammar with memoization");
     println!("Actual: k = {:.2} (closer to 1.0 is better)", k);
 
@@ -192,8 +196,10 @@ fn stlc_nested_lambda_complexity() {
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Nested structures test the parser's handling of complex expressions");
     println!("k = {:.2}", k);
 

@@ -3,6 +3,7 @@ use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Symbol};
 use crate::logic::typing::tree::{TypedAST, TypedNode};
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
+use scaffold_macros::allow_copying;
 use std::collections::HashSet;
 
 /// The result of computing valid next tokens for a partial parse.
@@ -114,6 +115,7 @@ impl TypedAST {
 }
 
 impl TypedNode {
+    #[allow_copying]
     fn collect_extensions(&self) -> Vec<DerivativeRegex> {
         match self {
             TypedNode::Term {

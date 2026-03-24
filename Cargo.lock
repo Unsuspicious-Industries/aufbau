@@ -114,13 +114,16 @@ dependencies = [
  "moka",
  "once_cell",
  "proptest",
+ "quote",
  "rand 0.8.5",
  "rayon",
  "regex",
  "regex-syntax",
  "rouille",
+ "scaffold_macros",
  "serde",
  "serde_json",
+ "syn",
 ]
 
 [[package]]
@@ -1122,6 +1125,10 @@ name = "safemem"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef703b7cb59335eae2eb93ceb664c0eb7ea6bf567079d843e09420219668e072"
+
+[[package]]
+name = "scaffold_macros"
+version = "0.1.0"
 
 [[package]]
 name = "scopeguard"

@@ -146,6 +146,10 @@ impl Unifier {
                 let b = self.apply(b.as_ref())?;
                 Ok(Type::Arrow(Box::new(a), Box::new(b)))
             }
+            Type::Array(inner) => {
+                let inner = self.apply(inner.as_ref())?;
+                Ok(Type::Array(Box::new(inner)))
+            }
             Type::Union(parts) => {
                 let mut resolved = Vec::with_capacity(parts.len());
                 for p in parts {
@@ -174,6 +178,7 @@ impl Unifier {
         match ty {
             Type::Meta(name) => !self.substitution.contains_key(name),
             Type::Arrow(a, b) => self.has_unresolved_meta(a) || self.has_unresolved_meta(b),
+            Type::Array(inner) => self.has_unresolved_meta(inner),
             Type::Union(parts) => parts.iter().any(|p| self.has_unresolved_meta(p)),
             Type::Not(a) => self.has_unresolved_meta(a),
             _ => false,
@@ -231,6 +236,12 @@ impl Unifier {
                     }
                     fail => fail,
                 }
+            }
+
+            (Type::Array(a), Type::Array(b)) => {
+                let a = a.clone();
+                let b = b.clone();
+                self.unify(&a, &b)
             }
 
             // Negation types: unify inner
@@ -356,6 +367,9 @@ impl Unifier {
                 Box::new(self.resolve_ctx_call(a, allow_context)),
                 Box::new(self.resolve_ctx_call(b, allow_context)),
             ),
+            Type::Array(inner) => {
+                Type::Array(Box::new(self.resolve_ctx_call(inner, allow_context)))
+            }
             Type::Union(parts) => Type::Union(
                 parts
                     .iter()
@@ -379,6 +393,7 @@ impl Unifier {
         match &ty {
             Type::Meta(n) => n == name,
             Type::Arrow(a, b) => self.occurs_in(name, a) || self.occurs_in(name, b),
+            Type::Array(inner) => self.occurs_in(name, inner),
             Type::Union(parts) => parts.iter().any(|p| self.occurs_in(name, p)),
             Type::Not(a) => self.occurs_in(name, a),
             Type::Partial(t, _) | Type::PathOf(t, _) => self.occurs_in(name, t),
@@ -401,6 +416,7 @@ pub fn equal(t1: &Type, t2: &Type) -> Option<bool> {
         (Type::Raw(a), Type::Raw(b)) => Some(a == b),
         // Arrow types require structural equality
         (Type::Arrow(l1, r1), Type::Arrow(l2, r2)) => Some(equal(l1, l2)? && equal(r1, r2)?),
+        (Type::Array(a), Type::Array(b)) => equal(a, b),
         (Type::Union(a), Type::Union(b)) => {
             if a.len() != b.len() {
                 Some(false)
@@ -473,6 +489,7 @@ pub fn subtype(t1: &Type, t2: &Type) -> bool {
     match (&t1, &t2) {
         // Arrow: contravariant in domain, covariant in codomain
         (Type::Arrow(d1, c1), Type::Arrow(d2, c2)) => subtype(d2, d1) && subtype(c1, c2),
+        (Type::Array(a), Type::Array(b)) => subtype(a, b),
         // Union on left: every member must be subtype of target
         (Type::Union(parts), other) => parts.iter().all(|p| subtype(p, other)),
         // Union on right: source must be subtype of at least one member
@@ -492,6 +509,7 @@ fn occurs_atom(name: &str, ty: &Type) -> bool {
     match ty {
         Type::Atom(n) => n == name,
         Type::Arrow(l, r) => occurs_atom(name, l) || occurs_atom(name, r),
+        Type::Array(inner) => occurs_atom(name, inner),
         Type::Not(t) => occurs_atom(name, t),
         _ => false,
     }

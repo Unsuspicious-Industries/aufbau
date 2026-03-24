@@ -27,6 +27,7 @@ impl fmt::Display for Type {
             Type::Meta(s) => write!(f, "?{}", s),
             Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
+            Type::Array(inner) => write!(f, "{}[]", inner),
             Type::Union(items) => {
                 let rendered: Vec<String> = items.iter().map(|t| format!("{}", t)).collect();
                 write!(f, "{}", rendered.join(" | "))
@@ -337,6 +338,10 @@ impl Type {
             ));
         }
 
+        if let Some(inner) = strip_array_suffix(s) {
+            return Ok(Type::Array(Box::new(Self::parse_impl(inner, raw_mode)?)));
+        }
+
         if let Some(&tok) = NEGATION_TOKENS.iter().find(|t| s.starts_with(**t)) {
             return Ok(Type::Not(Box::new(Self::parse_impl(
                 &s[tok.len()..],
@@ -376,6 +381,13 @@ impl Type {
             } else {
                 return Ok(Type::Atom(s.to_string()));
             }
+        }
+
+        // In raw mode, unsupported syntax should remain usable as an opaque raw type.
+        // This is important for language frontends whose annotation surface syntax is
+        // richer than the core type algebra understood by the engine.
+        if raw_mode {
+            return Ok(Type::Raw(s.to_string()));
         }
 
         // Strict parse failed - try partial parse as fallback
@@ -468,6 +480,36 @@ fn split_top_level_union(s: &str) -> Option<Vec<&str>> {
         parts.push(&s[start..end]);
     }
     Some(parts)
+}
+
+fn strip_array_suffix(s: &str) -> Option<&str> {
+    let trimmed = s.trim_end();
+    if !trimmed.ends_with("[]") {
+        return None;
+    }
+
+    let inner = trimmed[..trimmed.len() - 2].trim_end();
+    if inner.is_empty() {
+        return None;
+    }
+
+    let mut depth = 0isize;
+    for c in inner.chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ => {}
+        }
+        if depth < 0 {
+            return None;
+        }
+    }
+
+    if depth != 0 {
+        return None;
+    }
+
+    Some(inner)
 }
 
 fn flatten_unions(members: Vec<Type>) -> Vec<Type> {

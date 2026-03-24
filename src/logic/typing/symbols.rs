@@ -204,6 +204,7 @@ fn collect_symbols_from_type(ty: &Type, out: &mut Vec<String>) {
             collect_symbols_from_type(l, out);
             collect_symbols_from_type(r, out);
         }
+        Type::Array(inner) => collect_symbols_from_type(inner, out),
         Type::Union(parts) => {
             for p in parts {
                 collect_symbols_from_type(p, out);
@@ -228,6 +229,7 @@ fn collect_raws_from_type(ty: &Type, out: &mut Vec<String>) {
             collect_raws_from_type(l, out);
             collect_raws_from_type(r, out);
         }
+        Type::Array(inner) => collect_raws_from_type(inner, out),
         Type::Union(parts) => {
             for p in parts {
                 collect_raws_from_type(p, out);

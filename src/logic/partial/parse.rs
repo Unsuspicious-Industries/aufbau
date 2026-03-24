@@ -225,6 +225,7 @@ impl Segment {
 
 pub struct Parser {
     pub(crate) grammar: Grammar,
+    pub forest: SppfForest,
     /// Precomputed reserved literal tokens (keywords/operators) for O(1) checks
     /// during regex terminal matching.
     reserved_tokens: HashSet<String>,
@@ -239,6 +240,7 @@ impl Parser {
         let reserved_tokens: HashSet<String> = grammar.special_tokens.iter().cloned().collect();
         Self {
             grammar,
+            forest: SppfForest::new(),
             reserved_tokens,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
             last_hit_depth_limit: false,
@@ -318,7 +320,7 @@ impl Parser {
             debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
             let mut parse_state = ParseState::new();
-            let mut forest = SppfForest::new();
+            let mut forest = std::mem::take(&mut self.forest);
             let roots = match self.parse_nonterminal(
                 &segments,
                 &start_nt,

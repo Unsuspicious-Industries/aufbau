@@ -112,7 +112,7 @@ impl MetaParser {
                 input
             );
             match self.parser.partial(input) {
-                PartialParseOutcome::Success { ast } => {
+                PartialParseOutcome::Success { ast, .. } => {
                     debug_info!("meta", "MetaParser: Success at depth {}", current_depth);
                     self.last_used_depth = Some(current_depth);
 

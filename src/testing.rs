@@ -491,3 +491,104 @@ macro_rules! assert_eq_msg {
         assert_eq!($left, $right, "{}", $msg)
     };
 }
+
+// ============================================================================
+// Memo Debug Utilities
+// ============================================================================
+
+use crate::logic::partial::synth::Synthesizer;
+
+const TRUNCATE_INPUT: usize = 40;
+
+fn truncate(s: &str) -> String {
+    if s.len() > TRUNCATE_INPUT {
+        format!("{}...", &s[..TRUNCATE_INPUT])
+    } else {
+        s.to_string()
+    }
+}
+
+/// Print the synthesizer's parse memo as a table. Shows per-entry stats
+/// (ok/err, sppf_nodes, roots, alts, max_alts, height if requested).
+/// Height computation requires materialization — slow, off by default.
+pub fn print_memo_table(synth: &Synthesizer, with_height: bool) {
+    let memo = synth.iter_memo();
+    let entries: Vec<_> = memo.iter().collect();
+
+    if entries.is_empty() {
+        println!("  [memo: empty]");
+        return;
+    }
+
+    let mut total_sppf_nodes = 0usize;
+    let mut total_roots = 0usize;
+    let mut total_alts = 0usize;
+    let mut ok_count = 0usize;
+    let mut err_count = 0usize;
+    let mut heights: Vec<usize> = Vec::new();
+
+    println!(
+        "  {:<42} {:>4} {:>8} {:>6} {:>6} {:>8} {:>6}",
+        "input", "ok?", "sppf_nd", "roots", "alts", "max_alt", "height"
+    );
+    println!("  {}", "-".repeat(88));
+
+    for (input, result) in &entries {
+        let (sppf_nodes, roots, total_alt, max_alt) = match result {
+            Ok(partial) => {
+                let f = partial.forest();
+                let sn = f.node_count();
+                let rt = partial.root_ids().len();
+                let ta = f.total_alternatives();
+                let ma = f.max_alternatives();
+                let h = if with_height {
+                    partial.roots().iter().map(|r| r.height()).max()
+                } else {
+                    None
+                };
+                total_sppf_nodes += sn;
+                total_roots += rt;
+                total_alts += ta;
+                ok_count += 1;
+                if let Some(h) = h {
+                    heights.push(h);
+                }
+                (sn, rt, ta, Some(ma))
+            }
+            Err(_) => {
+                err_count += 1;
+                (0, 0, 0, None)
+            }
+        };
+
+        let ok_str = if result.is_ok() { "ok" } else { "ERR" };
+        let height_str = if with_height {
+            heights.last().map(|h| h.to_string()).unwrap_or_default()
+        } else {
+            "-".to_string()
+        };
+        let max_alt_str = max_alt.map(|m| m.to_string()).unwrap_or_default();
+
+        println!(
+            "  {:<42} {:>4} {:>8} {:>6} {:>6} {:>8} {:>6}",
+            truncate(input),
+            ok_str,
+            sppf_nodes,
+            roots,
+            total_alt,
+            max_alt_str,
+            height_str,
+        );
+    }
+
+    println!("  {}", "-".repeat(88));
+    let avg_height = if heights.is_empty() {
+        0f64
+    } else {
+        heights.iter().sum::<usize>() as f64 / heights.len() as f64
+    };
+    println!(
+        "  TOTAL: {} ok, {} err | sppf_nodes={} roots={} alts={} avg_height={:.1}",
+        ok_count, err_count, total_sppf_nodes, total_roots, total_alts, avg_height
+    );
+}

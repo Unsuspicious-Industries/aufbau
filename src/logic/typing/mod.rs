@@ -14,12 +14,15 @@ pub use tree::*;
 pub use core::{Context, TreeRef};
 pub use eval::evaluate_typing;
 pub use ops::{equal, subtype, Unifier, UnifyResult};
-pub use symbols::{gather_raw_types, gather_terminal_nodes, gather_terminals, gather_terminals_typed, gather_type_symbols};
+pub use symbols::{
+    gather_raw_types, gather_terminal_nodes, gather_terminals, gather_terminals_typed,
+    gather_type_symbols,
+};
 ///---------------
 /// Type Representation
 ///---------------
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum Type {
     // Base types as bindable vars
     Atom(String),
@@ -29,6 +32,8 @@ pub enum Type {
     Raw(String),
     // Function types (τ₁ → τ₂)
     Arrow(Box<Type>, Box<Type>),
+    // Array types (τ[])
+    Array(Box<Type>),
     // Union types (τ₁ | τ₂ | ...)
     Union(Vec<Type>),
     // Negation type (¬τ) - "anything that is not τ"

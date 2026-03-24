@@ -24,11 +24,15 @@
 //! (Expr @0 $result #3
 //!   (T "x" $var)
 //!   (T "+")
-//!   (T "y" $var))
+//!   (T "y"))
 //! ```
 //!
 //! This represents an Expr nonterminal using alternative 0, bound as "result",
 //! consuming 3 segments, with three terminal children (all inline).
+
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::redundant_clone)]
+
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};

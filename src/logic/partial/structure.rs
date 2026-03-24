@@ -40,6 +40,7 @@ pub struct SppfNodeKey {
 pub struct SppfForest {
     nodes: Vec<SppfNode>,
     node_lookup: HashMap<SppfNodeKey, SppfNodeId>,
+    complete_memo: HashMap<SppfNodeId, bool>,
 }
 
 impl SppfForest {
@@ -60,6 +61,7 @@ impl SppfForest {
             consumed_segments: key.consumed_segments,
             alternatives: Vec::new(),
         });
+        self.complete_memo.remove(&id);
         self.node_lookup.insert(key, id);
         id
     }
@@ -68,6 +70,7 @@ impl SppfForest {
         if let Some(node) = self.nodes.get_mut(node_id) {
             if !node.alternatives.contains(&alt) {
                 node.alternatives.push(alt);
+                self.complete_memo.remove(&node_id);
             }
         }
     }
@@ -80,13 +83,20 @@ impl SppfForest {
     }
 
     pub fn node_is_complete(&self, node_id: SppfNodeId) -> bool {
+        if let Some(v) = self.complete_memo.get(&node_id) {
+            return *v;
+        }
+
         fn rec(
             forest: &SppfForest,
             id: SppfNodeId,
-            memo: &mut HashMap<SppfNodeId, bool>,
+            local_memo: &mut HashMap<SppfNodeId, bool>,
             seen: &mut HashSet<SppfNodeId>,
         ) -> bool {
-            if let Some(v) = memo.get(&id) {
+            if let Some(v) = forest.complete_memo.get(&id) {
+                return *v;
+            }
+            if let Some(v) = local_memo.get(&id) {
                 return *v;
             }
             if !seen.insert(id) {
@@ -98,17 +108,54 @@ impl SppfForest {
                     alt.children.iter().all(|c| match c {
                         SppfChild::Terminal(Terminal::Complete { .. }) => true,
                         SppfChild::Terminal(Terminal::Partial { .. }) => false,
-                        SppfChild::Node(child_id) => rec(forest, *child_id, memo, seen),
+                        SppfChild::Node(child_id) => rec(forest, *child_id, local_memo, seen),
                     })
                 })
             });
 
             seen.remove(&id);
-            memo.insert(id, complete);
+            local_memo.insert(id, complete);
             complete
         }
 
         rec(self, node_id, &mut HashMap::new(), &mut HashSet::new())
+    }
+
+    pub fn clone_shallow(&self) -> Self {
+        Self {
+            nodes: self.nodes.clone(),
+            node_lookup: self.node_lookup.clone(),
+            complete_memo: self.complete_memo.clone(),
+        }
+    }
+
+    /// Number of interned SPPF nodes in this forest.
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Total packed alternatives across all interned nodes.
+    pub fn total_alternatives(&self) -> usize {
+        self.nodes.iter().map(|n| n.alternatives.len()).sum()
+    }
+
+    /// Max branching factor: highest alternative count on any single node.
+    pub fn max_alternatives(&self) -> usize {
+        self.nodes
+            .iter()
+            .map(|n| n.alternatives.len())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Number of distinct nonterminal names across all interned nodes.
+    pub fn distinct_names(&self) -> usize {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for n in &self.nodes {
+            seen.insert(&n.name);
+        }
+        seen.len()
     }
 
     pub fn merge_from(&mut self, other: &SppfForest) -> Vec<SppfNodeId> {
@@ -150,6 +197,9 @@ impl SppfForest {
     }
 
     pub fn materialize_roots(&self, root_ids: &[SppfNodeId]) -> Vec<NonTerminal> {
+        // Materialization is expensive and should be avoided in performance-sensitive
+        // paths (notably src/logic/partial/parse.rs). Keep a thin wrapper that
+        // explicitly documents that this is a heavyweight operation.
         let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
         let mut seen: HashSet<SppfNodeId> = HashSet::new();
         let mut out = Vec::new();
@@ -265,9 +315,28 @@ impl Sppf {
         }
     }
 
-    pub fn from_forest(forest: SppfForest, root_ids: Vec<SppfNodeId>, input: String) -> Self {
+    pub fn from_forest(mut forest: SppfForest, root_ids: Vec<SppfNodeId>, input: String) -> Self {
+        let mut computed = HashMap::new();
+        for root_id in &root_ids {
+            let complete = forest.node_is_complete(*root_id);
+            computed.insert(*root_id, complete);
+        }
+        forest.complete_memo.extend(computed);
+
         Self {
             forest: Arc::new(forest),
+            root_ids,
+            input,
+        }
+    }
+
+    pub fn from_shared_forest(
+        forest: Arc<SppfForest>,
+        root_ids: Vec<SppfNodeId>,
+        input: String,
+    ) -> Self {
+        Self {
+            forest,
             root_ids,
             input,
         }
@@ -314,6 +383,9 @@ impl Sppf {
     }
 
     pub fn roots(&self) -> Vec<NonTerminal> {
+        // WARNING: roots() materializes SPPF into explicit trees. Prefer using
+        // `root_ids()` + `forest()` for zero-copy operations. Keep this method
+        // for convenience but it's intentionally expensive.
         self.forest.materialize_roots(self.root_ids.as_slice())
     }
 
@@ -321,8 +393,20 @@ impl Sppf {
         self.forest.as_ref()
     }
 
+    pub fn shared_forest(&self) -> Arc<SppfForest> {
+        Arc::clone(&self.forest)
+    }
+
     pub fn root_ids(&self) -> &[SppfNodeId] {
         self.root_ids.as_slice()
+    }
+
+    pub fn complete_root_ids(&self) -> Vec<SppfNodeId> {
+        self.root_ids
+            .iter()
+            .copied()
+            .filter(|root_id| self.forest.node_is_complete(*root_id))
+            .collect()
     }
 
     pub fn root_count(&self) -> usize {
@@ -337,6 +421,14 @@ impl Sppf {
         &self.input
     }
 
+    pub fn height(&self) -> usize {
+        self.roots()
+            .iter()
+            .map(|root| root.height())
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn complete(&self) -> Option<NonTerminal> {
         self.roots().into_iter().find(|root| root.is_complete())
     }
@@ -349,9 +441,13 @@ impl Sppf {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.root_ids
-            .iter()
-            .any(|root_id| self.forest.node_is_complete(*root_id))
+        self.root_ids.iter().copied().any(|root_id| {
+            self.forest
+                .complete_memo
+                .get(&root_id)
+                .copied()
+                .unwrap_or_else(|| self.forest.node_is_complete(root_id))
+        })
     }
 }
 
@@ -453,6 +549,14 @@ impl NonTerminal {
 
     pub fn size(&self) -> usize {
         self.children.iter().map(|c| c.size()).sum::<usize>() + 1
+    }
+
+    pub fn height(&self) -> usize {
+        if self.children.is_empty() {
+            1
+        } else {
+            1 + self.children.iter().map(|c| c.height()).max().unwrap_or(0)
+        }
     }
 
     pub fn consumed_segments(&self) -> usize {
@@ -643,6 +747,13 @@ impl Node {
             Node::NonTerminal(nt) => nt.text(),
             Node::Terminal(Terminal::Complete { value, .. }) => Some(value.clone()),
             Node::Terminal(Terminal::Partial { value, .. }) => Some(value.clone()),
+        }
+    }
+
+    pub fn height(&self) -> usize {
+        match self {
+            Node::NonTerminal(nt) => nt.height(),
+            Node::Terminal(_) => 1,
         }
     }
 }

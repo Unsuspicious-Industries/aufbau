@@ -32,9 +32,13 @@ pub fn run_complexity_experiment(
         let start = Instant::now();
         // create a parser and measure
         let mut parser = crate::logic::partial::MetaParser::new(grammar.clone());
-        let _ = parser.partial(&input);
+        let parse_outcome = parser.partial(&input);
         let duration = start.elapsed();
-        ComplexityData::new(n, duration, input)
+        let height = match &parse_outcome {
+            Ok(ast) => ast.height(),
+            Err(_) => 0,
+        };
+        ComplexityData::new_with_height(n, duration, input, height)
     };
 
     let results: Vec<ComplexityData> = match jobs {
@@ -61,11 +65,26 @@ pub struct ComplexityData {
     pub n: usize,       // Input size
     pub time: Duration, // Parse time
     pub input: String,  // Actual input string
+    pub height: usize,  // Parsed AST height (0 when parsing fails)
 }
 
 impl ComplexityData {
     pub fn new(n: usize, time: Duration, input: String) -> Self {
-        Self { n, time, input }
+        Self {
+            n,
+            time,
+            input,
+            height: 0,
+        }
+    }
+
+    pub fn new_with_height(n: usize, time: Duration, input: String, height: usize) -> Self {
+        Self {
+            n,
+            time,
+            input,
+            height,
+        }
     }
 }
 
@@ -107,4 +126,36 @@ fn determine_complexity_exponent(data: &[ComplexityData]) -> f64 {
 /// Public wrapper to export complexity estimation to CLI
 pub fn estimate_complexity_exponent(data: &[ComplexityData]) -> f64 {
     determine_complexity_exponent(data)
+}
+
+/// Returns exponent k where time is approximately O(h^k), with h = parse tree height.
+pub fn determine_height_complexity_exponent(data: &[ComplexityData]) -> f64 {
+    let mut log_h = Vec::new();
+    let mut log_time = Vec::new();
+
+    for point in data {
+        let time_secs = point.time.as_secs_f64();
+        if time_secs > 0.0 && point.height > 0 {
+            log_h.push((point.height as f64).ln());
+            log_time.push(time_secs.ln());
+        }
+    }
+
+    let n = log_h.len() as f64;
+    let sum_x: f64 = log_h.iter().sum();
+    let sum_y: f64 = log_time.iter().sum();
+    let sum_xx: f64 = log_h.iter().map(|x| x * x).sum();
+    let sum_xy: f64 = log_h.iter().zip(&log_time).map(|(x, y)| x * y).sum();
+
+    let denominator = n * sum_xx - sum_x * sum_x;
+    if denominator.abs() < 1e-10 {
+        panic!("Insufficient variance in height data for complexity estimation");
+    }
+
+    let k = (n * sum_xy - sum_x * sum_y) / denominator;
+    if k.is_finite() {
+        k
+    } else {
+        panic!("Invalid height-based complexity exponent");
+    }
 }

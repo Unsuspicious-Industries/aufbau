@@ -2,9 +2,13 @@
 #![allow(unused_imports)]
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::MetaParser;
+use crate::logic::partial::{MetaParser, Synthesizer};
+use crate::logic::typing::tree::TypedNode;
+use crate::logic::typing::Context;
 use crate::validation::completability::{complete, CompletionResult};
-use crate::validation::complexity::{determine_complexity_exponent, ComplexityData};
+use crate::validation::complexity::{
+    determine_complexity_exponent, determine_height_complexity_exponent, ComplexityData,
+};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use std::time::Instant;
 
@@ -136,6 +140,87 @@ fn generate_incomplete_let_chain(n: usize) -> String {
     }
     out.push_str(&format!("let x{}: Int =", n));
     out
+}
+
+fn token_boundary_prefixes(grammar: &Grammar, input: &str) -> Vec<String> {
+    match grammar.tokenize(input) {
+        Ok(segments) => {
+            let mut cuts = vec![0usize];
+            cuts.extend(segments.iter().map(|s| s.end));
+            if !cuts.contains(&input.len()) {
+                cuts.push(input.len());
+            }
+            cuts.sort_unstable();
+            cuts.dedup();
+            cuts.into_iter().map(|e| input[..e].to_string()).collect()
+        }
+        Err(_) => {
+            let chars: Vec<char> = input.chars().collect();
+            (0..=chars.len())
+                .map(|len| chars[..len].iter().collect::<String>())
+                .collect()
+        }
+    }
+}
+
+fn generate_let_fn_composition(n: usize) -> String {
+    let mut out = String::new();
+    for i in 0..n {
+        if i == 0 {
+            out.push_str("let f0: Int -> Int = (x: Int) => x + 1; ");
+        } else {
+            out.push_str(&format!(
+                "let f{}: Int -> Int = (x: Int) => f{}(x); ",
+                i,
+                i - 1
+            ));
+        }
+    }
+    out.push_str("let seed: Int = 1; ");
+    let mut expr = "seed".to_string();
+    for i in (0..n).rev() {
+        expr = format!("f{}({})", i, expr);
+    }
+    out.push_str(&expr);
+    out
+}
+
+fn run_feed_profile(grammar: &Grammar, input: &str) -> Vec<ComplexityData> {
+    let ctx = Context::new();
+    let mut synth = Synthesizer::new(grammar.clone(), "");
+    let mut out = Vec::new();
+
+    for (idx, prefix) in token_boundary_prefixes(grammar, input)
+        .into_iter()
+        .enumerate()
+    {
+        let start = Instant::now();
+        let _ = synth.feed(prefix.clone(), &ctx);
+        let elapsed = start.elapsed();
+
+        let height = synth
+            .tree()
+            
+            .map(|t| t.roots.iter().map(typed_node_height).max().unwrap_or(0))
+            .unwrap_or(0);
+        out.push(ComplexityData::new_with_height(
+            idx + 1,
+            elapsed,
+            prefix,
+            height,
+        ));
+    }
+
+    out
+}
+
+fn typed_node_height(node: &TypedNode) -> usize {
+    match node {
+        TypedNode::Term { .. } => 1,
+        TypedNode::Expr { children, .. } => {
+            1 + children.iter().map(typed_node_height).max().unwrap_or(0)
+        }
+    }
 }
 
 fn measure_completion_time(
@@ -281,8 +366,10 @@ fn fun_parenthesized_literal_complexity() {
     );
 
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Expected: near-polynomial with parser memoization");
 
     assert!(
@@ -309,8 +396,10 @@ fn fun_let_literal_chain_complexity() {
     );
 
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Linear let-chains stress sequential grammar growth and bindings.");
 
     assert!(
@@ -333,8 +422,10 @@ fn fun_weird_random_complexity() {
     );
 
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Weird/random prefixes simulate noisy, partially malformed edits.");
 
     assert!(
@@ -357,8 +448,10 @@ fn fun_complex_random_complexity() {
     );
 
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Complex-random generator mixes operator chains, nested lambdas and lets.");
 
     // Allow a higher ceiling because these inputs are intentionally adversarial.
@@ -407,5 +500,56 @@ fn fun_completion_let_prefix_complexity() {
     assert!(
         observed_success,
         "Expected at least one successful completion across sampled n"
+    );
+}
+
+#[test]
+fn fun_feed_height_complexity_long_composition() {
+    let grammar = fun_grammar();
+    let input = generate_let_fn_composition(6);
+    let data = run_feed_profile(&grammar, &input);
+
+    let kh = determine_height_complexity_exponent(&data);
+    let mean_us = if data.is_empty() {
+        0.0
+    } else {
+        data.iter().map(|d| d.time.as_micros() as f64).sum::<f64>() / data.len() as f64
+    };
+
+    println!("\nFeed mean latency: {:.2} us", mean_us);
+    println!("Feed height complexity: O(h^{:.2})", kh);
+
+    assert!(
+        kh < 2.2,
+        "feed should be close to linear/subquadratic in tree height"
+    );
+}
+
+#[test]
+fn fun_feed_latency_budget_long_composition() {
+    let grammar = fun_grammar();
+    let input = generate_let_fn_composition(6);
+    let data = run_feed_profile(&grammar, &input);
+
+    let mut micros: Vec<u128> = data.iter().map(|d| d.time.as_micros()).collect();
+    micros.sort_unstable();
+    let mean_us = if micros.is_empty() {
+        0.0
+    } else {
+        micros.iter().map(|m| *m as f64).sum::<f64>() / micros.len() as f64
+    };
+    let p95_us = if micros.is_empty() {
+        0
+    } else {
+        micros[(micros.len() * 95 / 100).min(micros.len() - 1)]
+    };
+
+    println!("\nFeed mean latency: {:.2} us", mean_us);
+    println!("Feed p95 latency: {} us", p95_us);
+
+    // Keep this permissive but meaningful in CI noise; target remains sub-ms mean.
+    assert!(
+        mean_us < 2_000.0,
+        "feed mean latency should remain below 2ms"
     );
 }

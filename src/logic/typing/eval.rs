@@ -1,8 +1,3 @@
-//! Type Evaluation - Single Tree Checker
-//!
-//! Clean API: `check_tree` evaluates ONE tree, returning its status.
-//! Forest filtering is done at a higher level by the caller.
-
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::structure::{NonTerminal, Terminal};
 use crate::logic::typing::core::{Context, TreeStatus};
@@ -32,11 +27,6 @@ fn type_cache_enabled() -> bool {
     TYPE_CACHE_ENABLED.with(|flag| flag.get())
 }
 
-// ============================================================================
-// Core API - single tree checking
-// ============================================================================
-/// Evaluates a single tree against a grammar.
-///
 /// Returns a `TreeStatus` indicating if the tree is well-typed, partial, or malformed.
 pub fn check_tree(root: &NonTerminal, grammar: &Grammar) -> TreeStatus {
     check_tree_with_context(root, grammar, &Context::new())
@@ -1046,6 +1036,7 @@ fn has_meta(ty: &Type) -> bool {
     match ty {
         Type::Meta(_) => true,
         Type::Arrow(a, b) => has_meta(a) || has_meta(b),
+        Type::Array(inner) => has_meta(inner),
         Type::Union(parts) => parts.iter().any(has_meta),
         Type::Not(a) => has_meta(a),
         _ => false,
@@ -1061,6 +1052,7 @@ fn has_unresolved_subtyping_hole(ty: &Type) -> bool {
             has_unresolved_subtyping_hole(inner)
         }
         Type::Arrow(a, b) => has_unresolved_subtyping_hole(a) || has_unresolved_subtyping_hole(b),
+        Type::Array(inner) => has_unresolved_subtyping_hole(inner),
         Type::Union(parts) => parts.iter().any(has_unresolved_subtyping_hole),
         Type::Atom(_) | Type::Raw(_) | Type::None => false,
     }
@@ -1089,6 +1081,10 @@ fn solve_meta(ty: &Type, map: &HashMap<String, Type>) -> Result<Type, String> {
             let a = solve_meta(a, map)?;
             let b = solve_meta(b, map)?;
             return Ok(Type::Arrow(Box::new(a), Box::new(b)));
+        }
+        Type::Array(inner) => {
+            let inner = solve_meta(inner, map)?;
+            return Ok(Type::Array(Box::new(inner)));
         }
         Type::Union(parts) => {
             let mut resolved = Vec::with_capacity(parts.len());
@@ -1184,6 +1180,10 @@ fn solve_binding(tref: &TreeRef, ty: &Type, bound: &Bindings) -> Result<Type, St
             let a = solve_binding(tref, a, bound)?;
             let b = solve_binding(tref, b, bound)?;
             return Ok(Type::Arrow(Box::new(a), Box::new(b)));
+        }
+        Type::Array(inner) => {
+            let inner = solve_binding(tref, inner, bound)?;
+            return Ok(Type::Array(Box::new(inner)));
         }
         Type::Union(parts) => {
             let mut resolved = Vec::with_capacity(parts.len());

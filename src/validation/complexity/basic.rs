@@ -142,10 +142,11 @@ fn basic_deep_nesting_complexity() {
         None,
     );
 
-    // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Expected: O(n) for linear nesting");
     println!("Actual: k = {:.2} (closer to 1.0 is better)", k);
 
@@ -158,6 +159,7 @@ fn basic_deep_nesting_complexity() {
         k > 0.01,
         "Complexity should be worse than O(1) for non-trivial inputs"
     );
+    assert!(kh > 0.01, "Height complexity should be non-trivial");
 }
 
 #[test]
@@ -172,10 +174,11 @@ fn basic_random_string_complexity() {
         None,
     );
 
-    // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
+    let kh = determine_height_complexity_exponent(&data);
 
     println!("\nEmpirical complexity: O(n^{:.2})", k);
+    println!("Empirical height complexity: O(h^{:.2})", kh);
     println!("Random strings test the parser's handling of arbitrary inputs");
     println!("k = {:.2}", k);
 

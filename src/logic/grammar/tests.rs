@@ -104,3 +104,25 @@ fn stlc_abs_binding_paths_match_spec() {
     assert_path("l", "app", vec![vec![(0, Some(0))]]);
     assert_path("r", "app", vec![vec![(1, Some(0))]]);
 }
+
+#[test]
+fn repeated_binding_produces_multiple_paths() {
+    let spec = r#"
+    Number(num) ::= /[0-9]+/
+    Pair(pair) ::= Number[x] ',' Number[x]
+
+    Γ ⊢ x : 'number'
+    ----------------- (pair)
+    'number'
+    "#;
+
+    let grammar = Grammar::load(spec).expect("load pair grammar");
+    let paths = grammar
+        .binding_map
+        .get("x", "pair")
+        .expect("binding paths for repeated x");
+
+    assert_eq!(paths.len(), 2, "repeated binding should keep both paths");
+    assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
+    assert_eq!(steps(&paths[1]), vec![(2, Some(0))]);
+}

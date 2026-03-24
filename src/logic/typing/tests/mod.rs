@@ -10,7 +10,9 @@ mod imp;
 mod lc;
 mod parse;
 mod redeclaration;
+mod toy_arrays;
 mod tree;
+mod typescript;
 
 use super::*;
 use crate::logic::grammar::Grammar;

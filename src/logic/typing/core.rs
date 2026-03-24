@@ -3,16 +3,16 @@
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
 use crate::logic::typing::rule::TypeOperation;
 use crate::logic::typing::Type;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // =============================================================================
 // Context: Γ : String → Type
 // =============================================================================
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Context {
-    pub bindings: HashMap<String, Type>,
-    pub unresolved_bindings: HashMap<TreePath, Type>,
+    pub bindings: BTreeMap<String, Type>,
+    pub unresolved_bindings: BTreeMap<TreePath, Type>,
 }
 
 impl Context {
