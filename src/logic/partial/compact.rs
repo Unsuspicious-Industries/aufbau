@@ -430,7 +430,7 @@ impl crate::logic::grammar::Symbol {
 
 #[cfg(test)]
 mod tests {
-    
+
     use super::*;
     use crate::logic::grammar::Grammar;
     use crate::logic::partial::parse::Parser;

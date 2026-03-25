@@ -3,8 +3,19 @@ use crate::logic::partial::serialize::{
     ast_to_sexpr, nt_to_sexpr, parse_sexpr, sexpr_to_ast, sexpr_to_nt, sexpr_to_string,
     sexpr_to_terminal, terminal_to_sexpr,
 };
-use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
+use crate::logic::partial::structure::{register_grammar, Node, NonTerminal, SppfForest, Terminal};
 use crate::regex::Regex as DerivativeRegex;
+
+fn register_test_grammar(grammar: &Grammar) -> String {
+    let key = grammar.to_spec_string();
+    register_grammar(key.clone(), grammar.clone());
+    key
+}
+
+fn build_test_ast(grammar: &Grammar, roots: Vec<NonTerminal>, input: String) -> SppfForest {
+    register_grammar(grammar.name.clone(), grammar.clone());
+    SppfForest::from_trees(roots, input, grammar)
+}
 
 #[test]
 fn test_roundtrip_simple() {
@@ -86,7 +97,7 @@ fn test_partial_ast_serialization() {
         1,
     );
 
-    let ast = PartialAST::from_trees(vec![root], "hel".to_string());
+    let ast = build_test_ast(&grammar, vec![root], "hel".to_string());
     let sexpr = ast_to_sexpr(&ast);
     let s = sexpr_to_string(&sexpr);
 
@@ -375,7 +386,7 @@ fn test_roundtrip_complex_tree() {
         1,
     );
 
-    let ast = PartialAST::from_trees(vec![start], "x+y".to_string());
+    let ast = build_test_ast(&grammar, vec![start], "x+y".to_string());
 
     // Serialize and deserialize
     let sexpr = ast_to_sexpr(&ast);
@@ -540,7 +551,7 @@ fn test_complete_roundtrip_no_information_loss() {
         10,
     );
 
-    let ast = PartialAST::from_trees(vec![start.clone()], "x+y".to_string());
+    let ast = build_test_ast(&grammar, vec![start.clone()], "x+y".to_string());
 
     // Serialize and deserialize
     let sexpr = ast_to_sexpr(&ast);
@@ -640,7 +651,7 @@ fn test_partial_ast_serialize_method() {
         2,
     );
 
-    let ast = PartialAST::from_trees(vec![root], "hellowor".to_string());
+    let ast = build_test_ast(&grammar, vec![root], "hellowor".to_string());
 
     // Use the convenient serialize method
     let serialized = ast.serialize();
@@ -648,7 +659,7 @@ fn test_partial_ast_serialize_method() {
 
     // Deserialize using the convenient method
     let deserialized =
-        PartialAST::deserialize(&serialized, &grammar, "hellowor".to_string()).unwrap();
+        SppfForest::deserialize(&serialized, &grammar, "hellowor".to_string()).unwrap();
 
     assert_eq!(ast.roots().len(), deserialized.roots().len());
     assert_eq!(ast.input(), deserialized.input());
@@ -797,7 +808,7 @@ fn test_serialize_with_comments() {
   (T "hello"))
     "#;
 
-    let ast = PartialAST::deserialize(s_with_comments, &grammar, "hello".to_string()).unwrap();
+    let ast = SppfForest::deserialize(s_with_comments, &grammar, "hello".to_string()).unwrap();
     assert_eq!(ast.roots().len(), 1);
     assert_eq!(ast.roots()[0].name, "start");
 }

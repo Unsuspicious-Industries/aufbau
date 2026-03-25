@@ -1,5 +1,3 @@
-
-
 #[cfg(test)]
 mod completions;
 #[cfg(test)]

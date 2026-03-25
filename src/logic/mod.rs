@@ -10,6 +10,6 @@ pub mod search;
 pub mod binding;
 
 pub use grammar::{Segment, Tokenizer};
-pub use partial::{Parser, PartialAST};
+pub use partial::{Parser, SppfForest};
 
 pub use search::{search_complete, search_k, SearchConfig, SearchResult};

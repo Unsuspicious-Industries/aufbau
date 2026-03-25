@@ -5,7 +5,7 @@ pub mod meta;
 pub use meta::*;
 
 pub mod structure;
-pub use structure::{Node, NonTerminal, PartialAST, Terminal};
+pub use structure::{Node, NonTerminal, SppfForest, Terminal};
 
 pub mod completion;
 pub use completion::*;

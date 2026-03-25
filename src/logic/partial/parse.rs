@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
 use crate::logic::partial::structure::{
-    PackedAlternative, PartialAST, SppfChild, SppfForest, SppfNodeId, SppfNodeKey, Terminal,
+    PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
 };
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
@@ -78,10 +78,7 @@ const DEFAULT_MAX_RECURSION_DEPTH: usize = 15;
 /// grammar mismatches (which will never succeed regardless of depth).
 #[derive(Debug, Clone)]
 pub enum PartialParseOutcome {
-    /// Parse succeeded with at least one valid tree.
-    Success { ast: PartialAST },
-    /// Parse failed - input doesn't match the grammar.
-    /// Unlike depth-limited results, this will NOT improve with higher recursion limits.
+    Success { ast: SppfForest },
     Failure(ParseError),
 }
 
@@ -126,7 +123,7 @@ impl PartialParseOutcome {
         }
     }
 
-    pub fn into_result(self) -> Result<PartialAST, ParseError> {
+    pub fn into_result(self) -> Result<SppfForest, ParseError> {
         match self {
             Self::Success { ast } if !ast.is_empty() => Ok(ast),
             Self::Success { .. } => Err(ParseError::NoValidParse),
@@ -134,14 +131,14 @@ impl PartialParseOutcome {
         }
     }
 
-    pub fn ast(&self) -> Option<&PartialAST> {
+    pub fn ast(&self) -> Option<&SppfForest> {
         match self {
             Self::Success { ast } => Some(ast),
             _ => None,
         }
     }
 
-    pub fn unwrap(self) -> PartialAST {
+    pub fn unwrap(self) -> SppfForest {
         match self {
             Self::Success { ast } if !ast.is_empty() => ast,
             Self::Success { .. } => panic!("Called unwrap on Success with 0 roots"),
@@ -149,7 +146,7 @@ impl PartialParseOutcome {
         }
     }
 
-    pub fn expect(self, msg: &str) -> PartialAST {
+    pub fn expect(self, msg: &str) -> SppfForest {
         match self {
             Self::Success { ast } if !ast.is_empty() => ast,
             _ => panic!("{}", msg),
@@ -180,14 +177,6 @@ struct ParseState {
     visited: HashMap<(String, usize), usize>,
     /// Set to true when we hit the depth limit during this parse.
     hit_depth_limit: bool,
-    /// Within-call memo: (nt_name, abs_pos, segments_len) -> trees
-    /// Keyed by segments_len (= how many tokens are available from abs_pos),
-    /// so entries from different call sites never collide.
-    memo: HashMap<(String, usize, usize), Vec<ParsedNt>>,
-    /// Tracks which memo_keys are currently being computed (on the call stack).
-    /// Memo lookup is only skipped for keys that are actively in-progress,
-    /// not for all keys sharing the same (nt, pos) visited entry.
-    in_progress: HashSet<(String, usize, usize)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -209,8 +198,6 @@ impl ParseState {
         Self {
             visited: HashMap::new(),
             hit_depth_limit: false,
-            memo: HashMap::new(),
-            in_progress: HashSet::new(),
         }
     }
 }
@@ -238,9 +225,11 @@ pub struct Parser {
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
         let reserved_tokens: HashSet<String> = grammar.special_tokens.iter().cloned().collect();
+        let mut forest = SppfForest::new();
+        forest.set_grammar_name(grammar.name.clone());
         Self {
             grammar,
-            forest: SppfForest::new(),
+            forest,
             reserved_tokens,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
             last_hit_depth_limit: false,
@@ -275,7 +264,7 @@ impl Parser {
     /// 2. Returns a simple Result type for backward compatibility
     ///
     /// For more control (partial parses, depth info), use `partial()` directly.
-    pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
+    pub fn parse(&mut self, input: &str) -> Result<SppfForest, String> {
         match self.partial(input) {
             PartialParseOutcome::Success { ast, .. } => {
                 // Re-tokenize to determine how many segments the full input contributes.
@@ -283,8 +272,8 @@ impl Parser {
                 let total_segments = segments.len();
 
                 let complete_root = ast.root_ids().iter().any(|root_id| {
-                    ast.forest().consumed_segments(*root_id) == total_segments
-                        && ast.forest().node_is_complete(*root_id)
+                    ast.consumed_segments(*root_id) == total_segments
+                        && ast.node_is_complete(*root_id)
                 });
 
                 if complete_root {
@@ -354,7 +343,11 @@ impl Parser {
             }
 
             PartialParseOutcome::Success {
-                ast: PartialAST::from_forest(forest, valid_roots, input.to_string()),
+                ast: {
+                    forest.set_roots(valid_roots);
+                    forest.set_input(input.to_string());
+                    forest
+                },
             }
         })();
         outcome
@@ -407,70 +400,6 @@ impl Parser {
         // Check for recursion on same input position for cycle detection
         // Uses absolute position to correctly detect cycles
         let key = (nt_name.to_string(), abs_pos);
-
-        // Within-call memo lookup: if we already computed this (nt, pos, len)
-        // tuple during this parse invocation, return the cached result directly.
-        // This keeps the parser polynomial-time on ambiguous / left-recursive grammars.
-        // We only skip the lookup if this exact memo_key is currently being computed
-        // (i.e. we are in a recursive call for this same triple), to avoid serving
-        // a stale in-progress partial result.
-        let memo_key = (nt_name.to_string(), abs_pos, segments.len());
-        if !parse_state.in_progress.contains(&memo_key) {
-            if let Some(cached) = parse_state.memo.get(&memo_key) {
-                return Ok(cached.clone());
-            }
-        }
-        if let Some(count) = parse_state.visited.get(&key) {
-            // Empty/near-empty suffixes in left-recursive grammars still need a
-            // few recursive expansions to reach non-left-recursive alternatives.
-            // A +2 budget is too tight and causes false "NoValidParse" on
-            // operator-tail prefixes like "x +".
-            let local_limit = self.max_recursion.min(segments.len().saturating_add(8));
-            debug_trace!(
-                "parser2      ",
-                "{}[L{}] Recursion detected for '{}' at abs_pos {} depth {}",
-                indent,
-                level,
-                nt_name,
-                abs_pos,
-                count
-            );
-            // Termination fallback
-            // computer crashed too many times before
-            if *count >= local_limit {
-                debug_trace!(
-                    "parser2      ",
-                    "{}[L{}] Termination: Too much recursion (>= {}, remaining segments: {})",
-                    indent,
-                    level,
-                    local_limit,
-                    segments.len()
-                );
-                parse_state.hit_depth_limit = true;
-                return Ok(Vec::new());
-            } else {
-                debug_trace!(
-                    "parser2      ",
-                    "{}[L{}] Continuing recursion (count: {})",
-                    indent,
-                    level,
-                    count + 1
-                );
-                parse_state.visited.insert(key.clone(), count + 1);
-            }
-        } else {
-            debug_trace!(
-                "parser2      ",
-                "{}[L{}] First parse attempt for '{}' at abs_pos {}",
-                indent,
-                level,
-                nt_name,
-                abs_pos
-            );
-            parse_state.visited.insert(key.clone(), 1);
-        }
-
-        parse_state.in_progress.insert(memo_key.clone());
 
         // Clone productions to avoid borrow conflict with span cache
         let productions_len = self
@@ -543,18 +472,19 @@ impl Parser {
                             let consumed = self.count_consumed_segments(&children);
                             let complete =
                                 self.children_are_complete(&children, prod_ref.rhs.len());
-                            let key = SppfNodeKey {
+                            let node_id = forest.intern_node(SppfNode {
                                 name: nt_name.to_string(),
+                                grammar: forest.grammar_name().to_string(),
                                 binding: binding.clone(),
                                 abs_pos,
-                                consumed_segments: consumed,
-                            };
-                            let node_id = forest.intern_node(key);
+                                consumed_segments: 0,
+                                alternatives: vec![],
+                                ty: None,
+                            });
                             forest.add_alternative(
                                 node_id,
                                 PackedAlternative {
                                     alternative_index: alt_idx,
-                                    production: Arc::clone(&prod_ref),
                                     children: children.into_iter().map(|c| c.child).collect(),
                                 },
                             );
@@ -584,7 +514,6 @@ impl Parser {
         }
 
         parse_state.visited.remove(&key);
-        parse_state.in_progress.remove(&memo_key);
 
         debug_trace!(
             "parser2      ",
@@ -594,14 +523,6 @@ impl Parser {
             nt_name,
             outcomes.len()
         );
-
-        // Store in within-call memo so sibling productions don't recompute this.
-        // If any branch hit a recursion/depth cutoff, avoid memoizing potentially
-        // truncated results: they can otherwise poison later non-recursive paths
-        // for the same (nt, pos, len) triple.
-        if !parse_state.hit_depth_limit {
-            parse_state.memo.insert(memo_key, outcomes.clone());
-        }
 
         Ok(outcomes)
     }

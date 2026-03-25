@@ -167,6 +167,7 @@ use crate::logic::typing::TypingRule;
 /// inference-style typing rules.
 #[derive(Debug, Clone)]
 pub struct Grammar {
+    pub name: String,
     pub productions: HashMap<String, Vec<Production>>,
     pub typing_rules: HashMap<String, TypingRule>,
     pub special_tokens: Vec<String>,
@@ -182,10 +183,7 @@ pub struct Grammar {
 // becomes necessary.
 impl PartialEq for Grammar {
     fn eq(&self, other: &Self) -> bool {
-        self.productions == other.productions
-            && self.special_tokens == other.special_tokens
-            && self.delimiters == other.delimiters
-            && self.start == other.start
+        self.name == other.name
     }
 }
 
@@ -196,6 +194,7 @@ impl Eq for Grammar {}
 // order to ensure the hash is independent of HashMap iteration order.
 impl std::hash::Hash for Grammar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
         let mut keys: Vec<&String> = self.productions.keys().collect();
         keys.sort();
         for k in keys {
@@ -213,6 +212,7 @@ impl std::hash::Hash for Grammar {
 impl Default for Grammar {
     fn default() -> Self {
         Self {
+            name: String::new(),
             productions: HashMap::default(),
             typing_rules: HashMap::default(),
             special_tokens: Vec::default(),

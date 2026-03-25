@@ -38,10 +38,10 @@ fn format_node(node: &super::Node, level: usize) -> String {
     }
 }
 
-impl Display for super::PartialAST {
+impl Display for super::SppfForest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let roots = self.roots();
-        writeln!(f, "PartialAST ({} roots):", roots.len())?;
+        writeln!(f, "SppfForest ({} roots):", roots.len())?;
         for (i, root) in roots.iter().enumerate() {
             writeln!(f, "Root {}:", i)?;
             write!(f, "{}", format_nonterminal(root, 1))?;

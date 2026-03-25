@@ -1,10 +1,10 @@
 use super::*;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
-use crate::logic::partial::PartialAST;
+use crate::logic::partial::SppfForest;
 use crate::set_debug_level;
 
-fn parse(spec: &str, input: &str) -> (PartialAST, Grammar) {
+fn parse(spec: &str, input: &str) -> (SppfForest, Grammar) {
     let g = Grammar::load(spec).unwrap();
     let mut p = Parser::new(g.clone());
     (p.partial(input).unwrap(), g)
@@ -84,7 +84,7 @@ fn test_variable_requires_context() {
 
 #[test]
 fn test_partial_with_complete_filter() {
-    // Tests that typed_complete uses PartialAST::complete() check
+    // Tests that typed_complete uses SppfForest::complete() check
     let spec = "start ::= 'a' 'b' 'c'";
     let (ast, g) = parse(spec, "a b");
     // The partial AST itself is not complete

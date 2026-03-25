@@ -200,7 +200,6 @@ fn run_feed_profile(grammar: &Grammar, input: &str) -> Vec<ComplexityData> {
 
         let height = synth
             .tree()
-            
             .map(|t| t.roots.iter().map(typed_node_height).max().unwrap_or(0))
             .unwrap_or(0);
         out.push(ComplexityData::new_with_height(

@@ -2,10 +2,12 @@
 
 use std::collections::HashSet;
 
+use serde::de;
+
 use crate::debug_info;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::structure::{SppfForest, SppfNodeId};
-use crate::logic::partial::{ParseError, Parser, PartialAST, PartialParseOutcome};
+use crate::logic::partial::structure::SppfNodeId;
+use crate::logic::partial::{ParseError, Parser, PartialParseOutcome, SppfForest};
 use crate::logic::typing::{Context, TypedAST};
 
 const DEFAULT_START_DEPTH: usize = 5;
@@ -71,27 +73,27 @@ impl MetaParser {
     }
 
     //parse but discard depth
-    pub fn parse(&mut self, input: &str) -> Result<PartialAST, String> {
+    pub fn parse(&mut self, input: &str) -> Result<SppfForest, String> {
         let ast = self.partial(input)?;
         let complete_root_ids: Vec<SppfNodeId> = ast
             .root_ids()
             .iter()
             .copied()
-            .filter(|root_id| ast.forest().node_is_complete(*root_id))
+            .filter(|root_id| ast.node_is_complete(*root_id))
             .collect();
 
         if complete_root_ids.is_empty() {
             Err("No complete parse roots found".to_string())
         } else {
-            Ok(PartialAST::from_forest(
-                ast.forest().clone(),
+            Ok(SppfForest::from_forest(
+                ast.clone(),
                 complete_root_ids,
-                ast.input.clone(),
+                ast.input().to_string(),
             ))
         }
     }
 
-    pub fn partial(&mut self, input: &str) -> Result<PartialAST, String> {
+    pub fn partial(&mut self, input: &str) -> Result<SppfForest, String> {
         let mut current_depth = self.start_depth;
         debug_info!(
             "meta",
@@ -119,15 +121,20 @@ impl MetaParser {
                     match best_forest.as_mut() {
                         None => {
                             best_roots.extend(ast.root_ids().iter().copied());
-                            best_forest = Some(ast.forest().clone());
+                            best_forest = Some(ast.clone());
                         }
                         Some(forest) => {
-                            let id_map = forest.merge_from(ast.forest());
+                            let id_map = forest.merge_from(&ast);
                             for root_id in ast.root_ids() {
-                                best_roots.insert(id_map[*root_id]);
+                                best_roots.insert(id_map[root_id]);
                             }
                         }
                     }
+                    debug_info!(
+                        "meta",
+                        "MetaParser: Current best parse has {} complete roots",
+                        best_roots.len()
+                    );
 
                     if remaining_post_success_steps.is_none() && self.parser.last_hit_depth_limit()
                     {
@@ -152,7 +159,7 @@ impl MetaParser {
 
                     if !best_roots.is_empty() {
                         if let Some(forest) = best_forest {
-                            return Ok(PartialAST::from_forest(
+                            return Ok(SppfForest::from_forest(
                                 forest,
                                 best_roots.into_iter().collect(),
                                 input.to_string(),
@@ -176,7 +183,7 @@ impl MetaParser {
                             continue;
                         } else if !best_roots.is_empty() {
                             if let Some(forest) = best_forest {
-                                return Ok(PartialAST::from_forest(
+                                return Ok(SppfForest::from_forest(
                                     forest,
                                     best_roots.into_iter().collect(),
                                     input.to_string(),
@@ -220,7 +227,7 @@ impl MetaParser {
                             continue;
                         } else if !best_roots.is_empty() {
                             if let Some(forest) = best_forest {
-                                return Ok(PartialAST::from_forest(
+                                return Ok(SppfForest::from_forest(
                                     forest,
                                     best_roots.into_iter().collect(),
                                     input.to_string(),
@@ -239,7 +246,7 @@ impl MetaParser {
                 PartialParseOutcome::Failure(_) => {
                     if !best_roots.is_empty() {
                         if let Some(forest) = best_forest {
-                            return Ok(PartialAST::from_forest(
+                            return Ok(SppfForest::from_forest(
                                 forest,
                                 best_roots.into_iter().collect(),
                                 input.to_string(),
@@ -258,7 +265,7 @@ impl MetaParser {
 
         if !best_roots.is_empty() {
             if let Some(forest) = best_forest {
-                return Ok(PartialAST::from_forest(
+                return Ok(SppfForest::from_forest(
                     forest,
                     best_roots.into_iter().collect(),
                     input.to_string(),
@@ -283,7 +290,7 @@ impl MetaParser {
         ast.typed_ctx(&grammar, ctx)
     }
 
-    pub fn partial_with_depth(&mut self, input: &str) -> Result<(PartialAST, usize), String> {
+    pub fn partial_with_depth(&mut self, input: &str) -> Result<(SppfForest, usize), String> {
         let ast = self.partial(input)?;
         Ok((ast, self.last_used_depth.unwrap_or(self.start_depth)))
     }
@@ -303,7 +310,7 @@ impl MetaParser {
         input: &str,
         start_depth: usize,
         max_depth: usize,
-    ) -> Result<(PartialAST, usize), String> {
+    ) -> Result<(SppfForest, usize), String> {
         let prev_start = self.start_depth;
         let prev_max = self.max_depth;
 

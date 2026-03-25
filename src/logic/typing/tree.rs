@@ -2,8 +2,9 @@
 //!
 //! Composes on top of typing::eval which provides the core check_tree function.
 
+use crate::debug_info;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
+use crate::logic::partial::structure::{Node, NonTerminal, SppfForest, Terminal};
 use crate::logic::typing::core::{Context, TreePath, TreeRef, TreeStatus};
 use crate::logic::typing::eval::{check_node, check_tree_with_context};
 use crate::logic::typing::Type;
@@ -173,10 +174,10 @@ impl TypedNode {
 // ============================================================================
 // TypedAST
 // ============================================================================
-// PartialAST → TypedAST
+// SppfForest → TypedAST
 // ============================================================================
 
-impl PartialAST {
+impl SppfForest {
     /// Type-check and transform to TypedAST (all possible well-typed parses)
     pub fn typed(&self, g: &Grammar) -> Result<TypedAST, String> {
         self.typed_ctx(g, &Context::new())
@@ -186,7 +187,13 @@ impl PartialAST {
         let mut roots: Vec<TypedNode> = Vec::new();
 
         for root_id in self.root_ids() {
-            for r in self.forest().materialize_root(*root_id) {
+            debug_info!(
+                "typing",
+                "Typing SPPF root {} with grammar {}",
+                root_id,
+                g.name
+            );
+            for r in self.materialize_root(*root_id) {
                 let mut type_cache = HashMap::new();
                 let tref = TreeRef::new(&r, vec![]);
                 let status = check_node(&tref, g, ctx, 0, &mut type_cache);
@@ -217,7 +224,7 @@ impl PartialAST {
     /// Simple predicate: any well-typed tree exists?
     pub fn has_well_typed(&self, g: &Grammar) -> bool {
         for root_id in self.root_ids() {
-            for r in self.forest().materialize_root(*root_id) {
+            for r in self.materialize_root(*root_id) {
                 if check_tree_with_context(&r, g, &Context::new()).is_ok() {
                     return true;
                 }

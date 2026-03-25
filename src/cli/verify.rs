@@ -51,7 +51,10 @@ pub fn run(args: &VerifyCmd) {
     let script = args.script.clone().unwrap_or(default_script);
 
     if !script.exists() {
-        eprintln!("error: verification script not found at '{}'", script.display());
+        eprintln!(
+            "error: verification script not found at '{}'",
+            script.display()
+        );
         std::process::exit(2);
     }
 

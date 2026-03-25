@@ -1,7 +1,7 @@
 use crate::debug_debug;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::completion::CompletionSet;
-use crate::logic::partial::{MetaParser, PartialAST};
+use crate::logic::partial::{MetaParser, SppfForest};
 use crate::logic::typing::gather_terminals_typed;
 use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::{gather_raw_types, Context, TypedAST};
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-type MemoMap = HashMap<String, Result<Arc<PartialAST>, String>>;
+type MemoMap = HashMap<String, Result<Arc<SppfForest>, String>>;
 
 /// Per-entry stats for the parse memo, computed cheaply from interned SPPF nodes.
 /// Caller must consume the Ref before releasing it.
@@ -28,10 +28,10 @@ pub struct Synthesizer {
     // completion results. The parser still uses its within-call memo table to
     // avoid exponential parsing work. This struct only keeps lightweight
     // helpers and the meta-parser.
-    /// Cross-parse memo for partial parse results (input -> PartialAST).
+    /// Cross-parse memo for partial parse results (input -> SppfForest).
     /// Stored as interior-mutable RefCell to avoid copying and allow cheap
     /// Arc clones for shared ownership across callers.
-    parse_memo: RefCell<HashMap<String, Result<Arc<PartialAST>, String>>>,
+    parse_memo: RefCell<HashMap<String, Result<Arc<SppfForest>, String>>>,
 }
 
 impl Synthesizer {
@@ -108,7 +108,7 @@ impl Synthesizer {
                 .borrow()
                 .values()
                 .filter_map(|res| res.as_ref().ok())
-                .map(|p| p.forest().node_count() * 64)
+                .map(|p| p.node_count() * 64)
                 .sum::<usize>();
             // add typed tree size
             approx_size += typed_node_count * 64;
@@ -145,7 +145,7 @@ impl Synthesizer {
         self.completions_ctx(ctx)
     }
 
-    pub fn partial(&mut self) -> Result<PartialAST, String> {
+    pub fn partial(&mut self) -> Result<SppfForest, String> {
         let input = self.input.clone();
         self.cached_partial_ref(&input)
             .map(|ast| ast.as_ref().clone())
@@ -367,7 +367,7 @@ impl Synthesizer {
     }
 
     // copying a string
-    fn cached_partial_ref(&mut self, input: &str) -> Result<Arc<PartialAST>, String> {
+    fn cached_partial_ref(&mut self, input: &str) -> Result<Arc<SppfForest>, String> {
         // First check cross-parse memo to avoid re-parsing identical inputs.
         if let Some(cached) = self.parse_memo.borrow().get(input) {
             return cached.clone();

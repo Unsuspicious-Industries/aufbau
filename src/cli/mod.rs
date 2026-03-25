@@ -6,8 +6,8 @@ pub mod logic;
 pub mod validate;
 pub mod verify;
 
-use clap::{ArgAction, Parser, Subcommand};
 use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(name = "aufbau", version, about = "aufbau toolkit", long_about = None)]

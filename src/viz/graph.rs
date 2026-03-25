@@ -1,5 +1,5 @@
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::PartialAST;
+use crate::logic::partial::SppfForest;
 use crate::logic::partial::{Node, NonTerminal, Terminal};
 use crate::logic::typing::core::TreeStatus;
 use crate::logic::typing::eval::check_tree;
@@ -92,7 +92,7 @@ pub struct TypingRuleInfo {
     pub pretty: String,
 }
 
-pub fn build_graph(ast: &PartialAST, grammar: &Grammar) -> GraphData {
+pub fn build_graph(ast: &SppfForest, grammar: &Grammar) -> GraphData {
     let roots = ast.roots();
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();

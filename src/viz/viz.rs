@@ -545,12 +545,12 @@ fn filter_well_typed_completions(
 }
 
 /// Extract all identifier tokens from the AST by traversing terminal nodes
-/// Compute completions for a parsed `PartialAST` via its `TypedAST`.
+/// Compute completions for a parsed `SppfForest` via its `TypedAST`.
 ///
 /// Returns (well_typed_completions, all_completion_strings).
 fn compute_completions_for_partial(
     input: &str,
-    partial: &crate::logic::partial::PartialAST,
+    partial: &crate::logic::partial::SppfForest,
     grammar: &Grammar,
 ) -> (Vec<String>, Vec<String>) {
     let typed = match partial.typed(grammar) {

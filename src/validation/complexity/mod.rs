@@ -9,6 +9,7 @@ pub mod stlc;
 
 use crate::logic::grammar::Grammar;
 use rayon::prelude::*;
+use regex_syntax::ast::print;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -35,9 +36,16 @@ pub fn run_complexity_experiment(
         let parse_outcome = parser.partial(&input);
         let duration = start.elapsed();
         let height = match &parse_outcome {
-            Ok(ast) => ast.height(),
+            Ok(ast) => ast.roots().first().map(|r| r.height()).unwrap_or(0),
             Err(_) => 0,
         };
+        println!(
+            "Measured n={} (len={}) -> time={:?}, height={}",
+            n,
+            input.len(),
+            duration,
+            height
+        );
         ComplexityData::new_with_height(n, duration, input, height)
     };
 

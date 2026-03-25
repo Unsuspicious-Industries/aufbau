@@ -109,7 +109,7 @@ pub fn search_complete(
         Err(e) => {
             return SearchResult::Invalid {
                 message: format!("Input is not partially valid: {}", e),
-            }
+            };
         }
     };
 

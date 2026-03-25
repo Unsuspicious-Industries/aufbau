@@ -1,8 +1,9 @@
-use crate::logic::grammar::Production;
+use crate::logic::grammar::{Grammar, Production};
 use crate::logic::segment::SegmentRange;
+use crate::logic::typing::Type;
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub type SppfNodeId = usize;
 
@@ -15,32 +16,70 @@ pub enum SppfChild {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PackedAlternative {
     pub alternative_index: usize,
-    pub production: Arc<Production>,
     pub children: Vec<SppfChild>,
 }
 
 #[derive(Clone, Debug)]
 pub struct SppfNode {
     pub name: String,
+    pub grammar: String,
     pub binding: Option<String>,
     pub abs_pos: usize,
     pub consumed_segments: usize,
     pub alternatives: Vec<PackedAlternative>,
+    pub ty: Option<Type>,
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct SppfNodeKey {
-    pub name: String,
-    pub binding: Option<String>,
-    pub abs_pos: usize,
-    pub consumed_segments: usize,
-}
-
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SppfForest {
-    nodes: Vec<SppfNode>,
-    node_lookup: HashMap<SppfNodeKey, SppfNodeId>,
-    complete_memo: HashMap<SppfNodeId, bool>,
+    roots: Vec<SppfNodeId>,
+    grammar_name: String,
+    input: String,
+}
+
+impl Default for SppfForest {
+    fn default() -> Self {
+        Self {
+            roots: Vec::new(),
+            grammar_name: String::new(),
+            input: String::new(),
+        }
+    }
+}
+
+// -- global store: nodes by grammar name --
+
+struct GlobalStore {
+    nodes: HashMap<String, Vec<SppfNode>>,
+    grammars: HashMap<String, Grammar>,
+}
+
+fn global_store() -> &'static Mutex<GlobalStore> {
+    static STORE: OnceLock<Mutex<GlobalStore>> = OnceLock::new();
+    STORE.get_or_init(|| {
+        Mutex::new(GlobalStore {
+            nodes: HashMap::new(),
+            grammars: HashMap::new(),
+        })
+    })
+}
+
+pub fn register_node(grammar_name: &str, node: SppfNode) -> SppfNodeId {
+    let mut store = global_store().lock().expect("global store poisoned");
+    let pool = store.nodes.entry(grammar_name.to_string()).or_default();
+    let id = pool.len();
+    pool.push(node);
+    id
+}
+
+pub fn get_node(grammar_name: &str, id: SppfNodeId) -> Option<SppfNode> {
+    let store = global_store().lock().expect("global store poisoned");
+    store.nodes.get(grammar_name)?.get(id).cloned()
+}
+
+pub fn register_grammar(key: String, grammar: Grammar) {
+    let mut store = global_store().lock().expect("global store poisoned");
+    store.grammars.entry(key).or_insert(grammar);
 }
 
 impl SppfForest {
@@ -48,163 +87,234 @@ impl SppfForest {
         Self::default()
     }
 
-    pub fn intern_node(&mut self, key: SppfNodeKey) -> SppfNodeId {
-        if let Some(existing) = self.node_lookup.get(&key) {
-            return *existing;
+    pub fn from_forest(forest: SppfForest, roots: Vec<SppfNodeId>, input: String) -> Self {
+        Self {
+            roots,
+            grammar_name: forest.grammar_name,
+            input,
         }
-
-        let id = self.nodes.len();
-        self.nodes.push(SppfNode {
-            name: key.name.clone(),
-            binding: key.binding.clone(),
-            abs_pos: key.abs_pos,
-            consumed_segments: key.consumed_segments,
-            alternatives: Vec::new(),
-        });
-        self.complete_memo.remove(&id);
-        self.node_lookup.insert(key, id);
-        id
     }
 
-    pub fn add_alternative(&mut self, node_id: SppfNodeId, alt: PackedAlternative) {
-        if let Some(node) = self.nodes.get_mut(node_id) {
-            if !node.alternatives.contains(&alt) {
-                node.alternatives.push(alt);
-                self.complete_memo.remove(&node_id);
+    pub fn set_roots(&mut self, roots: Vec<SppfNodeId>) {
+        self.roots = roots;
+    }
+
+    pub fn set_grammar_name(&mut self, name: String) {
+        self.grammar_name = name;
+    }
+
+    pub fn set_input(&mut self, input: String) {
+        self.input = input;
+    }
+
+    pub fn grammar_name(&self) -> &str {
+        &self.grammar_name
+    }
+
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+
+    pub fn root_ids(&self) -> &[SppfNodeId] {
+        self.roots.as_slice()
+    }
+
+    pub fn roots(&self) -> Vec<NonTerminal> {
+        self.materialize_roots(&self.roots.clone())
+    }
+
+    pub fn complete(&self) -> Option<NonTerminal> {
+        for root_id in &self.roots {
+            if self.node_is_complete(*root_id) {
+                let trees = self.materialize_root(*root_id);
+                if let Some(t) = trees.into_iter().find(|t| t.is_complete()) {
+                    return Some(t);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.roots.iter().any(|id| self.node_is_complete(*id))
+    }
+
+    pub fn completes(&self) -> Vec<NonTerminal> {
+        self.roots()
+            .into_iter()
+            .filter(|r| r.is_complete())
+            .collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.roots.is_empty()
+    }
+
+    pub fn intern_node(&mut self, node: SppfNode) -> SppfNodeId {
+        register_node(&self.grammar_name, node)
+    }
+
+    pub fn node(&self, id: SppfNodeId) -> Option<SppfNode> {
+        get_node(&self.grammar_name, id)
+    }
+
+    pub fn from_trees(roots: Vec<NonTerminal>, input: String, grammar: &Grammar) -> Self {
+        register_grammar(grammar.name.clone(), grammar.clone());
+        let root_ids: Vec<SppfNodeId> = roots
+            .into_iter()
+            .map(|r| register_nt_tree(&grammar.name, r))
+            .collect();
+        Self {
+            roots: root_ids,
+            grammar_name: grammar.name.clone(),
+            input,
+        }
+    }
+
+    pub fn set_node_type(&mut self, node_id: SppfNodeId, ty: Option<Type>) {
+        let mut store = global_store().lock().expect("store poisoned");
+        if let Some(pool) = store.nodes.get_mut(&self.grammar_name) {
+            if let Some(node) = pool.get_mut(node_id) {
+                node.ty = ty;
             }
         }
     }
 
+    pub fn node_type(&self, node_id: SppfNodeId) -> Option<Type> {
+        let store = global_store().lock().expect("store poisoned");
+        store
+            .nodes
+            .get(&self.grammar_name)
+            .and_then(|pool| pool.get(node_id))
+            .and_then(|n| n.ty.clone())
+    }
+
+    pub fn nodes(&self) -> Vec<SppfNode> {
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return Vec::new();
+        };
+        self.collect_reachable_ids(pool)
+            .into_iter()
+            .filter_map(|id| pool.get(id).cloned())
+            .collect()
+    }
+
+    pub fn add_alt(&mut self, node_id: SppfNodeId, alt: PackedAlternative) {
+        let mut store = global_store().lock().expect("store poisoned");
+        if let Some(pool) = store.nodes.get_mut(&self.grammar_name) {
+            if let Some(node) = pool.get_mut(node_id) {
+                if !node.alternatives.contains(&alt) {
+                    node.alternatives.push(alt);
+                }
+            }
+        }
+    }
+
+    pub fn add_alternative(&mut self, node_id: SppfNodeId, alt: PackedAlternative) {
+        self.add_alt(node_id, alt);
+    }
+
     pub fn consumed_segments(&self, node_id: SppfNodeId) -> usize {
-        self.nodes
-            .get(node_id)
+        let store = global_store().lock().expect("store poisoned");
+        store
+            .nodes
+            .get(&self.grammar_name)
+            .and_then(|pool| pool.get(node_id))
             .map(|n| n.consumed_segments)
             .unwrap_or(0)
     }
 
     pub fn node_is_complete(&self, node_id: SppfNodeId) -> bool {
-        if let Some(v) = self.complete_memo.get(&node_id) {
-            return *v;
-        }
-
-        fn rec(
-            forest: &SppfForest,
-            id: SppfNodeId,
-            local_memo: &mut HashMap<SppfNodeId, bool>,
-            seen: &mut HashSet<SppfNodeId>,
-        ) -> bool {
-            if let Some(v) = forest.complete_memo.get(&id) {
-                return *v;
-            }
-            if let Some(v) = local_memo.get(&id) {
-                return *v;
-            }
+        fn rec(nodes: &[SppfNode], id: SppfNodeId, seen: &mut HashSet<SppfNodeId>) -> bool {
             if !seen.insert(id) {
                 return false;
             }
-
-            let complete = forest.nodes.get(id).is_some_and(|node| {
+            let complete = nodes.get(id).is_some_and(|node| {
                 node.alternatives.iter().any(|alt| {
                     alt.children.iter().all(|c| match c {
                         SppfChild::Terminal(Terminal::Complete { .. }) => true,
                         SppfChild::Terminal(Terminal::Partial { .. }) => false,
-                        SppfChild::Node(child_id) => rec(forest, *child_id, local_memo, seen),
+                        SppfChild::Node(child_id) => rec(nodes, *child_id, seen),
                     })
                 })
             });
-
             seen.remove(&id);
-            local_memo.insert(id, complete);
             complete
         }
 
-        rec(self, node_id, &mut HashMap::new(), &mut HashSet::new())
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return false;
+        };
+        rec(pool.as_slice(), node_id, &mut HashSet::new())
     }
 
-    pub fn clone_shallow(&self) -> Self {
-        Self {
-            nodes: self.nodes.clone(),
-            node_lookup: self.node_lookup.clone(),
-            complete_memo: self.complete_memo.clone(),
-        }
-    }
-
-    /// Number of interned SPPF nodes in this forest.
     pub fn node_count(&self) -> usize {
-        self.nodes.len()
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return 0;
+        };
+        self.collect_reachable_ids(pool).len()
     }
 
-    /// Total packed alternatives across all interned nodes.
     pub fn total_alternatives(&self) -> usize {
-        self.nodes.iter().map(|n| n.alternatives.len()).sum()
+        self.nodes().iter().map(|n| n.alternatives.len()).sum()
     }
 
-    /// Max branching factor: highest alternative count on any single node.
     pub fn max_alternatives(&self) -> usize {
-        self.nodes
+        self.nodes()
             .iter()
             .map(|n| n.alternatives.len())
             .max()
             .unwrap_or(0)
     }
 
-    /// Number of distinct nonterminal names across all interned nodes.
-    pub fn distinct_names(&self) -> usize {
-        use std::collections::HashSet;
-        let mut seen = HashSet::new();
-        for n in &self.nodes {
-            seen.insert(&n.name);
+    pub fn merge_from(&mut self, other: &SppfForest) -> HashMap<SppfNodeId, SppfNodeId> {
+        // Approximation: just extend roots, identity map.
+        // Same-grammar forests share the same node pool so IDs are compatible.
+        let mut id_map = HashMap::new();
+        for &id in &other.roots {
+            id_map.insert(id, id);
         }
-        seen.len()
-    }
-
-    pub fn merge_from(&mut self, other: &SppfForest) -> Vec<SppfNodeId> {
-        let mut id_map = vec![0; other.nodes.len()];
-
-        for (old_id, node) in other.nodes.iter().enumerate() {
-            let key = SppfNodeKey {
-                name: node.name.clone(),
-                binding: node.binding.clone(),
-                abs_pos: node.abs_pos,
-                consumed_segments: node.consumed_segments,
-            };
-            id_map[old_id] = self.intern_node(key);
-        }
-
-        for (old_id, node) in other.nodes.iter().enumerate() {
-            let new_id = id_map[old_id];
-            for alt in &node.alternatives {
-                let children = alt
-                    .children
-                    .iter()
-                    .map(|c| match c {
-                        SppfChild::Terminal(t) => SppfChild::Terminal(t.clone()),
-                        SppfChild::Node(cid) => SppfChild::Node(id_map[*cid]),
-                    })
-                    .collect();
-                self.add_alternative(
-                    new_id,
-                    PackedAlternative {
-                        alternative_index: alt.alternative_index,
-                        production: Arc::clone(&alt.production),
-                        children,
-                    },
-                );
-            }
-        }
-
+        self.roots.extend(other.roots.iter().copied());
         id_map
     }
 
+    fn collect_reachable_ids(&self, nodes: &[SppfNode]) -> Vec<SppfNodeId> {
+        fn visit(nodes: &[SppfNode], id: SppfNodeId, seen: &mut HashSet<SppfNodeId>) {
+            if !seen.insert(id) {
+                return;
+            }
+            let Some(node) = nodes.get(id) else {
+                return;
+            };
+            for alt in &node.alternatives {
+                for child in &alt.children {
+                    if let SppfChild::Node(child_id) = child {
+                        visit(nodes, *child_id, seen);
+                    }
+                }
+            }
+        }
+
+        let mut seen = HashSet::new();
+        for root_id in &self.roots {
+            visit(nodes, *root_id, &mut seen);
+        }
+        seen.into_iter().collect()
+    }
+
     pub fn materialize_roots(&self, root_ids: &[SppfNodeId]) -> Vec<NonTerminal> {
-        // Materialization is expensive and should be avoided in performance-sensitive
-        // paths (notably src/logic/partial/parse.rs). Keep a thin wrapper that
-        // explicitly documents that this is a heavyweight operation.
         let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
         let mut seen: HashSet<SppfNodeId> = HashSet::new();
         let mut out = Vec::new();
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return out;
+        };
         for root_id in root_ids {
-            out.extend(self.materialize_node(*root_id, &mut memo, &mut seen));
+            out.extend(self.materialize_node(pool, *root_id, &mut memo, &mut seen));
         }
         out
     }
@@ -212,11 +322,16 @@ impl SppfForest {
     pub fn materialize_root(&self, root_id: SppfNodeId) -> Vec<NonTerminal> {
         let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
         let mut seen: HashSet<SppfNodeId> = HashSet::new();
-        self.materialize_node(root_id, &mut memo, &mut seen)
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return Vec::new();
+        };
+        self.materialize_node(pool, root_id, &mut memo, &mut seen)
     }
 
     fn materialize_node(
         &self,
+        nodes: &[SppfNode],
         node_id: SppfNodeId,
         memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
         seen: &mut HashSet<SppfNodeId>,
@@ -228,18 +343,26 @@ impl SppfForest {
             return Vec::new();
         }
 
-        let Some(node) = self.nodes.get(node_id) else {
+        let Some(node) = nodes.get(node_id) else {
             seen.remove(&node_id);
             return Vec::new();
         };
 
+        let g = {
+            let store = global_store().lock().expect("store poisoned");
+            store.grammars.get(&self.grammar_name).unwrap().clone()
+        };
+
         let mut trees = Vec::new();
         for packed in &node.alternatives {
-            let child_sequences = self.materialize_children(&packed.children, memo, seen);
+            let child_sequences = self.materialize_children(nodes, &packed.children, memo, seen);
             for children in child_sequences {
                 trees.push(NonTerminal::new(
                     node.name.clone(),
-                    Arc::clone(&packed.production),
+                    Arc::new(
+                        g.productions.get(node.name.as_str()).unwrap()[packed.alternative_index]
+                            .clone(),
+                    ),
                     packed.alternative_index,
                     children,
                     node.binding.clone(),
@@ -255,6 +378,7 @@ impl SppfForest {
 
     fn materialize_children(
         &self,
+        nodes: &[SppfNode],
         children: &[SppfChild],
         memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
         seen: &mut HashSet<SppfNodeId>,
@@ -265,7 +389,7 @@ impl SppfForest {
             let choices: Vec<Node> = match child {
                 SppfChild::Terminal(t) => vec![Node::Terminal(t.clone())],
                 SppfChild::Node(id) => self
-                    .materialize_node(*id, memo, seen)
+                    .materialize_node(nodes, *id, memo, seen)
                     .into_iter()
                     .map(Node::NonTerminal)
                     .collect(),
@@ -290,168 +414,35 @@ impl SppfForest {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct Sppf {
-    forest: Arc<SppfForest>,
-    root_ids: Vec<SppfNodeId>,
-    pub input: String,
-}
-
-pub type PartialAST = Sppf;
-
-impl Sppf {
-    pub(crate) fn from_trees(roots: Vec<NonTerminal>, input: String) -> Self {
-        let mut forest = SppfForest::new();
-        let mut root_ids = Vec::new();
-
-        for root in roots {
-            root_ids.push(Self::insert_nt(&mut forest, root, 0));
-        }
-
-        Self {
-            forest: Arc::new(forest),
-            root_ids,
-            input,
-        }
-    }
-
-    pub fn from_forest(mut forest: SppfForest, root_ids: Vec<SppfNodeId>, input: String) -> Self {
-        let mut computed = HashMap::new();
-        for root_id in &root_ids {
-            let complete = forest.node_is_complete(*root_id);
-            computed.insert(*root_id, complete);
-        }
-        forest.complete_memo.extend(computed);
-
-        Self {
-            forest: Arc::new(forest),
-            root_ids,
-            input,
-        }
-    }
-
-    pub fn from_shared_forest(
-        forest: Arc<SppfForest>,
-        root_ids: Vec<SppfNodeId>,
-        input: String,
-    ) -> Self {
-        Self {
-            forest,
-            root_ids,
-            input,
-        }
-    }
-
-    fn insert_nt(forest: &mut SppfForest, nt: NonTerminal, abs_pos: usize) -> SppfNodeId {
-        let key = SppfNodeKey {
-            name: nt.name.clone(),
-            binding: nt.binding.clone(),
-            abs_pos,
-            consumed_segments: nt.consumed_segments,
-        };
-        let node_id = forest.intern_node(key);
-
-        let mut offset = abs_pos;
-        let mut packed_children = Vec::with_capacity(nt.children.len());
-        for child in nt.children {
-            match child {
-                Node::Terminal(t) => {
-                    if matches!(t, Terminal::Complete { .. } | Terminal::Partial { .. }) {
-                        offset += 1;
-                    }
-                    packed_children.push(SppfChild::Terminal(t));
-                }
-                Node::NonTerminal(child_nt) => {
-                    let consumed = child_nt.consumed_segments;
-                    let child_id = Self::insert_nt(forest, child_nt, offset);
-                    offset += consumed;
-                    packed_children.push(SppfChild::Node(child_id));
-                }
+fn register_nt_tree(grammar_name: &str, nt: NonTerminal) -> SppfNodeId {
+    let children: Vec<SppfChild> = nt
+        .children
+        .into_iter()
+        .map(|c| match c {
+            Node::Terminal(t) => SppfChild::Terminal(t),
+            Node::NonTerminal(child_nt) => {
+                SppfChild::Node(register_nt_tree(grammar_name, child_nt))
             }
-        }
-
-        forest.add_alternative(
-            node_id,
-            PackedAlternative {
-                alternative_index: nt.alternative_index,
-                production: Arc::clone(&nt.production),
-                children: packed_children,
-            },
-        );
-
-        node_id
-    }
-
-    pub fn roots(&self) -> Vec<NonTerminal> {
-        // WARNING: roots() materializes SPPF into explicit trees. Prefer using
-        // `root_ids()` + `forest()` for zero-copy operations. Keep this method
-        // for convenience but it's intentionally expensive.
-        self.forest.materialize_roots(self.root_ids.as_slice())
-    }
-
-    pub fn forest(&self) -> &SppfForest {
-        self.forest.as_ref()
-    }
-
-    pub fn shared_forest(&self) -> Arc<SppfForest> {
-        Arc::clone(&self.forest)
-    }
-
-    pub fn root_ids(&self) -> &[SppfNodeId] {
-        self.root_ids.as_slice()
-    }
-
-    pub fn complete_root_ids(&self) -> Vec<SppfNodeId> {
-        self.root_ids
-            .iter()
-            .copied()
-            .filter(|root_id| self.forest.node_is_complete(*root_id))
-            .collect()
-    }
-
-    pub fn root_count(&self) -> usize {
-        self.root_ids.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.root_ids.is_empty()
-    }
-
-    pub fn input(&self) -> &str {
-        &self.input
-    }
-
-    pub fn height(&self) -> usize {
-        self.roots()
-            .iter()
-            .map(|root| root.height())
-            .max()
-            .unwrap_or(0)
-    }
-
-    pub fn complete(&self) -> Option<NonTerminal> {
-        self.roots().into_iter().find(|root| root.is_complete())
-    }
-
-    pub fn completes(&self) -> Vec<NonTerminal> {
-        self.roots()
-            .into_iter()
-            .filter(|root| root.is_complete())
-            .collect()
-    }
-
-    pub fn is_complete(&self) -> bool {
-        self.root_ids.iter().copied().any(|root_id| {
-            self.forest
-                .complete_memo
-                .get(&root_id)
-                .copied()
-                .unwrap_or_else(|| self.forest.node_is_complete(root_id))
         })
-    }
+        .collect();
+    register_node(
+        grammar_name,
+        SppfNode {
+            name: nt.name,
+            grammar: grammar_name.to_string(),
+            binding: nt.binding,
+            abs_pos: 0,
+            consumed_segments: nt.consumed_segments,
+            alternatives: vec![PackedAlternative {
+                alternative_index: nt.alternative_index,
+                children,
+            }],
+            ty: None,
+        },
+    )
 }
 
-/// A nonterminal node representing a specific choice of production
+// representing a specific choice of production
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NonTerminal {
     /// Name of the nonterminal (e.g., "Expr", "start")

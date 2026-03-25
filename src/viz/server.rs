@@ -1,4 +1,4 @@
-use rouille::{router, Request, Response};
+use rouille::{Request, Response, router};
 
 use super::viz;
 

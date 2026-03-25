@@ -662,7 +662,7 @@ mod tests {
         //  XOR accept function: (a_in_accept XOR b_in_accept)
         assert!(xor_dfa.accepts("")); // In a* but not aa*
         assert!(!xor_dfa.accepts("a")); // In both, so not in XOR
-                                        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
+        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
     }
 
     #[test]
@@ -682,8 +682,8 @@ mod tests {
         assert!(!complement_dfa.accepts("")); // Empty string is in a*, so not in complement
         assert!(!complement_dfa.accepts("a")); // 'a' is in a*, so not in complement
         assert!(!complement_dfa.accepts("aa")); // 'aa' is in a*, so not in complement
-                                                // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
-                                                // This is a limitation of the current complement implementation
+        // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
+        // This is a limitation of the current complement implementation
     }
 
     #[test]

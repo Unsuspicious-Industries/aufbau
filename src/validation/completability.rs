@@ -259,7 +259,7 @@ pub fn is_completable(grammar: &Grammar, input: &str, max_depth: usize) -> bool 
 fn prefix_ok(
     grammar: &Grammar,
     ctx: &Context,
-    partial: &crate::logic::PartialAST,
+    partial: &crate::logic::SppfForest,
     tokens: &crate::logic::partial::CompletionSet,
 ) -> bool {
     if !tokens.is_empty() {

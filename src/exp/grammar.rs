@@ -25,7 +25,10 @@ fn test_simple() {
     let expr = "(((((a c))))) c";
     let ast = p.parse(expr).unwrap();
     println!("Parsed: {}", ast);
-    println!("Height: {}", ast.height());
+    println!(
+        "Height: {}",
+        ast.roots().first().map(|r| r.height()).unwrap_or(0)
+    );
 }
 #[cfg(test)]
 #[test]
@@ -37,5 +40,8 @@ fn test_stlc() {
     let expr = "f x y";
     let ast = p.parse(expr).unwrap();
     println!("Parsed: {}", ast);
-    println!("Height: {}", ast.height());
+    println!(
+        "Height: {}",
+        ast.roots().first().map(|r| r.height()).unwrap_or(0)
+    );
 }

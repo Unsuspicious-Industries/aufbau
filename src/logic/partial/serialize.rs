@@ -33,9 +33,8 @@
 #![allow(clippy::clone_on_copy)]
 #![allow(clippy::redundant_clone)]
 
-
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::structure::{Node, NonTerminal, PartialAST, Terminal};
+use crate::logic::partial::structure::{register_grammar, Node, NonTerminal, SppfForest, Terminal};
 use crate::regex::Regex as DerivativeRegex;
 
 // S-expression parsing
@@ -174,8 +173,8 @@ pub fn parse_sexpr(input: &str) -> Result<SExpr, String> {
 
 // ---------------- Serialization: AST -> S-expression ----------------
 
-/// Serialize a PartialAST to a more convenient S-expression format
-pub fn ast_to_sexpr(ast: &PartialAST) -> SExpr {
+/// Serialize a SppfForest to a more convenient S-expression format
+pub fn ast_to_sexpr(ast: &SppfForest) -> SExpr {
     let roots = ast.roots();
     if roots.len() == 1 {
         // Single root: just serialize the tree directly
@@ -348,24 +347,23 @@ fn escape_string(s: &str) -> String {
 
 // ---------------- Deserialization: S-expression -> AST ----------------
 
-pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar, input: String) -> Result<PartialAST, String> {
+pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar, input: String) -> Result<SppfForest, String> {
+    register_grammar(grammar.name.clone(), grammar.clone());
+
     match sexpr {
         SExpr::List(items) if !items.is_empty() => {
-            // Check if this is a single tree or multiple roots
             if let SExpr::Atom(name) = &items[0] {
                 if grammar.productions.contains_key(name) {
-                    // Single tree
                     let root = sexpr_to_nt(sexpr, grammar)?;
-                    return Ok(PartialAST::from_trees(vec![root], input));
+                    return Ok(SppfForest::from_trees(vec![root], input, grammar));
                 }
             }
 
-            // Multiple roots
             let mut roots = Vec::new();
             for item in items {
                 roots.push(sexpr_to_nt(item, grammar)?);
             }
-            Ok(PartialAST::from_trees(roots, input))
+            Ok(SppfForest::from_trees(roots, input, grammar))
         }
         _ => Err("Expected list for AST".into()),
     }
@@ -572,14 +570,14 @@ pub fn sexpr_atom_or_str(s: &SExpr) -> Result<String, String> {
 
 // ---------------- Convenient impl blocks for types ----------------
 
-impl PartialAST {
-    /// Serialize this PartialAST to a string
+impl SppfForest {
+    /// Serialize this SppfForest to a string
     pub fn serialize(&self) -> String {
         let sexpr = ast_to_sexpr(self);
         sexpr_to_string(&sexpr)
     }
 
-    /// Deserialize a PartialAST from a string
+    /// Deserialize a SppfForest from a string
     pub fn deserialize(s: &str, grammar: &Grammar, input: String) -> Result<Self, String> {
         let sexpr = parse_sexpr(&strip_headers(s))?;
         sexpr_to_ast(&sexpr, grammar, input)
@@ -685,6 +683,17 @@ impl NonTerminal {
 mod tests {
     use super::*;
 
+    fn register_test_grammar(grammar: &Grammar) -> String {
+        let key = grammar.to_spec_string();
+        register_grammar(key.clone(), grammar.clone());
+        key
+    }
+
+    fn build_test_ast(grammar: &Grammar, roots: Vec<NonTerminal>, input: String) -> SppfForest {
+        register_grammar(grammar.name.clone(), grammar.clone());
+        SppfForest::from_trees(roots, input, grammar)
+    }
+
     #[test]
     fn test_roundtrip_simple() {
         let grammar_str = r#"
@@ -765,7 +774,7 @@ mod tests {
             1,
         );
 
-        let ast = PartialAST::from_trees(vec![root], "hel".to_string());
+        let ast = build_test_ast(&grammar, vec![root], "hel".to_string());
         let sexpr = ast_to_sexpr(&ast);
         let s = sexpr_to_string(&sexpr);
 
@@ -1054,7 +1063,7 @@ mod tests {
             1,
         );
 
-        let ast = PartialAST::from_trees(vec![start], "x+y".to_string());
+        let ast = build_test_ast(&grammar, vec![start], "x+y".to_string());
 
         // Serialize and deserialize
         let sexpr = ast_to_sexpr(&ast);
@@ -1219,7 +1228,7 @@ mod tests {
             10,
         );
 
-        let ast = PartialAST::from_trees(vec![start.clone()], "x+y".to_string());
+        let ast = build_test_ast(&grammar, vec![start.clone()], "x+y".to_string());
 
         // Serialize and deserialize
         let sexpr = ast_to_sexpr(&ast);
@@ -1319,7 +1328,7 @@ mod tests {
             2,
         );
 
-        let ast = PartialAST::from_trees(vec![root], "hellowor".to_string());
+        let ast = build_test_ast(&grammar, vec![root], "hellowor".to_string());
 
         // Use the convenient serialize method
         let serialized = ast.serialize();
@@ -1327,7 +1336,7 @@ mod tests {
 
         // Deserialize using the convenient method
         let deserialized =
-            PartialAST::deserialize(&serialized, &grammar, "hellowor".to_string()).unwrap();
+            SppfForest::deserialize(&serialized, &grammar, "hellowor".to_string()).unwrap();
 
         assert_eq!(ast.roots().len(), deserialized.roots().len());
         assert_eq!(ast.input(), deserialized.input());
@@ -1476,7 +1485,7 @@ mod tests {
   (T "hello"))
         "#;
 
-        let ast = PartialAST::deserialize(s_with_comments, &grammar, "hello".to_string()).unwrap();
+        let ast = SppfForest::deserialize(s_with_comments, &grammar, "hello".to_string()).unwrap();
         assert_eq!(ast.roots().len(), 1);
         assert_eq!(ast.roots()[0].name, "start");
     }

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use aufbau::logic::grammar::Grammar;
 use aufbau::logic::typing::Context;
-use aufbau::logic::{search_complete, SearchConfig, SearchResult};
+use aufbau::logic::{SearchConfig, SearchResult, search_complete};
 
 /// Complete a partial program read from stdin using the type-aware synthesizer.
 ///

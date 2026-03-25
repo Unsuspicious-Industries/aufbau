@@ -24,7 +24,10 @@ pub fn run(args: &ValidateCmd) {
                                 failing_prefix,
                                 error,
                                 ..
-                            } => (false, format!("Failing prefix: '{}'\nError: {}", failing_prefix, error)),
+                            } => (
+                                false,
+                                format!("Failing prefix: '{}'\nError: {}", failing_prefix, error),
+                            ),
                         }
                     }),
                 });

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use aufbau::logic::grammar::Grammar;
 use aufbau::logic::typing::Context;
-use aufbau::logic::{search_k, SearchConfig};
+use aufbau::logic::{SearchConfig, search_k};
 
 #[derive(Args, Debug, Clone)]
 pub struct CompleteKCmd {

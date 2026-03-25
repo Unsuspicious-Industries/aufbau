@@ -206,11 +206,27 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
 
     // Write profile files
     if let Some(profile_path) = &args.profile {
-        write_profiles(module_name, profile_path, &profile_records, total_cases, passed, failed);
+        write_profiles(
+            module_name,
+            profile_path,
+            &profile_records,
+            total_cases,
+            passed,
+            failed,
+        );
     }
 
     // Write reports
-    write_reports(module_name, &results, &args.filter, total_suites, total_cases, passed, failed, total_duration);
+    write_reports(
+        module_name,
+        &results,
+        &args.filter,
+        total_suites,
+        total_cases,
+        passed,
+        failed,
+        total_duration,
+    );
 
     // Terminal summary
     eprintln!();
@@ -224,7 +240,9 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
     } else {
         eprintln!(
             "  {} FAILED / {} total  ({}ms)",
-            failed, total_cases, total_duration.as_millis()
+            failed,
+            total_cases,
+            total_duration.as_millis()
         );
         eprintln!();
         for r in &results {
@@ -263,7 +281,10 @@ fn write_profiles(
     let perf_path = dir.join(format!("{}-perf.json", stem));
     let fail_path = dir.join(format!("{}-failures.json", stem));
 
-    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
     let summary = json!({"cases": total, "passed": passed, "failed": failed});
 
     let perf_obj = json!({
@@ -327,7 +348,11 @@ fn write_reports(
     writeln!(
         f,
         "  suites={} cases={} passed={} failed={} time={}ms",
-        total_suites, total_cases, passed, failed, total_duration.as_millis()
+        total_suites,
+        total_cases,
+        passed,
+        failed,
+        total_duration.as_millis()
     )
     .ok();
     writeln!(f, "{}", sep).ok();
@@ -352,7 +377,14 @@ fn write_reports(
                 writeln!(f, "  [{}]", r.suite).ok();
                 cur = &r.suite;
             }
-            writeln!(f, "    ok  {:30} {:>8}us  \"{}\"", r.desc, r.duration.as_micros(), r.input).ok();
+            writeln!(
+                f,
+                "    ok  {:30} {:>8}us  \"{}\"",
+                r.desc,
+                r.duration.as_micros(),
+                r.input
+            )
+            .ok();
         }
     }
     writeln!(f).ok();
@@ -373,7 +405,13 @@ fn write_reports(
                     cur = &r.suite;
                 }
                 writeln!(f).ok();
-                writeln!(f, "    FAIL  {}  (time={}us)", r.desc, r.duration.as_micros()).ok();
+                writeln!(
+                    f,
+                    "    FAIL  {}  (time={}us)",
+                    r.desc,
+                    r.duration.as_micros()
+                )
+                .ok();
                 writeln!(f, "    input=\"{}\"", r.input).ok();
                 for line in r.detail.lines() {
                     let trimmed = line.trim();
@@ -399,7 +437,16 @@ fn write_reports(
         let sf = sr.iter().filter(|r| !r.passed).count();
         let st: Duration = sr.iter().map(|r| r.duration).sum();
         let status = if sf == 0 { "ok" } else { "FAIL" };
-        writeln!(f, "    {:4}  {:40} passed={} failed={} time={}us", status, sn, sp, sf, st.as_micros()).ok();
+        writeln!(
+            f,
+            "    {:4}  {:40} passed={} failed={} time={}us",
+            status,
+            sn,
+            sp,
+            sf,
+            st.as_micros()
+        )
+        .ok();
     }
     writeln!(f).ok();
     writeln!(f, "{}", sep).ok();

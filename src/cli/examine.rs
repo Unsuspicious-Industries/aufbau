@@ -153,13 +153,13 @@ pub fn run(args: &ExamineCmd) {
         match synth.partial() {
             Ok(partial_ast) => {
                 eprintln!(
-                    "-- parsed PartialAST ({} root(s)) --",
+                    "-- parsed SppfForest ({} root(s)) --",
                     partial_ast.roots().len()
                 );
                 if args.dump_ast {
                     eprintln!("{:#?}", partial_ast);
                 } else {
-                    eprintln!("  (PartialAST suppressed; use --dump-ast to print full PartialAST)");
+                    eprintln!("  (SppfForest suppressed; use --dump-ast to print full SppfForest)");
                 }
 
                 // Typed filter / typed attempt
@@ -172,7 +172,7 @@ pub fn run(args: &ExamineCmd) {
                 match partial_ast.typed_ctx(&grammar, &ctx) {
                     Ok(typed_ast) => {
                         eprintln!(
-                            "PartialAST typed successfully - TypedAST has {} root(s)",
+                            "SppfForest typed successfully - TypedAST has {} root(s)",
                             typed_ast.roots.len()
                         );
                         if args.dump_ast {
@@ -184,7 +184,7 @@ pub fn run(args: &ExamineCmd) {
                         }
                     }
                     Err(e) => {
-                        eprintln!("PartialAST typed failed: {}", e);
+                        eprintln!("SppfForest typed failed: {}", e);
                     }
                 }
 
@@ -264,7 +264,7 @@ pub fn run(args: &ExamineCmd) {
         // output at the end (instead of dumping the AST to stdout).
         if let aufbau::validation::completable::TestResult::Pass(opt_comp) = &result {
             if let Some(comp_str) = opt_comp.clone() {
-                // Parse the completed string to obtain the completed PartialAST
+                // Parse the completed string to obtain the completed SppfForest
                 // using the same adaptive parser path as completability checks.
                 let mut synth_done = Synthesizer::new(grammar.clone(), &comp_str);
                 match synth_done.partial() {

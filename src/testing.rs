@@ -536,11 +536,10 @@ pub fn print_memo_table(synth: &Synthesizer, with_height: bool) {
     for (input, result) in &entries {
         let (sppf_nodes, roots, total_alt, max_alt) = match result {
             Ok(partial) => {
-                let f = partial.forest();
-                let sn = f.node_count();
+                let sn = partial.node_count();
                 let rt = partial.root_ids().len();
-                let ta = f.total_alternatives();
-                let ma = f.max_alternatives();
+                let ta = partial.total_alternatives();
+                let ma = partial.max_alternatives();
                 let h = if with_height {
                     partial.roots().iter().map(|r| r.height()).max()
                 } else {

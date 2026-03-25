@@ -107,11 +107,11 @@ fn bare_identifier_has_assignment_completion_path() {
 /// Ensure partial "t" is treated as partial "true" and can typecheck.
 #[test]
 fn union_decl_partial_true_is_well_typed() {
-    use crate::logic::partial::structure::Terminal;
     use crate::logic::partial::MetaParser;
     use crate::logic::partial::Synthesizer;
-    use crate::logic::typing::symbols::gather_terminal_nodes;
+    use crate::logic::partial::structure::Terminal;
     use crate::logic::typing::Context;
+    use crate::logic::typing::symbols::gather_terminal_nodes;
 
     let grammar = imp_grammar();
     let input = "{ let u:Int|Bool=t";
