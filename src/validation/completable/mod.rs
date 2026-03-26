@@ -342,35 +342,57 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
     );
 
     let workers = batch_worker_count(cases.len());
+    let fail_fast = std::env::var("AUFBAU_FAIL_FAST")
+        .ok()
+        .map(|value| value != "0")
+        .unwrap_or(true);
     println!(
-        "Launching batch with {} worker threads ({} cases,  AUFBAU_VALIDATION_JOBS={:?})",
+        "Launching batch with {} worker threads ({} cases,  AUFBAU_VALIDATION_JOBS={:?}, fail_fast={})",
         workers,
         cases.len(),
         std::env::var("AUFBAU_VALIDATION_JOBS")
             .ok()
             .and_then(|s| s.parse::<usize>().ok())
-            .filter(|n| *n > 0)
+            .filter(|n| *n > 0),
+        fail_fast,
     );
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(workers)
-        .stack_size(32 * 1024 * 1024)
-        .build()
-        .expect("failed to build completable thread pool");
+    let mut outcomes: Vec<CaseOutcome> = if fail_fast {
+        let mut out = Vec::new();
+        for (idx, case) in cases.iter().enumerate() {
+            let (result, duration) = run_test_timed(grammar, case);
+            let stop = matches!(result, TestResult::Fail(_));
+            out.push(CaseOutcome {
+                idx,
+                result,
+                duration,
+            });
+            if stop {
+                break;
+            }
+        }
+        out
+    } else {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .stack_size(32 * 1024 * 1024)
+            .build()
+            .expect("failed to build completable thread pool");
 
-    let mut outcomes: Vec<CaseOutcome> = pool.install(|| {
-        cases
-            .par_iter()
-            .enumerate()
-            .map(|(idx, case)| {
-                let (result, duration) = run_test_timed(grammar, case);
-                CaseOutcome {
-                    idx,
-                    result,
-                    duration,
-                }
-            })
-            .collect()
-    });
+        pool.install(|| {
+            cases
+                .par_iter()
+                .enumerate()
+                .map(|(idx, case)| {
+                    let (result, duration) = run_test_timed(grammar, case);
+                    CaseOutcome {
+                        idx,
+                        result,
+                        duration,
+                    }
+                })
+                .collect()
+        })
+    };
 
     outcomes.sort_by_key(|o| o.idx);
 

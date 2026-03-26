@@ -225,6 +225,19 @@ fn check_completable_float_arithmetic() {
 }
 
 #[test]
+fn float_chain_with_int_operand_is_unsound() {
+    let grammar = fun_grammar();
+    let input = "let a : ( Float -> ( Float ) ) = 0.0 +. 0.0 +. 0 + ( let a : Float =";
+    let result =
+        crate::validation::completability::sound_complete(&grammar, input, 6, Some(Context::new()));
+
+    assert!(
+        !result.is_sound,
+        "prefix soundness should reject float chains that already contain an int operand"
+    );
+}
+
+#[test]
 fn check_completable_lambda() {
     let grammar = fun_grammar();
     let res = run_test_batch(&grammar, &lambda_cases());

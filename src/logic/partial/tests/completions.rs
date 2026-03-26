@@ -662,3 +662,27 @@ fn typed_completions_keep_identifier_prefix_with_context() {
         "typed completions should keep identifier-prefix continuations"
     );
 }
+
+#[test]
+fn typed_completions_do_not_offer_int_for_float_chain() {
+    let grammar = crate::testing::load_example_grammar("fun");
+    let input = "let a : ( Float -> ( Float ) ) = 0.0 +. 0.0 +. 0 + ( let a : Float =";
+    let mut synth = crate::logic::partial::Synthesizer::new(grammar, input);
+    let ctx = crate::logic::typing::Context::new();
+
+    let completions = synth.completions_ctx(&ctx);
+    let patterns = completions
+        .iter()
+        .map(|token| token.to_pattern())
+        .collect::<Vec<_>>();
+
+    assert!(
+        !completions.matches("0"),
+        "typed completions should not offer int literal '0' after a float operator chain: {:?}",
+        patterns
+    );
+    assert!(
+        synth.try_extend("0", &ctx).is_err(),
+        "extending with int literal '0' should be rejected"
+    );
+}

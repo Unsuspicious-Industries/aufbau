@@ -16,6 +16,10 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("assign bool", "{ let flag:Bool=true; }"),
         ParseTestCase::valid("assign union bool", "{ let u:Int|Bool=true; }"),
         ParseTestCase::valid("operation", "{ let x:Int=5; let y:Int=3; let z:Int=x+y; }"),
+        ParseTestCase::valid(
+            "long decl chain",
+            "{ let a:Int=1; let b:Int=2; let c:Int=3; let d:Int=4; let e:Int=5; let f:Int=6; let g:Int=7; let h:Int=8; }",
+        ),
         ParseTestCase::valid("sequential var reuse", "{ let x:Int=5; let y:Int=x; }"),
         ParseTestCase::valid("sequential var expr", "{ let x:Int=5; let y:Int=x+1; }"),
         ParseTestCase::valid("parentheses", "{ let x:Int=5; let y:Int=(x+1); }"),

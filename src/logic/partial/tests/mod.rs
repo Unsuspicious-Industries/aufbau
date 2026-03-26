@@ -6,6 +6,8 @@ mod meta;
 mod rec;
 
 #[cfg(test)]
+mod dsl;
+#[cfg(test)]
 mod edge;
 #[cfg(test)]
 mod expectations;

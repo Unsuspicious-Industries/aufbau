@@ -422,9 +422,23 @@ fn apply_rule_with_context_output(
         debug_trace!("typing", "Unifier after premise : {:?}", unifier);
     }
 
-    // If any premise was partial (but none failed), the rule is partial.
+    // If any premise was partial (but none failed), preserve as much conclusion
+    // type information as possible instead of collapsing to `Any`. This is
+    // critical for sound typed completion: an incomplete `IntBinary` should stay
+    // partial-`Int`, so it cannot satisfy a `Float` ascription upstream.
     if any_partial {
-        return (TreeStatus::Partial(Type::Any), None);
+        let partial_status = match eval_conclusion(
+            tref,
+            &rule.conclusion,
+            &bound,
+            &primary_ctx,
+            unifier.as_map(),
+        ) {
+            TreeStatus::Valid(ty) | TreeStatus::Partial(ty) => TreeStatus::Partial(ty),
+            TreeStatus::Malformed => TreeStatus::Partial(Type::Any),
+            TreeStatus::TooDeep => TreeStatus::TooDeep,
+        };
+        return (partial_status, None);
     }
 
     let map = unifier.as_map();

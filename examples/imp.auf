@@ -51,12 +51,12 @@ IfElseStmt(if_else) ::= 'if' '(' Expression[cond] ')' Block[then_block] 'else' B
 WhileStmt(while) ::= 'while' '(' Expression[cond] ')' Block[body]
 
 // Block: { statements }
-Block(block) ::= '{' Statements[stmts] '}'
+Block(block) ::= '{' StatementList[stmts] '}'
 
 // Statement list
 Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
 
-Statements(stmts) ::= Statement[head] Statements[tail] | ε
+StatementList(stmts) ::= Statement*
 
 // Top-level program is a block
 Program(program) ::= Block[main]
@@ -114,11 +114,6 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 Γ ⊢ cond : 'Bool', [Γ] ⊢ body : ?T
 -------------------------------- (while)
 ?T
-
-// check without asserting type
-Γ ▷ head, Γ ▷ tail 
--------------- (stmts)
-∅
 
 // Block: statements produce ?T (no ctx propagation)
 [Γ] ▷ stmts 

@@ -40,6 +40,11 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("empty", "", 3),
         // Sequences
         T::ok("two decls", "{ let x:Int=5; let y:Int=3; }", 3),
+        T::ok(
+            "long decl chain partial tail",
+            "{ let a:Int=1; let b:Int=2; let c:Int=3; let d:Int=4; let e:Int=5; let f:Int=6; a",
+            6,
+        ),
         T::ok("sequence partial", "{ let x:Int=5; x", 6),
         // Arithmetic expressions
         T::ok("simple add", "{ let x:Int=1+2; }", 2),

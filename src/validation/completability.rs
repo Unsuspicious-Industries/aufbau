@@ -132,22 +132,15 @@ pub fn sound_complete(
             let depth_budget = max_depth;
             let start = std::time::Instant::now();
 
+            let sound_tokens =
+                |synth: &mut Synthesizer, tokens: &crate::logic::partial::CompletionSet| {
+                    completion_tokens_are_sound(synth, tokens, &ctx)
+                };
+
             if *len == chars.len() {
                 let tokens = prefix_synth.feed(prefix.clone(), &ctx);
                 if let Ok(typed) = prefix_synth.partial_typed_ctx(&ctx) {
-                    if typed.is_complete() {
-                        let detail = PrefixDetail {
-                            prefix: prefix.clone(),
-                            ok: true,
-                            time_us: start.elapsed().as_micros(),
-                            states_explored: Some(0),
-                            visited_count: Some(0),
-                            visited_sample: vec![],
-                        };
-                        return (*len, detail, Some(prefix.clone()), None);
-                    }
-
-                    if !tokens.is_empty() {
+                    if typed.is_complete() && sound_tokens(&mut prefix_synth, &tokens) {
                         let detail = PrefixDetail {
                             prefix: prefix.clone(),
                             ok: true,
@@ -207,13 +200,12 @@ pub fn sound_complete(
             }
 
             let tokens = prefix_synth.feed(prefix.clone(), &ctx);
-            let ok = if !tokens.is_empty() {
-                true
-            } else {
-                match prefix_synth.partial() {
-                    Ok(partial) => prefix_ok(grammar, &ctx, &partial, &tokens),
-                    Err(_) => false,
+            let ok = match prefix_synth.partial() {
+                Ok(partial) => {
+                    prefix_ok(grammar, &ctx, &partial, &tokens)
+                        && completion_tokens_are_sound(&mut prefix_synth, &tokens, &ctx)
                 }
+                Err(_) => false,
             };
 
             let elapsed_us = start.elapsed().as_micros();
@@ -281,15 +273,24 @@ fn prefix_ok(
     partial: &crate::logic::SppfForest,
     tokens: &crate::logic::partial::CompletionSet,
 ) -> bool {
-    if !tokens.is_empty() {
-        return true;
-    }
-
     // Prefix soundness accepts any root that is currently typable or
     // typing-indeterminate (partial), even if the root is syntactically
     // incomplete. This is required for states like `... in` where the
     // body has not started yet.
-    partial.has_valid_or_partial_ctx(grammar, ctx)
+    partial.has_valid_or_partial_ctx(grammar, ctx) || !tokens.is_empty()
+}
+
+fn completion_tokens_are_sound(
+    synth: &mut Synthesizer,
+    tokens: &crate::logic::partial::CompletionSet,
+    ctx: &Context,
+) -> bool {
+    tokens.iter().all(|token| {
+        token
+            .example()
+            .map(|example| synth.try_extend(&example, ctx).is_ok())
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(test)]
