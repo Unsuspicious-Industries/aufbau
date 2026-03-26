@@ -5,7 +5,7 @@ use std::fs;
 use std::io::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aufbau::validation::complexity::{self, ComplexityData, estimate_complexity_exponent};
+use aufbau::validation::complexity::{self, estimate_complexity_exponent, ComplexityData};
 
 pub fn run(args: &ValidateCmd) {
     eprintln!("aufbau validation runner - complexity");

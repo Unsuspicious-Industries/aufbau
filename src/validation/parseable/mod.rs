@@ -28,8 +28,8 @@ pub mod weird;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::MetaParser;
-use crate::logic::typing::Type;
 use crate::logic::typing::core::Context;
+use crate::logic::typing::Type;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
 

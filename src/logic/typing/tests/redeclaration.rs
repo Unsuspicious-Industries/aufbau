@@ -40,6 +40,7 @@ use crate::logic::partial::MetaParser;
 use crate::logic::typing::core::{Context, TreeStatus};
 use crate::logic::typing::eval::check_tree;
 use crate::logic::typing::Type;
+use crate::set_debug_level;
 use crate::validation::completable::load_example_grammar;
 
 fn stlc() -> Grammar {
@@ -96,6 +97,7 @@ fn test_context_extend_allows_different_variables() {
 
 #[test]
 fn test_nested_lambda_same_variable_rejected() {
+    set_debug_level(crate::DebugLevel::Trace);
     // λx : Int. λx : Bool. x
     // This should fail because inner lambda tries to rebind 'x'
     let g = stlc();

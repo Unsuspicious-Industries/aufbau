@@ -5,8 +5,6 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::Synthesizer;
-use crate::logic::typing::core::TreeStatus;
-use crate::logic::typing::eval::check_tree_with_context;
 use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::Context;
 use crate::logic::{search_complete, SearchConfig, SearchResult};
@@ -266,23 +264,11 @@ fn prefix_ok(
         return true;
     }
 
-    let mut saw_typed_root = false;
-
-    for root in partial.roots() {
-        match check_tree_with_context(&root, grammar, ctx) {
-            // Prefix soundness accepts any root that is currently typable or
-            // typing-indeterminate (partial), even if the root is syntactically
-            // incomplete. This is required for states like `... in` where the
-            // body has not started yet.
-            TreeStatus::Valid(_) | TreeStatus::Partial(_) => {
-                saw_typed_root = true;
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    saw_typed_root
+    // Prefix soundness accepts any root that is currently typable or
+    // typing-indeterminate (partial), even if the root is syntactically
+    // incomplete. This is required for states like `... in` where the
+    // body has not started yet.
+    partial.has_valid_or_partial_ctx(grammar, ctx)
 }
 
 #[cfg(test)]

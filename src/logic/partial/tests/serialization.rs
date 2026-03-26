@@ -14,7 +14,7 @@ fn register_test_grammar(grammar: &Grammar) -> String {
 
 fn build_test_ast(grammar: &Grammar, roots: Vec<NonTerminal>, input: String) -> SppfForest {
     register_grammar(grammar.name.clone(), grammar.clone());
-    SppfForest::from_trees(roots, input, grammar)
+    SppfForest::from_trees(roots, input, grammar.clone())
 }
 
 #[test]

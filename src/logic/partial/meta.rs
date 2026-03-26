@@ -2,10 +2,9 @@
 
 use std::collections::HashSet;
 
-use serde::de;
-
 use crate::debug_info;
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::parse::ParserStats;
 use crate::logic::partial::structure::SppfNodeId;
 use crate::logic::partial::{ParseError, Parser, PartialParseOutcome, SppfForest};
 use crate::logic::typing::{Context, TypedAST};
@@ -70,6 +69,15 @@ impl MetaParser {
     pub fn with_post_success_steps(mut self, steps: usize) -> Self {
         self.post_success_steps = steps;
         self
+    }
+
+    pub fn with_preserve_cache_across_parses(mut self, preserve: bool) -> Self {
+        self.parser = self.parser.with_preserve_cache_across_parses(preserve);
+        self
+    }
+
+    pub fn set_preserve_cache_across_parses(&mut self, preserve: bool) {
+        self.parser.set_preserve_cache_across_parses(preserve);
     }
 
     //parse but discard depth
@@ -332,6 +340,14 @@ impl MetaParser {
     /// Returns the depth at which the last successful parse settled.
     pub fn last_used_depth(&self) -> Option<usize> {
         self.last_used_depth
+    }
+
+    pub fn last_parser_stats(&self) -> &ParserStats {
+        self.parser.last_stats()
+    }
+
+    pub fn cache_entry_count(&self) -> usize {
+        self.parser.cache_entry_count()
     }
 
     pub fn parser(&self) -> &Parser {

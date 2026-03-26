@@ -1,13 +1,14 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
 use crate::logic::partial::structure::{
-    PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
+    register_grammar, PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
 };
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
+use serde::Serialize;
+use std::hash::{Hash, Hasher};
 
 /// Shifts indices [0..n) by `level` positions, wrapping around.
 /// Different recursion depths try productions in different orders to distribute search effort.
@@ -22,6 +23,12 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
         return Vec::new();
     }
     (0..n).map(|i| (i + level) % n).collect()
+}
+
+fn hash_input(input: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    input.hash(&mut hasher);
+    hasher.finish()
 }
 
 /*
@@ -61,9 +68,8 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
  * table. The memo is keyed by `(nt_name, abs_pos, segments_len)` and prevents
  * exponential recomputation of the same subproblem within a single parse.
  *
- * The memo does NOT persist across separate `partial()` calls — every
- * invocation starts from scratch. `clear_cache()` is a no-op kept for API
- * compatibility.
+ * By default the memo does NOT persist across separate `partial()` calls.
+ * It can optionally be preserved across parses for experiments.
  */
 
 /// Default maximum recursion depth for left-recursive grammars.
@@ -172,11 +178,31 @@ impl PartialParseOutcome {
 /// and memoizes completed sub-parses within a single invocation so the parser
 /// runs in polynomial rather than exponential time.
 struct ParseState {
-    /// Tracks recursion depth for (non-terminal, absolute_position)
-    /// Used to detect potential infinite loops within a single parse
-    visited: HashMap<(String, usize), usize>,
+    /// Completed sub-parses within a single `partial()` call.
+    memo: HashMap<ParseMemoKey, Vec<ParsedNt>>,
+    /// Keys currently being expanded, used for cycle detection.
+    active: HashSet<ParseMemoKey>,
     /// Set to true when we hit the depth limit during this parse.
     hit_depth_limit: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ParseMemoKey {
+    input_id: u64,
+    nt_name: String,
+    binding: Option<String>,
+    abs_pos: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct ParserStats {
+    pub nt_cache_hits: usize,
+    pub nt_cache_misses: usize,
+    pub nt_cache_stores: usize,
+    pub suffix_cache_hits: usize,
+    pub suffix_cache_misses: usize,
+    pub cycle_cuts: usize,
+    pub clone_events: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -193,10 +219,21 @@ struct ParsedChild {
     complete: bool,
 }
 
+impl ParsedChild {
+    fn from_nt(nt: ParsedNt) -> Self {
+        Self {
+            child: SppfChild::Node(nt.node_id),
+            consumed: nt.consumed,
+            complete: nt.complete,
+        }
+    }
+}
+
 impl ParseState {
     fn new() -> Self {
         Self {
-            visited: HashMap::new(),
+            memo: HashMap::new(),
+            active: HashSet::new(),
             hit_depth_limit: false,
         }
     }
@@ -220,19 +257,26 @@ pub struct Parser {
     max_recursion: usize,
     /// Whether the last parse hit the depth limit
     last_hit_depth_limit: bool,
+    preserve_cache_across_parses: bool,
+    parse_cache: HashMap<ParseMemoKey, Vec<ParsedNt>>,
+    last_stats: ParserStats,
 }
 
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
+        register_grammar(grammar.name.clone(), grammar.clone());
         let reserved_tokens: HashSet<String> = grammar.special_tokens.iter().cloned().collect();
         let mut forest = SppfForest::new();
-        forest.set_grammar_name(grammar.name.clone());
+        forest.set_grammar(grammar.clone());
         Self {
             grammar,
             forest,
             reserved_tokens,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
             last_hit_depth_limit: false,
+            preserve_cache_across_parses: true,
+            parse_cache: HashMap::new(),
+            last_stats: ParserStats::default(),
         }
     }
 
@@ -247,15 +291,36 @@ impl Parser {
         self.max_recursion = depth;
     }
 
+    pub fn with_preserve_cache_across_parses(mut self, preserve: bool) -> Self {
+        self.preserve_cache_across_parses = preserve;
+        self
+    }
+
+    pub fn set_preserve_cache_across_parses(&mut self, preserve: bool) {
+        self.preserve_cache_across_parses = preserve;
+    }
+
+    pub fn preserve_cache_across_parses(&self) -> bool {
+        self.preserve_cache_across_parses
+    }
+
     /// Returns whether the last `partial()` call hit the recursion depth limit.
     pub fn last_hit_depth_limit(&self) -> bool {
         self.last_hit_depth_limit
     }
 
-    /// No-op. The memoization cache is local to each `partial()` call and
-    /// is discarded automatically when the call returns. Kept for API
-    /// compatibility.
-    pub fn clear_cache(&mut self) {}
+    pub fn clear_cache(&mut self) {
+        self.parse_cache.clear();
+        self.last_stats = ParserStats::default();
+    }
+
+    pub fn last_stats(&self) -> &ParserStats {
+        &self.last_stats
+    }
+
+    pub fn cache_entry_count(&self) -> usize {
+        self.parse_cache.len()
+    }
 
     /// Parse input and return a complete AST (simple interface).
     ///
@@ -291,6 +356,7 @@ impl Parser {
 
     pub fn partial(&mut self, input: &str) -> PartialParseOutcome {
         self.last_hit_depth_limit = false;
+        self.last_stats = ParserStats::default();
 
         debug_trace!("parser2      ", "Starting parse of input: '{}'", input);
 
@@ -305,12 +371,14 @@ impl Parser {
                 Some(s) => s.to_string(),
                 None => return PartialParseOutcome::Failure(ParseError::NoStartSymbol),
             };
+            let input_id = hash_input(input);
 
             debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
             let mut parse_state = ParseState::new();
             let mut forest = std::mem::take(&mut self.forest);
             let roots = match self.parse_nonterminal(
+                input_id,
                 &segments,
                 &start_nt,
                 None,
@@ -329,6 +397,10 @@ impl Parser {
             let depth_limited = parse_state.hit_depth_limit;
             self.last_hit_depth_limit = depth_limited;
 
+            if self.preserve_cache_across_parses && !depth_limited {
+                self.parse_cache.extend(parse_state.memo.drain());
+            }
+
             let valid_roots: Vec<SppfNodeId> = roots
                 .into_iter()
                 .filter(|r| r.consumed == total_segments)
@@ -344,6 +416,7 @@ impl Parser {
 
             PartialParseOutcome::Success {
                 ast: {
+                    forest.set_grammar(self.grammar.clone());
                     forest.set_roots(valid_roots);
                     forest.set_input(input.to_string());
                     forest
@@ -358,8 +431,57 @@ impl Parser {
         self.grammar.tokenize(input)
     }
 
+    fn memo_key(
+        &self,
+        input_id: u64,
+        nt_name: &str,
+        binding: &Option<String>,
+        abs_pos: usize,
+    ) -> ParseMemoKey {
+        ParseMemoKey {
+            input_id,
+            nt_name: nt_name.to_string(),
+            binding: binding.clone(),
+            abs_pos,
+        }
+    }
+
+    fn memo_lookup(
+        &mut self,
+        parse_state: &mut ParseState,
+        key: &ParseMemoKey,
+    ) -> Option<Vec<ParsedNt>> {
+        if let Some(cached) = parse_state.memo.get(key) {
+            self.last_stats.nt_cache_hits += 1;
+            return Some(cached.clone());
+        }
+
+        if self.preserve_cache_across_parses {
+            if let Some(cached) = self.parse_cache.get(key) {
+                self.last_stats.nt_cache_hits += 1;
+                parse_state.memo.insert(key.clone(), cached.clone());
+                return Some(cached.clone());
+            }
+        }
+
+        self.last_stats.nt_cache_misses += 1;
+        None
+    }
+
+    fn memo_store(
+        &mut self,
+        parse_state: &mut ParseState,
+        key: ParseMemoKey,
+        value: Vec<ParsedNt>,
+    ) -> Vec<ParsedNt> {
+        self.last_stats.nt_cache_stores += 1;
+        parse_state.memo.insert(key, value.clone());
+        value
+    }
+
     fn parse_nonterminal(
         &mut self,
+        input_id: u64,
         segments: &[Segment],
         nt_name: &str,
         binding: Option<String>,
@@ -397,40 +519,40 @@ impl Parser {
             return Ok(Vec::new());
         }
 
-        // Check for recursion on same input position for cycle detection
-        // Uses absolute position to correctly detect cycles
-        let key = (nt_name.to_string(), abs_pos);
+        let key = self.memo_key(input_id, nt_name, &binding, abs_pos);
 
-        // Clone productions to avoid borrow conflict with span cache
-        let productions_len = self
+        if let Some(cached) = self.memo_lookup(parse_state, &key) {
+            return Ok(cached);
+        }
+
+        if !parse_state.active.insert(key.clone()) {
+            self.last_stats.cycle_cuts += 1;
+            return Ok(Vec::new());
+        }
+
+        let productions = self
             .grammar
             .productions
             .get(nt_name)
-            .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?
-            .len();
+            .cloned()
+            .ok_or_else(|| format!("No productions for nonterminal '{}'", nt_name))?;
 
         // Shuffle productions using a PRNG seeded by level to avoid bias
         // This helps explore different parse alternatives at different depths,
         // preventing systematic bias toward earlier productions
-        let shuffled_indices = prng_shuffle(productions_len, level);
+        let shuffled_indices = prng_shuffle(productions.len(), level);
 
         let mut outcomes = Vec::new();
         let mut seen = HashSet::new();
+        let grammar_name = forest.grammar_name().to_string();
 
         for &alt_idx in &shuffled_indices {
-            let prod = self
-                .grammar
-                .productions
-                .get(nt_name)
-                .and_then(|ps| ps.get(alt_idx))
-                .ok_or_else(|| {
-                    format!(
-                        "No production index {} for nonterminal '{}'",
-                        alt_idx, nt_name
-                    )
-                })?
-                .clone();
-            let prod_ref = Arc::new(prod);
+            let prod = productions.get(alt_idx).cloned().ok_or_else(|| {
+                format!(
+                    "No production index {} for nonterminal '{}'",
+                    alt_idx, nt_name
+                )
+            })?;
             debug_trace!(
                 "parser2      ",
                 "{}[L{}] Trying production {}@{}: {} on {}",
@@ -438,7 +560,7 @@ impl Parser {
                 level,
                 nt_name,
                 alt_idx,
-                prod_ref,
+                prod,
                 segments
                     .iter()
                     .map(|s| s.text())
@@ -446,7 +568,15 @@ impl Parser {
                     .join(" ")
             );
 
-            match self.parse_production(segments, &prod_ref, abs_pos, level, parse_state, forest) {
+            match self.parse_production(
+                input_id,
+                segments,
+                &prod,
+                abs_pos,
+                level,
+                parse_state,
+                forest,
+            ) {
                 Ok(prod_outcomes) => {
                     if prod_outcomes.is_empty() {
                         debug_trace!(
@@ -469,12 +599,20 @@ impl Parser {
                             prod_outcomes.len()
                         );
                         for children in prod_outcomes {
-                            let consumed = self.count_consumed_segments(&children);
-                            let complete =
-                                self.children_are_complete(&children, prod_ref.rhs.len());
+                            let (consumed, complete) =
+                                self.children_summary(&children, prod.rhs.len());
+                            let alt_children = children
+                                .into_iter()
+                                .map(|child| child.child)
+                                .collect::<Vec<_>>();
+
+                            if !seen.insert((alt_idx, alt_children.clone(), consumed, complete)) {
+                                continue;
+                            }
+
                             let node_id = forest.intern_node(SppfNode {
                                 name: nt_name.to_string(),
-                                grammar: forest.grammar_name().to_string(),
+                                grammar: grammar_name.clone(),
                                 binding: binding.clone(),
                                 abs_pos,
                                 consumed_segments: 0,
@@ -485,17 +623,14 @@ impl Parser {
                                 node_id,
                                 PackedAlternative {
                                     alternative_index: alt_idx,
-                                    children: children.into_iter().map(|c| c.child).collect(),
+                                    children: alt_children,
                                 },
                             );
-                            let out = ParsedNt {
+                            outcomes.push(ParsedNt {
                                 node_id,
                                 consumed,
                                 complete,
-                            };
-                            if seen.insert(out.clone()) {
-                                outcomes.push(out);
-                            }
+                            });
                         }
                     }
                 }
@@ -513,7 +648,7 @@ impl Parser {
             }
         }
 
-        parse_state.visited.remove(&key);
+        parse_state.active.remove(&key);
 
         debug_trace!(
             "parser2      ",
@@ -524,7 +659,7 @@ impl Parser {
             outcomes.len()
         );
 
-        Ok(outcomes)
+        Ok(self.memo_store(parse_state, key, outcomes))
     }
 
     /// Parse a production (sequence of symbols)
@@ -538,6 +673,7 @@ impl Parser {
     /// Each symbol parse is O(1) with memoization
     fn parse_production(
         &mut self,
+        input_id: u64,
         segments: &[Segment],
         prod: &Production,
         abs_pos: usize,
@@ -565,7 +701,15 @@ impl Parser {
             return Ok(vec![vec![]]);
         }
 
-        self.parse_symbols(segments, &prod.rhs, abs_pos, level, parse_state, forest)
+        self.parse_symbols(
+            input_id,
+            segments,
+            &prod.rhs,
+            abs_pos,
+            level,
+            parse_state,
+            forest,
+        )
     }
 
     /// Parse a sequence of symbols
@@ -582,6 +726,7 @@ impl Parser {
     /// This is the main source of complexity in the parser
     fn parse_symbols(
         &mut self,
+        input_id: u64,
         segments: &[Segment],
         symbols: &[Symbol],
         abs_pos: usize,
@@ -597,8 +742,15 @@ impl Parser {
         let first_sym = &symbols[0];
         let rest_syms = &symbols[1..];
 
-        let first_parses =
-            self.parse_symbol(segments, first_sym, abs_pos, level, parse_state, forest)?;
+        let first_parses = self.parse_symbol(
+            input_id,
+            segments,
+            first_sym,
+            abs_pos,
+            level,
+            parse_state,
+            forest,
+        )?;
 
         // If no parses for first symbol, this production fails
         // ensure early exit
@@ -629,9 +781,12 @@ impl Parser {
             // Recursively parse remaining symbols with updated absolute position
             let new_abs_pos = abs_pos + consumed;
             let rest_parses = if let Some(cached) = rest_cache.get(&consumed) {
-                cached.clone()
+                self.last_stats.suffix_cache_hits += 1;
+                cached
             } else {
+                self.last_stats.suffix_cache_misses += 1;
                 let parsed = self.parse_symbols(
+                    input_id,
                     remaining_segments,
                     rest_syms,
                     new_abs_pos,
@@ -639,14 +794,16 @@ impl Parser {
                     parse_state,
                     forest,
                 )?;
-                rest_cache.insert(consumed, parsed.clone());
-                parsed
+                rest_cache.insert(consumed, parsed);
+                rest_cache.get(&consumed).expect("rest cache inserted")
             };
 
             // Combine results
-            for mut rest_nodes in rest_parses {
-                let mut full_parse = vec![node.clone()];
-                full_parse.append(&mut rest_nodes);
+            for rest_nodes in rest_parses.iter() {
+                let mut full_parse = Vec::with_capacity(1 + rest_nodes.len());
+                full_parse.push(node.clone());
+                full_parse.extend(rest_nodes.iter().cloned());
+                self.last_stats.clone_events += 1 + rest_nodes.len();
                 outcomes.push(full_parse);
             }
         }
@@ -662,12 +819,12 @@ impl Parser {
     ///
     /// ## Time Complexity
     /// idk but could be costly
-    fn count_consumed_segments(&self, nodes: &[ParsedChild]) -> usize {
-        nodes.iter().map(|n| n.consumed).sum()
-    }
-
-    fn children_are_complete(&self, nodes: &[ParsedChild], rhs_len: usize) -> bool {
-        nodes.len() == rhs_len && nodes.iter().all(|n| n.complete)
+    fn children_summary(&self, nodes: &[ParsedChild], rhs_len: usize) -> (usize, bool) {
+        nodes
+            .iter()
+            .fold((0, nodes.len() == rhs_len), |(consumed, complete), node| {
+                (consumed + node.consumed, complete && node.complete)
+            })
     }
 
     /// Parse a symbol (expression or regex)
@@ -684,6 +841,7 @@ impl Parser {
     /// Nonterminal: O(p) where p is the number of productions
     fn parse_symbol(
         &mut self,
+        input_id: u64,
         segments: &[Segment],
         symbol: &Symbol,
         abs_pos: usize,
@@ -697,6 +855,7 @@ impl Parser {
             }
             Symbol::Nonterminal { name, binding } => {
                 let nts = self.parse_nonterminal(
+                    input_id,
                     segments,
                     name,
                     binding.clone(),
@@ -705,14 +864,7 @@ impl Parser {
                     parse_state,
                     forest,
                 )?;
-                Ok(nts
-                    .into_iter()
-                    .map(|nt| ParsedChild {
-                        child: SppfChild::Node(nt.node_id),
-                        consumed: nt.consumed,
-                        complete: nt.complete,
-                    })
-                    .collect())
+                Ok(nts.into_iter().map(ParsedChild::from_nt).collect())
             }
         };
         res

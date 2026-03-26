@@ -2,11 +2,12 @@ pub mod check;
 pub mod complete;
 pub mod complete_k;
 pub mod examine;
+pub mod exp;
 pub mod logic;
 pub mod validate;
 pub mod verify;
 
-use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use aufbau::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -70,6 +71,9 @@ pub enum Commands {
 
     /// Quick helper to examine completability for an input or test-case
     Examine(self::examine::ExamineCmd),
+
+    /// Run experimental parser/cache/SPPF benchmarks
+    Exp(self::exp::ExpCmd),
 }
 
 pub fn run() {
@@ -107,5 +111,6 @@ pub fn run() {
         Commands::Validate(args) => self::validate::run(args),
         Commands::Verify(args) => self::verify::run(args),
         Commands::Examine(args) => self::examine::run(args),
+        Commands::Exp(args) => self::exp::run(args),
     }
 }

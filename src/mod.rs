@@ -3,7 +3,7 @@ pub mod regex;
 pub mod validation;
 pub mod viz;
 
-mod exp;
+pub mod exp;
 
 #[macro_use]
 mod utils;

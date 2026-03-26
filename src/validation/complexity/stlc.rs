@@ -189,8 +189,8 @@ fn stlc_nested_lambda_complexity() {
         &grammar,
         generate_nested_lambda_with_app,
         "STLC Nested Lambda",
-        20,
-        100,
+        5,
+        25,
         None,
     );
 

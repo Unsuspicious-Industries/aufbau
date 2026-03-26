@@ -6,13 +6,13 @@ use crate::logic::typing::gather_terminals_typed;
 use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::{gather_raw_types, Context, TypedAST};
 use crate::regex::Regex as DerivativeRegex;
-use std::cell::Ref;
-use std::cell::RefCell;
+use std::cell::{Cell, Ref, RefCell};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 type MemoMap = HashMap<String, Result<Arc<SppfForest>, String>>;
+type TypedMemoMap = HashMap<String, Result<Arc<TypedAST>, String>>;
 
 /// Per-entry stats for the parse memo, computed cheaply from interned SPPF nodes.
 /// Caller must consume the Ref before releasing it.
@@ -32,11 +32,16 @@ pub struct Synthesizer {
     /// Stored as interior-mutable RefCell to avoid copying and allow cheap
     /// Arc clones for shared ownership across callers.
     parse_memo: RefCell<HashMap<String, Result<Arc<SppfForest>, String>>>,
+    typed_memo: RefCell<TypedMemoMap>,
+    parse_memo_hits: Cell<usize>,
+    parse_memo_misses: Cell<usize>,
+    typed_memo_hits: Cell<usize>,
+    typed_memo_misses: Cell<usize>,
 }
 
 impl Synthesizer {
     pub fn new(grammar: Grammar, input: impl Into<String>) -> Self {
-        let meta = MetaParser::new(grammar.clone());
+        let meta = MetaParser::new(grammar.clone()).with_preserve_cache_across_parses(true);
         let input = input.into();
 
         let regex_seed_candidates = collect_regex_seed_candidates(&grammar);
@@ -48,6 +53,11 @@ impl Synthesizer {
             tree: None,
             regex_seed_candidates,
             parse_memo: RefCell::new(HashMap::new()),
+            typed_memo: RefCell::new(HashMap::new()),
+            parse_memo_hits: Cell::new(0),
+            parse_memo_misses: Cell::new(0),
+            typed_memo_hits: Cell::new(0),
+            typed_memo_misses: Cell::new(0),
         }
     }
 
@@ -56,7 +66,9 @@ impl Synthesizer {
         input: impl Into<String>,
         max_depth: usize,
     ) -> Self {
-        let meta = MetaParser::new(grammar.clone()).with_max_depth(max_depth);
+        let meta = MetaParser::new(grammar.clone())
+            .with_max_depth(max_depth)
+            .with_preserve_cache_across_parses(true);
         let input = input.into();
 
         let regex_seed_candidates = collect_regex_seed_candidates(&grammar);
@@ -68,15 +80,34 @@ impl Synthesizer {
             tree: None,
             regex_seed_candidates,
             parse_memo: RefCell::new(HashMap::new()),
+            typed_memo: RefCell::new(HashMap::new()),
+            parse_memo_hits: Cell::new(0),
+            parse_memo_misses: Cell::new(0),
+            typed_memo_hits: Cell::new(0),
+            typed_memo_misses: Cell::new(0),
         }
     }
 
     pub fn clear_memo(&self) {
         self.parse_memo.borrow_mut().clear();
+        self.typed_memo.borrow_mut().clear();
+        self.parse_memo_hits.set(0);
+        self.parse_memo_misses.set(0);
+        self.typed_memo_hits.set(0);
+        self.typed_memo_misses.set(0);
     }
 
     pub fn memo_entry_count(&self) -> usize {
-        self.parse_memo.borrow().len()
+        self.parse_memo.borrow().len() + self.typed_memo.borrow().len()
+    }
+
+    pub fn memo_stats(&self) -> (usize, usize, usize, usize) {
+        (
+            self.parse_memo_hits.get(),
+            self.parse_memo_misses.get(),
+            self.typed_memo_hits.get(),
+            self.typed_memo_misses.get(),
+        )
     }
 
     /// Borrow the memo for iteration. Returns a Ref that must be consumed
@@ -141,7 +172,32 @@ impl Synthesizer {
     /// Feed a new input snapshot and return typed completions for it.
     /// This is the hot path for interactive synthesis and is cache-backed.
     pub fn feed(&mut self, input: impl Into<String>, ctx: &Context) -> CompletionSet {
-        self.input = input.into();
+        let next_input = input.into();
+
+        if self.tree.is_some() {
+            if let Some(suffix) = next_input.strip_prefix(&self.input) {
+                let trimmed = suffix.trim();
+                let single_token_suffix = !trimmed.is_empty()
+                    && trimmed.len() <= 32
+                    && !trimmed.chars().any(char::is_whitespace);
+
+                if single_token_suffix {
+                    if let Ok((typed, extended)) = self.try_extend(suffix, ctx) {
+                        if extended == next_input {
+                            let key = typed_cache_key(&extended, ctx);
+                            self.typed_memo
+                                .borrow_mut()
+                                .insert(key, Ok(Arc::new(typed.clone())));
+                            self.input = extended;
+                            self.tree = Some(typed.clone());
+                            return typed.completions(&self.grammar);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.input = next_input;
         self.completions_ctx(ctx)
     }
 
@@ -370,8 +426,11 @@ impl Synthesizer {
     fn cached_partial_ref(&mut self, input: &str) -> Result<Arc<SppfForest>, String> {
         // First check cross-parse memo to avoid re-parsing identical inputs.
         if let Some(cached) = self.parse_memo.borrow().get(input) {
+            self.parse_memo_hits.set(self.parse_memo_hits.get() + 1);
             return cached.clone();
         }
+
+        self.parse_memo_misses.set(self.parse_memo_misses.get() + 1);
 
         let parsed = self
             .meta
@@ -391,15 +450,30 @@ impl Synthesizer {
         input: &str,
         ctx: &Context,
     ) -> Result<Arc<TypedAST>, String> {
-        // First check partial memo to reuse parsed forests, then type the result.
-        // This chains into cached_partial_ref so repeated inputs hit the memo.
-        self.cached_partial_ref(input)?
+        let key = typed_cache_key(input, ctx);
+
+        if let Some(cached) = self.typed_memo.borrow().get(&key) {
+            self.typed_memo_hits.set(self.typed_memo_hits.get() + 1);
+            return cached.clone();
+        }
+
+        self.typed_memo_misses.set(self.typed_memo_misses.get() + 1);
+
+        let typed = self
+            .cached_partial_ref(input)?
             .typed_ctx(&self.grammar, ctx)
-            .map(Arc::new)
+            .map(Arc::new);
+
+        self.typed_memo.borrow_mut().insert(key, typed.clone());
+        typed
     }
 
     // Previously the synthesizer kept several LRU caches here. Those have
     // been removed to simplify behavior and avoid stale cross-request state.
+}
+
+fn typed_cache_key(input: &str, ctx: &Context) -> String {
+    format!("{}::{}", input, context_cache_key(ctx))
 }
 
 fn context_cache_key(ctx: &Context) -> String {

@@ -1,11 +1,14 @@
 pub mod parse;
-pub use parse::{ParseError, Parser, PartialParseOutcome};
+pub use parse::{ParseError, Parser, ParserStats, PartialParseOutcome};
 
 pub mod meta;
 pub use meta::*;
 
 pub mod structure;
-pub use structure::{Node, NonTerminal, SppfForest, Terminal};
+pub use structure::{
+    global_cache_stats, grammar_cache_stats, input_cache_entries, reset_global_store,
+    GlobalCacheStats, GrammarCacheStats, InputCacheEntry, Node, NonTerminal, SppfForest, Terminal,
+};
 
 pub mod completion;
 pub use completion::*;

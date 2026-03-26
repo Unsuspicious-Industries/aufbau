@@ -193,7 +193,7 @@ impl SppfForest {
                 root_id,
                 g.name
             );
-            for r in self.materialize_root(*root_id) {
+            self.for_each_materialized_root(*root_id, |r| {
                 let mut type_cache = HashMap::new();
                 let tref = TreeRef::new(&r, vec![]);
                 let status = check_node(&tref, g, ctx, 0, &mut type_cache);
@@ -201,7 +201,8 @@ impl SppfForest {
                 if !matches!(status, TreeStatus::Malformed | TreeStatus::TooDeep) {
                     roots.push(TypedNode::from_nt(&r, &vec![], &type_cache));
                 }
-            }
+                true
+            });
         }
 
         if roots.is_empty() {
@@ -223,11 +224,39 @@ impl SppfForest {
 
     /// Simple predicate: any well-typed tree exists?
     pub fn has_well_typed(&self, g: &Grammar) -> bool {
+        self.has_well_typed_ctx(g, &Context::new())
+    }
+
+    pub fn has_well_typed_ctx(&self, g: &Grammar, ctx: &Context) -> bool {
         for root_id in self.root_ids() {
-            for r in self.materialize_root(*root_id) {
-                if check_tree_with_context(&r, g, &Context::new()).is_ok() {
-                    return true;
+            let mut found = false;
+            self.for_each_materialized_root(*root_id, |r| {
+                if check_tree_with_context(&r, g, ctx).is_ok() {
+                    found = true;
+                    return false;
                 }
+                true
+            });
+            if found {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn has_valid_or_partial_ctx(&self, g: &Grammar, ctx: &Context) -> bool {
+        for root_id in self.root_ids() {
+            let mut found = false;
+            self.for_each_materialized_root(*root_id, |r| {
+                let status = check_tree_with_context(&r, g, ctx);
+                if matches!(status, TreeStatus::Valid(_) | TreeStatus::Partial(_)) {
+                    found = true;
+                    return false;
+                }
+                true
+            });
+            if found {
+                return true;
             }
         }
         false

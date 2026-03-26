@@ -355,7 +355,7 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar, input: String) -> Result<S
             if let SExpr::Atom(name) = &items[0] {
                 if grammar.productions.contains_key(name) {
                     let root = sexpr_to_nt(sexpr, grammar)?;
-                    return Ok(SppfForest::from_trees(vec![root], input, grammar));
+                    return Ok(SppfForest::from_trees(vec![root], input, grammar.clone()));
                 }
             }
 
@@ -363,7 +363,7 @@ pub fn sexpr_to_ast(sexpr: &SExpr, grammar: &Grammar, input: String) -> Result<S
             for item in items {
                 roots.push(sexpr_to_nt(item, grammar)?);
             }
-            Ok(SppfForest::from_trees(roots, input, grammar))
+            Ok(SppfForest::from_trees(roots, input, grammar.clone()))
         }
         _ => Err("Expected list for AST".into()),
     }
@@ -691,7 +691,7 @@ mod tests {
 
     fn build_test_ast(grammar: &Grammar, roots: Vec<NonTerminal>, input: String) -> SppfForest {
         register_grammar(grammar.name.clone(), grammar.clone());
-        SppfForest::from_trees(roots, input, grammar)
+        SppfForest::from_trees(roots, input, grammar.clone())
     }
 
     #[test]

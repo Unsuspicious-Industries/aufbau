@@ -2,8 +2,6 @@
 
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
-use crate::logic::typing::core::TreeStatus;
-use crate::logic::typing::eval::check_tree;
 use crate::set_debug_level;
 
 fn load_grammar() -> Grammar {
@@ -22,18 +20,10 @@ fn test_valid_app() {
     println!("Input: {}", input);
 
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast
-        .roots()
-        .into_iter()
-        .filter(|r| r.is_complete())
-        .collect();
-
-    let valid = complete_trees.iter().any(|tree| {
-        let status = check_tree(tree, &grammar);
-        !matches!(status, TreeStatus::Malformed)
-    });
-
-    assert!(valid, "Identity function should type-check");
+    assert!(
+        ast.has_well_typed(&grammar),
+        "Identity function should type-check"
+    );
 }
 
 #[test]
@@ -46,22 +36,10 @@ fn test_simple_lambda() {
     println!("Input: {}", input);
 
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast
-        .roots()
-        .into_iter()
-        .filter(|r| r.is_complete())
-        .collect();
-
-    for tree in &complete_trees {
-        let status = check_tree(tree, &grammar);
-        println!("Status: {:?}", status);
-    }
-
-    let valid = complete_trees
-        .iter()
-        .any(|tree| !matches!(check_tree(tree, &grammar), TreeStatus::Malformed));
-
-    assert!(valid, "Simple lambda should type-check");
+    assert!(
+        ast.has_well_typed(&grammar),
+        "Simple lambda should type-check"
+    );
 }
 
 #[test]
@@ -76,19 +54,8 @@ fn test_unbound_variable() {
 
     set_debug_level(crate::DebugLevel::Trace);
     let ast = parser.partial(input).expect("Failed to parse");
-    let complete_trees: Vec<_> = ast
-        .roots()
-        .into_iter()
-        .filter(|r| r.is_complete())
-        .collect();
-
-    // All complete trees should be malformed (unbound variable)
-    let all_malformed = complete_trees
-        .iter()
-        .all(|tree| matches!(check_tree(tree, &grammar), TreeStatus::Malformed));
-
     assert!(
-        all_malformed,
+        !ast.has_well_typed(&grammar),
         "Unbound variable 'i' should cause type error"
     );
 }

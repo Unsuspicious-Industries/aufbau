@@ -13,10 +13,10 @@ use crate::logic::grammar::Grammar;
 use crate::logic::typing::core::Context;
 
 use crate::validation::completability::{
-    CompletionResult, PrefixSoundnessResult, complete, sound_complete,
+    complete, sound_complete, CompletionResult, PrefixSoundnessResult,
 };
-use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use serde_json::json;
 use std::time::{Duration, Instant};
 

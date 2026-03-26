@@ -1,7 +1,8 @@
-use crate::logic::grammar::{Grammar, Production};
+use crate::logic::grammar::{Grammar, Production, Symbol};
 use crate::logic::segment::SegmentRange;
 use crate::logic::typing::Type;
 use crate::regex::Regex as DerivativeRegex;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -34,6 +35,7 @@ pub struct SppfNode {
 pub struct SppfForest {
     roots: Vec<SppfNodeId>,
     grammar_name: String,
+    grammar: Option<Grammar>,
     input: String,
 }
 
@@ -42,6 +44,7 @@ impl Default for SppfForest {
         Self {
             roots: Vec::new(),
             grammar_name: String::new(),
+            grammar: None,
             input: String::new(),
         }
     }
@@ -50,8 +53,38 @@ impl Default for SppfForest {
 // -- global store: nodes by grammar name --
 
 struct GlobalStore {
+    // Grammar name -> node pool (id -> node)
     nodes: HashMap<String, Vec<SppfNode>>,
+    // Grammar name -> grammar
     grammars: HashMap<String, Grammar>,
+    // (Grammar name, input, nt) -> node id
+    icache: HashMap<(String, String, String), SppfNodeId>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GlobalCacheStats {
+    pub grammar_count: usize,
+    pub node_pool_count: usize,
+    pub total_nodes: usize,
+    pub unique_nodes: usize,
+    pub duplicate_nodes: usize,
+    pub input_cache_entries: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct GrammarCacheStats {
+    pub grammar: String,
+    pub node_count: usize,
+    pub unique_nodes: usize,
+    pub duplicate_nodes: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct InputCacheEntry {
+    pub grammar: String,
+    pub input: String,
+    pub nonterminal: String,
+    pub node_id: SppfNodeId,
 }
 
 fn global_store() -> &'static Mutex<GlobalStore> {
@@ -60,6 +93,7 @@ fn global_store() -> &'static Mutex<GlobalStore> {
         Mutex::new(GlobalStore {
             nodes: HashMap::new(),
             grammars: HashMap::new(),
+            icache: HashMap::new(),
         })
     })
 }
@@ -82,7 +116,128 @@ pub fn register_grammar(key: String, grammar: Grammar) {
     store.grammars.entry(key).or_insert(grammar);
 }
 
+pub fn get_cached_node(grammar_name: &str, input: &str, nt_name: &str) -> Option<SppfNodeId> {
+    let store = global_store().lock().expect("global store poisoned");
+    store
+        .icache
+        .get(&(
+            grammar_name.to_string(),
+            input.to_string(),
+            nt_name.to_string(),
+        ))
+        .copied()
+}
+
+fn cache_full_node(grammar_name: &str, input: &str, nt_name: &str, node_id: SppfNodeId) {
+    let mut store = global_store().lock().expect("global store poisoned");
+    store.icache.insert(
+        (
+            grammar_name.to_string(),
+            input.to_string(),
+            nt_name.to_string(),
+        ),
+        node_id,
+    );
+}
+
+pub fn global_cache_stats() -> GlobalCacheStats {
+    let store = global_store().lock().expect("global store poisoned");
+    let per_grammar = grammar_cache_stats_locked(&store);
+    let total_nodes = per_grammar.iter().map(|stats| stats.node_count).sum();
+    let unique_nodes = per_grammar.iter().map(|stats| stats.unique_nodes).sum();
+
+    GlobalCacheStats {
+        grammar_count: store.grammars.len(),
+        node_pool_count: store.nodes.len(),
+        total_nodes,
+        unique_nodes,
+        duplicate_nodes: total_nodes.saturating_sub(unique_nodes),
+        input_cache_entries: store.icache.len(),
+    }
+}
+
+pub fn grammar_cache_stats() -> Vec<GrammarCacheStats> {
+    let store = global_store().lock().expect("global store poisoned");
+    grammar_cache_stats_locked(&store)
+}
+
+pub fn input_cache_entries() -> Vec<InputCacheEntry> {
+    let store = global_store().lock().expect("global store poisoned");
+    store
+        .icache
+        .iter()
+        .map(|((grammar, input, nonterminal), node_id)| InputCacheEntry {
+            grammar: grammar.clone(),
+            input: input.clone(),
+            nonterminal: nonterminal.clone(),
+            node_id: *node_id,
+        })
+        .collect()
+}
+
+pub fn reset_global_store() {
+    let mut store = global_store().lock().expect("global store poisoned");
+    store.nodes.clear();
+    store.grammars.clear();
+    store.icache.clear();
+}
+
+fn grammar_cache_stats_locked(store: &GlobalStore) -> Vec<GrammarCacheStats> {
+    store
+        .nodes
+        .iter()
+        .map(|(grammar, pool)| {
+            let mut seen = HashSet::new();
+            let unique_nodes = pool
+                .iter()
+                .filter(|node| seen.insert(node_fingerprint(node)))
+                .count();
+
+            GrammarCacheStats {
+                grammar: grammar.clone(),
+                node_count: pool.len(),
+                unique_nodes,
+                duplicate_nodes: pool.len().saturating_sub(unique_nodes),
+            }
+        })
+        .collect()
+}
+
+fn node_fingerprint(node: &SppfNode) -> String {
+    format!(
+        "{}|{}|{:?}|{}|{}|{:?}",
+        node.name,
+        node.grammar,
+        node.binding,
+        node.abs_pos,
+        node.consumed_segments,
+        node.alternatives
+    )
+}
+
 impl SppfForest {
+    fn production_for(
+        grammar: &Grammar,
+        node_name: &str,
+        alternative_index: usize,
+        arity: usize,
+    ) -> Production {
+        grammar
+            .productions
+            .get(node_name)
+            .and_then(|alts| alts.get(alternative_index))
+            .cloned()
+            .unwrap_or_else(|| Production {
+                rule: None,
+                rhs: (0..arity)
+                    .map(|_| Symbol::Nonterminal {
+                        name: "_".to_string(),
+                        binding: None,
+                    })
+                    .collect(),
+            })
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -91,6 +246,7 @@ impl SppfForest {
         Self {
             roots,
             grammar_name: forest.grammar_name,
+            grammar: forest.grammar,
             input,
         }
     }
@@ -99,8 +255,11 @@ impl SppfForest {
         self.roots = roots;
     }
 
-    pub fn set_grammar_name(&mut self, name: String) {
-        self.grammar_name = name;
+    pub fn set_grammar(&mut self, grammar: Grammar) {
+        if !grammar.name.is_empty() {
+            self.grammar_name = grammar.name.clone();
+        }
+        self.grammar = Some(grammar);
     }
 
     pub fn set_input(&mut self, input: String) {
@@ -136,7 +295,80 @@ impl SppfForest {
     }
 
     pub fn is_complete(&self) -> bool {
+        self.has_complete()
+    }
+
+    /// At least one complete derivation exists (may also have partials)
+    pub fn has_complete(&self) -> bool {
         self.roots.iter().any(|id| self.node_is_complete(*id))
+    }
+
+    /// All derivations are fully complete (no partial nodes at all)
+    pub fn is_full(&self) -> bool {
+        if self.roots.is_empty() {
+            return false;
+        }
+        !self.has_partial()
+    }
+
+    /// Has at least one partial derivation (contains incomplete terminals)
+    pub fn has_partial(&self) -> bool {
+        for root_id in &self.roots {
+            if self.node_has_partial(*root_id) {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Node has at least one partial derivation
+    pub fn node_has_partial(&self, node_id: SppfNodeId) -> bool {
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return false;
+        };
+        let Some(node) = pool.get(node_id) else {
+            return false;
+        };
+
+        for alt in &node.alternatives {
+            for child in &alt.children {
+                match child {
+                    SppfChild::Terminal(Terminal::Partial { .. }) => return true,
+                    SppfChild::Terminal(Terminal::Complete { .. }) => continue,
+                    SppfChild::Node(child_id) => {
+                        if self.node_has_partial_in_store(*child_id, &store) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn node_has_partial_in_store(&self, node_id: SppfNodeId, store: &GlobalStore) -> bool {
+        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+            return false;
+        };
+        let Some(node) = pool.get(node_id) else {
+            return false;
+        };
+
+        for alt in &node.alternatives {
+            for child in &alt.children {
+                match child {
+                    SppfChild::Terminal(Terminal::Partial { .. }) => return true,
+                    SppfChild::Terminal(Terminal::Complete { .. }) => continue,
+                    SppfChild::Node(child_id) => {
+                        if self.node_has_partial_in_store(*child_id, store) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     pub fn completes(&self) -> Vec<NonTerminal> {
@@ -158,15 +390,51 @@ impl SppfForest {
         get_node(&self.grammar_name, id)
     }
 
-    pub fn from_trees(roots: Vec<NonTerminal>, input: String, grammar: &Grammar) -> Self {
+    pub fn from_trees(roots: Vec<NonTerminal>, input: String, grammar: Grammar) -> Self {
         register_grammar(grammar.name.clone(), grammar.clone());
+
+        // Find start nt from first root
+        let start_nt = roots.first().map(|r| r.name.clone()).unwrap_or_default();
+
+        // Check cache first
+        if let Some(cached_id) = get_cached_node(&grammar.name, &input, &start_nt) {
+            return Self {
+                roots: vec![cached_id],
+                grammar_name: grammar.name.clone(),
+                grammar: Some(grammar),
+                input,
+            };
+        }
+
         let root_ids: Vec<SppfNodeId> = roots
             .into_iter()
             .map(|r| register_nt_tree(&grammar.name, r))
             .collect();
+
+        // If we have exactly one root and it's full, cache it
+        if root_ids.len() == 1 {
+            let root_id = root_ids[0];
+            let store = global_store().lock().expect("store poisoned");
+            if let Some(pool) = store.nodes.get(&grammar.name) {
+                if let Some(node) = pool.get(root_id) {
+                    let is_full = node.alternatives.iter().all(|alt| {
+                        alt.children.iter().all(|c| match c {
+                            SppfChild::Terminal(Terminal::Complete { .. }) => true,
+                            _ => false,
+                        })
+                    });
+                    if is_full {
+                        drop(store);
+                        cache_full_node(&grammar.name, &input, &start_nt, root_id);
+                    }
+                }
+            }
+        }
+
         Self {
             roots: root_ids,
             grammar_name: grammar.name.clone(),
+            grammar: Some(grammar),
             input,
         }
     }
@@ -226,6 +494,11 @@ impl SppfForest {
     }
 
     pub fn node_is_complete(&self, node_id: SppfNodeId) -> bool {
+        self.node_has_complete(node_id)
+    }
+
+    /// Node has at least one complete derivation
+    pub fn node_has_complete(&self, node_id: SppfNodeId) -> bool {
         fn rec(nodes: &[SppfNode], id: SppfNodeId, seen: &mut HashSet<SppfNodeId>) -> bool {
             if !seen.insert(id) {
                 return false;
@@ -248,6 +521,11 @@ impl SppfForest {
             return false;
         };
         rec(pool.as_slice(), node_id, &mut HashSet::new())
+    }
+
+    /// Node is fully complete (all alternatives complete, no partials)
+    pub fn node_is_full(&self, node_id: SppfNodeId) -> bool {
+        !self.node_has_partial(node_id)
     }
 
     pub fn node_count(&self) -> usize {
@@ -273,6 +551,9 @@ impl SppfForest {
     pub fn merge_from(&mut self, other: &SppfForest) -> HashMap<SppfNodeId, SppfNodeId> {
         // Approximation: just extend roots, identity map.
         // Same-grammar forests share the same node pool so IDs are compatible.
+        if self.grammar.is_none() {
+            self.grammar = other.grammar.clone();
+        }
         let mut id_map = HashMap::new();
         for &id in &other.roots {
             id_map.insert(id, id);
@@ -309,12 +590,27 @@ impl SppfForest {
         let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
         let mut seen: HashSet<SppfNodeId> = HashSet::new();
         let mut out = Vec::new();
+        let grammar = match &self.grammar {
+            Some(g) => g.clone(),
+            None => {
+                let store = global_store().lock().expect("store poisoned");
+                match store.grammars.get(&self.grammar_name) {
+                    Some(g) => g.clone(),
+                    None => return out,
+                }
+            }
+        };
+        let grammar_name = if !self.grammar_name.is_empty() {
+            self.grammar_name.clone()
+        } else {
+            grammar.name.clone()
+        };
         let store = global_store().lock().expect("store poisoned");
-        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+        let Some(pool) = store.nodes.get(&grammar_name) else {
             return out;
         };
         for root_id in root_ids {
-            out.extend(self.materialize_node(pool, *root_id, &mut memo, &mut seen));
+            out.extend(self.materialize_node(pool, &grammar, *root_id, &mut memo, &mut seen));
         }
         out
     }
@@ -322,16 +618,100 @@ impl SppfForest {
     pub fn materialize_root(&self, root_id: SppfNodeId) -> Vec<NonTerminal> {
         let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
         let mut seen: HashSet<SppfNodeId> = HashSet::new();
+
+        // Try cache first - if cached, use it directly (it's full)
+        if let Some(g) = &self.grammar {
+            if !self.input.is_empty() {
+                // Get node name from root_id for cache lookup
+                let store = global_store().lock().expect("store poisoned");
+                let pool = store.nodes.get(&self.grammar_name);
+                if let Some(pool) = pool {
+                    if let Some(node) = pool.get(root_id) {
+                        let nt_name = node.name.clone();
+                        drop(store); // Release lock before cache lookup
+                        if let Some(cached_id) =
+                            get_cached_node(&self.grammar_name, &self.input, &nt_name)
+                        {
+                            if let Some(cached_root) = self.materialize_cached_root(cached_id, &g) {
+                                return vec![cached_root];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let grammar = match &self.grammar {
+            Some(g) => g.clone(),
+            None => {
+                let store = global_store().lock().expect("store poisoned");
+                match store.grammars.get(&self.grammar_name) {
+                    Some(g) => g.clone(),
+                    None => return Vec::new(),
+                }
+            }
+        };
+        let grammar_name = if !self.grammar_name.is_empty() {
+            self.grammar_name.clone()
+        } else {
+            grammar.name.clone()
+        };
         let store = global_store().lock().expect("store poisoned");
-        let Some(pool) = store.nodes.get(&self.grammar_name) else {
+        let Some(pool) = store.nodes.get(&grammar_name) else {
             return Vec::new();
         };
-        self.materialize_node(pool, root_id, &mut memo, &mut seen)
+        self.materialize_node(pool, &grammar, root_id, &mut memo, &mut seen)
+    }
+
+    fn materialize_cached_root(
+        &self,
+        node_id: SppfNodeId,
+        grammar: &Grammar,
+    ) -> Option<NonTerminal> {
+        // For cached full nodes, just use materialize_node directly
+        // Cache guarantees the node is full (complete, no partials)
+        let mut memo: HashMap<SppfNodeId, Vec<NonTerminal>> = HashMap::new();
+        let mut seen: HashSet<SppfNodeId> = HashSet::new();
+
+        let store = global_store().lock().expect("store poisoned");
+        let pool = store.nodes.get(&self.grammar_name)?;
+        let trees = self.materialize_node(pool, grammar, node_id, &mut memo, &mut seen);
+
+        // For cached nodes, we expect exactly one full tree
+        trees.into_iter().next()
+    }
+
+    pub fn for_each_materialized_root<F>(&self, root_id: SppfNodeId, mut visit: F)
+    where
+        F: FnMut(NonTerminal) -> bool,
+    {
+        let grammar = match &self.grammar {
+            Some(g) => g.clone(),
+            None => {
+                let store = global_store().lock().expect("store poisoned");
+                match store.grammars.get(&self.grammar_name) {
+                    Some(g) => g.clone(),
+                    None => return,
+                }
+            }
+        };
+        let grammar_name = if !self.grammar_name.is_empty() {
+            self.grammar_name.clone()
+        } else {
+            grammar.name.clone()
+        };
+        let store = global_store().lock().expect("store poisoned");
+        let Some(pool) = store.nodes.get(&grammar_name) else {
+            return;
+        };
+        let mut seen: HashSet<SppfNodeId> = HashSet::new();
+        self.materialize_node_each(pool, &grammar, root_id, &mut seen, &mut visit);
     }
 
     fn materialize_node(
         &self,
         nodes: &[SppfNode],
+        grammar: &Grammar,
         node_id: SppfNodeId,
         memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
         seen: &mut HashSet<SppfNodeId>,
@@ -348,21 +728,20 @@ impl SppfForest {
             return Vec::new();
         };
 
-        let g = {
-            let store = global_store().lock().expect("store poisoned");
-            store.grammars.get(&self.grammar_name).unwrap().clone()
-        };
-
         let mut trees = Vec::new();
         for packed in &node.alternatives {
-            let child_sequences = self.materialize_children(nodes, &packed.children, memo, seen);
+            let prod = Self::production_for(
+                grammar,
+                node.name.as_str(),
+                packed.alternative_index,
+                packed.children.len(),
+            );
+            let child_sequences =
+                self.materialize_children(nodes, grammar, &packed.children, memo, seen);
             for children in child_sequences {
                 trees.push(NonTerminal::new(
                     node.name.clone(),
-                    Arc::new(
-                        g.productions.get(node.name.as_str()).unwrap()[packed.alternative_index]
-                            .clone(),
-                    ),
+                    Arc::new(prod.clone()),
                     packed.alternative_index,
                     children,
                     node.binding.clone(),
@@ -379,6 +758,7 @@ impl SppfForest {
     fn materialize_children(
         &self,
         nodes: &[SppfNode],
+        grammar: &Grammar,
         children: &[SppfChild],
         memo: &mut HashMap<SppfNodeId, Vec<NonTerminal>>,
         seen: &mut HashSet<SppfNodeId>,
@@ -389,7 +769,7 @@ impl SppfForest {
             let choices: Vec<Node> = match child {
                 SppfChild::Terminal(t) => vec![Node::Terminal(t.clone())],
                 SppfChild::Node(id) => self
-                    .materialize_node(nodes, *id, memo, seen)
+                    .materialize_node(nodes, grammar, *id, memo, seen)
                     .into_iter()
                     .map(Node::NonTerminal)
                     .collect(),
@@ -411,6 +791,109 @@ impl SppfForest {
         }
 
         sequences
+    }
+
+    fn materialize_node_each(
+        &self,
+        nodes: &[SppfNode],
+        grammar: &Grammar,
+        node_id: SppfNodeId,
+        seen: &mut HashSet<SppfNodeId>,
+        visit: &mut dyn FnMut(NonTerminal) -> bool,
+    ) -> bool {
+        if !seen.insert(node_id) {
+            return true;
+        }
+
+        let Some(node) = nodes.get(node_id) else {
+            return true;
+        };
+
+        for packed in &node.alternatives {
+            let prod = Self::production_for(
+                grammar,
+                node.name.as_str(),
+                packed.alternative_index,
+                packed.children.len(),
+            );
+            let mut emit_children = |children: Vec<Node>| {
+                let nt = NonTerminal::new(
+                    node.name.clone(),
+                    Arc::new(prod.clone()),
+                    packed.alternative_index,
+                    children,
+                    node.binding.clone(),
+                    node.consumed_segments,
+                );
+                visit(nt)
+            };
+            if !self.materialize_children_each(
+                nodes,
+                grammar,
+                &packed.children,
+                0,
+                &mut Vec::new(),
+                seen,
+                &mut emit_children,
+            ) {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn materialize_children_each(
+        &self,
+        nodes: &[SppfNode],
+        grammar: &Grammar,
+        children: &[SppfChild],
+        index: usize,
+        current: &mut Vec<Node>,
+        seen: &mut HashSet<SppfNodeId>,
+        emit: &mut dyn FnMut(Vec<Node>) -> bool,
+    ) -> bool {
+        if index == children.len() {
+            return emit(current.clone());
+        }
+
+        match &children[index] {
+            SppfChild::Terminal(t) => {
+                current.push(Node::Terminal(t.clone()));
+                let keep = self.materialize_children_each(
+                    nodes,
+                    grammar,
+                    children,
+                    index + 1,
+                    current,
+                    seen,
+                    emit,
+                );
+                current.pop();
+                keep
+            }
+            SppfChild::Node(id) => {
+                let mut child_seen: HashSet<SppfNodeId> = HashSet::new();
+                let mut emit_nt = |nt: NonTerminal| -> bool {
+                    current.push(Node::NonTerminal(nt));
+                    let keep = self.materialize_children_each(
+                        nodes,
+                        grammar,
+                        children,
+                        index + 1,
+                        current,
+                        seen,
+                        emit,
+                    );
+                    current.pop();
+                    keep
+                };
+                if !self.materialize_node_each(nodes, grammar, *id, &mut child_seen, &mut emit_nt) {
+                    return false;
+                }
+                true
+            }
+        }
     }
 }
 
