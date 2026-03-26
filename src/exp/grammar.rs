@@ -9,6 +9,7 @@ use crate::{
 };
 
 // define a simple grammar
+#[cfg(test)]
 const SIMPLE: &str = r#"
 A ::= "a" | "b"
 B ::= "c" | "d"

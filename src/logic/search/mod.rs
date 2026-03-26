@@ -1,5 +1,6 @@
 //! Priority-guided DFS search for completions.
 
+mod heuristics;
 pub mod scoring;
 
 use crate::debug_info;
@@ -301,7 +302,7 @@ fn build_children(
     visited_states: &mut VecDeque<String>,
     states_explored: &mut usize,
 ) -> Vec<(SearchState, f64)> {
-    let tokens = synth.feed(state.tree.text().to_string(), ctx);
+    let tokens = heuristics::ordered_tokens(synth.feed(state.tree.text().to_string(), ctx));
 
     debug_info!(
         "search",

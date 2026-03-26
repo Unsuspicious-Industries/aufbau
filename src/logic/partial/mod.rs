@@ -2,6 +2,7 @@ pub mod state;
 pub use state::PrefixState;
 
 pub mod memo;
+pub mod stats;
 
 pub mod parse;
 pub use parse::{ParseError, Parser, ParserStats, PartialParseOutcome};
@@ -10,9 +11,10 @@ pub mod meta;
 pub use meta::*;
 
 pub mod structure;
+pub use stats::{GlobalCacheStats, GrammarCacheStats, InputCacheEntry};
 pub use structure::{
-    global_cache_stats, grammar_cache_stats, input_cache_entries, reset_global_store,
-    GlobalCacheStats, GrammarCacheStats, InputCacheEntry, Node, NonTerminal, SppfForest, Terminal,
+    global_cache_stats, grammar_cache_stats, input_cache_entries, reset_global_store, Node,
+    NonTerminal, SppfForest, Terminal,
 };
 
 pub mod completion;

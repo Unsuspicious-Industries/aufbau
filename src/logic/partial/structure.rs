@@ -1,8 +1,8 @@
 use crate::logic::grammar::{Grammar, Production, Symbol};
+use crate::logic::partial::stats::{GlobalCacheStats, GrammarCacheStats, InputCacheEntry};
 use crate::logic::segment::SegmentRange;
 use crate::logic::typing::Type;
 use crate::regex::Regex as DerivativeRegex;
-use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -59,32 +59,6 @@ struct GlobalStore {
     grammars: HashMap<String, Grammar>,
     // (Grammar name, input, nt) -> node id
     icache: HashMap<(String, String, String), SppfNodeId>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct GlobalCacheStats {
-    pub grammar_count: usize,
-    pub node_pool_count: usize,
-    pub total_nodes: usize,
-    pub unique_nodes: usize,
-    pub duplicate_nodes: usize,
-    pub input_cache_entries: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct GrammarCacheStats {
-    pub grammar: String,
-    pub node_count: usize,
-    pub unique_nodes: usize,
-    pub duplicate_nodes: usize,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct InputCacheEntry {
-    pub grammar: String,
-    pub input: String,
-    pub nonterminal: String,
-    pub node_id: SppfNodeId,
 }
 
 fn global_store() -> &'static Mutex<GlobalStore> {

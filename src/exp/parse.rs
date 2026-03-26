@@ -1,4 +1,5 @@
 use crate::logic::grammar::Grammar;
+use crate::logic::partial::memo::clear_shared_memo;
 use crate::logic::partial::{
     global_cache_stats, grammar_cache_stats, input_cache_entries, reset_global_store, Parser,
     ParserStats, Synthesizer,
@@ -15,8 +16,10 @@ type Suite = (&'static str, Grammar, usize, fn(usize) -> String);
 #[derive(Debug, Clone)]
 pub struct ExpConfig {
     pub max_n: usize,
+    pub include_standard: bool,
     pub include_incremental: bool,
     pub max_prefixes: usize,
+    pub include_drivers: bool,
     pub output: Option<PathBuf>,
 }
 
@@ -24,8 +27,10 @@ impl Default for ExpConfig {
     fn default() -> Self {
         Self {
             max_n: 2,
+            include_standard: false,
             include_incremental: false,
             max_prefixes: 2,
+            include_drivers: true,
             output: None,
         }
     }
@@ -47,9 +52,23 @@ struct Sample {
 }
 
 pub fn run(config: ExpConfig) -> Value {
-    let samples = suites()
-        .iter()
-        .flat_map(|suite| run_suite(suite, config.max_n))
+    let samples = config
+        .include_standard
+        .then(|| {
+            suites()
+                .iter()
+                .flat_map(|suite| run_suite(suite, config.max_n))
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .flatten()
+        .chain(
+            config
+                .include_drivers
+                .then(driver_samples)
+                .into_iter()
+                .flatten(),
+        )
         .chain(
             (config.include_incremental)
                 .then(|| {
@@ -65,13 +84,14 @@ pub fn run(config: ExpConfig) -> Value {
         )
         .collect::<Vec<_>>();
 
+    let summaries = summarize(&samples);
     let report = json!({
         "generated_at": now_unix(),
-        "samples": samples,
-        "summaries": summarize(&samples),
+        "samples": config.output.as_ref().map(|_| samples.clone()).unwrap_or_default(),
+        "summaries": summaries,
         "global_cache": global_cache_stats(),
         "per_grammar_cache": grammar_cache_stats(),
-        "input_cache_entries": input_cache_entries(),
+        "input_cache_entries": config.output.as_ref().map(|_| input_cache_entries()).unwrap_or_default(),
     });
 
     if let Some(path) = &config.output {
@@ -140,6 +160,7 @@ fn measure(
     n: usize,
 ) -> Sample {
     reset_global_store();
+    clear_shared_memo();
 
     let mut parser = Parser::new(grammar.clone())
         .with_max_recursion(max_recursion)
@@ -191,6 +212,202 @@ fn incremental_suites() -> Vec<Suite> {
         96,
         generate_fun_let_chain,
     )]
+}
+
+fn driver_samples() -> Vec<Sample> {
+    let ctx = Context::new();
+    let fun = load_example_grammar("fun");
+    let imp = load_example_grammar("imp");
+
+    let mut out = Vec::new();
+    out.extend(measure_driver_chain(
+        "fun_operator_prefix",
+        &fun,
+        96,
+        "1.0 +.",
+        &ctx,
+    ));
+    out.extend(measure_driver_chain(
+        "imp_declaration_prefix",
+        &imp,
+        96,
+        "{ let x:Int = 1; x",
+        &ctx,
+    ));
+    out
+}
+
+fn measure_driver_chain(
+    suite: &str,
+    grammar: &Grammar,
+    max_recursion: usize,
+    input: &str,
+    ctx: &Context,
+) -> Vec<Sample> {
+    let mut out = Vec::new();
+    out.push(measure_driver_step(suite, "parser.partial", input, || {
+        reset_global_store();
+        clear_shared_memo();
+        let mut parser = Parser::new(grammar.clone()).with_max_recursion(max_recursion);
+        let outcome = parser.partial(input);
+        let (node_count, total_alternatives, max_alternatives) = outcome
+            .ast()
+            .map(|ast| {
+                (
+                    ast.node_count(),
+                    ast.total_alternatives(),
+                    ast.max_alternatives(),
+                )
+            })
+            .unwrap_or((0, 0, 0));
+
+        let stats = json!({
+            "parser": parser_stats_json(parser.last_stats()),
+            "cache_entries": parser.cache_entry_count(),
+        });
+
+        DriverStep {
+            node_count,
+            total_alternatives,
+            max_alternatives,
+            cache_entries: parser.cache_entry_count(),
+            stats,
+        }
+    }));
+
+    out.push(measure_driver_step(suite, "synth.feed", input, || {
+        reset_global_store();
+        clear_shared_memo();
+        let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), "", max_recursion);
+        let tokens = synth.feed(input.to_string(), ctx);
+        let (parse_hits, parse_misses, typed_hits, typed_misses) = synth.memo_stats();
+        let (parse_cached, typed_node_count, approx_size) = synth.cache_stats();
+        DriverStep {
+            node_count: typed_node_count,
+            total_alternatives: tokens.len(),
+            max_alternatives: approx_size,
+            cache_entries: synth.memo_entry_count(),
+            stats: json!({
+                "parse_memo_hits": parse_hits,
+                "parse_memo_misses": parse_misses,
+                "typed_memo_hits": typed_hits,
+                "typed_memo_misses": typed_misses,
+                "parse_cached_inputs": parse_cached,
+                "completion_count": tokens.len(),
+                "approx_cache_size": approx_size,
+            }),
+        }
+    }));
+
+    out.push(measure_driver_step(
+        suite,
+        "synth.partial_typed_ctx",
+        input,
+        || {
+            reset_global_store();
+            clear_shared_memo();
+            let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), input, max_recursion);
+            let typed = synth.partial_typed_ctx(ctx).ok();
+            let typed_roots = typed.as_ref().map(|tree| tree.len()).unwrap_or(0);
+            let typed_complete = typed
+                .as_ref()
+                .map(|tree| usize::from(tree.is_complete()))
+                .unwrap_or(0);
+            let (parse_cached, typed_node_count, approx_size) = synth.cache_stats();
+            DriverStep {
+                node_count: typed_node_count,
+                total_alternatives: typed_roots,
+                max_alternatives: approx_size,
+                cache_entries: synth.memo_entry_count(),
+                stats: json!({
+                    "typed_roots": typed_roots,
+                    "typed_complete": typed_complete,
+                    "parse_cached_inputs": parse_cached,
+                    "approx_cache_size": approx_size,
+                }),
+            }
+        },
+    ));
+
+    out.push(measure_driver_step(
+        suite,
+        "synth.completions_ctx",
+        input,
+        || {
+            reset_global_store();
+            clear_shared_memo();
+            let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), input, max_recursion);
+            let tokens = synth.completions_ctx(ctx);
+            let (parse_hits, parse_misses, typed_hits, typed_misses) = synth.memo_stats();
+            let (parse_cached, typed_node_count, approx_size) = synth.cache_stats();
+            DriverStep {
+                node_count: typed_node_count,
+                total_alternatives: tokens.len(),
+                max_alternatives: approx_size,
+                cache_entries: synth.memo_entry_count(),
+                stats: json!({
+                    "parse_memo_hits": parse_hits,
+                    "parse_memo_misses": parse_misses,
+                    "typed_memo_hits": typed_hits,
+                    "typed_memo_misses": typed_misses,
+                    "parse_cached_inputs": parse_cached,
+                    "completion_count": tokens.len(),
+                    "approx_cache_size": approx_size,
+                }),
+            }
+        },
+    ));
+
+    out
+}
+
+#[derive(Debug, Clone)]
+struct DriverStep {
+    node_count: usize,
+    total_alternatives: usize,
+    max_alternatives: usize,
+    cache_entries: usize,
+    stats: Value,
+}
+
+fn measure_driver_step(
+    suite: &str,
+    function: &str,
+    input: &str,
+    f: impl FnOnce() -> DriverStep,
+) -> Sample {
+    let rss_before = current_rss_kb();
+    let hwm_before = current_hwm_kb();
+    let started = Instant::now();
+    let step = f();
+    let elapsed_us = started.elapsed().as_micros();
+    let rss_after = current_rss_kb();
+    let hwm_after = current_hwm_kb();
+    let global = global_cache_stats();
+
+    Sample {
+        function: function.to_string(),
+        suite: suite.to_string(),
+        mode: "driver".to_string(),
+        n: 1,
+        input_len: input.len(),
+        elapsed_us,
+        cache_entries: step.cache_entries,
+        node_count: step.node_count,
+        total_alternatives: step.total_alternatives,
+        max_alternatives: step.max_alternatives,
+        stats: json!({
+            "driver": step.stats,
+            "rss_before_kb": rss_before,
+            "rss_after_kb": rss_after,
+            "rss_delta_kb": rss_after.saturating_sub(rss_before),
+            "hwm_before_kb": hwm_before,
+            "hwm_after_kb": hwm_after,
+            "hwm_delta_kb": hwm_after.saturating_sub(hwm_before),
+            "global_nodes": global.total_nodes,
+            "global_duplicates": global.duplicate_nodes,
+        }),
+    }
 }
 
 fn run_incremental_suite(
@@ -260,6 +477,7 @@ fn measure_reused_feed_sequence(
     ctx: &Context,
 ) -> Vec<Sample> {
     reset_global_store();
+    clear_shared_memo();
 
     let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), "", max_recursion);
 
@@ -312,6 +530,7 @@ fn measure_feed(
     hot: bool,
 ) -> Sample {
     reset_global_store();
+    clear_shared_memo();
 
     let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), "", max_recursion);
 
@@ -503,6 +722,27 @@ fn write_report(path: &Path, report: &Value) {
 
     let file = fs::File::create(path).expect("failed to create experiment report");
     serde_json::to_writer_pretty(file, report).expect("failed to write experiment report");
+}
+
+fn current_rss_kb() -> u64 {
+    proc_status_kb("VmRSS:")
+}
+
+fn current_hwm_kb() -> u64 {
+    proc_status_kb("VmHWM:")
+}
+
+fn proc_status_kb(prefix: &str) -> u64 {
+    fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|status| {
+            status
+                .lines()
+                .find(|line| line.starts_with(prefix))
+                .and_then(|line| line.split_whitespace().nth(1))
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .unwrap_or(0)
 }
 
 fn print_report(report: &Value) {

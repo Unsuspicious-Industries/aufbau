@@ -191,10 +191,13 @@ impl Synthesizer {
                 let trimmed = suffix.trim();
                 let single_token_suffix = !trimmed.is_empty()
                     && trimmed.len() <= 32
-                    && !trimmed.chars().any(char::is_whitespace);
+                    && !trimmed.chars().any(char::is_whitespace)
+                    && suffix
+                        .chars()
+                        .all(|ch| ch.is_whitespace() || trimmed.contains(ch));
 
                 if single_token_suffix {
-                    if let Ok((typed, extended)) = self.try_extend(suffix, ctx) {
+                    if let Ok((typed, extended)) = self.try_extend(trimmed, ctx) {
                         if extended == next_input {
                             let key = typed_cache_key(&extended, ctx);
                             self.typed_memo

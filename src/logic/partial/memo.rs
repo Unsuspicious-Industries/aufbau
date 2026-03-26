@@ -1,6 +1,9 @@
 use crate::logic::partial::structure::SppfNodeId;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
+const DEFAULT_SHARED_MEMO_ENTRY_LIMIT: usize = 8192;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct ParseMemoKey {
@@ -25,6 +28,15 @@ pub(crate) struct MemoEntry {
 }
 
 pub(crate) type MemoTable = HashMap<ParseMemoKey, MemoEntry>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct SharedMemoKey {
+    pub grammar: String,
+    pub input: String,
+    pub max_recursion: usize,
+}
+
+static SHARED_MEMO: OnceLock<Mutex<HashMap<SharedMemoKey, MemoTable>>> = OnceLock::new();
 
 impl MemoEntry {
     pub fn from_outcomes(outcomes: Vec<ParsedNt>) -> Self {
@@ -64,5 +76,40 @@ pub(crate) fn stable_memo(table: &MemoTable) -> MemoTable {
             let stable = entry.stable_only();
             (!stable.is_empty()).then(|| (key.clone(), stable))
         })
+        .collect()
+}
+
+pub(crate) fn shared_memo_get(key: &SharedMemoKey) -> Option<MemoTable> {
+    shared_memo_store()
+        .lock()
+        .expect("shared memo poisoned")
+        .get(key)
+        .cloned()
+}
+
+pub(crate) fn shared_memo_put(key: SharedMemoKey, table: MemoTable) {
+    let mut store = shared_memo_store().lock().expect("shared memo poisoned");
+    store.insert(key, limit_entries(table));
+}
+
+pub(crate) fn clear_shared_memo() {
+    shared_memo_store()
+        .lock()
+        .expect("shared memo poisoned")
+        .clear();
+}
+
+fn shared_memo_store() -> &'static Mutex<HashMap<SharedMemoKey, MemoTable>> {
+    SHARED_MEMO.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn limit_entries(table: MemoTable) -> MemoTable {
+    if table.len() <= DEFAULT_SHARED_MEMO_ENTRY_LIMIT {
+        return table;
+    }
+
+    table
+        .into_iter()
+        .take(DEFAULT_SHARED_MEMO_ENTRY_LIMIT)
         .collect()
 }

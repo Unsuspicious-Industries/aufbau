@@ -9,7 +9,6 @@ pub mod stlc;
 
 use crate::logic::grammar::Grammar;
 use rayon::prelude::*;
-use regex_syntax::ast::print;
 use std::time::Duration;
 use std::time::Instant;
 

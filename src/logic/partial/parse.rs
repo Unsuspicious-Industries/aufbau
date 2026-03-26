@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
-use crate::logic::partial::memo::{MemoEntry, MemoTable, ParseMemoKey, ParsedNt};
+use crate::logic::partial::memo::{
+    clear_shared_memo, shared_memo_get, shared_memo_put, MemoEntry, MemoTable, ParseMemoKey,
+    ParsedNt, SharedMemoKey,
+};
 use crate::logic::partial::state::{ParseState, PrefixState};
 use crate::logic::partial::structure::{
     register_grammar, PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
@@ -304,6 +307,7 @@ impl Parser {
         self.parse_cache.clear();
         self.cached_input = None;
         self.cached_recursion = None;
+        clear_shared_memo();
         self.last_stats = ParserStats::default();
     }
 
@@ -382,6 +386,7 @@ impl Parser {
                         self.parse_cache = prefix.stable_memo();
                         self.cached_input = Some(input.to_string());
                         self.cached_recursion = Some(self.max_recursion);
+                        self.store_shared_memo(input, &self.parse_cache);
                     }
                     prefix.into_forest()
                 },
@@ -471,7 +476,27 @@ impl Parser {
             (Some(cached), Some(depth)) if input == cached && depth == self.max_recursion => {
                 std::mem::take(&mut self.parse_cache)
             }
-            _ => MemoTable::new(),
+            _ => self.shared_seed_memo_for(input).unwrap_or_default(),
+        }
+    }
+
+    fn shared_seed_memo_for(&self, input: &str) -> Option<MemoTable> {
+        self.preserve_cache_across_parses
+            .then(|| shared_memo_get(&self.shared_memo_key(input)))
+            .flatten()
+    }
+
+    fn store_shared_memo(&self, input: &str, memo: &MemoTable) {
+        if self.preserve_cache_across_parses {
+            shared_memo_put(self.shared_memo_key(input), memo.clone());
+        }
+    }
+
+    fn shared_memo_key(&self, input: &str) -> SharedMemoKey {
+        SharedMemoKey {
+            grammar: self.grammar.name.clone(),
+            input: input.to_string(),
+            max_recursion: self.max_recursion,
         }
     }
 
