@@ -32,11 +32,11 @@ fn test_stlc_simple_variable() {
 fn test_stlc_simple_variable_with_serialization() {
     assert_stlc_parse_matches(
         "x",
-        r#"(Expression @0 #1
-  (AtomicExpression @0 #1
-    (Variable @0 #1
-      (Identifier @0 $x #1
-        (T "x")))))"#,
+        r#"(Expression @0 #0
+  (AtomicExpression @0 #0
+    (Variable @0 #0
+      (Identifier @0 $x #0
+        (T "x" + "((([0-9]|[A-Z])|[a-z]))*")))))"#,
     );
 }
 
@@ -44,17 +44,17 @@ fn test_stlc_simple_variable_with_serialization() {
 fn test_stlc_simple_application_with_serialization() {
     assert_stlc_parse_matches(
         "f x",
-        r#"(Expression @1 #2
-  (Application @0 #2
-    (Expression @0 $l #1
-      (AtomicExpression @0 #1
-        (Variable @0 #1
-          (Identifier @0 $x #1
-            (T "f")))))
-    (AtomicExpression @0 $r #1
-      (Variable @0 #1
-        (Identifier @0 $x #1
-          (T "x"))))))"",
+        r#"(Expression @1 #0
+  (Application @0 #0
+    (Expression @0 $l #0
+      (AtomicExpression @0 #0
+        (Variable @0 #0
+          (Identifier @0 $x #0
+            (T "f" + "((([0-9]|[A-Z])|[a-z]))*")))))
+    (AtomicExpression @0 $r #0
+      (Variable @0 #0
+        (Identifier @0 $x #0
+          (T "x" + "((([0-9]|[A-Z])|[a-z]))*"))))))"#,
     );
 }
 
@@ -63,29 +63,24 @@ fn test_stlc_identity_lambda_with_serialization() {
     // λx:A.x
     assert_stlc_parse_matches(
         "λx:A.x",
-        r#"(Expression @0 #6
-    (AtomicExpression @2 #6
-        (Lambda @0 #6
-            (T "λ")
-      (Identifier @0 $a #1
-                (T "x"))
-            (T ":")
-      (Type @0 $τ #1
-        (AtomicType @0 #1
-          (BaseType @0 #1
-            (TypeName @0 #1
-                            (T "A")))))
-            (T ".")
-            (Expression @1 $e #1
-                (Application @0 #1
-                    (AtomicExpression @0 $l #1
-                        (Variable @0 #1
-                            (Identifier @0 $x #1
-                                (T "x"))))
-                    (Expression @1 $r #0
-                        (Application @0 #0
-                            (AtomicExpression @1 $l #0
-                                (T~ "")))))))))"#,
+        r#"(Expression @0 #0
+  (AtomicExpression @2 #0
+    (Lambda @0 #0
+      (T "λ" + "")
+      (Identifier @0 $a #0
+        (T "x" + "((([0-9]|[A-Z])|[a-z]))*"))
+      (T ":" + "")
+      (Type @0 $τ #0
+        (AtomicType @0 #0
+          (BaseType @0 #0
+            (TypeName @0 #0
+              (T "A" + "(((((([0-9]|[A-Z])|_)|[a-z])|τ)|[₀-₉]))*")))))
+      (T "." + "")
+      (Expression @0 $e #0
+        (AtomicExpression @0 #0
+          (Variable @0 #0
+            (Identifier @0 $x #0
+              (T "x" + "((([0-9]|[A-Z])|[a-z]))*"))))))))"#,
     );
 }
 

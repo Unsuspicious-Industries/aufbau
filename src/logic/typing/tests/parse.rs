@@ -8,13 +8,18 @@ fn test_parse_raw() {
 
 #[test]
 fn test_parse_raw_preserves_ts_surface_types() {
-    let cases = [
-        "number[]",
+    match Type::parse_raw("number[]").expect("raw parse should succeed") {
+        Type::Array(inner) => match *inner {
+            Type::Raw(value) => assert_eq!(value, "number"),
+            other => panic!("expected raw array inner type, got {:?}", other),
+        },
+        other => panic!("expected raw array type, got {:?}", other),
+    }
+
+    for case in [
         "{ name: string; age: number }",
         "(number, string) => boolean",
-    ];
-
-    for case in cases {
+    ] {
         match Type::parse_raw(case).expect("raw parse should succeed") {
             Type::Raw(value) => assert_eq!(value, case),
             other => panic!("expected raw type for '{}', got {:?}", case, other),

@@ -244,7 +244,7 @@ pub fn is_extensible_path(nt: &NonTerminal, p: &TreePath) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::partial::Parser;
+    use crate::logic::partial::MetaParser;
 
     #[test]
     fn resolve_bindings_keeps_grouped_matches() {
@@ -258,7 +258,7 @@ mod tests {
         "#;
 
         let grammar = Grammar::load(spec).expect("load pair grammar");
-        let mut parser = Parser::new(grammar.clone());
+        let mut parser = MetaParser::new(grammar.clone());
         let ast = parser.parse("1 , 2 ;").expect("parse pair");
         let root = ast.complete().expect("complete pair root");
 

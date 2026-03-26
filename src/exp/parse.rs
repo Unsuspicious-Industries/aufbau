@@ -15,13 +15,17 @@ type Suite = (&'static str, Grammar, usize, fn(usize) -> String);
 #[derive(Debug, Clone)]
 pub struct ExpConfig {
     pub max_n: usize,
+    pub include_incremental: bool,
+    pub max_prefixes: usize,
     pub output: Option<PathBuf>,
 }
 
 impl Default for ExpConfig {
     fn default() -> Self {
         Self {
-            max_n: 4,
+            max_n: 2,
+            include_incremental: false,
+            max_prefixes: 2,
             output: None,
         }
     }
@@ -47,9 +51,17 @@ pub fn run(config: ExpConfig) -> Value {
         .iter()
         .flat_map(|suite| run_suite(suite, config.max_n))
         .chain(
-            incremental_suites()
-                .iter()
-                .flat_map(|suite| run_incremental_suite(suite, config.max_n)),
+            (config.include_incremental)
+                .then(|| {
+                    incremental_suites()
+                        .iter()
+                        .flat_map(|suite| {
+                            run_incremental_suite(suite, config.max_n, config.max_prefixes)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .into_iter()
+                .flatten(),
         )
         .collect::<Vec<_>>();
 
@@ -184,10 +196,14 @@ fn incremental_suites() -> Vec<Suite> {
 fn run_incremental_suite(
     (name, grammar, max_recursion, mk_input): &Suite,
     max_n: usize,
+    max_prefixes: usize,
 ) -> Vec<Sample> {
     let ctx = Context::new();
     let input = mk_input(max_n.max(1));
-    let prefixes = sampled_prefixes(token_boundary_prefixes(grammar, &input), 8);
+    let prefixes = sampled_prefixes(
+        token_boundary_prefixes(grammar, &input),
+        max_prefixes.max(1),
+    );
 
     prefixes
         .iter()

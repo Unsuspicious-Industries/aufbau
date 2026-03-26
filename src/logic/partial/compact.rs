@@ -433,17 +433,17 @@ mod tests {
 
     use super::*;
     use crate::logic::grammar::Grammar;
-    use crate::logic::partial::parse::Parser;
+    use crate::logic::partial::MetaParser;
 
     #[test]
     fn test_compact_roundtrip_simple() {
         let grammar_str = r#"
-        start ::= "hello" "world"
+        start ::= 'hello' 'world'
         "#;
 
         let grammar = Grammar::load(grammar_str).unwrap();
-        let mut parser = Parser::new(grammar.clone());
-        let result = parser.parse("helloworld").unwrap();
+        let mut parser = MetaParser::new(grammar.clone());
+        let result = parser.parse("hello world").unwrap();
 
         assert!(result.is_complete());
         let tree = &result.roots()[0];
@@ -468,7 +468,7 @@ mod tests {
         let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
-        let mut parser = Parser::new(grammar.clone());
+        let mut parser = MetaParser::new(grammar.clone());
         let result = parser.parse("x").unwrap();
 
         assert!(result.is_complete());
@@ -498,7 +498,7 @@ mod tests {
         let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
-        let mut parser = Parser::new(grammar.clone());
+        let mut parser = MetaParser::new(grammar.clone());
         let result = parser.parse("λx:A.x").unwrap();
 
         assert!(result.is_complete());
@@ -528,7 +528,7 @@ mod tests {
         let grammar_str = include_str!("../../../examples/stlc.auf");
         let grammar = Grammar::load(grammar_str).unwrap();
 
-        let mut parser = Parser::new(grammar.clone());
+        let mut parser = MetaParser::new(grammar.clone());
         let result = parser.parse("f x y").unwrap();
 
         assert!(result.is_complete());

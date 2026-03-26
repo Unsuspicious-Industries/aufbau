@@ -1,6 +1,5 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::MetaParser;
-use crate::logic::Parser;
 use crate::set_debug_level;
 
 #[test]
@@ -54,7 +53,7 @@ fn test_left_rec_with_parentheses() {
     start ::= Expr
     "#;
     let g = Grammar::load(spec).unwrap();
-    let mut p = Parser::new(g);
+    let mut p = MetaParser::new(g);
 
     let ast = p.parse("( n + n ) + n").unwrap();
     assert!(ast.is_complete());

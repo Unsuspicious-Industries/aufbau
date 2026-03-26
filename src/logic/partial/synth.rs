@@ -1,7 +1,7 @@
 use crate::debug_debug;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::completion::CompletionSet;
-use crate::logic::partial::{MetaParser, SppfForest};
+use crate::logic::partial::{MetaParser, PrefixState, SppfForest};
 use crate::logic::typing::gather_terminals_typed;
 use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::{gather_raw_types, Context, TypedAST};
@@ -23,6 +23,7 @@ pub struct Synthesizer {
     meta: MetaParser,
     input: String,
     tree: Option<TypedAST>,
+    prefix_state: Option<PrefixState>,
     regex_seed_candidates: Vec<String>,
     // Note: synthesizer no longer keeps persistent caches for partial/typed/
     // completion results. The parser still uses its within-call memo table to
@@ -51,6 +52,7 @@ impl Synthesizer {
             meta,
             input,
             tree: None,
+            prefix_state: None,
             regex_seed_candidates,
             parse_memo: RefCell::new(HashMap::new()),
             typed_memo: RefCell::new(HashMap::new()),
@@ -78,6 +80,7 @@ impl Synthesizer {
             meta,
             input,
             tree: None,
+            prefix_state: None,
             regex_seed_candidates,
             parse_memo: RefCell::new(HashMap::new()),
             typed_memo: RefCell::new(HashMap::new()),
@@ -88,9 +91,10 @@ impl Synthesizer {
         }
     }
 
-    pub fn clear_memo(&self) {
+    pub fn clear_memo(&mut self) {
         self.parse_memo.borrow_mut().clear();
         self.typed_memo.borrow_mut().clear();
+        self.prefix_state = None;
         self.parse_memo_hits.set(0);
         self.parse_memo_misses.set(0);
         self.typed_memo_hits.set(0);
@@ -165,7 +169,15 @@ impl Synthesizer {
     }
 
     pub fn set_input(&mut self, input: impl Into<String>) {
-        self.input = input.into();
+        let next = input.into();
+        if next == self.input {
+            return;
+        }
+
+        self.input = next;
+        self.prefix_state = None;
+        self.parse_memo.borrow_mut().clear();
+        self.typed_memo.borrow_mut().clear();
         self.update_tree();
     }
 
@@ -432,15 +444,27 @@ impl Synthesizer {
 
         self.parse_memo_misses.set(self.parse_memo_misses.get() + 1);
 
-        let parsed = self
-            .meta
-            .partial_with_depth(input)
-            .map(|(ast, _)| Arc::new(ast));
+        let parsed = match self.prefix_state.take() {
+            Some(prev) if input.starts_with(prev.input()) => self
+                .meta
+                .advance_owned_with_depth(prev, input)
+                .map(|(prefix, _)| prefix),
+            Some(prev) => {
+                self.prefix_state = Some(prev);
+                self.meta.prefix_with_depth(input).map(|(prefix, _)| prefix)
+            }
+            None => self.meta.prefix_with_depth(input).map(|(prefix, _)| prefix),
+        }
+        .map(|prefix| {
+            let forest = prefix.forest().clone();
+            self.prefix_state = Some(prefix);
+            Arc::new(forest)
+        });
 
         // Store in parse_memo for reuse across synth calls.
-        self.parse_memo
-            .borrow_mut()
-            .insert(input.to_string(), parsed.clone());
+        let mut parse_memo = self.parse_memo.borrow_mut();
+        parse_memo.clear();
+        parse_memo.insert(input.to_string(), parsed.clone());
 
         parsed
     }
@@ -464,7 +488,9 @@ impl Synthesizer {
             .typed_ctx(&self.grammar, ctx)
             .map(Arc::new);
 
-        self.typed_memo.borrow_mut().insert(key, typed.clone());
+        let mut typed_memo = self.typed_memo.borrow_mut();
+        typed_memo.clear();
+        typed_memo.insert(key, typed.clone());
         typed
     }
 

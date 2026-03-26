@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
+use crate::logic::partial::memo::{MemoEntry, MemoTable, ParseMemoKey, ParsedNt};
+use crate::logic::partial::state::{ParseState, PrefixState};
 use crate::logic::partial::structure::{
     register_grammar, PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
 };
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use serde::Serialize;
-use std::hash::{Hash, Hasher};
 
 /// Shifts indices [0..n) by `level` positions, wrapping around.
 /// Different recursion depths try productions in different orders to distribute search effort.
@@ -26,6 +27,8 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
 }
 
 fn hash_input(input: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     input.hash(&mut hasher);
     hasher.finish()
@@ -76,6 +79,8 @@ fn hash_input(input: &str) -> u64 {
 /// Limits depth to prevent exponential blowup on ambiguous grammars.
 /// MetaParser enables adaptive depth finding. Override with `with_max_recursion`.
 const DEFAULT_MAX_RECURSION_DEPTH: usize = 15;
+const DEFAULT_PERSIST_WINDOW: usize = 32;
+const DEFAULT_MAX_PERSISTED_MEMO_ENTRIES: usize = 2048;
 
 /// Outcome of a partial parse operation with detailed metadata.
 ///
@@ -171,29 +176,6 @@ impl PartialParseOutcome {
     }
 }
 
-/// Tracks parsing state for a single parse operation
-///
-/// This struct contains per-parse state that should NOT be shared across
-/// multiple parse calls. It tracks recursion to detect cycles during parsing,
-/// and memoizes completed sub-parses within a single invocation so the parser
-/// runs in polynomial rather than exponential time.
-struct ParseState {
-    /// Completed sub-parses within a single `partial()` call.
-    memo: HashMap<ParseMemoKey, Vec<ParsedNt>>,
-    /// Keys currently being expanded, used for cycle detection.
-    active: HashSet<ParseMemoKey>,
-    /// Set to true when we hit the depth limit during this parse.
-    hit_depth_limit: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ParseMemoKey {
-    input_id: u64,
-    nt_name: String,
-    binding: Option<String>,
-    abs_pos: usize,
-}
-
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ParserStats {
     pub nt_cache_hits: usize,
@@ -203,13 +185,6 @@ pub struct ParserStats {
     pub suffix_cache_misses: usize,
     pub cycle_cuts: usize,
     pub clone_events: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct ParsedNt {
-    node_id: SppfNodeId,
-    consumed: usize,
-    complete: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -225,16 +200,6 @@ impl ParsedChild {
             child: SppfChild::Node(nt.node_id),
             consumed: nt.consumed,
             complete: nt.complete,
-        }
-    }
-}
-
-impl ParseState {
-    fn new() -> Self {
-        Self {
-            memo: HashMap::new(),
-            active: HashSet::new(),
-            hit_depth_limit: false,
         }
     }
 }
@@ -255,10 +220,14 @@ pub struct Parser {
     reserved_tokens: HashSet<String>,
     /// Maximum recursion depth for left-recursive patterns like `Expr Expr`
     max_recursion: usize,
+    persist_window: usize,
+    max_persisted_memo_entries: usize,
     /// Whether the last parse hit the depth limit
     last_hit_depth_limit: bool,
     preserve_cache_across_parses: bool,
-    parse_cache: HashMap<ParseMemoKey, Vec<ParsedNt>>,
+    parse_cache: MemoTable,
+    cached_input: Option<String>,
+    cached_recursion: Option<usize>,
     last_stats: ParserStats,
 }
 
@@ -273,9 +242,13 @@ impl Parser {
             forest,
             reserved_tokens,
             max_recursion: DEFAULT_MAX_RECURSION_DEPTH,
+            persist_window: DEFAULT_PERSIST_WINDOW,
+            max_persisted_memo_entries: DEFAULT_MAX_PERSISTED_MEMO_ENTRIES,
             last_hit_depth_limit: false,
             preserve_cache_across_parses: true,
-            parse_cache: HashMap::new(),
+            parse_cache: MemoTable::new(),
+            cached_input: None,
+            cached_recursion: None,
             last_stats: ParserStats::default(),
         }
     }
@@ -289,6 +262,24 @@ impl Parser {
     /// Set the maximum recursion depth for left-recursive grammars
     pub fn set_max_recursion(&mut self, depth: usize) {
         self.max_recursion = depth;
+    }
+
+    pub fn with_persist_window(mut self, window: usize) -> Self {
+        self.persist_window = window;
+        self
+    }
+
+    pub fn set_persist_window(&mut self, window: usize) {
+        self.persist_window = window;
+    }
+
+    pub fn with_max_persisted_memo_entries(mut self, max_entries: usize) -> Self {
+        self.max_persisted_memo_entries = max_entries.max(1);
+        self
+    }
+
+    pub fn set_max_persisted_memo_entries(&mut self, max_entries: usize) {
+        self.max_persisted_memo_entries = max_entries.max(1);
     }
 
     pub fn with_preserve_cache_across_parses(mut self, preserve: bool) -> Self {
@@ -311,6 +302,8 @@ impl Parser {
 
     pub fn clear_cache(&mut self) {
         self.parse_cache.clear();
+        self.cached_input = None;
+        self.cached_recursion = None;
         self.last_stats = ParserStats::default();
     }
 
@@ -320,6 +313,32 @@ impl Parser {
 
     pub fn cache_entry_count(&self) -> usize {
         self.parse_cache.len()
+    }
+
+    pub fn prefix(&mut self, input: &str) -> Result<PrefixState, ParseError> {
+        self.prefix_with_seed(input, MemoTable::new())
+    }
+
+    pub fn advance(&mut self, prev: &PrefixState, input: &str) -> Result<PrefixState, ParseError> {
+        if input != prev.input() || prev.max_recursion() != self.max_recursion {
+            return self.prefix(input);
+        }
+
+        let state = self.prefix_with_seed(input, prev.stable_memo())?;
+        Ok(state)
+    }
+
+    pub fn advance_owned(
+        &mut self,
+        prev: PrefixState,
+        input: &str,
+    ) -> Result<PrefixState, ParseError> {
+        if input != prev.input() || prev.max_recursion() != self.max_recursion {
+            return self.prefix(input);
+        }
+
+        let state = self.prefix_with_seed(input, prev.into_stable_memo())?;
+        Ok(state)
     }
 
     /// Parse input and return a complete AST (simple interface).
@@ -355,29 +374,48 @@ impl Parser {
     }
 
     pub fn partial(&mut self, input: &str) -> PartialParseOutcome {
+        let seed = self.take_seed_memo_for(input);
+        match self.prefix_with_seed(input, seed) {
+            Ok(prefix) => PartialParseOutcome::Success {
+                ast: {
+                    if self.preserve_cache_across_parses && !prefix.hit_depth_limit() {
+                        self.parse_cache = prefix.stable_memo();
+                        self.cached_input = Some(input.to_string());
+                        self.cached_recursion = Some(self.max_recursion);
+                    }
+                    prefix.into_forest()
+                },
+            },
+            Err(err) => PartialParseOutcome::Failure(err),
+        }
+    }
+
+    fn prefix_with_seed(
+        &mut self,
+        input: &str,
+        seed: MemoTable,
+    ) -> Result<PrefixState, ParseError> {
         self.last_hit_depth_limit = false;
         self.last_stats = ParserStats::default();
 
         debug_trace!("parser2      ", "Starting parse of input: '{}'", input);
 
-        let outcome = (|| {
-            let segments = match self.tokenize(input) {
-                Ok(s) => s,
-                Err(e) => return PartialParseOutcome::Failure(ParseError::Tokenization(e)),
-            };
-            debug_trace!("parser2      ", "Tokenized into {:?}", segments);
+        let segments = self.tokenize(input).map_err(ParseError::Tokenization)?;
+        let input_id = hash_input(input);
+        debug_trace!("parser2      ", "Tokenized into {:?}", segments);
 
-            let start_nt = match self.grammar.start_nonterminal() {
-                Some(s) => s.to_string(),
-                None => return PartialParseOutcome::Failure(ParseError::NoStartSymbol),
-            };
-            let input_id = hash_input(input);
+        let start_nt = self
+            .grammar
+            .start_nonterminal()
+            .map(|s| s.to_string())
+            .ok_or(ParseError::NoStartSymbol)?;
 
-            debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
+        debug_trace!("parser2      ", "Start nonterminal: {}", start_nt);
 
-            let mut parse_state = ParseState::new();
-            let mut forest = std::mem::take(&mut self.forest);
-            let roots = match self.parse_nonterminal(
+        let mut parse_state = ParseState::with_seed(seed);
+        let mut forest = std::mem::take(&mut self.forest);
+        let roots = self
+            .parse_nonterminal(
                 input_id,
                 &segments,
                 &start_nt,
@@ -386,44 +424,104 @@ impl Parser {
                 0,
                 &mut parse_state,
                 &mut forest,
-            ) {
-                Ok(r) => r,
-                Err(e) => {
-                    return PartialParseOutcome::Failure(ParseError::Tokenization(e));
-                }
-            };
+            )
+            .map_err(ParseError::Tokenization)?;
 
-            let total_segments = segments.len();
-            let depth_limited = parse_state.hit_depth_limit;
-            self.last_hit_depth_limit = depth_limited;
+        let total_segments = segments.len();
+        let depth_limited = parse_state.hit_depth_limit;
+        self.last_hit_depth_limit = depth_limited;
 
-            if self.preserve_cache_across_parses && !depth_limited {
-                self.parse_cache.extend(parse_state.memo.drain());
+        let valid_roots: Vec<SppfNodeId> = roots
+            .into_iter()
+            .filter(|r| r.consumed == total_segments)
+            .map(|r| r.node_id)
+            .collect();
+
+        if valid_roots.is_empty() {
+            return Err(if depth_limited {
+                ParseError::DepthLimit
+            } else {
+                ParseError::NoValidParse
+            });
+        }
+
+        forest.set_grammar(self.grammar.clone());
+        forest.set_roots(valid_roots);
+        forest.set_input(input.to_string());
+
+        let persisted_memo = self.persistable_memo(&parse_state.memo, total_segments);
+        let frontier = self.persistable_frontier(&parse_state.frontier, total_segments);
+        Ok(PrefixState::new(
+            input.to_string(),
+            segments,
+            forest,
+            persisted_memo,
+            frontier,
+            depth_limited,
+            self.max_recursion,
+        ))
+    }
+
+    fn take_seed_memo_for(&mut self, input: &str) -> MemoTable {
+        if !self.preserve_cache_across_parses {
+            return MemoTable::new();
+        }
+
+        match (&self.cached_input, self.cached_recursion) {
+            (Some(cached), Some(depth)) if input == cached && depth == self.max_recursion => {
+                std::mem::take(&mut self.parse_cache)
             }
+            _ => MemoTable::new(),
+        }
+    }
 
-            let valid_roots: Vec<SppfNodeId> = roots
-                .into_iter()
-                .filter(|r| r.consumed == total_segments)
-                .map(|r| r.node_id)
-                .collect();
+    fn persistable_memo(&self, table: &MemoTable, total_segments: usize) -> MemoTable {
+        let cutoff = total_segments.saturating_sub(self.persist_window);
+        let mut entries = table
+            .iter()
+            .filter_map(|(key, entry)| {
+                let stable = entry.stable_only();
+                (!stable.is_empty()).then(|| {
+                    let class = if key.abs_pos == 0 {
+                        0usize
+                    } else if key.abs_pos >= cutoff {
+                        1
+                    } else {
+                        2
+                    };
+                    let distance = total_segments.saturating_sub(key.abs_pos);
+                    ((class, distance), key.clone(), stable)
+                })
+            })
+            .collect::<Vec<_>>();
 
-            if valid_roots.is_empty() {
-                if depth_limited {
-                    return PartialParseOutcome::Failure(ParseError::DepthLimit);
-                }
-                return PartialParseOutcome::Failure(ParseError::NoValidParse);
-            }
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        entries
+            .into_iter()
+            .take(self.max_persisted_memo_entries)
+            .map(|(_, key, entry)| (key, entry))
+            .collect()
+    }
 
-            PartialParseOutcome::Success {
-                ast: {
-                    forest.set_grammar(self.grammar.clone());
-                    forest.set_roots(valid_roots);
-                    forest.set_input(input.to_string());
-                    forest
-                },
-            }
-        })();
-        outcome
+    fn persistable_frontier(
+        &self,
+        frontier: &HashSet<ParseMemoKey>,
+        total_segments: usize,
+    ) -> Vec<ParseMemoKey> {
+        let cutoff = total_segments.saturating_sub(self.persist_window);
+        let mut keys = frontier
+            .iter()
+            .filter(|key| key.abs_pos >= cutoff || key.abs_pos == 0)
+            .cloned()
+            .collect::<Vec<_>>();
+        keys.sort_by_key(|key| {
+            (
+                usize::from(key.abs_pos != 0),
+                total_segments.saturating_sub(key.abs_pos),
+            )
+        });
+        keys.truncate(self.max_persisted_memo_entries.min(keys.len()));
+        keys
     }
 
     /// Tokenize input into segments using the grammar's tokenizer
@@ -437,12 +535,14 @@ impl Parser {
         nt_name: &str,
         binding: &Option<String>,
         abs_pos: usize,
+        level: usize,
     ) -> ParseMemoKey {
         ParseMemoKey {
             input_id,
             nt_name: nt_name.to_string(),
             binding: binding.clone(),
             abs_pos,
+            level,
         }
     }
 
@@ -453,15 +553,7 @@ impl Parser {
     ) -> Option<Vec<ParsedNt>> {
         if let Some(cached) = parse_state.memo.get(key) {
             self.last_stats.nt_cache_hits += 1;
-            return Some(cached.clone());
-        }
-
-        if self.preserve_cache_across_parses {
-            if let Some(cached) = self.parse_cache.get(key) {
-                self.last_stats.nt_cache_hits += 1;
-                parse_state.memo.insert(key.clone(), cached.clone());
-                return Some(cached.clone());
-            }
+            return Some(cached.all());
         }
 
         self.last_stats.nt_cache_misses += 1;
@@ -475,7 +567,11 @@ impl Parser {
         value: Vec<ParsedNt>,
     ) -> Vec<ParsedNt> {
         self.last_stats.nt_cache_stores += 1;
-        parse_state.memo.insert(key, value.clone());
+        let entry = MemoEntry::from_outcomes(value.clone());
+        if entry.has_partial() {
+            parse_state.frontier.insert(key.clone());
+        }
+        parse_state.memo.insert(key, entry);
         value
     }
 
@@ -519,7 +615,7 @@ impl Parser {
             return Ok(Vec::new());
         }
 
-        let key = self.memo_key(input_id, nt_name, &binding, abs_pos);
+        let key = self.memo_key(input_id, nt_name, &binding, abs_pos, level);
 
         if let Some(cached) = self.memo_lookup(parse_state, &key) {
             return Ok(cached);

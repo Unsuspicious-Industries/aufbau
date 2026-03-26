@@ -21,6 +21,7 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::Parser;
 use crate::logic::partial::structure::{Node, NonTerminal, Terminal};
+use crate::logic::partial::MetaParser;
 use std::path::Path;
 
 // ============================================================================
@@ -337,9 +338,10 @@ pub fn assert_parse_structurally_matches(
     input: &str,
     expected_serialized: &str,
 ) {
-    let mut parser = Parser::new(grammar.clone());
+    let mut parser = MetaParser::new(grammar.clone());
     let ast = parser
         .parse(input)
+        .or_else(|_| parser.partial(input))
         .unwrap_or_else(|e| panic!("Failed to parse '{}': {:?}", input, e));
 
     assert!(

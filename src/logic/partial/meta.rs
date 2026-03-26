@@ -6,7 +6,7 @@ use crate::debug_info;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::parse::ParserStats;
 use crate::logic::partial::structure::SppfNodeId;
-use crate::logic::partial::{ParseError, Parser, PartialParseOutcome, SppfForest};
+use crate::logic::partial::{ParseError, Parser, PartialParseOutcome, PrefixState, SppfForest};
 use crate::logic::typing::{Context, TypedAST};
 
 const DEFAULT_START_DEPTH: usize = 5;
@@ -301,6 +301,48 @@ impl MetaParser {
     pub fn partial_with_depth(&mut self, input: &str) -> Result<(SppfForest, usize), String> {
         let ast = self.partial(input)?;
         Ok((ast, self.last_used_depth.unwrap_or(self.start_depth)))
+    }
+
+    pub fn prefix_with_depth(&mut self, input: &str) -> Result<(PrefixState, usize), String> {
+        let (_ast, depth) = self.partial_with_depth(input)?;
+        self.parser.set_max_recursion(depth);
+        let prefix = self.parser.prefix(input).map_err(|e| e.to_string())?;
+        self.last_used_depth = Some(depth);
+        Ok((prefix, depth))
+    }
+
+    pub fn advance_with_depth(
+        &mut self,
+        prev: &PrefixState,
+        input: &str,
+    ) -> Result<(PrefixState, usize), String> {
+        if let Some(depth) = self.last_used_depth {
+            self.parser.set_max_recursion(depth);
+            match self.parser.advance(prev, input) {
+                Ok(prefix) => return Ok((prefix, depth)),
+                Err(ParseError::DepthLimit) | Err(ParseError::NoValidParse) => {}
+                Err(err) => return Err(err.to_string()),
+            }
+        }
+
+        self.prefix_with_depth(input)
+    }
+
+    pub fn advance_owned_with_depth(
+        &mut self,
+        prev: PrefixState,
+        input: &str,
+    ) -> Result<(PrefixState, usize), String> {
+        if let Some(depth) = self.last_used_depth {
+            self.parser.set_max_recursion(depth);
+            match self.parser.advance_owned(prev, input) {
+                Ok(prefix) => return Ok((prefix, depth)),
+                Err(ParseError::DepthLimit) | Err(ParseError::NoValidParse) => {}
+                Err(err) => return Err(err.to_string()),
+            }
+        }
+
+        self.prefix_with_depth(input)
     }
 
     pub fn partial_typed_ctx_with_depth(

@@ -115,7 +115,7 @@ fn test_float_operator_prefix_behavior() {
     let mut p = MetaParser::new(g.clone()).with_max_depth(41);
 
     // Structural parsing should succeed on these prefixes.
-    for prefix in ["1.0 +", "10.0 /"] {
+    for prefix in ["1.0 +.", "10.0 /."] {
         let ast = p
             .partial(prefix)
             .unwrap_or_else(|e| panic!("Expected structural parse for '{}': {}", prefix, e));
@@ -128,7 +128,7 @@ fn test_float_operator_prefix_behavior() {
 
     // Typed partial parsing should remain available on these arithmetic-prefix
     // states to support completion.
-    for prefix in ["1.0 +", "10.0 /"] {
+    for prefix in ["1.0 +.", "10.0 /."] {
         let typed = p.partial_typed(prefix);
         assert!(
             typed.is_ok(),

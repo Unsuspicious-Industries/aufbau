@@ -122,6 +122,7 @@ pub fn sound_complete(
             .collect(),
     };
 
+    let mut prefix_synth = Synthesizer::new(grammar.clone(), "");
     let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
         .iter()
         .map(|(len, prefix)| {
@@ -132,7 +133,32 @@ pub fn sound_complete(
             let start = std::time::Instant::now();
 
             if *len == chars.len() {
-                // Fast path: if the full input already has a complete well-typed
+                let tokens = prefix_synth.feed(prefix.clone(), &ctx);
+                if let Ok(typed) = prefix_synth.partial_typed_ctx(&ctx) {
+                    if typed.is_complete() {
+                        let detail = PrefixDetail {
+                            prefix: prefix.clone(),
+                            ok: true,
+                            time_us: start.elapsed().as_micros(),
+                            states_explored: Some(0),
+                            visited_count: Some(0),
+                            visited_sample: vec![],
+                        };
+                        return (*len, detail, Some(prefix.clone()), None);
+                    }
+
+                    if !tokens.is_empty() {
+                        let detail = PrefixDetail {
+                            prefix: prefix.clone(),
+                            ok: true,
+                            time_us: start.elapsed().as_micros(),
+                            states_explored: Some(0),
+                            visited_count: Some(0),
+                            visited_sample: vec![],
+                        };
+                        return (*len, detail, Some(prefix.clone()), None);
+                    }
+                }
 
                 let result = complete(grammar, prefix, depth_budget, Some(ctx.clone()));
                 let elapsed_us = start.elapsed().as_micros();
@@ -180,19 +206,14 @@ pub fn sound_complete(
                 };
             }
 
-            // Use a fresh Synthesizer for each prefix so that depth hints
-            // learned from earlier (shorter) prefixes do not bleed into the
-            // parse of later prefixes.  A short prefix like "set" may parse at
-            // depth 1 (Variable), and reusing that hint for "set " then fails
-            // to find the deeper Bind partial tree that is the only valid
-            // continuation, producing a false soundness failure.
-            let mut prefix_synth = Synthesizer::new(grammar.clone(), prefix.clone());
-            let ok = match prefix_synth.partial() {
-                Ok(partial) => {
-                    let tokens = prefix_synth.completions_ctx(&ctx);
-                    prefix_ok(grammar, &ctx, &partial, &tokens)
+            let tokens = prefix_synth.feed(prefix.clone(), &ctx);
+            let ok = if !tokens.is_empty() {
+                true
+            } else {
+                match prefix_synth.partial() {
+                    Ok(partial) => prefix_ok(grammar, &ctx, &partial, &tokens),
+                    Err(_) => false,
                 }
-                Err(_) => false,
             };
 
             let elapsed_us = start.elapsed().as_micros();

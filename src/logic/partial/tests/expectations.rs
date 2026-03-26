@@ -8,11 +8,11 @@ fn stlc_var() {
     assert_parse_structurally_matches(
         grammars::stlc(),
         "x",
-        r#"(Expression @0 #1
-  (AtomicExpression @0 #1
-    (Variable @0 #1
-      (Identifier @0 $x #1
-        (T "x")))))"#,
+        r#"(Expression @0 #0
+  (AtomicExpression @0 #0
+    (Variable @0 #0
+      (Identifier @0 $x #0
+        (T "x" + "((([0-9]|[A-Z])|[a-z]))*")))))"#,
     );
 }
 
@@ -21,17 +21,17 @@ fn stlc_app() {
     assert_parse_structurally_matches(
         grammars::stlc(),
         "f x",
-        r#"(Expression @1 #2
-  (Application @0 #2
-    (Expression @0 $l #1
-      (AtomicExpression @0 #1
-        (Variable @0 #1
-          (Identifier @0 $x #1
-            (T "f")))))
-    (AtomicExpression @0 $r #1
-      (Variable @0 #1
-        (Identifier @0 $x #1
-          (T "x"))))))"#,
+        r#"(Expression @1 #0
+  (Application @0 #0
+    (Expression @0 $l #0
+      (AtomicExpression @0 #0
+        (Variable @0 #0
+          (Identifier @0 $x #0
+            (T "f" + "((([0-9]|[A-Z])|[a-z]))*")))))
+    (AtomicExpression @0 $r #0
+      (Variable @0 #0
+        (Identifier @0 $x #0
+          (T "x" + "((([0-9]|[A-Z])|[a-z]))*"))))))"#,
     );
 }
 
@@ -40,16 +40,10 @@ fn fun_int() {
     assert_parse_structurally_matches(
         grammars::fun(),
         "42",
-        r#"(Expression @0 #1
-  (IntBinary @0 #1
-    (Expression @2 $left #1
-      (Application @0 #1
-        (AtomicExpression @1 $func #1
-          (Integer @0 #1
-            (T "42")))
-        (T~ "")))
-    (IntOp @0 $op #0
-      (T~ ""))))"#,
+        r#"(Expression @4 #0
+  (AtomicExpression @1 #0
+    (Integer @0 #0
+      (T "42" + "[0-9]*"))))"#,
     );
 }
 
@@ -58,34 +52,24 @@ fn fun_lambda() {
     assert_parse_structurally_matches(
         grammars::fun(),
         "(x: Int) => x",
-        r#"(Expression @0 #7
-  (IntBinary @0 #7
-    (Expression @2 $left #7
-      (Application @0 #7
-        (AtomicExpression @4 $func #7
-          (Lambda @0 #7
-            (T "(")
-            (Identifier @0 $param #1
-              (T "x"))
-            (T ":")
-            (Type @0 $τ #1
-              (BaseType @0 #1
-                (TypeName @0 #1
-                  (T "Int"))))
-            (T ")")
-            (T "=>")
-            (Expression @1 $body #1
-              (FloatBinary @0 #1
-                (Expression @4 $left #1
-                  (AtomicExpression @0 #1
-                    (Variable @0 #1
-                      (Identifier @0 $x #1
-                        (T "x")))))
-                (FloatOp @0 $op #0
-                  (T~ ""))))))
-        (T~ "")))
-    (IntOp @2 $op #0
-      (T~ ""))))"#,
+        r#"(Expression @4 #0
+  (AtomicExpression @4 #0
+    (Lambda @0 #0
+      (T "(" + "")
+      (Identifier @0 $param #0
+        (T "x" + "(([0-9]|[a-z]))*"))
+      (T ":" + "")
+      (Type @0 $τ #0
+        (BaseType @0 #0
+          (TypeName @0 #0
+            (T "Int" + "(([0-9]|[a-z]))*"))))
+      (T ")" + "")
+      (T "=>" + "")
+      (Expression @4 $body #0
+        (AtomicExpression @0 #0
+          (Variable @0 #0
+            (Identifier @0 $x #0
+              (T "x" + "(([0-9]|[a-z]))*"))))))))"#,
     );
 }
 
@@ -94,28 +78,28 @@ fn imp_block() {
     assert_parse_structurally_matches(
         grammars::imp(),
         "{ let x: Int = 1; }",
-        r#"(Program @0 #9
-  (Block @0 $main #9
-    (T "{")
-    (Statements @0 $stmts #7
-      (Statement @0 $head #7
-        (Declaration @0 #7
-          (T "let")
-          (Identifier @0 $name #1
-            (T "x"))
-          (T ":")
-          (Type @0 $τ #1
-            (BaseType @0 #1
-              (TypeName @0 #1
-                (T "Int"))))
-          (T "=")
-          (Expression @2 $value #1
-            (AtomicExpr @1 #1
-              (Integer @0 #1
-                (T "1"))))
-          (T ";")))
+        r#"(Program @0 #0
+  (Block @0 $main #0
+    (T "{" + "")
+    (Statements @0 $stmts #0
+      (Statement @0 $head #0
+        (Declaration @0 #0
+          (T "let" + "")
+          (Identifier @0 $name #0
+            (T "x" + "((([0-9]|_)|[a-z]))*"))
+          (T ":" + "")
+          (Type @0 $τ #0
+            (BaseType @0 #0
+              (TypeName @0 #0
+                (T "Int" + ""))))
+          (T "=" + "")
+          (Expression @2 $value #0
+            (AtomicExpr @1 #0
+              (Integer @0 #0
+                (T "1" + "[0-9]*"))))
+          (T ";" + "")))
       (Statements @1 $tail #0))
-    (T "}")))"#,
+    (T "}" + "")))"#,
     );
 }
 
@@ -132,14 +116,14 @@ fn custom_left_rec() {
     assert_parse_structurally_matches(
         &grammar,
         "1 + 2",
-        r#"(start @0 #3
-  (Expr @0 #3
-    (Expr @1 #1
-      (Num @0 #1
-        (T "1")))
-    (T "+")
-    (Num @0 #1
-      (T "2"))))"#,
+        r#"(start @0 #0
+  (Expr @0 #0
+    (Expr @1 #0
+      (Num @0 #0
+        (T "1" + "[0-9]*")))
+    (T "+" + "")
+    (Num @0 #0
+      (T "2" + "[0-9]*"))))"#,
     );
 }
 
@@ -157,11 +141,11 @@ fn custom_partial_arrow() {
     assert_partial_structurally_matches(
         &grammar,
         "A-",
-        r#"(start @0 #2
-  (Type @0 #2
-    (BaseType @0 #1
-      (Identifier @0 #1
-        (T "A")))
-    (T~ "-")))"#,
+        r#"(start @0 #0
+  (Type @0 #0
+    (BaseType @0 #0
+      (Identifier @0 #0
+        (T "A" + "(([A-Z]|[a-z]))*")))
+    (T~ "-" ~ ">")))"#,
     );
 }

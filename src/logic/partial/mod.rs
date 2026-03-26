@@ -1,3 +1,8 @@
+pub mod state;
+pub use state::PrefixState;
+
+pub mod memo;
+
 pub mod parse;
 pub use parse::{ParseError, Parser, ParserStats, PartialParseOutcome};
 

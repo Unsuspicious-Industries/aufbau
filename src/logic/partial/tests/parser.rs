@@ -120,6 +120,24 @@ fn test_complex_grammar() {
 }
 
 #[test]
+fn test_persisted_memo_is_bounded() {
+    let spec = r#"
+    Atom ::= 'x' | 'y'
+    Pair ::= Atom Atom
+    Chain ::= Pair | Pair Chain
+    start ::= Chain
+    "#;
+    let g = Grammar::load(spec).unwrap();
+    let mut p = Parser::new(g)
+        .with_max_persisted_memo_entries(3)
+        .with_persist_window(1);
+
+    let _ = p.partial("x y x y");
+
+    assert!(p.cache_entry_count() <= 3);
+}
+
+#[test]
 fn test_binding_preservation() {
     let spec = r#"
     Number ::= /[0-9]+/

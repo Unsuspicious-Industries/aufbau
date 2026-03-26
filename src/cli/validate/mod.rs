@@ -128,6 +128,7 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
         if n > 0 {
             if let Err(e) = rayon::ThreadPoolBuilder::new()
                 .num_threads(n)
+                .stack_size(32 * 1024 * 1024)
                 .build_global()
             {
                 eprintln!("Warning: failed to set rayon thread pool: {}", e);

@@ -6,6 +6,8 @@ mod meta;
 mod rec;
 
 #[cfg(test)]
+mod edge;
+#[cfg(test)]
 mod expectations;
 #[cfg(test)]
 mod parser;

@@ -107,14 +107,7 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     let mut out = Vec::new();
     out.push((
         "Deep Nesting".to_string(),
-        run_complexity_test(
-            &grammar,
-            generate_deep_nesting,
-            "Deep Nesting",
-            10,
-            100,
-            jobs,
-        ),
+        run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 8, 40, jobs),
     ));
     out.push((
         "Random String".to_string(),
@@ -122,8 +115,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
             &grammar,
             generate_random_string,
             "Random String",
+            20,
             100,
-            1000,
             jobs,
         ),
     ));

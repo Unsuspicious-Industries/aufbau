@@ -353,6 +353,7 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
     );
     let pool = ThreadPoolBuilder::new()
         .num_threads(workers)
+        .stack_size(32 * 1024 * 1024)
         .build()
         .expect("failed to build completable thread pool");
 
