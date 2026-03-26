@@ -1,6 +1,19 @@
 use super::Symbol;
 use regex::Regex as ExternalRegex;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatKind {
+    Optional,
+    ZeroOrMore,
+    OneOrMore,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParsedSymbol {
+    pub symbol: Symbol,
+    pub repetition: Option<RepeatKind>,
+}
+
 // collection of utils for working with grammar definitions
 pub fn is_regex(pattern: &str) -> bool {
     // Only slash-delimited patterns: /regex/
@@ -93,7 +106,7 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
 
 /// Result of parsing a RHS: the concrete symbols plus any literal tokens encountered.
 pub struct ParsedRhs {
-    pub alternatives: Vec<Vec<Symbol>>,
+    pub alternatives: Vec<Vec<ParsedSymbol>>,
     pub literal_tokens: Vec<String>,
 }
 
@@ -110,11 +123,11 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
         let mut symbols_in_alt = Vec::new();
         let mut is_epsilon_alt = false;
         for token in alt.split_whitespace() {
-            let (base_token, binding) = split_binding(token)?;
-            ensure_no_repetition_suffix(&base_token)?;
+            let (repetition, token) = split_repetition_suffix(token);
+            let (base_token, binding) = split_binding(&token)?;
             if base_token == "ε" {
                 // epsion is for empty alternative
-                if binding.is_some() {
+                if binding.is_some() || repetition.is_some() {
                     return Err("Epsilon production cannot carry a binding".into());
                 }
                 if is_epsilon_alt || !symbols_in_alt.is_empty() {
@@ -130,9 +143,15 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
             }
             let mut symbol = Symbol::new(base_token);
             if let Some(binding) = binding {
+                if repetition.is_some() {
+                    return Err(
+                        "Bindings on repetition operators are not supported; bind the repeated item inside the production instead"
+                            .into(),
+                    );
+                }
                 symbol = symbol.attach_binding(binding);
             }
-            symbols_in_alt.push(symbol);
+            symbols_in_alt.push(ParsedSymbol { symbol, repetition });
         }
         if is_epsilon_alt {
             alternatives.push(Vec::new());
@@ -220,16 +239,22 @@ fn split_binding(token: &str) -> Result<(String, Option<String>), String> {
     Ok((value, Some(binding)))
 }
 
-fn ensure_no_repetition_suffix(token: &str) -> Result<(), String> {
-    if let Some(last) = token.chars().last() {
-        if matches!(last, '*' | '+' | '?') {
-            return Err(format!(
-                "Repetition operators (*, +, ?) are not supported anymore (found in '{}')",
-                token
-            ));
-        }
+fn split_repetition_suffix(token: &str) -> (Option<RepeatKind>, String) {
+    match token.chars().last() {
+        Some('?') if token.len() > 1 => (
+            Some(RepeatKind::Optional),
+            token[..token.len() - 1].to_string(),
+        ),
+        Some('*') if token.len() > 1 => (
+            Some(RepeatKind::ZeroOrMore),
+            token[..token.len() - 1].to_string(),
+        ),
+        Some('+') if token.len() > 1 => (
+            Some(RepeatKind::OneOrMore),
+            token[..token.len() - 1].to_string(),
+        ),
+        _ => (None, token.to_string()),
     }
-    Ok(())
 }
 
 fn literal_token_value(token: &str) -> Option<String> {

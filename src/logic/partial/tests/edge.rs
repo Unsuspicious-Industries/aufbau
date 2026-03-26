@@ -60,3 +60,44 @@ fn append_only_prefix_state_roundtrip_is_conservative() {
     assert!(!advanced.forest().roots().is_empty());
     assert_eq!(advanced.input(), "x x");
 }
+
+#[test]
+fn repetition_star_materializes_flat_children() {
+    let spec = r#"
+    Number ::= /[0-9]+/
+    start ::= Number*
+    "#;
+    let grammar = Grammar::load(spec).unwrap();
+    let mut parser = MetaParser::new(grammar);
+
+    let ast = parser.parse("1 2 3").unwrap();
+    let root = ast.complete().expect("complete tree");
+    assert_eq!(root.children.len(), 3);
+}
+
+#[test]
+fn repetition_plus_requires_one_item() {
+    let spec = r#"
+    Number ::= /[0-9]+/
+    start ::= Number+
+    "#;
+    let grammar = Grammar::load(spec).unwrap();
+    let mut parser = MetaParser::new(grammar.clone());
+
+    assert!(parser.parse("1 2").is_ok());
+    let mut parser = Parser::new(grammar);
+    assert!(parser.parse("").is_err());
+}
+
+#[test]
+fn repetition_optional_accepts_absence_without_extra_node() {
+    let spec = r#"
+    start ::= 'x'?
+    "#;
+    let grammar = Grammar::load(spec).unwrap();
+    let mut parser = MetaParser::new(grammar);
+
+    let ast = parser.parse("").unwrap();
+    let root = ast.complete().expect("complete tree");
+    assert!(root.children.is_empty());
+}

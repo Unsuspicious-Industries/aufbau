@@ -740,12 +740,12 @@ impl SppfForest {
         let mut sequences: Vec<Vec<Node>> = vec![Vec::new()];
 
         for child in children {
-            let choices: Vec<Node> = match child {
-                SppfChild::Terminal(t) => vec![Node::Terminal(t.clone())],
+            let choices: Vec<Vec<Node>> = match child {
+                SppfChild::Terminal(t) => vec![vec![Node::Terminal(t.clone())]],
                 SppfChild::Node(id) => self
                     .materialize_node(nodes, grammar, *id, memo, seen)
                     .into_iter()
-                    .map(Node::NonTerminal)
+                    .map(|nt| self.materialized_nodes_for(grammar, nt))
                     .collect(),
             };
 
@@ -757,7 +757,7 @@ impl SppfForest {
             for base in &sequences {
                 for choice in &choices {
                     let mut seq = base.clone();
-                    seq.push(choice.clone());
+                    seq.extend(choice.clone());
                     next.push(seq);
                 }
             }
@@ -849,7 +849,9 @@ impl SppfForest {
             SppfChild::Node(id) => {
                 let mut child_seen: HashSet<SppfNodeId> = HashSet::new();
                 let mut emit_nt = |nt: NonTerminal| -> bool {
-                    current.push(Node::NonTerminal(nt));
+                    let flattened = self.materialized_nodes_for(grammar, nt);
+                    let added = flattened.len();
+                    current.extend(flattened);
                     let keep = self.materialize_children_each(
                         nodes,
                         grammar,
@@ -859,7 +861,7 @@ impl SppfForest {
                         seen,
                         emit,
                     );
-                    current.pop();
+                    current.truncate(current.len().saturating_sub(added));
                     keep
                 };
                 if !self.materialize_node_each(nodes, grammar, *id, &mut child_seen, &mut emit_nt) {
@@ -867,6 +869,14 @@ impl SppfForest {
                 }
                 true
             }
+        }
+    }
+
+    fn materialized_nodes_for(&self, grammar: &Grammar, nt: NonTerminal) -> Vec<Node> {
+        if grammar.is_hidden_nonterminal(&nt.name) {
+            nt.children
+        } else {
+            vec![Node::NonTerminal(nt)]
         }
     }
 }
@@ -946,6 +956,10 @@ impl Terminal {
     }
 }
 
+fn symbol_is_repetition_helper(symbol: &Symbol) -> bool {
+    matches!(symbol, Symbol::Nonterminal { name, .. } if name.starts_with("__rep_"))
+}
+
 impl NonTerminal {
     pub fn new(
         name: String,
@@ -969,10 +983,18 @@ impl NonTerminal {
         if self.production.rhs.is_empty() {
             return true;
         }
-        if self.children.len() != self.production.rhs.len() {
+        if !self.is_variadic_repetition() && self.children.len() != self.production.rhs.len() {
             return false;
         }
         self.children.iter().all(|child| child.is_complete())
+    }
+
+    pub fn expected_children_len(&self) -> usize {
+        if self.is_variadic_repetition() {
+            self.children.len()
+        } else {
+            self.production.rhs.len()
+        }
     }
 
     pub fn is_extensible(&self) -> bool {
@@ -985,6 +1007,10 @@ impl NonTerminal {
             Some(Node::Terminal(Terminal::Partial { .. })) => true,
             None => false,
         }
+    }
+
+    fn is_variadic_repetition(&self) -> bool {
+        self.production.rhs.iter().any(symbol_is_repetition_helper)
     }
 
     pub fn frontier(&self) -> Option<usize> {

@@ -166,7 +166,7 @@ impl TypedNode {
             ty,
             complete: nt.is_complete(),
             alt_index: nt.alternative_index,
-            rhs_len: nt.production.rhs.len(),
+            rhs_len: nt.expected_children_len(),
         }
     }
 }

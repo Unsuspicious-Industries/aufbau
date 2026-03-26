@@ -31,7 +31,7 @@ pub(crate) type MemoTable = HashMap<ParseMemoKey, MemoEntry>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct SharedMemoKey {
-    pub grammar: String,
+    pub grammar_id: u64,
     pub input: String,
     pub max_recursion: usize,
 }

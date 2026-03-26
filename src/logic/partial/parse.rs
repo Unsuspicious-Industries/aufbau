@@ -481,20 +481,24 @@ impl Parser {
     }
 
     fn shared_seed_memo_for(&self, input: &str) -> Option<MemoTable> {
-        self.preserve_cache_across_parses
+        (!self.grammar.name.is_empty() && self.preserve_cache_across_parses)
             .then(|| shared_memo_get(&self.shared_memo_key(input)))
             .flatten()
     }
 
     fn store_shared_memo(&self, input: &str, memo: &MemoTable) {
-        if self.preserve_cache_across_parses {
+        if self.preserve_cache_across_parses && !self.grammar.name.is_empty() {
             shared_memo_put(self.shared_memo_key(input), memo.clone());
         }
     }
 
     fn shared_memo_key(&self, input: &str) -> SharedMemoKey {
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.grammar.hash(&mut hasher);
         SharedMemoKey {
-            grammar: self.grammar.name.clone(),
+            grammar_id: hasher.finish(),
             input: input.to_string(),
             max_recursion: self.max_recursion,
         }

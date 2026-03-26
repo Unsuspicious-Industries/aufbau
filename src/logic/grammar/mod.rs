@@ -10,7 +10,7 @@ pub use tokenizer::{Segment, Tokenizer, DEFAULT_DELIMITERS};
 mod tests;
 
 use crate::regex::Regex as DerivativeRegex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 
 // ANCHOR: Symbol
@@ -174,6 +174,7 @@ pub struct Grammar {
     pub delimiters: Vec<char>,
     pub start: Option<String>,
     pub binding_map: BindingMap,
+    pub hidden_nonterminals: HashSet<String>,
     /// Cached tokenizer (built lazily from special_tokens and delimiters)
     tokenizer: Option<Tokenizer>,
 }
@@ -203,6 +204,9 @@ impl std::hash::Hash for Grammar {
                 prods.hash(state);
             }
         }
+        let mut hidden: Vec<&String> = self.hidden_nonterminals.iter().collect();
+        hidden.sort();
+        hidden.hash(state);
         self.special_tokens.hash(state);
         self.delimiters.hash(state);
         self.start.hash(state);
@@ -219,6 +223,7 @@ impl Default for Grammar {
             delimiters: DEFAULT_DELIMITERS.to_vec(),
             start: None,
             binding_map: BindingMap::new(),
+            hidden_nonterminals: HashSet::new(),
             tokenizer: None,
         }
     }
@@ -258,6 +263,14 @@ impl Grammar {
     /// Add a production rule to the grammar.
     pub fn add_production(&mut self, nt: String, prod: Production) {
         self.productions.entry(nt.clone()).or_default().push(prod);
+    }
+
+    pub fn add_hidden_nonterminal(&mut self, nt: String) {
+        self.hidden_nonterminals.insert(nt);
+    }
+
+    pub fn is_hidden_nonterminal(&self, nt: &str) -> bool {
+        self.hidden_nonterminals.contains(nt)
     }
 
     /// Set the start nonterminal.

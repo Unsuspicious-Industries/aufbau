@@ -126,3 +126,31 @@ fn repeated_binding_produces_multiple_paths() {
     assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
     assert_eq!(steps(&paths[1]), vec![(2, Some(0))]);
 }
+
+#[test]
+fn repetition_helpers_preserve_inner_binding_paths() {
+    let spec = r#"
+    Item(item) ::= Number[x]
+    Seq(seq) ::= Item*
+
+    Γ ⊢ x : 'number'
+    ----------------- (item)
+    'number'
+    "#;
+
+    let grammar = Grammar::load(spec).expect("load repetition grammar");
+    let paths = grammar
+        .binding_map
+        .get("x", "item")
+        .expect("binding paths for repeated item");
+
+    assert_eq!(paths.len(), 1);
+    assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
+    assert!(
+        grammar
+            .productions
+            .keys()
+            .any(|name| grammar.is_hidden_nonterminal(name)),
+        "repetition expansion should introduce hidden helpers"
+    );
+}
