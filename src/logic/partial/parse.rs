@@ -3,16 +3,17 @@ use std::collections::{HashMap, HashSet};
 use crate::debug_trace;
 use crate::logic::grammar::{Grammar, Production, Segment, Symbol};
 use crate::logic::partial::memo::{
-    clear_shared_memo, shared_memo_get, shared_memo_put, MemoEntry, MemoTable, ParseMemoKey,
-    ParsedNt, SharedMemoKey,
+    clear_shared_memo, MemoEntry, MemoTable, ParseMemoKey, ParsedNt,
 };
-use crate::logic::partial::state::{ParseState, PrefixState};
+use crate::logic::partial::state::{ParseState, PrefixState, SeedMemo};
 use crate::logic::partial::structure::{
-    register_grammar, PackedAlternative, SppfChild, SppfForest, SppfNode, SppfNodeId, Terminal,
+    grammar_store_key, register_grammar, register_node, PackedAlternative, SppfChild, SppfForest,
+    SppfNode, SppfNodeId, Terminal,
 };
 use crate::logic::segment::SegmentRange;
 use crate::regex::{PrefixStatus, Regex as DerivativeRegex};
 use serde::Serialize;
+use std::sync::Arc;
 
 /// Shifts indices [0..n) by `level` positions, wrapping around.
 /// Different recursion depths try productions in different orders to distribute search effort.
@@ -27,14 +28,6 @@ fn prng_shuffle(n: usize, level: usize) -> Vec<usize> {
         return Vec::new();
     }
     (0..n).map(|i| (i + level) % n).collect()
-}
-
-fn hash_input(input: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    input.hash(&mut hasher);
-    hasher.finish()
 }
 
 /*
@@ -236,7 +229,7 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(grammar: Grammar) -> Self {
-        register_grammar(grammar.name.clone(), grammar.clone());
+        register_grammar(grammar_store_key(&grammar), grammar.clone());
         let reserved_tokens: HashSet<String> = grammar.special_tokens.iter().cloned().collect();
         let mut forest = SppfForest::new();
         forest.set_grammar(grammar.clone());
@@ -265,6 +258,10 @@ impl Parser {
     /// Set the maximum recursion depth for left-recursive grammars
     pub fn set_max_recursion(&mut self, depth: usize) {
         self.max_recursion = depth;
+    }
+
+    pub fn max_recursion(&self) -> usize {
+        self.max_recursion
     }
 
     pub fn with_persist_window(mut self, window: usize) -> Self {
@@ -320,15 +317,15 @@ impl Parser {
     }
 
     pub fn prefix(&mut self, input: &str) -> Result<PrefixState, ParseError> {
-        self.prefix_with_seed(input, MemoTable::new())
+        self.prefix_with_seed(input, SeedMemo::empty())
     }
 
     pub fn advance(&mut self, prev: &PrefixState, input: &str) -> Result<PrefixState, ParseError> {
-        if input != prev.input() || prev.max_recursion() != self.max_recursion {
+        if !input.starts_with(prev.input()) || prev.max_recursion() != self.max_recursion {
             return self.prefix(input);
         }
 
-        let state = self.prefix_with_seed(input, prev.stable_memo())?;
+        let state = self.prefix_with_seed(input, prev.seed_memo())?;
         Ok(state)
     }
 
@@ -337,11 +334,11 @@ impl Parser {
         prev: PrefixState,
         input: &str,
     ) -> Result<PrefixState, ParseError> {
-        if input != prev.input() || prev.max_recursion() != self.max_recursion {
+        if !input.starts_with(prev.input()) || prev.max_recursion() != self.max_recursion {
             return self.prefix(input);
         }
 
-        let state = self.prefix_with_seed(input, prev.into_stable_memo())?;
+        let state = self.prefix_with_seed(input, prev.into_seed_memo())?;
         Ok(state)
     }
 
@@ -383,10 +380,9 @@ impl Parser {
             Ok(prefix) => PartialParseOutcome::Success {
                 ast: {
                     if self.preserve_cache_across_parses && !prefix.hit_depth_limit() {
-                        self.parse_cache = prefix.stable_memo();
+                        self.parse_cache = prefix.seed_memo().memo.as_ref().clone();
                         self.cached_input = Some(input.to_string());
                         self.cached_recursion = Some(self.max_recursion);
-                        self.store_shared_memo(input, &self.parse_cache);
                     }
                     prefix.into_forest()
                 },
@@ -395,18 +391,13 @@ impl Parser {
         }
     }
 
-    fn prefix_with_seed(
-        &mut self,
-        input: &str,
-        seed: MemoTable,
-    ) -> Result<PrefixState, ParseError> {
+    fn prefix_with_seed(&mut self, input: &str, seed: SeedMemo) -> Result<PrefixState, ParseError> {
         self.last_hit_depth_limit = false;
         self.last_stats = ParserStats::default();
 
         debug_trace!("parser2      ", "Starting parse of input: '{}'", input);
 
         let segments = self.tokenize(input).map_err(ParseError::Tokenization)?;
-        let input_id = hash_input(input);
         debug_trace!("parser2      ", "Tokenized into {:?}", segments);
 
         let start_nt = self
@@ -421,7 +412,6 @@ impl Parser {
         let mut forest = std::mem::take(&mut self.forest);
         let roots = self
             .parse_nonterminal(
-                input_id,
                 &segments,
                 &start_nt,
                 None,
@@ -436,10 +426,12 @@ impl Parser {
         let depth_limited = parse_state.hit_depth_limit;
         self.last_hit_depth_limit = depth_limited;
 
+        let mut seen_roots = HashSet::new();
         let valid_roots: Vec<SppfNodeId> = roots
             .into_iter()
             .filter(|r| r.consumed == total_segments)
             .map(|r| r.node_id)
+            .filter(|node_id| seen_roots.insert(*node_id))
             .collect();
 
         if valid_roots.is_empty() {
@@ -467,40 +459,20 @@ impl Parser {
         ))
     }
 
-    fn take_seed_memo_for(&mut self, input: &str) -> MemoTable {
+    fn take_seed_memo_for(&mut self, input: &str) -> SeedMemo {
         if !self.preserve_cache_across_parses {
-            return MemoTable::new();
+            return SeedMemo::empty();
         }
 
         match (&self.cached_input, self.cached_recursion) {
             (Some(cached), Some(depth)) if input == cached && depth == self.max_recursion => {
-                std::mem::take(&mut self.parse_cache)
+                SeedMemo {
+                    memo: Arc::new(std::mem::take(&mut self.parse_cache)),
+                    frontier: Vec::new(),
+                    total_segments: 0,
+                }
             }
-            _ => self.shared_seed_memo_for(input).unwrap_or_default(),
-        }
-    }
-
-    fn shared_seed_memo_for(&self, input: &str) -> Option<MemoTable> {
-        (!self.grammar.name.is_empty() && self.preserve_cache_across_parses)
-            .then(|| shared_memo_get(&self.shared_memo_key(input)))
-            .flatten()
-    }
-
-    fn store_shared_memo(&self, input: &str, memo: &MemoTable) {
-        if self.preserve_cache_across_parses && !self.grammar.name.is_empty() {
-            shared_memo_put(self.shared_memo_key(input), memo.clone());
-        }
-    }
-
-    fn shared_memo_key(&self, input: &str) -> SharedMemoKey {
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.grammar.hash(&mut hasher);
-        SharedMemoKey {
-            grammar_id: hasher.finish(),
-            input: input.to_string(),
-            max_recursion: self.max_recursion,
+            _ => SeedMemo::empty(),
         }
     }
 
@@ -560,14 +532,12 @@ impl Parser {
 
     fn memo_key(
         &self,
-        input_id: u64,
         nt_name: &str,
         binding: &Option<String>,
         abs_pos: usize,
         level: usize,
     ) -> ParseMemoKey {
         ParseMemoKey {
-            input_id,
             nt_name: nt_name.to_string(),
             binding: binding.clone(),
             abs_pos,
@@ -580,9 +550,14 @@ impl Parser {
         parse_state: &mut ParseState,
         key: &ParseMemoKey,
     ) -> Option<Vec<ParsedNt>> {
-        if let Some(cached) = parse_state.memo.get(key) {
+        if let Some(cached) = parse_state.memoized(key) {
             self.last_stats.nt_cache_hits += 1;
-            return Some(cached.all());
+            return Some(cached);
+        }
+
+        if parse_state.seed_entry_is_exact(key) {
+            self.last_stats.nt_cache_hits += 1;
+            return Some(parse_state.seed_outcomes(key));
         }
 
         self.last_stats.nt_cache_misses += 1;
@@ -606,7 +581,6 @@ impl Parser {
 
     fn parse_nonterminal(
         &mut self,
-        input_id: u64,
         segments: &[Segment],
         nt_name: &str,
         binding: Option<String>,
@@ -644,7 +618,7 @@ impl Parser {
             return Ok(Vec::new());
         }
 
-        let key = self.memo_key(input_id, nt_name, &binding, abs_pos, level);
+        let key = self.memo_key(nt_name, &binding, abs_pos, level);
 
         if let Some(cached) = self.memo_lookup(parse_state, &key) {
             return Ok(cached);
@@ -667,8 +641,29 @@ impl Parser {
         // preventing systematic bias toward earlier productions
         let shuffled_indices = prng_shuffle(productions.len(), level);
 
-        let mut outcomes = Vec::new();
-        let mut seen = HashSet::new();
+        let mut outcomes = parse_state.seed_outcomes(&key);
+        let mut packed_nodes = outcomes
+            .iter()
+            .map(|parsed| (parsed.consumed, parsed.node_id))
+            .collect::<HashMap<_, _>>();
+        let mut seen = outcomes
+            .iter()
+            .map(|parsed| {
+                let children = forest
+                    .node(parsed.node_id)
+                    .and_then(|node| node.alternatives.first().cloned())
+                    .map(|alt| {
+                        (
+                            alt.alternative_index,
+                            alt.children,
+                            parsed.consumed,
+                            parsed.complete,
+                        )
+                    })
+                    .unwrap_or((usize::MAX, Vec::new(), parsed.consumed, parsed.complete));
+                children
+            })
+            .collect::<HashSet<_>>();
         let grammar_name = forest.grammar_name().to_string();
 
         for &alt_idx in &shuffled_indices {
@@ -693,15 +688,7 @@ impl Parser {
                     .join(" ")
             );
 
-            match self.parse_production(
-                input_id,
-                segments,
-                &prod,
-                abs_pos,
-                level,
-                parse_state,
-                forest,
-            ) {
+            match self.parse_production(segments, &prod, abs_pos, level, parse_state, forest) {
                 Ok(prod_outcomes) => {
                     if prod_outcomes.is_empty() {
                         debug_trace!(
@@ -735,14 +722,19 @@ impl Parser {
                                 continue;
                             }
 
-                            let node_id = forest.intern_node(SppfNode {
-                                name: nt_name.to_string(),
-                                grammar: grammar_name.clone(),
-                                binding: binding.clone(),
-                                abs_pos,
-                                consumed_segments: 0,
-                                alternatives: vec![],
-                                ty: None,
+                            let node_id = *packed_nodes.entry(consumed).or_insert_with(|| {
+                                register_node(
+                                    &grammar_name,
+                                    SppfNode {
+                                        name: nt_name.to_string(),
+                                        grammar: grammar_name.clone(),
+                                        binding: binding.clone(),
+                                        abs_pos,
+                                        consumed_segments: consumed,
+                                        alternatives: vec![],
+                                        ty: None,
+                                    },
+                                )
                             });
                             forest.add_alternative(
                                 node_id,
@@ -798,7 +790,6 @@ impl Parser {
     /// Each symbol parse is O(1) with memoization
     fn parse_production(
         &mut self,
-        input_id: u64,
         segments: &[Segment],
         prod: &Production,
         abs_pos: usize,
@@ -826,15 +817,7 @@ impl Parser {
             return Ok(vec![vec![]]);
         }
 
-        self.parse_symbols(
-            input_id,
-            segments,
-            &prod.rhs,
-            abs_pos,
-            level,
-            parse_state,
-            forest,
-        )
+        self.parse_symbols(segments, &prod.rhs, abs_pos, level, parse_state, forest)
     }
 
     /// Parse a sequence of symbols
@@ -851,7 +834,6 @@ impl Parser {
     /// This is the main source of complexity in the parser
     fn parse_symbols(
         &mut self,
-        input_id: u64,
         segments: &[Segment],
         symbols: &[Symbol],
         abs_pos: usize,
@@ -867,15 +849,8 @@ impl Parser {
         let first_sym = &symbols[0];
         let rest_syms = &symbols[1..];
 
-        let first_parses = self.parse_symbol(
-            input_id,
-            segments,
-            first_sym,
-            abs_pos,
-            level,
-            parse_state,
-            forest,
-        )?;
+        let first_parses =
+            self.parse_symbol(segments, first_sym, abs_pos, level, parse_state, forest)?;
 
         // If no parses for first symbol, this production fails
         // ensure early exit
@@ -911,7 +886,6 @@ impl Parser {
             } else {
                 self.last_stats.suffix_cache_misses += 1;
                 let parsed = self.parse_symbols(
-                    input_id,
                     remaining_segments,
                     rest_syms,
                     new_abs_pos,
@@ -966,7 +940,6 @@ impl Parser {
     /// Nonterminal: O(p) where p is the number of productions
     fn parse_symbol(
         &mut self,
-        input_id: u64,
         segments: &[Segment],
         symbol: &Symbol,
         abs_pos: usize,
@@ -980,7 +953,6 @@ impl Parser {
             }
             Symbol::Nonterminal { name, binding } => {
                 let nts = self.parse_nonterminal(
-                    input_id,
                     segments,
                     name,
                     binding.clone(),

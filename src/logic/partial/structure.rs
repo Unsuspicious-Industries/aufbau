@@ -4,6 +4,7 @@ use crate::logic::segment::SegmentRange;
 use crate::logic::typing::Type;
 use crate::regex::Regex as DerivativeRegex;
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex, OnceLock};
 
 pub type SppfNodeId = usize;
@@ -70,6 +71,16 @@ fn global_store() -> &'static Mutex<GlobalStore> {
             icache: HashMap::new(),
         })
     })
+}
+
+pub(crate) fn grammar_store_key(grammar: &Grammar) -> String {
+    if !grammar.name.is_empty() {
+        return grammar.name.clone();
+    }
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    grammar.hash(&mut hasher);
+    format!("anon:{:016x}", hasher.finish())
 }
 
 pub fn register_node(grammar_name: &str, node: SppfNode) -> SppfNodeId {
@@ -230,9 +241,7 @@ impl SppfForest {
     }
 
     pub fn set_grammar(&mut self, grammar: Grammar) {
-        if !grammar.name.is_empty() {
-            self.grammar_name = grammar.name.clone();
-        }
+        self.grammar_name = grammar_store_key(&grammar);
         self.grammar = Some(grammar);
     }
 
@@ -356,25 +365,22 @@ impl SppfForest {
         self.roots.is_empty()
     }
 
-    pub fn intern_node(&mut self, node: SppfNode) -> SppfNodeId {
-        register_node(&self.grammar_name, node)
-    }
-
     pub fn node(&self, id: SppfNodeId) -> Option<SppfNode> {
         get_node(&self.grammar_name, id)
     }
 
     pub fn from_trees(roots: Vec<NonTerminal>, input: String, grammar: Grammar) -> Self {
-        register_grammar(grammar.name.clone(), grammar.clone());
+        let grammar_key = grammar_store_key(&grammar);
+        register_grammar(grammar_key.clone(), grammar.clone());
 
         // Find start nt from first root
         let start_nt = roots.first().map(|r| r.name.clone()).unwrap_or_default();
 
         // Check cache first
-        if let Some(cached_id) = get_cached_node(&grammar.name, &input, &start_nt) {
+        if let Some(cached_id) = get_cached_node(&grammar_key, &input, &start_nt) {
             return Self {
                 roots: vec![cached_id],
-                grammar_name: grammar.name.clone(),
+                grammar_name: grammar_key.clone(),
                 grammar: Some(grammar),
                 input,
             };
@@ -399,7 +405,7 @@ impl SppfForest {
                     });
                     if is_full {
                         drop(store);
-                        cache_full_node(&grammar.name, &input, &start_nt, root_id);
+                        cache_full_node(&grammar_key, &input, &start_nt, root_id);
                     }
                 }
             }
@@ -407,7 +413,7 @@ impl SppfForest {
 
         Self {
             roots: root_ids,
-            grammar_name: grammar.name.clone(),
+            grammar_name: grammar_key,
             grammar: Some(grammar),
             input,
         }
@@ -577,7 +583,7 @@ impl SppfForest {
         let grammar_name = if !self.grammar_name.is_empty() {
             self.grammar_name.clone()
         } else {
-            grammar.name.clone()
+            grammar_store_key(&grammar)
         };
         let store = global_store().lock().expect("store poisoned");
         let Some(pool) = store.nodes.get(&grammar_name) else {
@@ -628,7 +634,7 @@ impl SppfForest {
         let grammar_name = if !self.grammar_name.is_empty() {
             self.grammar_name.clone()
         } else {
-            grammar.name.clone()
+            grammar_store_key(&grammar)
         };
         let store = global_store().lock().expect("store poisoned");
         let Some(pool) = store.nodes.get(&grammar_name) else {
@@ -672,7 +678,7 @@ impl SppfForest {
         let grammar_name = if !self.grammar_name.is_empty() {
             self.grammar_name.clone()
         } else {
-            grammar.name.clone()
+            grammar_store_key(&grammar)
         };
         let store = global_store().lock().expect("store poisoned");
         let Some(pool) = store.nodes.get(&grammar_name) else {

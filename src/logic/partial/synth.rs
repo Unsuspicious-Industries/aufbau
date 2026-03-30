@@ -1,7 +1,7 @@
 use crate::debug_debug;
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::completion::CompletionSet;
-use crate::logic::partial::{MetaParser, PrefixState, SppfForest};
+use crate::logic::partial::{MetaParser, Parser, PrefixState, SppfForest};
 use crate::logic::typing::gather_terminals_typed;
 use crate::logic::typing::tree::TypedNode;
 use crate::logic::typing::{gather_raw_types, Context, TypedAST};
@@ -186,34 +186,61 @@ impl Synthesizer {
     pub fn feed(&mut self, input: impl Into<String>, ctx: &Context) -> CompletionSet {
         let next_input = input.into();
 
-        if self.tree.is_some() {
-            if let Some(suffix) = next_input.strip_prefix(&self.input) {
-                let trimmed = suffix.trim();
-                let single_token_suffix = !trimmed.is_empty()
-                    && trimmed.len() <= 32
-                    && !trimmed.chars().any(char::is_whitespace)
-                    && suffix
-                        .chars()
-                        .all(|ch| ch.is_whitespace() || trimmed.contains(ch));
-
-                if single_token_suffix {
-                    if let Ok((typed, extended)) = self.try_extend(trimmed, ctx) {
-                        if extended == next_input {
-                            let key = typed_cache_key(&extended, ctx);
-                            self.typed_memo
-                                .borrow_mut()
-                                .insert(key, Ok(Arc::new(typed.clone())));
-                            self.input = extended;
-                            self.tree = Some(typed.clone());
-                            return typed.completions(&self.grammar);
-                        }
-                    }
-                }
-            }
+        if self.tree.is_some()
+            && let Some(tokens) = self.append_only_tokens_for(&next_input)
+            && let Some(tokens) = self.try_append_only_incremental(tokens, &next_input, ctx)
+        {
+            return tokens;
         }
 
         self.input = next_input;
         self.completions_ctx(ctx)
+    }
+
+    fn append_only_tokens_for(&self, next_input: &str) -> Option<Vec<String>> {
+        let suffix = next_input.strip_prefix(&self.input)?;
+        if suffix.is_empty() {
+            return Some(Vec::new());
+        }
+
+        if suffix.trim().is_empty() {
+            return Some(Vec::new());
+        }
+
+        self.grammar
+            .tokenize(suffix)
+            .ok()
+            .map(|segments| segments.into_iter().map(|segment| segment.text()).collect())
+    }
+
+    fn try_append_only_incremental(
+        &mut self,
+        tokens: Vec<String>,
+        next_input: &str,
+        ctx: &Context,
+    ) -> Option<CompletionSet> {
+        let original_input = self.input.clone();
+        let original_tree = self.tree.clone();
+
+        for token in tokens {
+            if self.extend(&token, ctx).is_err() {
+                self.input = original_input;
+                self.tree = original_tree;
+                return None;
+            }
+        }
+
+        if !same_tokenization(&self.grammar, &self.input, next_input) {
+            self.input = original_input;
+            self.tree = original_tree;
+            return None;
+        }
+
+        let typed = self.tree.clone()?;
+        let key = typed_cache_key(next_input, ctx);
+        self.typed_memo.borrow_mut().insert(key, Ok(Arc::new(typed.clone())));
+        self.input = next_input.to_string();
+        Some(typed.completions(&self.grammar))
     }
 
     pub fn partial(&mut self) -> Result<SppfForest, String> {
@@ -244,7 +271,16 @@ impl Synthesizer {
         match self.cached_typed_ctx_ref(&input, ctx) {
             Ok(typed) => {
                 self.tree = Some(typed.as_ref().clone());
-                let tokens = typed.as_ref().completions(&self.grammar);
+                let local_terms = typed
+                    .roots
+                    .iter()
+                    .flat_map(gather_terminals_typed)
+                    .collect::<Vec<_>>();
+                let tokens = self.refine_tokens_for_typed_extensions(
+                    typed.as_ref().completions(&self.grammar),
+                    ctx,
+                    &local_terms,
+                );
                 debug_debug!(
                     "completion",
                     "completions: input='{}' tokens={}",
@@ -489,12 +525,76 @@ impl Synthesizer {
         let typed = self
             .cached_partial_ref(input)?
             .typed_ctx(&self.grammar, ctx)
+            .or_else(|err| {
+                if err != "No well-typed trees" {
+                    return Err(err);
+                }
+
+                let mut parser = Parser::new(self.grammar.clone()).with_max_recursion(
+                    self.meta
+                        .last_used_depth()
+                        .unwrap_or(self.meta.parser().max_recursion()),
+                );
+                let ast = parser
+                    .partial(input)
+                    .into_result()
+                    .map_err(|e| e.to_string())?;
+                ast.typed_ctx(&self.grammar, ctx)
+            })
             .map(Arc::new);
 
         let mut typed_memo = self.typed_memo.borrow_mut();
         typed_memo.clear();
         typed_memo.insert(key, typed.clone());
         typed
+    }
+
+    fn refine_tokens_for_typed_extensions(
+        &mut self,
+        tokens: CompletionSet,
+        ctx: &Context,
+        local_terms: &[String],
+    ) -> CompletionSet {
+        let refined = tokens
+            .iter()
+            .filter_map(|token| self.refine_token_for_typed_extension(token, ctx, local_terms))
+            .collect::<Vec<_>>();
+        CompletionSet::from_tokens(refined)
+    }
+
+    fn refine_token_for_typed_extension(
+        &mut self,
+        token: &DerivativeRegex,
+        ctx: &Context,
+        local_terms: &[String],
+    ) -> Option<DerivativeRegex> {
+        if let Some(example) = token.example() {
+            if self.try_extend(&example, ctx).is_ok() {
+                return Some(token.clone());
+            }
+        }
+
+        // Not a heuristic: if a completion regex is standing in for an identifier
+        // continuation, the current context gives an exact set of admissible
+        // suffixes for that partial identifier.
+        if let Some(fragment) = trailing_identifier_fragment(&self.input).map(str::to_string) {
+            for name in ctx.bindings.keys() {
+                if let Some(suffix) = name.strip_prefix(&fragment) {
+                    if !suffix.is_empty()
+                        && token.matches(suffix)
+                        && self.try_extend(suffix, ctx).is_ok()
+                    {
+                        return Some(DerivativeRegex::literal(suffix));
+                    }
+                }
+            }
+        }
+
+        self.regex_gather_candidates(token)
+            .into_iter()
+            .chain(local_terms.iter().cloned())
+            .find(|candidate| self.try_extend(candidate, ctx).is_ok())
+            .map(|candidate| DerivativeRegex::literal(&candidate))
     }
 
     // Previously the synthesizer kept several LRU caches here. Those have
@@ -538,6 +638,27 @@ fn context_cache_key(ctx: &Context) -> String {
         .collect::<Vec<_>>()
         .join("|");
     format!("b:{};u:{}", b, u)
+}
+
+fn trailing_identifier_fragment(input: &str) -> Option<&str> {
+    let end = input.len();
+    let start = input
+        .char_indices()
+        .rev()
+        .take_while(|(_, ch)| ch.is_ascii_alphanumeric() || *ch == '_')
+        .last()
+        .map(|(idx, _)| idx)?;
+    Some(&input[start..end])
+}
+
+fn same_tokenization(grammar: &Grammar, left: &str, right: &str) -> bool {
+    match (grammar.tokenize(left), grammar.tokenize(right)) {
+        (Ok(left_segments), Ok(right_segments)) => left_segments
+            .iter()
+            .map(|segment| segment.as_str())
+            .eq(right_segments.iter().map(|segment| segment.as_str())),
+        _ => false,
+    }
 }
 
 fn collect_regex_seed_candidates(grammar: &Grammar) -> Vec<String> {

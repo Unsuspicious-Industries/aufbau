@@ -3,11 +3,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
-const DEFAULT_SHARED_MEMO_ENTRY_LIMIT: usize = 8192;
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 pub(crate) struct ParseMemoKey {
-    pub input_id: u64,
     pub nt_name: String,
     pub binding: Option<String>,
     pub abs_pos: usize,
@@ -29,14 +26,7 @@ pub(crate) struct MemoEntry {
 
 pub(crate) type MemoTable = HashMap<ParseMemoKey, MemoEntry>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct SharedMemoKey {
-    pub grammar_id: u64,
-    pub input: String,
-    pub max_recursion: usize,
-}
-
-static SHARED_MEMO: OnceLock<Mutex<HashMap<SharedMemoKey, MemoTable>>> = OnceLock::new();
+static SHARED_MEMO: OnceLock<Mutex<()>> = OnceLock::new();
 
 impl MemoEntry {
     pub fn from_outcomes(outcomes: Vec<ParsedNt>) -> Self {
@@ -69,47 +59,10 @@ impl MemoEntry {
     }
 }
 
-pub(crate) fn stable_memo(table: &MemoTable) -> MemoTable {
-    table
-        .iter()
-        .filter_map(|(key, entry)| {
-            let stable = entry.stable_only();
-            (!stable.is_empty()).then(|| (key.clone(), stable))
-        })
-        .collect()
-}
-
-pub(crate) fn shared_memo_get(key: &SharedMemoKey) -> Option<MemoTable> {
-    shared_memo_store()
-        .lock()
-        .expect("shared memo poisoned")
-        .get(key)
-        .cloned()
-}
-
-pub(crate) fn shared_memo_put(key: SharedMemoKey, table: MemoTable) {
-    let mut store = shared_memo_store().lock().expect("shared memo poisoned");
-    store.insert(key, limit_entries(table));
-}
-
 pub(crate) fn clear_shared_memo() {
-    shared_memo_store()
-        .lock()
-        .expect("shared memo poisoned")
-        .clear();
+    let _guard = shared_memo_store().lock().expect("shared memo poisoned");
 }
 
-fn shared_memo_store() -> &'static Mutex<HashMap<SharedMemoKey, MemoTable>> {
-    SHARED_MEMO.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn limit_entries(table: MemoTable) -> MemoTable {
-    if table.len() <= DEFAULT_SHARED_MEMO_ENTRY_LIMIT {
-        return table;
-    }
-
-    table
-        .into_iter()
-        .take(DEFAULT_SHARED_MEMO_ENTRY_LIMIT)
-        .collect()
+fn shared_memo_store() -> &'static Mutex<()> {
+    SHARED_MEMO.get_or_init(|| Mutex::new(()))
 }

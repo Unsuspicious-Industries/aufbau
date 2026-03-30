@@ -1,3 +1,4 @@
+use crate::exp::safe::{self, SafeLimits};
 use crate::logic::grammar::Grammar;
 use crate::logic::partial::memo::clear_shared_memo;
 use crate::logic::partial::{
@@ -15,22 +16,32 @@ type Suite = (&'static str, Grammar, usize, fn(usize) -> String);
 
 #[derive(Debug, Clone)]
 pub struct ExpConfig {
+    pub include_safe: bool,
     pub max_n: usize,
     pub include_standard: bool,
     pub include_incremental: bool,
     pub max_prefixes: usize,
     pub include_drivers: bool,
+    pub safe_max_steps: usize,
+    pub safe_only: Option<String>,
+    pub safe_max_step_ms: u64,
+    pub safe_max_rss_kb: u64,
     pub output: Option<PathBuf>,
 }
 
 impl Default for ExpConfig {
     fn default() -> Self {
         Self {
+            include_safe: true,
             max_n: 2,
             include_standard: false,
             include_incremental: false,
             max_prefixes: 2,
             include_drivers: true,
+            safe_max_steps: 6,
+            safe_only: None,
+            safe_max_step_ms: 250,
+            safe_max_rss_kb: 256 * 1024,
             output: None,
         }
     }
@@ -52,6 +63,17 @@ struct Sample {
 }
 
 pub fn run(config: ExpConfig) -> Value {
+    let safe_report = config.include_safe.then(|| {
+        safe::run(
+            SafeLimits {
+                max_steps: config.safe_max_steps.max(1),
+                max_step_ms: config.safe_max_step_ms.max(1),
+                max_rss_kb: config.safe_max_rss_kb.max(1),
+            },
+            config.safe_only.as_deref(),
+        )
+    });
+
     let samples = config
         .include_standard
         .then(|| {
@@ -87,6 +109,7 @@ pub fn run(config: ExpConfig) -> Value {
     let summaries = summarize(&samples);
     let report = json!({
         "generated_at": now_unix(),
+        "safe": safe_report,
         "samples": config.output.as_ref().map(|_| samples.clone()).unwrap_or_default(),
         "summaries": summaries,
         "global_cache": global_cache_stats(),
@@ -746,6 +769,10 @@ fn proc_status_kb(prefix: &str) -> u64 {
 }
 
 fn print_report(report: &Value) {
+    if !report["safe"].is_null() {
+        safe::print(&report["safe"]);
+    }
+
     println!("== experiments ==");
 
     report["summaries"]
