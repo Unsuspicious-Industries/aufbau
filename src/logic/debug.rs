@@ -1,22 +1,13 @@
-use crate::logic::grammar::Segment;
-use crate::logic::segment::SegmentRange;
-
 use std::fmt::{self, Display};
 
 /// Debug level for controlling output verbosity
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DebugLevel {
-    /// No debug output
     None = 0,
-    /// Only errors and critical issues
     Error = 1,
-    /// Warnings and important events
     Warn = 2,
-    /// General information
     Info = 3,
-    /// Detailed debugging information
     Debug = 4,
-    /// Very verbose tracing
     Trace = 5,
 }
 
@@ -50,7 +41,6 @@ impl Default for DebugConfig {
     }
 }
 
-// Thread-local debug configuration
 thread_local! {
     static DEBUG_CONFIG: std::cell::RefCell<DebugConfig> = std::cell::RefCell::new(DebugConfig::default());
 }
@@ -101,7 +91,6 @@ pub fn is_debug_enabled(level: DebugLevel, module: &str) -> bool {
 }
 
 #[macro_export]
-/// Unified debug macro for all modules
 macro_rules! debug {
     ($level:expr, $module:expr, $($arg:tt)*) => {
         if $crate::logic::debug::is_debug_enabled($level, $module) {
@@ -111,7 +100,6 @@ macro_rules! debug {
 }
 
 #[macro_export]
-/// Convenience macros for different debug levels
 macro_rules! debug_error {
     ($module:expr, $($arg:tt)*) => {
         $crate::debug!($crate::logic::debug::DebugLevel::Error, $module, $($arg)*);
@@ -144,78 +132,4 @@ macro_rules! debug_trace {
     ($module:expr, $($arg:tt)*) => {
         $crate::debug!($crate::logic::debug::DebugLevel::Trace, $module, $($arg)*);
     };
-}
-
-/// Debug utilities for working with AST nodes and spans
-pub struct DebugUtils;
-
-impl DebugUtils {
-    /// Format a segment range location for debugging
-    pub fn format_span(span: Option<&SegmentRange>, segments: &[Segment]) -> String {
-        match span {
-            Some(range) => {
-                let start_seg = segments.get(range.start);
-                let end_seg = segments.get(range.end);
-
-                match (start_seg, end_seg) {
-                    (Some(start), Some(end)) => {
-                        let start_byte = start.start;
-                        let end_byte = end.end;
-                        format!(
-                            "segs[{}..{}] bytes[{}..{}]",
-                            range.start, range.end, start_byte, end_byte
-                        )
-                    }
-                    _ => format!(
-                        "invalid segment range: segs[{}..{}]",
-                        range.start, range.end
-                    ),
-                }
-            }
-            None => "no span".to_string(),
-        }
-    }
-
-    /// Extract text from a segment range
-    pub fn extract_span_text(span: &SegmentRange, segments: &[Segment]) -> String {
-        let mut result = String::new();
-        for idx in span.start..=span.end {
-            if let Some(seg) = segments.get(idx) {
-                result.push_str(&seg.text());
-                if idx < span.end {
-                    result.push(' '); // Add space between segments
-                }
-            }
-        }
-        result
-    }
-}
-
-/// Debug context for tracking state during operations
-pub struct DebugContext {
-    pub operation: String,
-    pub data: std::collections::HashMap<String, String>,
-}
-
-impl DebugContext {
-    pub fn new(operation: &str) -> Self {
-        Self {
-            operation: operation.to_string(),
-            data: std::collections::HashMap::new(),
-        }
-    }
-
-    pub fn add(&mut self, key: &str, value: &str) {
-        self.data.insert(key.to_string(), value.to_string());
-    }
-
-    pub fn debug_dump(&self, level: DebugLevel, module: &str) {
-        if is_debug_enabled(level, module) {
-            println!("[{}:{}] === {} ===", level, module, self.operation);
-            for (key, value) in &self.data {
-                println!("[{}:{}]   {}: {}", level, module, key, value);
-            }
-            println!("[{}:{}] === END {} ===", level, module, self.operation);
-        }
-    }
 }

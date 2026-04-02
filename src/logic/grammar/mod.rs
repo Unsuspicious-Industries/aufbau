@@ -4,7 +4,7 @@ pub mod tokenizer;
 pub mod utils;
 
 use crate::logic::binding::{self, BindingMap};
-pub use tokenizer::{Segment, Tokenizer, DEFAULT_DELIMITERS};
+pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
 
 #[cfg(test)]
 mod tests;
@@ -79,13 +79,10 @@ impl Hash for Symbol {
 impl Symbol {
     pub fn new(value: String) -> Self {
         debug_trace!("grammar", "Creating symbol from value: {}", value);
-        if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
-            let literal = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
-                regex: DerivativeRegex::literal(&literal),
-                binding: None,
-            }
-        } else if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        if value.len() >= 2
+            && ((value.starts_with('\'') && value.ends_with('\''))
+                || (value.starts_with('"') && value.ends_with('"')))
+        {
             let literal = value[1..value.len() - 1].to_string();
             Symbol::Terminal {
                 regex: DerivativeRegex::literal(&literal),
@@ -169,6 +166,8 @@ use crate::logic::typing::TypingRule;
 pub struct Grammar {
     pub name: String,
     pub productions: HashMap<String, Vec<Production>>,
+    nonterminals: Vec<String>,
+    nt_index: HashMap<String, usize>,
     pub typing_rules: HashMap<String, TypingRule>,
     pub special_tokens: Vec<String>,
     pub delimiters: Vec<char>,
@@ -218,6 +217,8 @@ impl Default for Grammar {
         Self {
             name: String::new(),
             productions: HashMap::default(),
+            nonterminals: Vec::default(),
+            nt_index: HashMap::default(),
             typing_rules: HashMap::default(),
             special_tokens: Vec::default(),
             delimiters: DEFAULT_DELIMITERS.to_vec(),
@@ -238,7 +239,11 @@ impl Grammar {
     /// Create a grammar with the given productions
     pub fn new_with_productions(productions: HashMap<String, Vec<Production>>) -> Self {
         let mut grammar = Self::default();
-        grammar.productions = productions;
+        for (nt, prods) in productions {
+            for prod in prods {
+                grammar.add_production(nt.clone(), prod);
+            }
+        }
         grammar
     }
 
@@ -262,6 +267,11 @@ impl Grammar {
 
     /// Add a production rule to the grammar.
     pub fn add_production(&mut self, nt: String, prod: Production) {
+        if !self.nt_index.contains_key(&nt) {
+            let next = self.nonterminals.len();
+            self.nt_index.insert(nt.clone(), next);
+            self.nonterminals.push(nt.clone());
+        }
         self.productions.entry(nt.clone()).or_default().push(prod);
     }
 
@@ -281,6 +291,23 @@ impl Grammar {
     /// Get the start nonterminal if available.
     pub fn start_nonterminal(&self) -> Option<&String> {
         self.start.as_ref()
+    }
+
+    pub fn nt_index(&self, nt: &str) -> Option<usize> {
+        self.nt_index.get(nt).copied()
+    }
+
+    pub fn nt_name(&self, idx: usize) -> Option<&str> {
+        self.nonterminals.get(idx).map(String::as_str)
+    }
+
+    pub fn productions_by_idx(&self, idx: usize) -> Option<&Vec<Production>> {
+        self.nt_name(idx)
+            .and_then(|name| self.productions.get(name))
+    }
+
+    pub fn production_count(&self) -> usize {
+        self.nonterminals.len()
     }
 
     /// Check if a symbol is nullable (can match zero tokens).
@@ -322,6 +349,29 @@ impl Grammar {
             Ok(segments) => Ok(segments),
             Err(err) => Err(err),
         }
+    }
+
+    pub fn extend_input(&self, input: &str, token: &str) -> String {
+        if input.ends_with(char::is_whitespace) || token.starts_with(char::is_whitespace) {
+            return format!("{}{}", input, token);
+        }
+
+        let last = input.chars().next_back();
+        let first = token.chars().next();
+        let needs_space = matches!((last, first), (Some(l), Some(r)) if self.needs_separator(l, r));
+        if needs_space {
+            format!("{} {}", input, token)
+        } else {
+            format!("{}{}", input, token)
+        }
+    }
+
+    fn needs_separator(&self, left: char, right: char) -> bool {
+        let delim = |ch: char| ch.is_whitespace() || self.delimiters.contains(&ch);
+        !delim(left)
+            && !delim(right)
+            && left.is_ascii_alphanumeric()
+            && right.is_ascii_alphanumeric()
     }
 
     pub fn nt_regex(&self, nt: &String) -> DerivativeRegex {

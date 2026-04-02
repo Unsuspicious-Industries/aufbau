@@ -218,6 +218,12 @@ Definition typecheck (input : string) : option ty :=
   | None => None
   end.
 
+(* Soundness of the executable checker:
+   if the checker accepts with type [τ], then there exists a parsed STLC term [e]
+   such that the parser returns [e] on the same input and [e] has type [τ]
+   according to the verified typing relation [has_type].
+
+   This is a no-false-positives theorem for the verified Coq checker. *)
 Theorem typecheck_sound :
   forall input τ,
     typecheck input = Some τ ->
@@ -229,5 +235,170 @@ Proof.
   exists e. split; [reflexivity|].
   now apply infer_sound in Htc.
 Qed.
+
+(* Readable alias for the main STLC checker soundness theorem. *)
+Theorem stlc_checker_soundness :
+  forall input τ,
+    typecheck input = Some τ ->
+    exists e, parse input = Some e /\ has_type nil e τ.
+Proof.
+  exact typecheck_sound.
+Qed.
+
+
+Theorem stlc_example_program_parses :
+  exists e, parse "λ x : A . x" = Some e.
+Proof.
+  intros.
+  destruct (parse "λ x : A . x") as [e|] eqn:Hparse; try discriminate.
+  exists e. reflexivity.
+Qed.
+
+Theorem stlc_example_program_typechecks :
+  typecheck "λ x : A . x" = Some (TyArrow (TyBase "A") (TyBase "A")).
+Proof. reflexivity. Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   Correctness of type equality
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Lemma ty_eqb_refl : forall τ, ty_eqb τ τ = true.
+Proof.
+  induction τ as [s | τ1 IH1 τ2 IH2]; simpl.
+  - apply string_eqb_refl.
+  - rewrite IH1, IH2. reflexivity.
+Qed.
+
+Lemma ty_eqb_sym : forall τ1 τ2, ty_eqb τ1 τ2 = true -> ty_eqb τ2 τ1 = true.
+Proof.
+  induction τ1 as [s1 | τ1a IH1 τ1b IH2];
+  destruct τ2 as [s2 | τ2a τ2b]; simpl; try discriminate; auto.
+  - intro H. apply string_eqb_eq in H. subst. apply string_eqb_refl.
+  - intro H. destruct (ty_eqb τ1a τ2a) eqn:Ha; try discriminate.
+    destruct (ty_eqb τ1b τ2b) eqn:Hb; try discriminate.
+    apply IH1 in Ha. apply IH2 in Hb. rewrite Ha, Hb. reflexivity.
+Qed.
+
+Lemma ty_eq_dec : forall τ1 τ2 : ty, {τ1 = τ2} + {τ1 <> τ2}.
+Proof.
+  induction τ1 as [s1 | τ1a IH1 τ1b IH2];
+  destruct τ2 as [s2 | τ2a τ2b].
+  - destruct (string_eqb s1 s2) eqn:Heq.
+    + left. apply string_eqb_eq in Heq. subst. reflexivity.
+    + right. intro H. subst. assert (Hr := string_eqb_refl s2). congruence.
+  - right; discriminate.
+  - right; discriminate.
+  - destruct (IH1 τ2a) as [Ha | Ha]; destruct (IH2 τ2b) as [Hb | Hb].
+    + left. subst. reflexivity.
+    + right. intro H. inversion H. auto.
+    + right. intro H. inversion H. auto.
+    + right. intro H. inversion H. auto.
+Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   Inversion lemmas for the typing relation
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Lemma inversion_lam :
+  forall Γ x τ body τres,
+    has_type Γ (ELam x τ body) (TyArrow τ τres) ->
+    has_type (extend Γ x τ) body τres.
+Proof.
+  intros Γ x τ body τres Hty.
+  inversion Hty; subst. assumption.
+Qed.
+
+Lemma inversion_app :
+  forall Γ f a τres,
+    has_type Γ (EApp f a) τres ->
+    exists τarg, has_type Γ f (TyArrow τarg τres) /\ has_type Γ a τarg.
+Proof.
+  intros Γ f a τres Hty.
+  inversion Hty; subst.
+  exists τarg. split; assumption.
+Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   Uniqueness of typing: every STLC term has at most one type
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Lemma typing_unique :
+  forall Γ e τ1 τ2,
+    has_type Γ e τ1 -> has_type Γ e τ2 -> τ1 = τ2.
+Proof.
+  intros Γ e τ1 τ2 H1. revert τ2.
+  induction H1; intros τ2 H2; inversion H2; subst.
+  - (* T_Var *) congruence.
+  - (* T_Lam *)
+    match goal with H : has_type (extend _ _ _) _ _ |- _ =>
+      let Heq := fresh in assert (Heq := IHhas_type _ H); inversion Heq; reflexivity end.
+  - (* T_App *)
+    match goal with IH : forall τ, has_type _ _ τ -> _ = τ, H : has_type _ _ ?t |- _ =>
+      let Heq := fresh in assert (Heq := IH _ H); inversion Heq; reflexivity end.
+Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   Completeness of inference: if the typing relation holds,
+   the executable infer function finds the same type
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Lemma infer_complete :
+  forall Γ e τ,
+    has_type Γ e τ -> infer Γ e = Some τ.
+Proof.
+  intros Γ e τ Hty.
+  induction Hty; simpl.
+  - exact H.
+  - rewrite IHHty. reflexivity.
+  - rewrite IHHty1, IHHty2. rewrite ty_eqb_refl. reflexivity.
+Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   The executable infer is both sound and complete with respect to
+   the declarative has_type relation: they define the same judgments.
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Theorem infer_equiv :
+  forall Γ e τ,
+    infer Γ e = Some τ <-> has_type Γ e τ.
+Proof.
+  intros Γ e τ. split.
+  - apply infer_sound.
+  - apply infer_complete.
+Qed.
+
+(* ═══════════════════════════════════════════════════════════════════════
+   Additional example programs
+   ═══════════════════════════════════════════════════════════════════════ *)
+
+Theorem stlc_identity_program_typechecks :
+  typecheck "λ x : A . x" = Some (TyArrow (TyBase "A") (TyBase "A")).
+Proof. reflexivity. Qed.
+
+Theorem stlc_identity_program_well_typed :
+  exists e, parse "λ x : A . x" = Some e /\
+    has_type nil e (TyArrow (TyBase "A") (TyBase "A")).
+Proof.
+  exists (ELam "x" (TyBase "A") (EVar "x")).
+  split; [reflexivity | apply T_Lam; apply T_Var; simpl; reflexivity].
+Qed.
+
+Theorem stlc_applied_identity_parses :
+  exists e, parse "( λ x : A . x ) ( λ y : A . y )" = Some e.
+Proof. intros. destruct (parse "( λ x : A . x ) ( λ y : A . y )") as [e|] eqn:Hparse; try discriminate.
+  exists e. reflexivity.
+Qed.
+
+Theorem stlc_nested_lam_parses :
+  exists e, parse "λ f : A -> B . λ x : A . f x" = Some e.
+Proof. intros. destruct (parse "λ f : A -> B . λ x : A . f x") as [e|] eqn:Hparse; try discriminate.
+  exists e. reflexivity.
+Qed.
+
+Theorem stlc_nested_lam_typechecks :
+  typecheck "λ f : A -> B . λ x : A . f x" =
+    Some (TyArrow (TyArrow (TyBase "A") (TyBase "B"))
+                  (TyArrow (TyBase "A") (TyBase "B"))).
+Proof. reflexivity. Qed.
 
 End STLC.

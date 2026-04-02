@@ -380,17 +380,17 @@ impl RuleParser {
     /// Try to parse a type operation: τ₁ = τ₂ or τ₁ ⊆ τ₂
     fn try_parse_operation(s: &str) -> Option<(Type, TypeOperation, Type)> {
         // Try equality
-        if let Some((l, r)) = s.split_once("=") {
-            if let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim())) {
-                return Some((left, TypeOperation::Equality, right));
-            }
+        if let Some((l, r)) = s.split_once("=")
+            && let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim()))
+        {
+            return Some((left, TypeOperation::Equality, right));
         }
         // Try inclusion (⊆ or <=)
         for sep in ["⊆ ", "<="] {
-            if let Some((l, r)) = s.split_once(sep) {
-                if let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim())) {
-                    return Some((left, TypeOperation::Inclusion, right));
-                }
+            if let Some((l, r)) = s.split_once(sep)
+                && let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim()))
+            {
+                return Some((left, TypeOperation::Inclusion, right));
             }
         }
         None

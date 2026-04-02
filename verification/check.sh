@@ -3,7 +3,9 @@ set -euo pipefail
 
 VERIFICATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$VERIFICATION_DIR/.." && pwd)"
-COQ_BUILD_DIR="$VERIFICATION_DIR/_build/default/coq"
+COQ_DUNE_BUILD_DIR="$VERIFICATION_DIR/_build/default/coq"
+COQ_SOURCE_DIR="$VERIFICATION_DIR/coq"
+COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
 
 usage() {
   cat <<'EOF'
@@ -13,7 +15,7 @@ Usage:
   verification/check.sh --skip-reverify --program <language> <program>
 
 Arguments:
-  <language>  One of: stlc, fun, imp
+  <language>  One of: stlc, fun, imp, typescript
   <prefix>    Partial program prefix to complete with aufbau
   <program>   Already-complete program to typecheck with Coq
 
@@ -84,6 +86,11 @@ case "$LANGUAGE" in
     COQ_IMPORT="verification.coq.Imp"
     COQ_CHECK_TERM="ImpLang.typecheck_program"
     ;;
+  typescript)
+    SPEC_PATH="$ROOT_DIR/examples/typescript.auf"
+    COQ_IMPORT="verification.coq.Typescript"
+    COQ_CHECK_TERM="TypescriptLang.typecheck_program"
+    ;;
   *)
     echo "unknown language: $LANGUAGE" >&2
     usage >&2
@@ -100,7 +107,30 @@ else
 fi
 
 coq_reverify() {
-  (cd "$VERIFICATION_DIR" && dune build coq/Common.vo coq/STLC.vo coq/Fun.vo coq/Imp.vo)
+  if command -v dune >/dev/null 2>&1; then
+    (cd "$VERIFICATION_DIR" && dune build coq/Common.vo coq/STLC.vo coq/Fun.vo coq/Imp.vo coq/Typescript.vo)
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  else
+    (cd "$COQ_SOURCE_DIR" && \
+      coqc -Q . verification.coq -noglob Common.v && \
+      coqc -Q . verification.coq -noglob STLC.v && \
+      coqc -Q . verification.coq -noglob Fun.v && \
+      coqc -Q . verification.coq -noglob Imp.v && \
+      coqc -Q . verification.coq -noglob Typescript.v)
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  fi
+}
+
+resolve_coq_build_dir() {
+  if [[ -f "$COQ_DUNE_BUILD_DIR/Common.vo" ]]; then
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  elif [[ -f "$COQ_SOURCE_DIR/Common.vo" ]]; then
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  elif command -v dune >/dev/null 2>&1; then
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  else
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  fi
 }
 
 coq_escape_string() {
@@ -139,6 +169,7 @@ EOF
 }
 
 if [[ "$SKIP_REVERIFY" -eq 1 ]]; then
+  resolve_coq_build_dir
   echo "Skipping Coq re-verify (already verified for this batch)..." >&2
 else
   echo "Re-verifying Coq modules..." >&2

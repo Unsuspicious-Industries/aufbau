@@ -2,7 +2,7 @@
 
 use crate::debug_trace;
 
-use super::{nfa, PrefixStatus, Regex};
+use super::{PrefixStatus, Regex, nfa};
 
 // ===== Predicates =====
 pub fn is_empty(r: &Regex) -> bool {

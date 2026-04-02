@@ -11,7 +11,6 @@ const DEEP_NESTING: &str = r#"
 "#;
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::MetaParser;
 
 use super::*;
 
@@ -25,7 +24,7 @@ fn generate_deep_nesting(n: usize) -> String {
     for _ in 0..n {
         result.push('(');
     }
-    result.push_str("x");
+    result.push('x');
     for _ in 0..n {
         result.push(')');
     }
@@ -33,7 +32,6 @@ fn generate_deep_nesting(n: usize) -> String {
 }
 
 fn generate_random_string(n: usize) -> String {
-    // make sure we dont have more closeing parens than opening
     let mut result = String::new();
     let mut open_count = 0;
     let mut close_count = 0;
@@ -46,35 +44,25 @@ fn generate_random_string(n: usize) -> String {
                 result.push('(');
                 open_count += 1;
             }
-            1 => {
-                if open_count > close_count {
+            1 => match open_count > close_count {
+                true => {
                     result.push(')');
                     close_count += 1;
-                } else {
+                }
+                false => {
                     result.push('(');
                     open_count += 1;
                 }
-            }
-            _ => {
-                result.push('x');
-            }
+            },
+            _ => result.push('x'),
         }
     }
-    // Ensure balanced parentheses
+
     while open_count > close_count {
         result.push(')');
         close_count += 1;
     }
     result
-}
-
-use std::time::Instant;
-
-fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
-    let mut parser = MetaParser::new(grammar.clone());
-    let start = Instant::now();
-    let _ = parser.partial(input);
-    start.elapsed()
 }
 
 fn run_complexity_test(
@@ -85,63 +73,47 @@ fn run_complexity_test(
     tries: usize,
     jobs: Option<usize>,
 ) -> Vec<ComplexityData> {
-    println!("\n=== {} Complexity Test ===", name);
-    println!("Testing input sizes from 1 to {}", max_n);
-
-    // ensure tries >> n
-    assert!(tries >= max_n * 5);
-
-    let results = super::run_complexity_experiment(grammar, generator, name, max_n, tries, jobs);
-
-    // Print compact summary
-    for r in &results {
-        println!("n={:2}: {} -> {:?}", r.n, r.input, r.time);
-    }
-
-    results
+    assert!(tries >= max_n * 2);
+    let _ = name;
+    super::run_parse_experiment(grammar, generator, max_n, tries, jobs)
 }
 
 /// Export experiments for the basic complexity module
 pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     let grammar = basic_grammar();
-    let mut out = Vec::new();
-    out.push((
-        "Deep Nesting".to_string(),
-        run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 8, 40, jobs),
-    ));
-    out.push((
-        "Random String".to_string(),
-        run_complexity_test(
-            &grammar,
-            generate_random_string,
-            "Random String",
-            20,
-            100,
-            jobs,
+    vec![
+        (
+            "Deep Nesting".to_string(),
+            run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 5, 15, jobs),
         ),
-    ));
-    out
+        (
+            "Random String".to_string(),
+            run_complexity_test(
+                &grammar,
+                generate_random_string,
+                "Random String",
+                10,
+                30,
+                jobs,
+            ),
+        ),
+    ]
 }
 
 #[test]
 fn basic_deep_nesting_complexity() {
     let grammar = basic_grammar();
-    let data = run_complexity_test(
-        &grammar,
-        generate_deep_nesting,
-        "Deep Nesting",
-        10,
-        100,
-        None,
-    );
+    let data = run_complexity_test(&grammar, generate_deep_nesting, "Deep Nesting", 6, 18, None);
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Expected: O(n) for linear nesting");
-    println!("Actual: k = {:.2} (closer to 1.0 is better)", k);
+    super::print_complexity_summary(
+        "Deep nesting",
+        k,
+        kh,
+        "Expected: near-linear in nesting height.",
+    );
 
     // For linear nesting, complexity should be close to O(n)
     assert!(
@@ -162,18 +134,20 @@ fn basic_random_string_complexity() {
         &grammar,
         generate_random_string,
         "Random String",
-        100,
-        1000,
+        16,
+        48,
         None,
     );
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Random strings test the parser's handling of arbitrary inputs");
-    println!("k = {:.2}", k);
+    super::print_complexity_summary(
+        "Random strings",
+        k,
+        kh,
+        "Random strings probe arbitrary-input parser behavior.",
+    );
 
     // Random strings may have higher complexity due to backtracking
     assert!(

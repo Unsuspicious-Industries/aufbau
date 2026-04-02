@@ -162,9 +162,8 @@ impl Type {
         }
 
         // Case: parentheses, possibly unbalanced
-        if s.starts_with('(') {
+        if let Some(inner) = s.strip_prefix('(') {
             // fully balanced but parse failed -> treat as inner partial
-            let inner = &s[1..];
             if let Ok(inner_ty) = Type::parse(inner.trim_end_matches(')')) {
                 return Ok(Type::Partial(
                     Box::new(inner_ty),
@@ -292,11 +291,11 @@ impl Type {
 
         // Parentheses: only peel a wrapping pair if it encloses the *entire* expression.
         // Otherwise, leave it to the arrow/context-call parsing logic below.
-        if s.starts_with('(') {
+        if let Some(inner_suffix) = s.strip_prefix('(') {
             let depth = missing_closing_parens(s)?;
             if depth > 0 {
                 // Incomplete parens → partial type expecting a closing ')'
-                let inner = Self::parse_impl(&s[1..], raw_mode)?;
+                let inner = Self::parse_impl(inner_suffix, raw_mode)?;
                 if let Self::Partial(p, _d) = inner {
                     return Ok(Self::Partial(p, s.to_string()));
                 }
@@ -321,10 +320,10 @@ impl Type {
                 }
             }
 
-            if let Some(end) = wrapper_ends_at {
-                if end == s.len() - 1 {
-                    return Self::parse_impl(&s[1..s.len() - 1], raw_mode);
-                }
+            if let Some(end) = wrapper_ends_at
+                && end == s.len() - 1
+            {
+                return Self::parse_impl(&s[1..s.len() - 1], raw_mode);
             }
             // else: not a full wrapper, fall through
         }
@@ -350,21 +349,21 @@ impl Type {
         }
 
         // Parse context calls "Γ(x)", "(y)"
-        if let Some(paren_start) = s.find('(') {
-            if let Some(paren_end) = s.find(')') {
-                if paren_end > paren_start && paren_end == s.len() - 1 {
-                    let context = s[..paren_start].trim();
-                    let var = s[paren_start + 1..paren_end].trim();
-                    if !context.is_empty() && !var.is_empty() {
-                        // Validate context name contains only valid characters
-                        if context.chars().all(|c| {
-                            c.is_alphanumeric()
-                                || c == '_'
-                                || "ΓΔΘΛΣΦΨΩΞΠΡΤΥΧδγτλσφψωξπρυχ₁₂₃₄₅₆₇₈₉₀".contains(c)
-                        }) {
-                            return Ok(Type::ContextCall(context.to_string(), var.to_string()));
-                        }
-                    }
+        if let Some(paren_start) = s.find('(')
+            && let Some(paren_end) = s.find(')')
+            && paren_end > paren_start
+            && paren_end == s.len() - 1
+        {
+            let context = s[..paren_start].trim();
+            let var = s[paren_start + 1..paren_end].trim();
+            if !context.is_empty() && !var.is_empty() {
+                // Validate context name contains only valid characters
+                if context.chars().all(|c| {
+                    c.is_alphanumeric()
+                        || c == '_'
+                        || "ΓΔΘΛΣΦΨΩΞΠΡΤΥΧδγτλσφψωξπρυχ₁₂₃₄₅₆₇₈₉₀".contains(c)
+                }) {
+                    return Ok(Type::ContextCall(context.to_string(), var.to_string()));
                 }
             }
         }

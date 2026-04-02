@@ -14,15 +14,15 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
+use aufbau::logic::fusion::Synthesizer;
 use aufbau::logic::grammar::Grammar;
 use aufbau::logic::typing::Context;
-use aufbau::logic::{search_complete, SearchConfig, SearchResult};
 
 /// Complete a partial program read from stdin using the type-aware synthesizer.
 ///
 /// The search is a priority-guided DFS that tries to extend the partial input
 /// one token at a time until a complete, well-typed program is found.  The
-/// budget can be tuned with `--depth`, `--states`, and `--children`.
+/// budget can be tuned with `--depth`.
 ///
 /// Examples
 /// --------
@@ -41,18 +41,6 @@ pub struct CompleteCmd {
     /// Maximum number of completion steps (token extensions) from the prefix
     #[arg(long = "depth", default_value_t = 10)]
     pub depth: usize,
-
-    /// Maximum total search states explored before giving up
-    #[arg(long = "states", default_value_t = 96)]
-    pub states: usize,
-
-    /// Maximum children kept per expanded state (beam width)
-    #[arg(long = "children", default_value_t = 12)]
-    pub children: usize,
-
-    /// Maximum concrete string examples tried per regex token
-    #[arg(long = "examples", default_value_t = 1)]
-    pub examples: usize,
 
     /// Print extra information: depth reached, states explored, completion path
     #[arg(short = 'i', long = "info", action = clap::ArgAction::SetTrue)]
@@ -91,66 +79,54 @@ pub fn run(args: &CompleteCmd) {
     if args.info {
         eprintln!("input    : {:?}", input);
         eprintln!("depth    : {}", args.depth);
-        eprintln!("states   : {}", args.states);
-        eprintln!("children : {}", args.children);
-        eprintln!("examples : {}", args.examples);
     }
 
     // ── 3. Run completion search ─────────────────────────────────────────
-    let config = SearchConfig {
-        max_depth: args.depth,
-        max_token_examples: args.examples,
-        max_states: args.states,
-        max_children_per_state: args.children,
-    };
-
     let ctx = Context::new();
-
-    match search_complete(&grammar, input, &config, &ctx) {
-        SearchResult::Success {
-            complete_input,
-            ast,
-            completion_path,
-            depth,
-        } => {
-            if args.info {
-                eprintln!("status   : success");
-                eprintln!("depth    : {}", depth);
-                eprintln!(
-                    "path     : [{}]",
-                    completion_path
-                        .iter()
-                        .map(|r| r.to_pattern())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                eprintln!("type     : {}", ast.ty());
-                eprintln!();
+    let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), input, args.depth);
+    match synth.parse_with(&ctx) {
+        Ok(typed) => {
+            if typed.is_complete() {
+                if args.info {
+                    eprintln!("status   : success (complete)");
+                    eprintln!(
+                        "type     : {:?}",
+                        typed.first().map(|n| n.ty(synth.runtime()))
+                    );
+                }
+                println!("{}", input);
+                std::process::exit(0);
             }
-            println!("{}", complete_input);
-            std::process::exit(0);
-        }
 
-        SearchResult::Exhausted {
-            max_depth,
-            states_explored,
-            visited_states,
-        } => {
-            eprintln!(
-                "error: no completion found (depth={}, states_explored={})",
-                max_depth, states_explored
-            );
-            if args.dump_visited && !visited_states.is_empty() {
-                eprintln!("visited states ({}):", visited_states.len());
-                for s in &visited_states {
-                    eprintln!("  {:?}", s);
+            // Try to extend with completions
+            let tokens = synth.tokens_with(&ctx);
+            for token in tokens.iter() {
+                if let Some(example) = token.example() {
+                    let mut synth2 =
+                        Synthesizer::new_with_max_depth(grammar.clone(), input, args.depth);
+                    if synth2.feed(&example, &ctx).is_ok()
+                        && let Some(tree) = synth2.ast()
+                        && tree.is_complete()
+                    {
+                        if args.info {
+                            eprintln!("status   : success");
+                            eprintln!("depth    : 1");
+                            eprintln!(
+                                "type     : {:?}",
+                                tree.first().map(|n| n.ty(synth2.runtime()))
+                            );
+                        }
+                        println!("{}", synth2.input());
+                        std::process::exit(0);
+                    }
                 }
             }
+
+            eprintln!("error: no completion found");
             std::process::exit(1);
         }
-
-        SearchResult::Invalid { message } => {
-            eprintln!("error: invalid input — {}", message);
+        Err(e) => {
+            eprintln!("error: partial parse failed: {}", e);
             std::process::exit(1);
         }
     }

@@ -1,0 +1,10 @@
+typescript|function maFonction ( monParametre : number | number [ ] ) : void {
+typescript|const xs : number [ ] = [ 1 , 2 , 3 ] ;
+typescript|const xs : number [ ] = [ 1 , 2 , 3 ] ; function useIt ( v : number [ ] ) : void { return ; }
+typescript|const xs : number [ ] = [ 1 , 2 , 3 ] ; function useIt ( v : number [ ] ) : void { return ; } useIt ( xs ) ;
+typescript|function useIt ( v : number [ ] ) : void { return ; }
+typescript|function useIt ( v : number [ ] ) : void { return ; } const xs : number [ ] = [ 1 , 2 ] ; useIt ( xs
+typescript|function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] ,
+typescript|function guard ( x : boolean ) : void { if ( x ) { return ; } else { return ; } }
+typescript|function head ( xs : number | number [ ] ) : void { if ( true ) { return ; } else { return ; } }
+typescript|const flag : boolean = true ; function guard ( x : boolean ) : void { if ( x ) { return ; } else { return ; } } guard ( flag ) ;

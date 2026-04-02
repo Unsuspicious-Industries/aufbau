@@ -10,7 +10,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # Run the fast "parseable" validation module in its own job (parallelizable)
   parseable:
     name: Parseable validation
     runs-on: ubuntu-latest
@@ -47,8 +46,6 @@ jobs:
           name: validation-reports-parseable
           path: validation/reports/*.txt
 
-  # Run each `completable` suite file as a separate matrix job so results are
-  # visible per-module in GitHub Actions (stlc, imp, fun, weird, arithmetic)
   completable:
     name: Completable validation — ${{ matrix.module }}
     runs-on: ubuntu-latest
@@ -87,3 +84,71 @@ jobs:
         with:
           name: validation-reports-${{ matrix.module }}
           path: validation/reports/*.txt
+
+  verification:
+    name: Coq verification
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml with Coq and Dune
+        uses: ocaml/setup-opam@v2
+        with:
+          ocaml-version: '5.2.0'
+          opam-pin: coq 8.18.0
+        shell: bash
+
+      - name: Build Coq verification
+        run: |
+          cd verification
+          dune build @coq
+
+      - name: Run verification check on prefixes
+        run: |
+          cd verification
+          ./check_prefixes.sh prefixes/stlc.txt 3
+          ./check_prefixes.sh prefixes/fun.txt 3
+          ./check_prefixes.sh prefixes/imp.txt 3
+          ./check_prefixes.sh prefixes/typescript.txt 3
+
+  linecount:
+    name: Line count enforcement
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check line count limits
+        run: |
+          declare -A LIMITS
+          LIMITS["src/logic/fusion"]=1500
+          LIMITS["src/logic/grammar"]=800
+          LIMITS["src/logic/typing"]=700
+          LIMITS["src/logic/search"]=600
+          LIMITS["src/logic/binding"]=400
+          LIMITS["src/cli"]=600
+          LIMITS["src/validation"]=1000
+          LIMITS["src/regex"]=800
+          
+          FAILED=0
+          
+          for dir in "${!LIMITS[@]}"; do
+            MAX_LINES="${LIMITS[$dir]}"
+            echo "Checking $dir (max $MAX_LINES lines):"
+            for file in $(find "$dir" -name '*.rs' -type f 2>/dev/null); do
+              lines=$(wc -l < "$file")
+              if [ "$lines" -gt $MAX_LINES ]; then
+                echo "  FAIL: $file has $lines lines"
+                FAILED=1
+              fi
+            done
+          done
+          
+          if [ $FAILED -eq 1 ]; then
+            echo "Line count check FAILED"
+            exit 1
+          fi
+          echo "All line count checks passed"

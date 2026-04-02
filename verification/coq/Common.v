@@ -30,6 +30,20 @@ Proof.
   rewrite Heqb, IH. reflexivity.
 Qed.
 
+Lemma list_eqb_eq :
+  forall (A : Type) (eqbA : A -> A -> bool),
+    (forall x y, eqbA x y = true -> x = y) ->
+    forall xs ys, list_eqb eqbA xs ys = true -> xs = ys.
+Proof.
+  intros A eqbA Heqb.
+  induction xs as [|x xs IH]; destruct ys as [|y ys]; simpl; try discriminate; auto.
+  intro H.
+  apply andb_prop in H as [Hxy Hrest].
+  apply Heqb in Hxy.
+  specialize (IH _ Hrest).
+  subst. reflexivity.
+Qed.
+
 Lemma list_char_eqb_eq :
   forall xs ys,
     list_eqb char_eqb xs ys = true ->
@@ -61,6 +75,15 @@ Proof.
   now f_equal.
 Qed.
 
+Lemma string_eqb_neq :
+  forall s1 s2,
+    string_eqb s1 s2 = false ->
+    s1 <> s2.
+Proof.
+  intros s1 s2 Heq Heq'.
+  subst. rewrite string_eqb_refl in Heq. discriminate.
+Qed.
+
 Fixpoint lookup {A : Type} (x : string) (Γ : env A) : option A :=
   match Γ with
   | nil => None
@@ -87,6 +110,21 @@ Proof.
   destruct (string_eqb x y) eqn:Heq.
   - apply string_eqb_eq in Heq. contradiction.
   - reflexivity.
+Qed.
+
+Lemma lookup_extend_cases :
+  forall (A : Type) (Γ : env A) x y v,
+    x = y /\ lookup x (extend Γ y v) = Some v \/
+    x <> y /\ lookup x (extend Γ y v) = lookup x Γ.
+Proof.
+  intros.
+  destruct (string_eqb x y) eqn:Heq.
+  - left. split.
+    + apply string_eqb_eq in Heq. exact Heq.
+    + unfold extend, lookup. rewrite Heq. reflexivity.
+  - right. split.
+    + intro H. subst. rewrite string_eqb_refl in Heq. discriminate.
+    + unfold extend, lookup. rewrite Heq. reflexivity.
 Qed.
 
 Definition char_between (lo hi c : char63) : bool :=
@@ -121,6 +159,29 @@ Definition string_forall (p : char63 -> bool) (s : string) : bool :=
 
 Definition string_exists (p : char63 -> bool) (s : string) : bool :=
   list_exists p (to_list s).
+
+Lemma orb_true_elim : forall a b : bool, (a || b)%bool = true -> a = true \/ b = true.
+Proof. destruct a, b; simpl; auto. Qed.
+
+Lemma list_forall_sound :
+  forall A (p : A -> bool) xs,
+    list_forall p xs = true -> Forall (fun x => p x = true) xs.
+Proof.
+  intros A p xs. induction xs as [|x xs IH]; simpl; intro H.
+  - constructor.
+  - apply andb_prop in H as [Hx Hxs].
+    constructor; [exact Hx | apply IH; exact Hxs].
+Qed.
+
+Lemma list_forall_complete :
+  forall A (p : A -> bool) xs,
+    Forall (fun x => p x = true) xs -> list_forall p xs = true.
+Proof.
+  intros A p xs. induction xs as [|x xs IH]; simpl; intro H.
+  - reflexivity.
+  - inversion H; subst.
+    rewrite H2. simpl. apply IH in H3. rewrite H3. reflexivity.
+Qed.
 
 Fixpoint rev_append {A : Type} (xs ys : list A) : list A :=
   match xs with

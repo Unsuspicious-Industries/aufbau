@@ -1,40 +1,18 @@
-stlc|λ x
-stlc|λ x :
 stlc|λ x : A
 stlc|λ x : A ->
 stlc|λ x : A -> A
 stlc|λ x : A -> A .
 stlc|λ x : A -> B -> C
 stlc|λ x : A -> B -> C .
-stlc|λ x : ( A
-stlc|λ x : ( A )
-stlc|λ x : ( A ) ->
 stlc|λ x : ( A ) -> A
-stlc|λ x : ( A ) -> A .
-stlc|λ x : ( A -> B
-stlc|λ x : ( A -> B )
-stlc|λ x : ( A -> B ) ->
 stlc|λ x : ( A -> B ) -> C
-stlc|λ x : ( A -> B ) -> C .
-stlc|λ x : ( ( A -> B ) -> C
-stlc|λ x : ( ( A -> B ) -> C )
-stlc|λ x : ( ( A -> B ) -> C ) .
-stlc|λ x : τ₁
-stlc|λ x : τ₁ -> τ₂
-stlc|λ x : τ₁ -> τ₂ .
-stlc|λ x : τ₁ -> τ₂ -> τ₃
-stlc|λ x : τ₁ -> τ₂ -> τ₃ .
 
-stlc|λ x : A .
 stlc|λ x : A . x
 stlc|λ x : A . (
 stlc|λ x : A . ( x
 stlc|λ x : A . ( x )
-stlc|λ x : A . λ y
-stlc|λ x : A . λ y :
 stlc|λ x : A . λ y : B
 stlc|λ x : A . λ y : B ->
-stlc|λ x : A . λ y : B .
 stlc|λ x : A . λ y : B . x
 stlc|λ x : A . λ y : B . y
 stlc|λ x : A . λ y : A . y
@@ -43,7 +21,6 @@ stlc|λ x : A . λ y : A -> B .
 stlc|λ x : A . λ y : A -> B . y
 stlc|λ x : A . λ y : A -> B . y x
 stlc|λ x : A . λ y : B -> A . y
-stlc|λ x : A . λ y : B -> A . y x
 stlc|λ x : A . ( λ y : B .
 stlc|λ x : A . ( λ y : B . y
 stlc|λ x : A . ( λ y : B . y )
@@ -51,7 +28,6 @@ stlc|λ x : A . ( λ y : B . x
 stlc|λ x : A . ( λ y : B . x )
 stlc|λ x : A . ( λ y : A . y ) x
 stlc|λ x : A . ( λ y : A . x ) x
-stlc|λ x : A . ( λ y : A -> B . y ) x
 stlc|λ x : A . ( λ y : A -> B . y x )
 stlc|λ x : A . λ y : B . (
 stlc|λ x : A . λ y : B . ( x
@@ -65,10 +41,8 @@ stlc|λ f : A -> A . λ x : A .
 stlc|λ f : A -> A . λ x : A . x
 stlc|λ f : A -> A . λ x : A . f
 stlc|λ f : A -> A . λ x : A . f x
-stlc|λ f : A -> A . λ x : A . f (
 stlc|λ f : A -> A . λ x : A . f ( x
 stlc|λ f : A -> A . λ x : A . f ( x )
-stlc|λ f : A -> A . λ x : A . f ( f
 stlc|λ f : A -> A . λ x : A . f ( f x
 stlc|λ f : A -> A . λ x : A . f ( f x )
 stlc|λ f : A -> A . λ x : A . λ y : A . y
@@ -85,13 +59,13 @@ stlc|λ f : A -> B -> C .
 stlc|λ f : A -> B -> C . λ x : A .
 stlc|λ f : A -> B -> C . λ x : A . f
 stlc|λ f : A -> B -> C . λ x : A . f x
-stlc|λ f : A -> B -> C . λ x : A . f x (
 stlc|λ f : A -> B -> C . λ x : A . λ y : B .
 stlc|λ f : A -> B -> C . λ x : A . λ y : B . f
 stlc|λ f : A -> B -> C . λ x : A . λ y : B . f x
 stlc|λ f : A -> B -> C . λ x : A . λ y : B . f x y
 stlc|λ f : A -> B -> C . λ x : A . λ y : B . ( f x )
 stlc|λ f : A -> B -> C . λ x : A . λ y : B . ( f x ) y
+stlc|λ f : A -> B -> C . λ x : A . λ y : B . f x y
 
 stlc|λ g : B -> C .
 stlc|λ g : B -> C . g
@@ -103,15 +77,10 @@ stlc|λ h : A -> B . λ x : A .
 stlc|λ h : A -> B . λ x : A . h
 stlc|λ h : A -> B . λ x : A . h x
 
-stlc|λ f : ( A -> A ) .
 stlc|λ f : ( A -> A ) . f
-stlc|λ f : ( A -> A ) -> A .
 stlc|λ f : ( A -> A ) -> A . f
-stlc|λ f : ( A -> A ) -> A . f (
-stlc|λ f : ( A -> A ) -> A . f ( λ x : A .
 stlc|λ f : ( A -> A ) -> A . f ( λ x : A . x
 stlc|λ f : ( A -> A ) -> A . f ( λ x : A . x )
-stlc|λ f : ( A -> A ) -> A . f λ x : A .
 stlc|λ f : ( A -> A ) -> A . f λ x : A . x
 stlc|λ f : ( A -> A ) -> ( A -> A ) .
 stlc|λ f : ( A -> A ) -> ( A -> A ) . f
@@ -126,14 +95,9 @@ stlc|λ f : B -> C . λ g : A -> B . λ x : A . f ( g
 stlc|λ f : B -> C . λ g : A -> B . λ x : A . f ( g x
 stlc|λ f : B -> C . λ g : A -> B . λ x : A . f ( g x )
 
-stlc|(
-stlc|( λ x
-stlc|( λ x :
-stlc|( λ x : A
 stlc|( λ x : A .
 stlc|( λ x : A . x
 stlc|( λ x : A . x )
-stlc|( λ f : ( A -> A ) . f ) (
 stlc|( λ f : ( A -> A ) . f ) ( λ y : A .
 stlc|( λ f : ( A -> A ) . f ) ( λ y : A . y
 stlc|( λ f : ( A -> A ) . f ) ( λ y : A . y )
@@ -154,7 +118,6 @@ stlc|λ f : C -> D . λ g : B -> C . λ h : A -> B .
 stlc|λ f : C -> D . λ g : B -> C . λ h : A -> B . λ x : A .
 stlc|λ f : C -> D . λ g : B -> C . λ h : A -> B . λ x : A . h x
 stlc|λ f : C -> D . λ g : B -> C . λ h : A -> B . λ x : A . g ( h x )
-stlc|λ f : C -> D . λ g : B -> C . λ h : A -> B . λ x : A . f ( g ( h x ) )
 
 stlc|λ k : A -> B -> A .
 stlc|λ k : A -> B -> A . λ x : A .
@@ -169,5 +132,3 @@ stlc|λ _x : A . _x
 stlc|λ _f : A -> A . λ x1 : A . _f x1
 
 stlc|λ x : τ₁ -> τ₂ . x
-stlc|λ f : τ₁ -> τ₂ . λ x : τ₁ . f x
-stlc|λ f : τ₂ -> τ₃ . λ g : τ₁ -> τ₂ . λ x : τ₁ . f ( g x )

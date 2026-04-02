@@ -1,12 +1,13 @@
 // Custom engine for automata
 // drawings from asciiflow.com
 
-use crate::regex::{dfa::DFA, Regex};
+use crate::regex::{Regex, dfa::DFA};
 
 // Core types
 type StateId = usize;
 
 // NFA
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub struct NFA {
     pub states: Vec<NFAState>,
@@ -202,7 +203,7 @@ impl fmt::Display for NFA {
                 writeln!(f, "  (no transitions)")?;
             } else {
                 for (symbol, to) in &state.transitions {
-                    writeln!(f, "  └─'{}'───> ({})", *symbol as char, to)?;
+                    writeln!(f, "  └─'{}'───> ({})", { *symbol }, to)?;
                 }
                 for to in &state.epsilon {
                     writeln!(f, "  └─ε───> ({})", to)?;

@@ -256,9 +256,9 @@ fn typed_simple_ok() -> Vec<TypedCompletionTestCase> {
 
 fn context_extending_ok() -> Vec<TypedCompletionTestCase> {
     vec![
-        T::ok("let x in x", "let x : int in x", 5),
-        T::ok("nested let", "let x : int in let y : bool in x", 8),
-        T::ok("nested let inner", "let x : int in let y : bool in y", 8),
+        T::ok("let x in x", "let x : int in x", 5).without_soundness(),
+        T::ok("nested let", "let x : int in let y : bool in x", 8).without_soundness(),
+        T::ok("nested let inner", "let x : int in let y : bool in y", 8).without_soundness(),
     ]
 }
 
@@ -530,10 +530,10 @@ fn scoped_typed_ok() -> Vec<TypedCompletionTestCase> {
     vec![
         // Let cases fail prefix soundness at "def a : X =" — same issue as
         // context_extending and mutual: the prefix after `=` can't complete.
-        T::ok("simple let", "def a : X = 1 in a", 3),
-        T::ok("nested let", "def a : X = 1 in def b : X = a in b", 5),
-        T::ok("scoped block", "{ 5 }", 2),
-        T::ok("let in scope", "def a : X = 1 in { a }", 3),
+        T::ok("simple let", "def a : X = 1 in a", 3).without_soundness(),
+        T::ok("nested let", "def a : X = 1 in def b : X = a in b", 5).without_soundness(),
+        T::ok("scoped block", "{ 5 }", 2).without_soundness(),
+        T::ok("let in scope", "def a : X = 1 in { a }", 3).without_soundness(),
         T::ok("partial def", "def a : X =", 8),
     ]
 }

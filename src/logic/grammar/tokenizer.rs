@@ -164,7 +164,7 @@ impl Tokenizer {
             // Try to match a special token at the current position
             if let Some(match_len) = self.match_special(remaining) {
                 let index = segments.len();
-                let matched_bytes = remaining[..match_len].as_bytes().to_vec();
+                let matched_bytes = remaining.as_bytes()[..match_len].to_vec();
                 segments.push(Segment::with_index(
                     matched_bytes,
                     byte_pos,
@@ -218,7 +218,7 @@ impl Tokenizer {
                 // allowing "foo-" to split as ["foo", "-"(partial)] when "-"
                 // is a prefix of "->".
                 if i > 0 && self.prefix_special(substr) {
-                    let prev_is_word = prev_char.map_or(false, |p| p.is_alphanumeric() || p == '_');
+                    let prev_is_word = prev_char.is_some_and(|p| p.is_alphanumeric() || p == '_');
                     let curr_is_word = c.is_alphanumeric() || c == '_';
                     if !(prev_is_word && curr_is_word) {
                         break;
@@ -231,7 +231,7 @@ impl Tokenizer {
 
             if token_end > start_pos {
                 let index = segments.len();
-                let token_bytes = input[start_pos..token_end].as_bytes().to_vec();
+                let token_bytes = input.as_bytes()[start_pos..token_end].to_vec();
                 segments.push(Segment::with_index(
                     token_bytes,
                     start_pos,

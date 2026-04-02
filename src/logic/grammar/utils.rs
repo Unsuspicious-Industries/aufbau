@@ -31,21 +31,20 @@ pub fn parse_production(line: &str) -> Result<(String, String), String> {
 
 /// Parse nonterminal with optional rule name like "Lambda(lambda)" -> ("Lambda", Some("lambda"))
 pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), String> {
-    if let Some(open_paren) = nt_str.find('(') {
-        if let Some(close_paren) = nt_str.rfind(')') {
-            if close_paren > open_paren {
-                let name = nt_str[..open_paren].trim().to_string();
-                let rule_name = nt_str[open_paren + 1..close_paren].trim().to_string();
-                return Ok((
-                    name,
-                    if rule_name.is_empty() {
-                        None
-                    } else {
-                        Some(rule_name)
-                    },
-                ));
-            }
-        }
+    if let Some(open_paren) = nt_str.find('(')
+        && let Some(close_paren) = nt_str.rfind(')')
+        && close_paren > open_paren
+    {
+        let name = nt_str[..open_paren].trim().to_string();
+        let rule_name = nt_str[open_paren + 1..close_paren].trim().to_string();
+        return Ok((
+            name,
+            if rule_name.is_empty() {
+                None
+            } else {
+                Some(rule_name)
+            },
+        ));
     }
     // No rule name
     Ok((nt_str.trim().to_string(), None))
@@ -63,7 +62,7 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
         if ch == '/' && !in_single_quotes && !in_double_quotes {
             // regex literal
             current.push(ch);
-            while let Some(regex_ch) = chars.next() {
+            for regex_ch in chars.by_ref() {
                 current.push(regex_ch);
                 if regex_ch == '/' {
                     break;
@@ -136,10 +135,10 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
                 is_epsilon_alt = true;
                 continue;
             }
-            if let Some(lit) = literal_token_value(&base_token) {
-                if !literal_tokens.contains(&lit) {
-                    literal_tokens.push(lit.clone());
-                }
+            if let Some(lit) = literal_token_value(&base_token)
+                && !literal_tokens.contains(&lit)
+            {
+                literal_tokens.push(lit.clone());
             }
             let mut symbol = Symbol::new(base_token);
             if let Some(binding) = binding {
@@ -165,14 +164,9 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
     })
 }
 
-/// =========
-/// Type Shit
-/// =========
-///
-///
-/// ------------
-/// Type Parsing
-/// ------------
+// =========
+// Type Parsing
+// =========
 
 /// Parse a multi-line inference rule block
 pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), String> {
@@ -204,11 +198,11 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), 
             // first non-dash line after separator is conclusion
             conclusion = trimmed.to_string();
             // Try to extract rule name if not found yet and present at end of conclusion line
-            if name.is_empty() {
-                if let Some(cap) = name_at_end.captures(trimmed) {
-                    name = cap[1].trim().to_string();
-                    conclusion = name_at_end.replace(trimmed, "").trim().to_string();
-                }
+            if name.is_empty()
+                && let Some(cap) = name_at_end.captures(trimmed)
+            {
+                name = cap[1].trim().to_string();
+                conclusion = name_at_end.replace(trimmed, "").trim().to_string();
             }
         }
     }
@@ -258,9 +252,10 @@ fn split_repetition_suffix(token: &str) -> (Option<RepeatKind>, String) {
 }
 
 fn literal_token_value(token: &str) -> Option<String> {
-    if token.len() >= 2 && token.starts_with('\'') && token.ends_with('\'') {
-        Some(token[1..token.len() - 1].to_string())
-    } else if token.len() >= 2 && token.starts_with('"') && token.ends_with('"') {
+    if token.len() >= 2
+        && ((token.starts_with('\'') && token.ends_with('\''))
+            || (token.starts_with('"') && token.ends_with('"')))
+    {
         Some(token[1..token.len() - 1].to_string())
     } else {
         None

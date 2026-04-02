@@ -5,18 +5,19 @@ use std::fs;
 use std::io::Write as _;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use aufbau::validation::complexity::{self, estimate_complexity_exponent, ComplexityData};
+use aufbau::validation::complexity::{self, ComplexityData, estimate_complexity_exponent};
 
 pub fn run(args: &ValidateCmd) {
     eprintln!("aufbau validation runner - complexity");
 
-    let mut experiments: Vec<(&str, Vec<(String, Vec<ComplexityData>)>)> = Vec::new();
-
-    // Gather experiments from modules. Run complexity experiments single-threaded
-    // to avoid biasing timing measurements regardless of --jobs.
-    experiments.push(("basic", complexity::basic::experiments(None)));
-    experiments.push(("fun", complexity::fun::experiments(None)));
-    experiments.push(("stlc", complexity::stlc::experiments(None)));
+    #[allow(clippy::type_complexity)]
+    let experiments: Vec<(&str, Vec<(String, Vec<ComplexityData>)>)> = vec![
+        // Gather experiments from modules. Run complexity experiments single-threaded
+        // to avoid biasing timing measurements regardless of --jobs.
+        ("basic", complexity::basic::experiments(None)),
+        ("fun", complexity::fun::experiments(None)),
+        ("stlc", complexity::stlc::experiments(None)),
+    ];
 
     // Count total experiments
     let _total_exps: usize = experiments.iter().map(|(_, v)| v.len()).sum::<usize>();

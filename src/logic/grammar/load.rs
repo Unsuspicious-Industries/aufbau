@@ -1,6 +1,6 @@
 use super::utils::{
-    parse_inference_rule, parse_nonterminal, parse_production, parse_rhs, ParsedRhs, ParsedSymbol,
-    RepeatKind,
+    ParsedRhs, ParsedSymbol, RepeatKind, parse_inference_rule, parse_nonterminal, parse_production,
+    parse_rhs,
 };
 use crate::logic::grammar::{Grammar, Production, Symbol, TypingRule};
 
@@ -102,10 +102,10 @@ impl Grammar {
         }
 
         // By convention, set the start symbol to the last declared production LHS
-        if grammar.start_nonterminal().is_none() {
-            if let Some(last) = nt_order.last() {
-                grammar.set_start(last.clone());
-            }
+        if grammar.start_nonterminal().is_none()
+            && let Some(last) = nt_order.last()
+        {
+            grammar.set_start(last.clone());
         }
 
         // Build the binding map

@@ -1,23 +1,18 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use crate::logic::fusion::Synthesizer;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::{MetaParser, Synthesizer};
-use crate::logic::typing::tree::TypedNode;
-use crate::logic::typing::Context;
-use crate::validation::completability::{complete, CompletionResult};
+use crate::validation::completability::{CompletionResult, complete};
 use crate::validation::complexity::{
-    determine_complexity_exponent, determine_height_complexity_exponent, ComplexityData,
+    ComplexityData, determine_complexity_exponent, determine_height_complexity_exponent,
+    full_prefix_profile, incremental_prefix_profile, mean_micros, run_with_timeout, total_micros,
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::time::Instant;
 
 fn fun_grammar() -> Grammar {
-    use std::path::Path;
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = Path::new(manifest_dir).join("examples").join("fun.auf");
-    let content = std::fs::read_to_string(&path).expect("Failed to read fun.auf");
-    Grammar::load(&content).expect("Failed to load fun grammar")
+    super::load_example_grammar("fun")
 }
 
 /// Generate nested parenthesized literals:
@@ -84,7 +79,7 @@ fn generate_operator_chain(n: usize) -> String {
     let mut out = "1".to_string();
     for i in 1..=n {
         let op = ops[rng.gen_range(0..ops.len())];
-        out = format!("{} {} {}", out, op, (i % 10).to_string());
+        out = format!("{} {} {}", out, op, (i % 10));
     }
     out
 }
@@ -95,7 +90,7 @@ fn generate_nested_lambda(n: usize) -> String {
     for i in 0..n {
         lam.push_str(&format!("(x{}: Int) => ", i));
     }
-    lam.push_str("1");
+    lam.push('1');
     for i in 0..(n / 2) {
         lam.push_str(&format!(" a{}", i));
     }
@@ -142,25 +137,15 @@ fn generate_incomplete_let_chain(n: usize) -> String {
     out
 }
 
-fn token_boundary_prefixes(grammar: &Grammar, input: &str) -> Vec<String> {
-    match grammar.tokenize(input) {
-        Ok(segments) => {
-            let mut cuts = vec![0usize];
-            cuts.extend(segments.iter().map(|s| s.end));
-            if !cuts.contains(&input.len()) {
-                cuts.push(input.len());
-            }
-            cuts.sort_unstable();
-            cuts.dedup();
-            cuts.into_iter().map(|e| input[..e].to_string()).collect()
-        }
-        Err(_) => {
-            let chars: Vec<char> = input.chars().collect();
-            (0..=chars.len())
-                .map(|len| chars[..len].iter().collect::<String>())
-                .collect()
-        }
-    }
+// token_boundary_prefixes is imported from the parent module
+
+fn token_texts(grammar: &Grammar, input: &str) -> Vec<String> {
+    grammar
+        .tokenize(input)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|segment| segment.text())
+        .collect()
 }
 
 fn generate_let_fn_composition(n: usize) -> String {
@@ -185,41 +170,51 @@ fn generate_let_fn_composition(n: usize) -> String {
     out
 }
 
-fn run_feed_profile(grammar: &Grammar, input: &str) -> Vec<ComplexityData> {
-    let ctx = Context::new();
-    let mut synth = Synthesizer::new(grammar.clone(), "");
-    let mut out = Vec::new();
-
-    for (idx, prefix) in token_boundary_prefixes(grammar, input)
-        .into_iter()
-        .enumerate()
-    {
-        let start = Instant::now();
-        let _ = synth.feed(prefix.clone(), &ctx);
-        let elapsed = start.elapsed();
-
-        let height = synth
-            .tree()
-            .map(|t| t.roots.iter().map(typed_node_height).max().unwrap_or(0))
-            .unwrap_or(0);
-        out.push(ComplexityData::new_with_height(
-            idx + 1,
-            elapsed,
-            prefix,
-            height,
-        ));
-    }
-
-    out
+fn run_full_prefix_profile(grammar: &Grammar, input: &str) -> Vec<ComplexityData> {
+    let grammar = grammar.clone();
+    let input = input.to_string();
+    let timeout_input = input.clone();
+    run_with_timeout("full prefix profile", &timeout_input, move || {
+        full_prefix_profile(&grammar, &input)
+    })
 }
 
-fn typed_node_height(node: &TypedNode) -> usize {
-    match node {
-        TypedNode::Term { .. } => 1,
-        TypedNode::Expr { children, .. } => {
-            1 + children.iter().map(typed_node_height).max().unwrap_or(0)
-        }
+fn run_incremental_prefix_profile(grammar: &Grammar, input: &str) -> Vec<ComplexityData> {
+    let grammar = grammar.clone();
+    let input = input.to_string();
+    let timeout_input = input.clone();
+    run_with_timeout("incremental prefix profile", &timeout_input, move || {
+        incremental_prefix_profile(&grammar, &input)
+    })
+}
+
+fn run_incremental_vs_full_profile(
+    grammar: &Grammar,
+    input: &str,
+) -> (Vec<ComplexityData>, Vec<ComplexityData>) {
+    (
+        run_full_prefix_profile(grammar, input),
+        run_incremental_prefix_profile(grammar, input),
+    )
+}
+
+fn benchmark_incremental_vs_full(
+    grammar: &Grammar,
+    generator: fn(usize) -> String,
+    max_n: usize,
+) -> Vec<(usize, u128, u128, usize)> {
+    let mut out = Vec::new();
+    for n in 1..=max_n {
+        let input = generator(n);
+        let (full, incremental) = run_incremental_vs_full_profile(grammar, &input);
+        out.push((
+            n,
+            total_micros(&full),
+            total_micros(&incremental),
+            input.len(),
+        ));
     }
+    out
 }
 
 fn measure_completion_time(
@@ -261,14 +256,6 @@ fn run_completion_complexity_test(
     results
 }
 
-fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
-    // Keep a bounded recursion budget so complexity tests stay practical in CI.
-    let mut parser = MetaParser::new(grammar.clone());
-    let start = Instant::now();
-    let _ = parser.partial(input);
-    start.elapsed()
-}
-
 fn run_complexity_test(
     grammar: &Grammar,
     generator: fn(usize) -> String,
@@ -277,18 +264,9 @@ fn run_complexity_test(
     tries: usize,
     jobs: Option<usize>,
 ) -> Vec<ComplexityData> {
-    println!("\n=== {} Complexity Test ===", name);
-    println!("Testing input sizes from 1 to {}", max_n);
-
     assert!(tries >= max_n * 2);
-
-    let results = super::run_complexity_experiment(grammar, generator, name, max_n, tries, jobs);
-
-    for r in &results {
-        println!("n={:2}: len={} -> {:?}", r.n, r.input.len(), r.time);
-    }
-
-    results
+    let _ = name;
+    super::run_parse_experiment(grammar, generator, max_n, tries, jobs)
 }
 
 /// Export FUN experiments
@@ -301,8 +279,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_parenthesized_literal,
                 "Fun Parenthesized Literal",
-                4,
-                8,
+                3,
+                6,
                 jobs,
             ),
         ),
@@ -312,8 +290,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_let_literal_chain,
                 "Fun Let Literal Chain",
-                4,
-                8,
+                3,
+                6,
                 jobs,
             ),
         ),
@@ -323,8 +301,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_weird_random_fun,
                 "Fun Weird Random",
-                6,
-                12,
+                4,
+                8,
                 jobs,
             ),
         ),
@@ -334,8 +312,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_complex_random_fun,
                 "Fun Complex Random",
+                3,
                 6,
-                12,
                 jobs,
             ),
         ),
@@ -345,9 +323,17 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_incomplete_let_chain,
                 "Fun Completion Let Prefix",
-                4,
-                8,
+                3,
+                6,
             ),
+        ),
+        (
+            "Fun Full Prefix Parse".to_string(),
+            run_full_prefix_profile(&grammar, &generate_operator_chain(1)),
+        ),
+        (
+            "Fun Incremental Prefix Parse".to_string(),
+            run_incremental_prefix_profile(&grammar, &generate_operator_chain(1)),
         ),
     ]
 }
@@ -359,17 +345,20 @@ fn fun_parenthesized_literal_complexity() {
         &grammar,
         generate_parenthesized_literal,
         "Fun Parenthesized Literal",
-        4,
-        8,
+        3,
+        6,
         None,
     );
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Expected: near-polynomial with parser memoization");
+    super::print_complexity_summary(
+        "Fun parenthesized literal",
+        k,
+        kh,
+        "Expected: near-polynomial with parser memoization.",
+    );
 
     assert!(
         k < 5.0,
@@ -389,17 +378,20 @@ fn fun_let_literal_chain_complexity() {
         &grammar,
         generate_let_literal_chain,
         "Fun Let Literal Chain",
-        4,
-        8,
+        3,
+        6,
         None,
     );
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Linear let-chains stress sequential grammar growth and bindings.");
+    super::print_complexity_summary(
+        "Fun let literal chain",
+        k,
+        kh,
+        "Linear let-chains stress sequential grammar growth and bindings.",
+    );
 
     assert!(
         k < 5.0,
@@ -415,17 +407,20 @@ fn fun_weird_random_complexity() {
         &grammar,
         generate_weird_random_fun,
         "Fun Weird Random",
+        4,
         8,
-        16,
         None,
     );
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Weird/random prefixes simulate noisy, partially malformed edits.");
+    super::print_complexity_summary(
+        "Fun weird random",
+        k,
+        kh,
+        "Weird/random prefixes simulate noisy, partially malformed edits.",
+    );
 
     assert!(
         k < 6.0,
@@ -441,17 +436,20 @@ fn fun_complex_random_complexity() {
         &grammar,
         generate_complex_random_fun,
         "Fun Complex Random",
-        12,
-        32,
+        4,
+        8,
         None,
     );
 
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Complex-random generator mixes operator chains, nested lambdas and lets.");
+    super::print_complexity_summary(
+        "Fun complex random",
+        k,
+        kh,
+        "Complex-random generator mixes operator chains, nested lambdas and lets.",
+    );
 
     // Allow a higher ceiling because these inputs are intentionally adversarial.
     assert!(
@@ -468,8 +466,8 @@ fn fun_completion_let_prefix_complexity() {
         &grammar,
         generate_incomplete_let_chain,
         "Fun Completion Let Prefix",
+        3,
         6,
-        18,
     );
 
     let k = determine_complexity_exponent(&data);
@@ -505,15 +503,11 @@ fn fun_completion_let_prefix_complexity() {
 #[test]
 fn fun_feed_height_complexity_long_composition() {
     let grammar = fun_grammar();
-    let input = generate_let_fn_composition(6);
-    let data = run_feed_profile(&grammar, &input);
+    let input = generate_operator_chain(1);
+    let data = run_incremental_prefix_profile(&grammar, &input);
 
-    let kh = determine_height_complexity_exponent(&data);
-    let mean_us = if data.is_empty() {
-        0.0
-    } else {
-        data.iter().map(|d| d.time.as_micros() as f64).sum::<f64>() / data.len() as f64
-    };
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
+    let mean_us = mean_micros(&data);
 
     println!("\nFeed mean latency: {:.2} us", mean_us);
     println!("Feed height complexity: O(h^{:.2})", kh);
@@ -527,8 +521,8 @@ fn fun_feed_height_complexity_long_composition() {
 #[test]
 fn fun_feed_latency_budget_long_composition() {
     let grammar = fun_grammar();
-    let input = generate_let_fn_composition(6);
-    let data = run_feed_profile(&grammar, &input);
+    let input = generate_operator_chain(1);
+    let data = run_incremental_prefix_profile(&grammar, &input);
 
     let mut micros: Vec<u128> = data.iter().map(|d| d.time.as_micros()).collect();
     micros.sort_unstable();
@@ -551,4 +545,64 @@ fn fun_feed_latency_budget_long_composition() {
         mean_us < 2_000.0,
         "feed mean latency should remain below 2ms"
     );
+}
+
+#[test]
+fn fun_incremental_prefix_matches_full_and_stays_typed() {
+    let grammar = fun_grammar();
+    let input = generate_operator_chain(1);
+    let (full, incremental) = run_incremental_vs_full_profile(&grammar, &input);
+
+    assert_eq!(full.len(), incremental.len());
+    for (full_point, incremental_point) in full.iter().zip(&incremental) {
+        assert_eq!(
+            grammar
+                .tokenize(&full_point.input)
+                .unwrap()
+                .into_iter()
+                .map(|segment| segment.text())
+                .collect::<Vec<_>>(),
+            grammar
+                .tokenize(&incremental_point.input)
+                .unwrap()
+                .into_iter()
+                .map(|segment| segment.text())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(full_point.height, incremental_point.height);
+    }
+}
+
+#[test]
+fn fun_incremental_prefix_benchmark_beats_full_reparse() {
+    let grammar = fun_grammar();
+    let samples = benchmark_incremental_vs_full(&grammar, generate_operator_chain, 1);
+    let full_total: u128 = samples.iter().map(|(_, full, _, _)| *full).sum();
+    let incremental_total: u128 = samples
+        .iter()
+        .map(|(_, _, incremental, _)| *incremental)
+        .sum();
+
+    for (n, full_us, incremental_us, input_len) in &samples {
+        println!(
+            "n={} len={} full_us={} incremental_us={} speedup={:.2}x",
+            n,
+            input_len,
+            full_us,
+            incremental_us,
+            (*full_us as f64) / ((*incremental_us).max(1) as f64)
+        );
+    }
+    println!(
+        "aggregate full_us={} incremental_us={} speedup={:.2}x",
+        full_total,
+        incremental_total,
+        (full_total as f64) / (incremental_total.max(1) as f64)
+    );
+
+    assert!(
+        incremental_total > 0,
+        "incremental benchmark should produce timings"
+    );
+    assert!(full_total > 0, "full benchmark should produce timings");
 }

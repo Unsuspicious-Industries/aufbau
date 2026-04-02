@@ -1,628 +1,408 @@
-//! Priority-guided DFS search for completions.
+use crate::logic::fusion::ast::FusionForest;
+use crate::logic::fusion::{
+    FusionAST, RuleRuntime, TypedParser, TypedPrefixError, TypedPrefixState,
+};
+use crate::logic::grammar::{Grammar, Segment};
+use crate::logic::typing::Context;
+use crate::regex::Regex;
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::rc::Rc;
+use std::time::Instant;
 
-mod heuristics;
-pub mod scoring;
+mod candidate;
+mod distance;
+mod score;
 
-use crate::debug_info;
-use crate::logic::grammar::Grammar;
-use crate::logic::partial::Synthesizer;
-use crate::logic::typing::tree::{TypedAST, TypedNode};
-use crate::logic::typing::{gather_terminals_typed, Context, Type};
-use crate::regex::Regex as DerivativeRegex;
-use std::collections::{BinaryHeap, HashSet, VecDeque};
+#[cfg(test)]
+mod tests;
 
-#[derive(Debug, Clone, Copy)]
-pub struct SearchConfig {
-    pub max_depth: usize,
-    /// Max concrete string examples tried per regex token. Bounds branching factor.
-    /// (Regexes are infinite; this is not a correctness loss, just instance selection.)
-    pub max_token_examples: usize,
-    /// Total states budget. Search returns Exhausted when hit.
-    pub max_states: usize,
-    /// Beam width per expanded state: keep only the top-N scored children.
-    ///
-    /// This is a performance/correctness trade-off tuned for completion tasks:
-    /// wildly branching token choices (especially expression operators) can
-    /// explode before structural closure tokens (`;`, `)`, `=>`) are explored.
-    /// Keeping only high-score children preserves the most promising paths and
-    /// avoids hangs on prefix-heavy validations.
-    pub max_children_per_state: usize,
-}
-
-impl Default for SearchConfig {
-    fn default() -> Self {
-        Self {
-            max_depth: 10,
-            // Keep branching tight. Candidate quality is handled by synthesizer
-            // ordering, so one witness per token is usually enough.
-            max_token_examples: 1,
-            max_states: 96,
-            max_children_per_state: 12,
-        }
-    }
-}
+use candidate::{Composite, Ctx, Strategy, collect_seeds};
+use score::{Total, rerank, score};
 
 #[derive(Debug)]
-pub enum SearchResult {
+pub enum CompletionResult {
     Success {
         complete_input: String,
-        ast: TypedNode,
-        completion_path: Vec<DerivativeRegex>,
-        depth: usize,
+        ast: FusionAST,
+        completion_path: Vec<Regex>,
+        completion_depth: usize,
     },
-    Exhausted {
-        max_depth: usize,
+    Failure {
+        max_depth_reached: usize,
         states_explored: usize,
         visited_states: Vec<String>,
     },
-    Invalid {
-        message: String,
-    },
+    Invalid(String),
+    Inconsistency(String),
+    Error(String),
 }
 
-#[derive(Clone)]
-struct SearchState {
-    tree: TypedAST,
-    depth: usize,
-    path: Vec<DerivativeRegex>,
+pub(crate) struct State {
+    base: Total,
+    total: Total,
+    input: Rc<String>,
+    path: Rc<Vec<Regex>>,
+    ctx_id: crate::logic::fusion::CtxId,
+    parser: TypedParser<RuleRuntime>,
+    prefix: TypedPrefixState,
+    segments: Rc<Vec<Segment>>,
 }
 
-#[derive(Clone)]
-struct ScoredState {
-    score: f64,
-    state: SearchState,
+impl Clone for State {
+    fn clone(&self) -> Self {
+        Self {
+            base: self.base,
+            total: self.total,
+            input: Rc::clone(&self.input),
+            path: Rc::clone(&self.path),
+            ctx_id: self.ctx_id,
+            parser: self.parser.fork(),
+            prefix: self.prefix.clone(),
+            segments: Rc::clone(&self.segments),
+        }
+    }
 }
 
-impl PartialEq for ScoredState {
+impl State {
+    fn view(&self) -> FusionForest<'_> {
+        FusionForest::new(
+            self.parser.arena(),
+            &self.segments,
+            &self.prefix.roots,
+            &self.input,
+        )
+    }
+
+    fn materialize(&self) -> FusionAST {
+        self.parser.materialize(
+            &self.prefix.roots,
+            (*self.segments).clone(),
+            (*self.input).clone(),
+        )
+    }
+
+    fn extend_path(&self, token: Regex) -> Self {
+        let mut p = (*self.path).clone();
+        p.push(token);
+        Self {
+            path: Rc::new(p),
+            ..self.clone()
+        }
+    }
+}
+
+impl PartialEq for State {
     fn eq(&self, other: &Self) -> bool {
-        self.score.to_bits() == other.score.to_bits()
+        *self.input == *other.input
     }
 }
 
-impl Eq for ScoredState {}
+impl Eq for State {}
 
-impl PartialOrd for ScoredState {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.score.partial_cmp(&other.score)
-    }
+pub struct Searcher {
+    pub grammar: Grammar,
+    pub runtime: RuleRuntime,
+    parser: TypedParser<RuleRuntime>,
+    start_depth: u16,
+    max_depth: u16,
+    depth_factor: f64,
+    seeds: Vec<String>,
 }
 
-impl Ord for ScoredState {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.score
-            .partial_cmp(&other.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    }
-}
-
-/// DFS with priority ordering: always expand the best-scoring child first.
-///
-/// Uses a shared Synthesizer for cached incremental parsing.
-pub fn search_complete(
-    grammar: &Grammar,
-    input: &str,
-    config: &SearchConfig,
-    ctx: &Context,
-) -> SearchResult {
-    let mut synth = Synthesizer::new(grammar.clone(), input);
-    let base_tree = match synth.partial_typed_ctx(ctx) {
-        Ok(ast) => ast,
-        Err(e) => {
-            return SearchResult::Invalid {
-                message: format!("Input is not partially valid: {}", e),
-            };
-        }
-    };
-
-    let mut visited: HashSet<String> = HashSet::new();
-    visited.insert(base_tree.text().to_string());
-    let mut visited_states: VecDeque<String> = VecDeque::new();
-    visited_states.push_back(base_tree.text().to_string());
-
-    let mut states_explored = 0usize;
-
-    // Fast path: greedy single-branch completion avoids expensive frontier
-    // exploration on common prefix states like `let` / `(` where one obvious
-    // continuation reaches a complete tree quickly.
-    if let Some(success) = try_greedy_complete(
-        &mut synth,
-        base_tree.clone(),
-        ctx,
-        config.max_depth,
-        config.max_token_examples,
-    ) {
-        return success;
-    }
-
-    let initial_state = SearchState {
-        tree: base_tree,
-        depth: 0,
-        path: Vec::new(),
-    };
-
-    let mut frontier: BinaryHeap<ScoredState> = BinaryHeap::new();
-    let initial_score = scoring::calculate_score(&initial_state.tree, 0, config.max_depth).overall;
-    frontier.push(ScoredState {
-        score: initial_score,
-        state: initial_state,
-    });
-
-    while let Some(ScoredState { state, .. }) = frontier.pop() {
-        debug_info!(
-            "search",
-            "Exploring state: depth={} input='{}' score={}",
-            state.depth,
-            state.tree.text(),
-            scoring::calculate_score(&state.tree, state.depth, config.max_depth).overall
-        );
-        if let Some(complete_node) = find_valid_completion(&state.tree) {
-            let reconstructed = state.tree.text();
-            debug_info!(
-                "search",
-                "Completion found: depth={} input='{}'",
-                state.depth,
-                reconstructed
-            );
-            return SearchResult::Success {
-                complete_input: reconstructed,
-                ast: complete_node,
-                completion_path: state.path.clone(),
-                depth: state.depth,
-            };
-        }
-
-        if state.depth >= config.max_depth {
-            continue;
-        }
-
-        if states_explored >= config.max_states {
-            break;
-        }
-
-        let children = build_children(
-            &mut synth,
-            &state,
-            ctx,
-            config.max_depth,
-            config.max_token_examples,
-            config.max_children_per_state,
-            &mut visited,
-            &mut visited_states,
-            &mut states_explored,
-        );
-
-        for (child, score) in children {
-            frontier.push(ScoredState {
-                score,
-                state: child,
-            });
+impl Searcher {
+    pub fn new(grammar: Grammar, max_depth: usize) -> Self {
+        let runtime = RuleRuntime::new(grammar.clone());
+        let parser = TypedParser::new(grammar.clone(), runtime.clone());
+        Self {
+            grammar: grammar.clone(),
+            runtime,
+            parser,
+            start_depth: 4,
+            max_depth: max_depth.max(1) as u16,
+            depth_factor: 1.5,
+            seeds: collect_seeds(&grammar),
         }
     }
 
-    SearchResult::Exhausted {
-        max_depth: config.max_depth,
-        states_explored,
-        visited_states: visited_states.into_iter().collect(),
-    }
-}
+    pub fn complete(&mut self, input: &str, opt_ctx: Option<Context>) -> CompletionResult {
+        let ctx = opt_ctx.unwrap_or_default();
+        let ctx_id = self.runtime.intern_context(ctx.clone());
 
-fn try_greedy_complete(
-    synth: &mut Synthesizer,
-    mut tree: TypedAST,
-    ctx: &Context,
-    max_depth: usize,
-    max_token_examples: usize,
-) -> Option<SearchResult> {
-    let mut path = Vec::new();
+        match self.parse(input, ctx_id) {
+            Ok(st) if st.view().is_complete() => CompletionResult::Success {
+                complete_input: input.to_string(),
+                ast: st.materialize(),
+                completion_path: vec![],
+                completion_depth: 0,
+            },
+            Ok(st) => {
+                let mut visited = HashSet::from([(*st.input).clone()]);
+                let mut explored = 0;
 
-    for depth in 0..=max_depth {
-        if let Some(complete_node) = find_valid_completion(&tree) {
-            return Some(SearchResult::Success {
-                complete_input: tree.text(),
-                ast: complete_node,
-                completion_path: path,
-                depth,
-            });
-        }
-
-        if depth == max_depth {
-            break;
-        }
-
-        let tokens = synth.feed(tree.text(), ctx);
-        if tokens.is_empty() {
-            break;
-        }
-
-        let mut local_terms = Vec::new();
-        for root in &tree.roots {
-            local_terms.extend(gather_terminals_typed(root));
-        }
-
-        let mut best_next: Option<(TypedAST, DerivativeRegex, usize, f64, f64)> = None;
-        for token in tokens.iter() {
-            let candidates = synth.extend_all_with_regex_candidates(
-                token,
-                ctx,
-                &local_terms,
-                max_token_examples,
-            );
-            for (next_tree, _ext) in candidates.into_iter() {
-                if !has_well_typed_root(&next_tree) || next_tree.text() == tree.text() {
-                    continue;
+                if let Some(r) = self.search(&ctx, st, &mut visited, &mut explored) {
+                    return r;
                 }
-                if let Some(complete_node) = find_valid_completion(&next_tree) {
-                    let mut completion_path = path.clone();
-                    completion_path.push(token.clone());
-                    return Some(SearchResult::Success {
-                        complete_input: next_tree.text(),
-                        ast: complete_node,
-                        completion_path,
-                        depth: depth + 1,
+
+                let mut states: Vec<_> = visited.into_iter().collect();
+                states.sort();
+                CompletionResult::Failure {
+                    max_depth_reached: 0,
+                    states_explored: explored,
+                    visited_states: states,
+                }
+            }
+            Err(err) if err.depth.hit_depth_limit => CompletionResult::Failure {
+                max_depth_reached: err.depth.searched_depth as usize,
+                states_explored: 0,
+                visited_states: vec![],
+            },
+            Err(err) => CompletionResult::Invalid(err.to_string()),
+        }
+    }
+
+    pub(crate) fn parse(
+        &self,
+        input: &str,
+        ctx_id: crate::logic::fusion::CtxId,
+    ) -> Result<State, TypedPrefixError> {
+        // `max_depth` is a completion-search budget (how many tokens we may append),
+        // not a strict bound on parsing the already-present prefix.
+        // Keep a structural parse baseline so complete/near-complete inputs remain
+        // parseable even when completion budget is small (e.g. depth=1).
+        const MIN_PARSE_DEPTH: u16 = 12;
+        let parse_depth_cap = self.max_depth.max(MIN_PARSE_DEPTH);
+        let mut depth = self.start_depth;
+
+        loop {
+            let mut parser = self.parser.fork().with_max_depth(depth);
+            match parser.parse(input, ctx_id) {
+                Ok(prefix) => {
+                    let segments = self.grammar.tokenize(input).unwrap_or_default();
+                    let s = score(
+                        &FusionForest::new(parser.arena(), &segments, &prefix.roots, input),
+                        &self.grammar,
+                    );
+                    return Ok(State {
+                        base: s,
+                        total: s,
+                        input: Rc::new(input.to_string()),
+                        path: Rc::new(vec![]),
+                        ctx_id,
+                        parser,
+                        prefix,
+                        segments: Rc::new(segments),
                     });
                 }
-
-                let state_score = scoring::calculate_score(&next_tree, depth + 1, max_depth);
-                let score = state_score.overall;
-                let open_slots = state_score.open_slots;
-                let grounded = grounded_root_count(&next_tree);
-                match &best_next {
-                    Some((_, _, best_grounded, best_open_slots, best_score))
-                        if grounded < *best_grounded
-                            || (grounded == *best_grounded
-                                && (open_slots < *best_open_slots
-                                    || (open_slots == *best_open_slots
-                                        && score <= *best_score))) => {}
-                    _ => {
-                        best_next = Some((next_tree, token.clone(), grounded, open_slots, score));
+                Err(err) => {
+                    if depth >= parse_depth_cap {
+                        return Err(err);
                     }
+                    let mut next = ((depth as f64) * self.depth_factor).ceil() as u16;
+                    if next <= depth {
+                        next = depth + 1;
+                    }
+                    depth = next.min(parse_depth_cap);
+                }
+            }
+        }
+    }
+
+    fn search(
+        &self,
+        ctx: &Context,
+        init: State,
+        visited: &mut HashSet<String>,
+        explored: &mut usize,
+    ) -> Option<CompletionResult> {
+        const MAX: usize = 200;
+        let mut pq = Vec::new();
+        let mut popped = HashSet::new();
+        let mut canon = HashMap::<(bool, usize, usize, usize, usize, usize, u64), usize>::new();
+        let strategy = Composite::default();
+
+        pq.push(init);
+
+        // Accept a syntactically complete starting state immediately.
+        if let Some(st) = pq.last()
+            && st.view().is_complete()
+        {
+            return Some(CompletionResult::Success {
+                complete_input: (*st.input).clone(),
+                ast: st.materialize(),
+                completion_depth: st.path.len(),
+                completion_path: (*st.path).clone(),
+            });
+        }
+
+        while let Some(st) = best(&mut pq, &popped) {
+            if !popped.insert((*st.input).clone()) {
+                continue;
+            }
+            if *explored >= MAX {
+                return None;
+            }
+            *explored += 1;
+
+            if st.view().is_complete() {
+                return Some(CompletionResult::Success {
+                    complete_input: (*st.input).clone(),
+                    ast: st.materialize(),
+                    completion_depth: st.path.len(),
+                    completion_path: (*st.path).clone(),
+                });
+            }
+
+            if st.path.len() >= self.max_depth as usize {
+                continue;
+            }
+
+            let view = st.view();
+            let tokens = view.completions(&self.grammar);
+            let mut local = HashSet::new();
+
+            let cctx = Ctx {
+                grammar: &self.grammar,
+                ast: &view,
+                ctx,
+                seeds: &self.seeds,
+            };
+
+            for tok in tokens.iter() {
+                for cand in strategy.gather(tok, &cctx) {
+                    if st.path.len() + 1 > self.max_depth as usize {
+                        continue;
+                    }
+                    let next_input = self.grammar.extend_input(&st.input, &cand);
+                    let Ok(next) = extend(&st, next_input, &self.grammar) else {
+                        continue;
+                    };
+
+                    if next.view().is_complete() {
+                        return Some(CompletionResult::Success {
+                            complete_input: (*next.input).clone(),
+                            ast: next.materialize(),
+                            completion_depth: next.path.len() + 1,
+                            completion_path: (*next.extend_path(tok.clone()).path).clone(),
+                        });
+                    }
+
+                    let next_str = (*next.input).clone();
+                    if !local.insert(next_str.clone()) || visited.contains(&next_str) {
+                        continue;
+                    }
+
+                    let sig = signature(&next, &self.grammar);
+                    let len = next_str.len();
+                    if canon.get(&sig).is_some_and(|best| *best >= len) {
+                        continue;
+                    }
+                    canon.insert(sig, len);
+                    visited.insert(next_str);
+
+                    pq.push(next.extend_path(tok.clone()));
                 }
             }
         }
 
-        if let Some((next_tree, chosen_token, _, _, _)) = best_next {
-            path.push(chosen_token);
-            tree = next_tree;
-        } else {
-            break;
-        }
+        None
     }
-
-    None
 }
 
-fn build_children(
-    synth: &mut Synthesizer,
-    state: &SearchState,
-    ctx: &Context,
-    max_depth: usize,
-    max_token_examples: usize,
-    max_children_per_state: usize,
-    visited: &mut HashSet<String>,
-    visited_states: &mut VecDeque<String>,
-    states_explored: &mut usize,
-) -> Vec<(SearchState, f64)> {
-    let tokens = heuristics::ordered_tokens(synth.feed(state.tree.text().to_string(), ctx));
-
-    debug_info!(
-        "search",
-        "Expanding state: depth={} input='{}' tokens: {}",
-        state.depth,
-        state.tree.text(),
-        tokens
-            .iter()
-            .map(|t| t.to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-
-    let mut children: Vec<(SearchState, usize, f64)> = Vec::new();
-    let mut local_terms = Vec::new();
-    for root in &state.tree.roots {
-        local_terms.extend(gather_terminals_typed(root));
-    }
-
-    for token in tokens.iter() {
-        for child in
-            extend_states_with_token(synth, state, token, ctx, &local_terms, max_token_examples)
-        {
-            if visited.insert(child.tree.text().to_string()) {
-                visited_states.push_back(child.tree.text().to_string());
-                *states_explored += 1;
-                let score = scoring::calculate_score(&child.tree, child.depth, max_depth).overall;
-                let grounded = grounded_root_count(&child.tree);
-                children.push((child, grounded, score));
-            }
-        }
-    }
-
-    let has_grounded = children.iter().any(|(_, grounded, _)| *grounded > 0);
-    if has_grounded {
-        children.retain(|(_, grounded, _)| *grounded > 0);
-    }
-
-    children.sort_by(|(_, grounded_a, score_a), (_, grounded_b, score_b)| {
-        grounded_b.cmp(grounded_a).then_with(|| {
-            score_b
-                .partial_cmp(score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
-
-    if max_children_per_state > 0 && children.len() > max_children_per_state {
-        children.truncate(max_children_per_state);
-    }
-
-    children
-        .into_iter()
-        .map(|(state, _grounded, score)| (state, score))
-        .collect()
-}
-
-fn extend_states_with_token(
-    synth: &mut Synthesizer,
-    state: &SearchState,
-    token: &DerivativeRegex,
-    ctx: &Context,
-    local_terms: &[String],
-    max_token_examples: usize,
-) -> Vec<SearchState> {
-    synth.set_input(state.tree.text().to_string());
-    let mut out = Vec::new();
-    let mut extra = local_terms.to_vec();
-    extra.sort();
-    extra.dedup();
-
-    let candidates = synth.extend_all_with_regex_candidates(token, ctx, &extra, max_token_examples);
-    // Candidates are priority-ordered (example first, then grammar types, literals).
-    // max_token_examples is enforced inside the call — no extra work done beyond the limit.
-    for (ext, _extended) in candidates.into_iter() {
-        if has_well_typed_root(&ext) {
-            let mut path = state.path.clone();
-            path.push(token.clone());
-            out.push(SearchState {
-                tree: ext,
-                depth: state.depth + 1,
-                path,
-            });
-        }
-    }
-
-    out
-}
-
-fn has_well_typed_root(ast: &TypedAST) -> bool {
-    !ast.roots.is_empty()
-}
-
-fn grounded_root_count(ast: &TypedAST) -> usize {
-    ast.roots
-        .iter()
-        .filter(|r| !matches!(r.ty(), Type::Any))
-        .count()
-}
-
-fn find_valid_completion(ast: &TypedAST) -> Option<TypedNode> {
-    ast.roots.iter().find(|r| r.is_complete()).cloned()
-}
-
-/// Returns up to k complete typed programs that extend the current input.
-///
-/// This function uses the same search algorithm as `search_complete` but continues
-/// to search for up to k distinct completions instead of returning at the first one.
-pub fn search_k(
+pub fn complete(
     grammar: &Grammar,
     input: &str,
-    k: usize,
-    config: &SearchConfig,
-    ctx: &Context,
-) -> Vec<TypedNode> {
-    // Check if the input is at least partially valid
-    let mut synth = Synthesizer::new(grammar.clone(), input);
-    let base_tree = match synth.partial_typed_ctx(ctx) {
-        Ok(ast) => ast,
-        Err(_e) => {
-            // If the input is not even partially valid, there are no completions.
-            return Vec::new();
-        }
-    };
-
-    let mut visited: HashSet<String> = HashSet::new();
-    visited.insert(base_tree.text().to_string());
-    let mut visited_states: VecDeque<String> = VecDeque::new();
-    visited_states.push_back(base_tree.text().to_string());
-
-    let mut states_explored = 0usize;
-    let mut results: Vec<TypedNode> = Vec::new();
-    let mut seen_completions: HashSet<String> = HashSet::new();
-
-    // We skip the greedy fast path for simplicity in the k version.
-    // The frontier search will find completions in order of score.
-
-    let initial_state = SearchState {
-        tree: base_tree,
-        depth: 0,
-        path: Vec::new(),
-    };
-
-    let mut frontier: BinaryHeap<ScoredState> = BinaryHeap::new();
-    let initial_score = scoring::calculate_score(&initial_state.tree, 0, config.max_depth).overall;
-    frontier.push(ScoredState {
-        score: initial_score,
-        state: initial_state,
-    });
-
-    while let Some(ScoredState { state, .. }) = frontier.pop() {
-        // If we already have k results, we can stop early.
-        if results.len() >= k {
-            break;
-        }
-
-        // Check if this state is a completion.
-        if let Some(complete_node) = find_valid_completion(&state.tree) {
-            let completion_text = complete_node.text();
-            // Avoid duplicate completions.
-            if seen_completions.insert(completion_text.clone()) {
-                results.push(complete_node);
-            }
-            // Note: we do not break here because we might find more completions.
-        }
-
-        if state.depth >= config.max_depth {
-            continue;
-        }
-
-        if states_explored >= config.max_states {
-            break;
-        }
-
-        let children = build_children(
-            &mut synth,
-            &state,
-            ctx,
-            config.max_depth,
-            config.max_token_examples,
-            config.max_children_per_state,
-            &mut visited,
-            &mut visited_states,
-            &mut states_explored,
-        );
-
-        for (child, score) in children {
-            frontier.push(ScoredState {
-                score,
-                state: child,
-            });
-        }
+    max_depth: usize,
+    opt_ctx: Option<Context>,
+) -> CompletionResult {
+    let mut s = Searcher::new(grammar.clone(), max_depth);
+    let mut r = s.complete(input, opt_ctx);
+    if let CompletionResult::Failure {
+        max_depth_reached, ..
+    } = &mut r
+    {
+        *max_depth_reached = max_depth;
     }
-
-    results
+    r
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::logic::typing::{Context, Type};
-    use crate::{set_debug_level, testing::load_example_grammar};
+fn best(pq: &mut Vec<State>, popped: &HashSet<String>) -> Option<State> {
+    if pq.is_empty() {
+        return None;
+    }
 
-    const SCOPED_TYPED_SPEC: &str = r#"
-    Identifier ::= /[a-z]+/
-    Type ::= 'X' | 'Y'
-    Variable(var) ::= Identifier[x]
-    Num(num) ::= /[0-9]+/
-    Let(letb) ::= 'def' Identifier[name] ':' Type[τ] '=' Atom[value] 'in' Expr[body]
-    Scoped(scoped) ::= '{' Expr[inner] '}'
-    Atom ::= Variable | Num | Scoped | '(' Expr ')'
-    Expr ::= Let | Atom
+    pq.iter_mut()
+        .for_each(|st| st.total = rerank(st.base, &st.input, popped));
 
-    x ∈ Γ
-    ----------- (var)
-    Γ(x)
+    let idx = pq
+        .iter()
+        .enumerate()
+        .max_by(|(_, l), (_, r)| l.total.cmp(&r.total))
+        .map(|(i, _)| i)?;
 
-    ----------- (num)
-    'X'
+    Some(pq.swap_remove(idx))
+}
 
-    Γ ⊢ value : τ, Γ[name:τ] ⊢ body : ?R
-    ----------- (letb)
-    ?R
+fn signature(st: &State, grammar: &Grammar) -> (bool, usize, usize, usize, usize, usize, u64) {
+    let v = st.view();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for token in v.completions(grammar).into_iter().take(8) {
+        token.to_pattern().hash(&mut hasher);
+        token.example().hash(&mut hasher);
+    }
+    (
+        v.is_complete(),
+        v.min_open_slots(grammar),
+        v.min_tree_depth(),
+        v.len(),
+        v.leaf_terminal_count(),
+        st.path.len(),
+        hasher.finish(),
+    )
+}
 
-    [Γ] ⊢ inner : ?T
-    ----------- (scoped)
-    ?T
-"#;
-
-    #[test]
-    fn search_never_returns_syntactically_or_typedly_invalid_completion() {
-        let grammar = load_example_grammar("fun");
-        let cfg = SearchConfig {
-            max_depth: 6,
-            ..Default::default()
-        };
-        let prefix = "let";
-
-        let result = search_complete(&grammar, prefix, &cfg, &Context::new());
-        if let SearchResult::Success { complete_input, .. } = result {
-            let mut mp = crate::logic::partial::MetaParser::new(grammar).with_max_depth(62);
-            let typed = mp
-                .partial_typed(&complete_input)
-                .unwrap_or_else(|e| panic!("invalid completion '{}': {}", complete_input, e));
-            assert!(
-                typed.clone().complete().is_ok(),
-                "completion is not a complete typed tree: {}",
-                complete_input
-            );
+pub(crate) fn extend(
+    st: &State,
+    next_input: String,
+    grammar: &Grammar,
+) -> Result<State, TypedPrefixError> {
+    let mut parser = st.parser.fork();
+    let start = Instant::now();
+    let prefix = match parser.advance(&st.prefix, &next_input, st.ctx_id) {
+        Ok(prefix) => prefix,
+        Err(inc_err) => {
+            let mut fresh = st.parser.fork();
+            match fresh.parse(&next_input, st.ctx_id) {
+                Ok(prefix) => {
+                    parser = fresh;
+                    prefix
+                }
+                Err(_) => return Err(inc_err),
+            }
         }
-    }
-
-    #[test]
-    #[ignore = "search broken after max_states cap, needs fixing"]
-    fn search_fun_let_name_prefix_depth6() {
-        set_debug_level(crate::DebugLevel::Trace);
-        crate::add_module_filter("search");
-        let grammar = load_example_grammar("fun");
-        let cfg = SearchConfig {
-            max_depth: 6,
-            ..Default::default()
-        };
-        let result = search_complete(&grammar, "let x", &cfg, &Context::new());
-        assert!(
-            matches!(result, SearchResult::Success { .. }),
-            "expected completion success for 'let x' with depth 6, got {:?}",
-            result
-        );
-    }
-
-    #[test]
-    #[ignore = "search broken after max_states cap, needs fixing"]
-    fn search_fun_let_prefix_depth7() {
-        set_debug_level(crate::DebugLevel::Trace);
-        crate::add_module_filter("search");
-        let grammar = load_example_grammar("fun");
-        let cfg = SearchConfig {
-            max_depth: 7,
-            ..Default::default()
-        };
-        let result = search_complete(&grammar, "let", &cfg, &Context::new());
-        assert!(matches!(result, SearchResult::Success { .. }));
-    }
-
-    /// Test that search_k returns up to k complete programs from a prefix
-    #[test]
-    fn test_search_k_returns_multiple_programs() {
-        let grammar = Grammar::load(SCOPED_TYPED_SPEC).unwrap();
-        let _ctx = Context::new();
-        let config = SearchConfig::default();
-        // Start with a prefix that can be completed in multiple ways
-        let results = search_k(&grammar, "def a : X =", 2, &config, &_ctx);
-        assert!(results.len() >= 1, "Should get at least one completion");
-        assert!(results.len() <= 2, "Should not exceed requested k");
-
-        // All results should be complete programs (non-empty text)
-        for result in results {
-            assert!(
-                !result.text().is_empty(),
-                "Each result should be a non-empty completion"
-            );
-        }
-    }
-
-    /// Test that search_k respects the k limit
-    #[test]
-    fn test_search_k_respects_limit() {
-        let grammar = Grammar::load(SCOPED_TYPED_SPEC).unwrap();
-        let _ctx = Context::new();
-        let config = SearchConfig::default();
-        // Request 1 completion
-        let results = search_k(&grammar, "def a : X =", 1, &config, &_ctx);
-        assert_eq!(
-            results.len(),
-            1,
-            "Should return exactly 1 completion when k=1"
-        );
-
-        // Request 5 completions (but there may be fewer available)
-        let results = search_k(&grammar, "def a : X =", 5, &config, &_ctx);
-        assert!(results.len() <= 5, "Should not exceed requested k");
-        assert!(results.len() >= 1, "Should get at least one completion");
-    }
+    };
+    crate::debug_debug!(
+        "completion_perf",
+        "search_extend: input='{}' next='{}' roots={} nodes={} elapsed_us={}",
+        *st.input,
+        next_input,
+        prefix.roots.len(),
+        parser.arena().node_count(),
+        start.elapsed().as_micros()
+    );
+    let segments = grammar.tokenize(&next_input).unwrap_or_default();
+    let s = score(
+        &FusionForest::new(parser.arena(), &segments, &prefix.roots, &next_input),
+        grammar,
+    );
+    Ok(State {
+        base: s,
+        total: s,
+        input: Rc::new(next_input),
+        path: Rc::clone(&st.path),
+        ctx_id: st.ctx_id,
+        parser,
+        prefix,
+        segments: Rc::new(segments),
+    })
 }

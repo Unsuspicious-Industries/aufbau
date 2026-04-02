@@ -88,51 +88,10 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     ]
 }
 
-#[test]
-#[ignore = "depth probe - run manually to diagnose fun grammar performance"]
-fn probe_fun_parse_depth() {
-    use crate::logic::partial::MetaParser;
-    use std::time::Instant;
-    let grammar = fun_grammar();
-    let cases = [
-        ("simple", "42"),
-        ("lambda", "(x: Int) => x + 1"),
-        ("nested app", "(f: Int -> Int) => ((x: Int) => f(x))"),
-        (
-            "double compose",
-            "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
-        ),
-        (
-            "triple compose",
-            "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
-        ),
-        (
-            "higher-order app",
-            "(f: Int ) => (g: Int -> Int) => (x: Int) => f + g(x)",
-        ),
-    ];
-    for (name, input) in &cases {
-        println!("\n--- {} ({} chars) ---", name, input.len());
-        for &depth in &[5usize, 8, 10, 12, 15, 18, 20, 25, 30] {
-            let start = Instant::now();
-            let mut parser = MetaParser::new(grammar.clone())
-                .with_max_depth(depth)
-                .with_start_depth(depth);
-            let res = parser.partial(input);
-            let elapsed = start.elapsed();
-            println!(
-                "  depth={:2}: {} in {:?}",
-                depth,
-                if res.is_ok() { "OK  " } else { "FAIL" },
-                elapsed
-            );
-            if elapsed.as_secs() > 5 {
-                println!("  (too slow, stopping)");
-                break;
-            }
-        }
-    }
-}
+// FIXME: This test uses the old partial::MetaParser API which no longer exists
+// #[test]
+// #[ignore = "depth probe - run manually to diagnose fun grammar performance"]
+// fn probe_fun_parse_depth() { ... }
 
 #[test]
 fn valid_expressions_fun() {

@@ -1,11 +1,10 @@
 use clap::Args;
 use std::fs;
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use aufbau::logic::debug::set_debug_input;
+use aufbau::logic::fusion::Synthesizer;
 use aufbau::logic::grammar::Grammar;
-use aufbau::logic::partial::Synthesizer;
 use aufbau::logic::typing::Context;
 use aufbau::validation::completable::{self, TypedCompletionTestCase};
 
@@ -60,7 +59,7 @@ pub struct ExamineCmd {
 
 fn dump_completions(grammar: &Grammar, input: &str, ctx: &Context) {
     let mut synth = Synthesizer::new(grammar.clone(), input);
-    let typed = synth.completions_ctx(ctx);
+    let typed = synth.tokens_with(ctx);
     println!("\n-- completions --");
     for (i, token) in typed.iter().enumerate() {
         println!(
@@ -134,11 +133,11 @@ pub fn run(args: &ExamineCmd) {
                 }
             }
             // Always override depth when explicitly provided on the CLI
-            case.max_depth = args.depth;
+            case.completion_budget = args.depth;
             eprintln!("Overrode case expected={:?} depth={}", exp, args.depth);
         } else {
             // If no explicit expected was given still allow depth override
-            case.max_depth = args.depth;
+            case.completion_budget = args.depth;
         }
 
         eprintln!(
@@ -149,17 +148,15 @@ pub fn run(args: &ExamineCmd) {
         let case_input = case.input;
 
         // === Parser / Partial AST ===
-        let mut synth = Synthesizer::new(grammar.clone(), case_input);
-        match synth.partial() {
+        let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), case_input, 64);
+        match synth.parse_with(&Context::new()) {
             Ok(partial_ast) => {
-                eprintln!(
-                    "-- parsed SppfForest ({} root(s)) --",
-                    partial_ast.roots().len()
-                );
+                let root_count = partial_ast.len();
+                eprintln!("-- parsed FusionAST ({} root(s)) --", root_count);
                 if args.dump_ast {
                     eprintln!("{:#?}", partial_ast);
                 } else {
-                    eprintln!("  (SppfForest suppressed; use --dump-ast to print full SppfForest)");
+                    eprintln!("  (FusionAST suppressed; use --dump-ast to print full FusionAST)");
                 }
 
                 // Typed filter / typed attempt
@@ -169,22 +166,22 @@ pub fn run(args: &ExamineCmd) {
                         ctx.add(var.to_string(), ty);
                     }
                 }
-                match partial_ast.typed_ctx(&grammar, &ctx) {
+                match synth.parse_with(&ctx) {
                     Ok(typed_ast) => {
                         eprintln!(
-                            "SppfForest typed successfully - TypedAST has {} root(s)",
-                            typed_ast.roots.len()
+                            "FusionAST typed successfully - typed AST has {} root(s)",
+                            typed_ast.len()
                         );
                         if args.dump_ast {
                             eprintln!("{:#?}", typed_ast);
                         } else {
                             eprintln!(
-                                "  (TypedAST suppressed; use --dump-ast to print full TypedAST)"
+                                "  (typed AST suppressed; use --dump-ast to print full typed AST)"
                             );
                         }
                     }
                     Err(e) => {
-                        eprintln!("SppfForest typed failed: {}", e);
+                        eprintln!("FusionAST typed failed: {}", e);
                     }
                 }
 
@@ -219,7 +216,7 @@ pub fn run(args: &ExamineCmd) {
         println!("\n=== Detailed metadata ===");
         println!("case.input = '{}'", case.input);
         println!("case.description = '{}'", case.description);
-        println!("case.max_depth = {}", case.max_depth);
+        println!("case.completion_budget = {}", case.completion_budget);
 
         if let Some(se) = meta.states_explored {
             println!("states_explored = {}", se);
@@ -259,61 +256,11 @@ pub fn run(args: &ExamineCmd) {
             }
         }
 
-        // If we have a completed string, serialize the full completed AST to a binary
-        // file (so tools can load the exact tree).  Then print the full completed
-        // output at the end (instead of dumping the AST to stdout).
-        if let aufbau::validation::completable::TestResult::Pass(opt_comp) = &result {
-            if let Some(comp_str) = opt_comp.clone() {
-                // Parse the completed string to obtain the completed SppfForest
-                // using the same adaptive parser path as completability checks.
-                let mut synth_done = Synthesizer::new(grammar.clone(), &comp_str);
-                match synth_done.partial() {
-                    Ok(ast) => {
-                        // Serialize to the canonical string format and write as binary
-                        let serialized = ast.serialize();
-
-                        // Build a safe filename using the case description + timestamp
-                        let safe_desc: String = case
-                            .description
-                            .chars()
-                            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                            .collect();
-                        let ts = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map(|d| d.as_secs())
-                            .unwrap_or(0);
-                        let out_dir = PathBuf::from("validation/trees");
-                        let filename = format!("examine_{}_{}.ast", safe_desc, ts);
-                        let out_path = out_dir.join(filename);
-
-                        if let Err(e) = fs::create_dir_all(&out_dir) {
-                            eprintln!("Failed to create output dir '{}': {}", out_dir.display(), e);
-                        }
-
-                        match fs::write(&out_path, serialized.as_bytes()) {
-                            Ok(()) => {
-                                println!(
-                                    "Saved serialized completed tree to file: '{}'",
-                                    out_path.display()
-                                )
-                            }
-                            Err(e) => eprintln!(
-                                "Failed to write serialized tree to '{}': {}",
-                                out_path.display(),
-                                e
-                            ),
-                        }
-
-                        // (do not print the AST debug dump here)
-                    }
-                    Err(e) => {
-                        eprintln!("parser.partial on completed string failed: {}", e);
-                    }
-                }
-
-                // Print the full completed output at the end (user-requested)
-                println!("\nFULL COMPLETED OUTPUT:\n{}", comp_str);
-            }
+        // If we have a completed string, print it
+        if let aufbau::validation::completable::TestResult::Pass(opt_comp) = &result
+            && let Some(comp_str) = opt_comp.clone()
+        {
+            println!("\nFULL COMPLETED OUTPUT:\n{}", comp_str);
         }
 
         std::process::exit(if result.is_pass() { 0 } else { 1 });

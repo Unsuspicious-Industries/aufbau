@@ -1,9 +1,6 @@
 pub mod logic;
 pub mod regex;
 pub mod validation;
-pub mod viz;
-
-pub mod exp;
 
 #[macro_use]
 mod utils;

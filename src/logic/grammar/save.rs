@@ -33,7 +33,7 @@ impl Grammar {
                 out.push('\n');
             }
         }
-        out.push_str("\n");
+        out.push('\n');
 
         // ---------- Typing rules ----------
         if !self.typing_rules.is_empty() {
@@ -139,7 +139,7 @@ fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
             (_, Some(TypingJudgment::Operation { left, op, right })) => {
                 format!("{} {} {}", left, op, right)
             }
-            (Some(setting), None) => format!("{}", setting.name),
+            (Some(setting), None) => setting.name.to_string(),
             (None, None) => String::new(),
         })
         .collect::<Vec<_>>()

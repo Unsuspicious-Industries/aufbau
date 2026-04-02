@@ -5,18 +5,16 @@
 //! The Unifier provides proper Hindley-Milner style unification following the
 //! formal spec in §1.7, replacing the ad-hoc set_meta/solve_meta system.
 
-use crate::logic::typing::core::Context;
 use crate::logic::typing::Type;
+use crate::logic::typing::core::Context;
 use std::collections::HashMap;
 
 pub fn is_unresolved(ty: &Type) -> bool {
     // return true for Path and pathof
-    match ty {
-        Type::Path(_) => true,
-        Type::PathOf(_, _) => true,
-        Type::ContextCall(_, _) => true,
-        _ => false,
-    }
+    matches!(
+        ty,
+        Type::Path(_) | Type::PathOf(_, _) | Type::ContextCall(_, _)
+    )
 }
 
 // =============================================================================
@@ -347,15 +345,13 @@ impl Unifier {
                     .unwrap_or(var.as_str());
                 // Then, attempt a context lookup if allowed. For partial types we keep
                 // context calls unresolved so they can remain indeterminate.
-                if allow_context {
-                    if let Some(ctx) = self.context.as_ref() {
-                        if let Some(found) = ctx.lookup(resolved_var) {
-                            return found.clone();
-                        }
-                        // Prefix lookups keep partial inputs indeterminate, rather than failing.
-                        if ctx.lookup_starts_with(resolved_var).is_some() {
-                            return ty.clone();
-                        }
+                if allow_context && let Some(ctx) = self.context.as_ref() {
+                    if let Some(found) = ctx.lookup(resolved_var) {
+                        return found.clone();
+                    }
+                    // Prefix lookups keep partial inputs indeterminate, rather than failing.
+                    if ctx.lookup_starts_with(resolved_var).is_some() {
+                        return ty.clone();
                     }
                 }
                 if resolved_var != var.as_str() {
@@ -481,7 +477,7 @@ pub fn subtype(t1: &Type, t2: &Type) -> bool {
     }
 
     // Reflexivity: τ ⊆ τ
-    if let Some(true) = equal(&t1, &t2) {
+    if let Some(true) = equal(t1, t2) {
         return true;
     }
 

@@ -12,10 +12,8 @@ const STLC_PARSE_MAX_DEPTH: usize = 62;
 
 /// Note: These tests focus on parsing only, not type checking.
 /// For type checking tests, see the typing module tests.
-///
 /// The valid() method is used instead of valid() to avoid type checking
 /// overhead and focus on the core parsing performance.
-
 #[cfg(test)]
 fn stlc_grammar() -> Grammar {
     load_example_grammar("stlc")
@@ -56,10 +54,20 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
             .with_context(vec![("f", "A->B->C")])
             .with_parse_max_depth(30),
         // === Parenthesized applications ===
-        // non typed
-        ParseTestCase::structural("paren app", "(f x)"),
-        ParseTestCase::structural("paren double app", "((f x) y)"),
-        ParseTestCase::structural("paren nested app", "x t y u r"),
+        // These require environments because the fusion parser is type-directed.
+        ParseTestCase::valid("paren app", "(f x)").with_context(vec![("f", "A->B"), ("x", "A")]),
+        ParseTestCase::valid("paren double app", "((f x) y)").with_context(vec![
+            ("f", "A->B->C"),
+            ("x", "A"),
+            ("y", "B"),
+        ]),
+        ParseTestCase::valid("paren nested app", "x t y u r").with_context(vec![
+            ("x", "A->B->C->D->E"),
+            ("t", "A"),
+            ("y", "B"),
+            ("u", "C"),
+            ("r", "D"),
+        ]),
     ];
 
     cases

@@ -9,6 +9,7 @@
 // Example: for STLC `Abstraction(abs)` the path `[(3, Some(1)), (0, None)]`
 // mirrors the formal β(τ₁, abs) = 3@1·0 constraint.
 use std::collections::{HashMap, HashSet};
+use std::ops::{Add, Mul};
 
 use crate::logic::grammar::{Grammar, Production, Symbol};
 
@@ -32,6 +33,7 @@ impl PathStep {
 }
 
 /// A concrete grammar path represented as a finite sequence of `PathStep`s.
+/// Read it as a composable hyperedge walk through the grammar.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct GrammarPath {
     steps: Vec<PathStep>,
@@ -78,10 +80,7 @@ impl GrammarPath {
     }
 
     pub fn forward(&self) -> Option<(PathStep, Self)> {
-        let first = match self.steps.first().cloned() {
-            Some(step) => step,
-            None => return None,
-        };
+        let first = self.steps.first().cloned()?;
         let rest = self.steps[1..].to_vec();
         Some((first, Self { steps: rest }))
     }
@@ -90,15 +89,32 @@ impl GrammarPath {
     pub fn alts(&self) -> Vec<usize> {
         self.steps
             .iter()
-            .map(|step| match step.a {
-                Some(a) => a,
-                None => 0, // default to zero when no `a` field
-            })
+            .map(|step| step.a.unwrap_or_default())
             .collect()
     }
     // path in the tree
     pub fn idxs(&self) -> Vec<usize> {
         self.steps.iter().map(|step| step.i).collect()
+    }
+}
+
+// `+` is path sum: concatenate two already-built path fragments.
+impl Add for GrammarPath {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self {
+        self.steps.extend(rhs.steps);
+        self
+    }
+}
+
+// `*` is path extension by one step.
+impl Mul<PathStep> for GrammarPath {
+    type Output = Self;
+
+    fn mul(mut self, rhs: PathStep) -> Self {
+        self.steps.push(rhs);
+        self
     }
 }
 
@@ -182,6 +198,7 @@ pub fn build_binding_map(grammar: &Grammar) -> BindingMap {
     binding_map
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_paths(
     grammar: &Grammar,
     current_nt: &str,

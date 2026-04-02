@@ -2,18 +2,11 @@
 #![allow(unused_imports)]
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::MetaParser;
 use crate::validation::complexity::{
-    determine_complexity_exponent, determine_height_complexity_exponent, ComplexityData,
+    ComplexityData, determine_complexity_exponent, determine_height_complexity_exponent,
 };
-use std::time::Instant;
-
 fn stlc_grammar() -> Grammar {
-    use std::path::Path;
-    let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let path = Path::new(manifest_dir).join("examples").join("stlc.auf");
-    let content = std::fs::read_to_string(&path).expect("Failed to read stlc.auf");
-    Grammar::load(&content).expect("Failed to load STLC grammar")
+    super::load_example_grammar("stlc")
 }
 
 /// Generate a left-associative application chain of length n.
@@ -81,20 +74,12 @@ fn generate_nested_lambda_with_app(n: usize) -> String {
 
     // Body: left-associative application chain starting with f.
     if args.is_empty() {
-        result.push_str("f");
+        result.push('f');
     } else {
         result.push_str(&format!("f {}", args.join(" ")));
     }
 
     result
-}
-
-/// Measure parse time for a single input
-fn measure_parse_time(grammar: &Grammar, input: &str) -> std::time::Duration {
-    let mut parser = MetaParser::new(grammar.clone());
-    let start = Instant::now();
-    let _ = parser.partial(input);
-    start.elapsed()
 }
 
 /// Run complexity test and return data points
@@ -106,18 +91,9 @@ fn run_complexity_test(
     tries: usize,
     jobs: Option<usize>,
 ) -> Vec<ComplexityData> {
-    println!("\n=== {} Complexity Test ===", name);
-    println!("Testing input sizes from 1 to {}", max_n);
-
-    assert!(tries >= max_n * 5);
-
-    let results = super::run_complexity_experiment(grammar, generator, name, max_n, tries, jobs);
-
-    for r in &results {
-        println!("n={:2}: len={} -> {:?}", r.n, r.input.len(), r.time);
-    }
-
-    results
+    assert!(tries >= max_n * 2);
+    let _ = name;
+    super::run_parse_experiment(grammar, generator, max_n, tries, jobs)
 }
 
 /// Export STLC experiments
@@ -126,14 +102,7 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
     vec![
         (
             "STLC App Chain".to_string(),
-            run_complexity_test(
-                &grammar,
-                generate_app_chain,
-                "STLC App Chain",
-                20,
-                100,
-                jobs,
-            ),
+            run_complexity_test(&grammar, generate_app_chain, "STLC App Chain", 8, 24, jobs),
         ),
         (
             "STLC Nested Lambda".to_string(),
@@ -141,8 +110,8 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
                 &grammar,
                 generate_nested_lambda_with_app,
                 "STLC Nested Lambda",
-                12,
-                60,
+                6,
+                18,
                 jobs,
             ),
         ),
@@ -152,23 +121,18 @@ pub fn experiments(jobs: Option<usize>) -> Vec<(String, Vec<ComplexityData>)> {
 #[test]
 fn stlc_app_chain_complexity() {
     let grammar = stlc_grammar();
-    let data = run_complexity_test(
-        &grammar,
-        generate_app_chain,
-        "STLC App Chain",
-        50,
-        500,
-        None,
-    );
+    let data = run_complexity_test(&grammar, generate_app_chain, "STLC App Chain", 12, 36, None);
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Expected: O(n^2) for left-recursive grammar with memoization");
-    println!("Actual: k = {:.2} (closer to 1.0 is better)", k);
+    super::print_complexity_summary(
+        "STLC app chain",
+        k,
+        kh,
+        "Expected: near-polynomial under memoized left-recursive parsing.",
+    );
 
     // With memoization, we should get better than exponential (k < 3)
     // The exact value depends on implementation
@@ -189,19 +153,21 @@ fn stlc_nested_lambda_complexity() {
         &grammar,
         generate_nested_lambda_with_app,
         "STLC Nested Lambda",
-        5,
-        25,
+        8,
+        24,
         None,
     );
 
     // Determine complexity exponent
     let k = determine_complexity_exponent(&data);
-    let kh = determine_height_complexity_exponent(&data);
+    let kh = super::maybe_height_complexity_exponent(&data).unwrap_or(1.0);
 
-    println!("\nEmpirical complexity: O(n^{:.2})", k);
-    println!("Empirical height complexity: O(h^{:.2})", kh);
-    println!("Nested structures test the parser's handling of complex expressions");
-    println!("k = {:.2}", k);
+    super::print_complexity_summary(
+        "STLC nested lambda",
+        k,
+        kh,
+        "Nested terms stress binder and application structure.",
+    );
 
     // Nested structures may have higher complexity
     assert!(

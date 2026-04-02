@@ -26,10 +26,10 @@ pub mod toy;
 pub mod weird;
 // pub mod clike;
 
+use crate::logic::fusion::Synthesizer;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::MetaParser;
-use crate::logic::typing::core::Context;
 use crate::logic::typing::Type;
+use crate::logic::typing::core::Context;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
@@ -254,11 +254,11 @@ pub fn check_all_prefixes_parseable(
             Some(d) => snap_meta_depth(d),
             None => snap_meta_depth(valid_depth_for(prefix)),
         };
-        let mut parser = MetaParser::new(grammar.clone()).with_max_depth(depth);
+        let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), prefix, depth);
         let res: Result<(), String> = if check_typing {
-            parser.partial_typed_ctx(prefix, ctx).map(|_| ())
+            synth.parse_with(&ctx).map(|_| ())
         } else {
-            parser.partial(prefix).map(|_| ())
+            synth.parse_with(&Context::new()).map(|_| ())
         };
         match res {
             Ok(_) => None,
@@ -308,17 +308,14 @@ pub fn check_parse_fails(
     parse_max_depth: Option<usize>,
 ) -> ParseResult {
     let start = Instant::now();
-    let mut parser = match parse_max_depth {
-        Some(d) => MetaParser::new(grammar.clone()).with_max_depth(d),
-        None => MetaParser::new(grammar.clone()),
-    };
+    let depth = parse_max_depth.unwrap_or(64);
+    let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), input, depth);
 
     if check_typing {
-        // For type errors, syntax may still parse. We only fail this check if a
-        // complete well-typed tree exists.
-        match parser.partial(input) {
+        let ctx = Context::new();
+        match synth.parse_with(&ctx) {
             Ok(ast) => {
-                if ast.typed_complete(grammar).is_ok() {
+                if ast.is_complete() {
                     ParseResult::Fail {
                         failing_prefix: input.to_string(),
                         error: "Expected type failure but found a complete well-typed tree"
@@ -338,10 +335,10 @@ pub fn check_parse_fails(
             },
         }
     } else {
-        match parser.partial(input) {
-            Ok(t) => ParseResult::Fail {
+        match synth.parse_with(&Context::new()) {
+            Ok(_) => ParseResult::Fail {
                 failing_prefix: input.to_string(),
-                error: format!("Expected parse/type failure but succeeded with {}", t).to_string(),
+                error: "Expected parse/type failure but succeeded".to_string(),
                 prefix_index: input.chars().count(),
             },
             Err(_) => ParseResult::Pass {
@@ -423,7 +420,7 @@ impl BatchResult {
             }
         }
 
-        msg.push_str("\n");
+        msg.push('\n');
         msg.push_str("=".repeat(60).as_str());
         msg
     }
@@ -454,7 +451,7 @@ pub fn run_parse_batch(
             let (passed_flag, prefix_count, failing_prefix, error, prefix_index) = match &result {
                 ParseResult::Pass { prefix_count, .. } => (
                     true,
-                    Some(*prefix_count as usize),
+                    Some(*prefix_count),
                     None::<String>,
                     None::<String>,
                     None::<usize>,

@@ -4,9 +4,9 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
+use aufbau::logic::fusion::Synthesizer;
 use aufbau::logic::grammar::Grammar;
 use aufbau::logic::typing::Context;
-use aufbau::logic::{search_k, SearchConfig};
 
 #[derive(Args, Debug, Clone)]
 pub struct CompleteKCmd {
@@ -21,18 +21,6 @@ pub struct CompleteKCmd {
     /// Maximum number of completion steps (token extensions) from the prefix
     #[arg(long = "depth", default_value_t = 10)]
     pub depth: usize,
-
-    /// Maximum total search states explored before giving up
-    #[arg(long = "states", default_value_t = 96)]
-    pub states: usize,
-
-    /// Maximum children kept per expanded state (beam width)
-    #[arg(long = "children", default_value_t = 12)]
-    pub children: usize,
-
-    /// Maximum concrete string examples tried per regex token
-    #[arg(long = "examples", default_value_t = 1)]
-    pub examples: usize,
 }
 
 pub fn run(args: &CompleteKCmd) {
@@ -58,15 +46,35 @@ pub fn run(args: &CompleteKCmd) {
     }
     let input = input.trim_end_matches('\n');
 
-    let config = SearchConfig {
-        max_depth: args.depth,
-        max_token_examples: args.examples,
-        max_states: args.states,
-        max_children_per_state: args.children,
-    };
-
     let ctx = Context::new();
-    let results = search_k(&grammar, input, args.count, &config, &ctx);
+    let mut results = Vec::new();
+
+    let mut synth = Synthesizer::new_with_max_depth(grammar.clone(), input, args.depth);
+    // Try completions up to k times
+    for _ in 0..args.count {
+        let tokens = synth.tokens_with(&ctx);
+        let mut found = false;
+
+        for token in tokens.iter() {
+            if let Some(example) = token.example() {
+                let mut synth2 =
+                    Synthesizer::new_with_max_depth(grammar.clone(), input, args.depth);
+
+                if synth2.feed(&example, &ctx).is_ok()
+                    && let Some(tree) = synth2.ast()
+                    && tree.is_complete()
+                {
+                    results.push(synth2.input().to_string());
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if !found {
+            break;
+        }
+    }
 
     if results.is_empty() {
         eprintln!("error: no completions found");
@@ -74,6 +82,6 @@ pub fn run(args: &CompleteKCmd) {
     }
 
     for result in results {
-        println!("{}", result.text());
+        println!("{}", result);
     }
 }

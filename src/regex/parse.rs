@@ -8,6 +8,7 @@ impl Regex {
         Self::from_str(pattern)
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(pattern: &str) -> Result<Self, String> {
         regex_syntax::Parser::new()
             .parse(pattern)

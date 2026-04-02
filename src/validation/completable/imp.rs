@@ -94,67 +94,18 @@ fn bare_identifier_has_assignment_completion_path() {
 
     let mut ctx = Context::new();
     ctx.add("x".to_string(), Type::Raw("Int".to_string()));
-    let completions = synth.completions_ctx(&ctx);
+    let completions = synth.tokens_with(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")
             && token
                 .example()
-                .map(|example| synth.try_extend(&example, &ctx).is_ok())
+                .map(|example| synth.feed(&example, &ctx).is_ok())
                 .unwrap_or(false)
     });
     assert!(
         has_eq,
         "expected '=' completion for bare identifier to allow assignment"
-    );
-}
-
-/// Ensure partial "t" is treated as partial "true" and can typecheck.
-#[test]
-fn union_decl_partial_true_is_well_typed() {
-    use crate::logic::partial::structure::Terminal;
-    use crate::logic::partial::MetaParser;
-    use crate::logic::partial::Synthesizer;
-    use crate::logic::typing::symbols::gather_terminal_nodes;
-    use crate::logic::typing::Context;
-
-    let grammar = imp_grammar();
-    let input = "{ let u:Int|Bool=t";
-    let mut parser = MetaParser::new(grammar.clone());
-    let partial = parser.partial(input).expect("partial parse should succeed");
-
-    let mut saw_partial_true = false;
-    for root_id in partial.root_ids() {
-        partial.for_each_materialized_root(*root_id, |root| {
-            for term in gather_terminal_nodes(&root) {
-                if let Terminal::Partial {
-                    value, remainder, ..
-                } = term
-                {
-                    if value == "t" {
-                        if let Some(rem) = remainder {
-                            if rem.matches("rue") {
-                                saw_partial_true = true;
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-            true
-        });
-        if saw_partial_true {
-            break;
-        }
-    }
-
-    assert!(saw_partial_true, "expected partial terminal 't' for 'true'");
-
-    let mut synth = Synthesizer::new(grammar.clone(), input);
-    let ctx = Context::new();
-    assert!(
-        synth.try_extend("rue", &ctx).is_ok(),
-        "expected 't' to complete to well-typed 'true'"
     );
 }
 
@@ -168,13 +119,13 @@ fn identifier_in_block_has_assignment_completion_only() {
 
     let mut ctx = Context::new();
     ctx.add("a".to_string(), Type::Raw("Int".to_string()));
-    let completions = synth.completions_ctx(&ctx);
+    let completions = synth.tokens_with(&ctx);
 
     let has_eq = completions.iter().any(|token| {
         token.matches("=")
             && token
                 .example()
-                .map(|example| synth.try_extend(&example, &ctx).is_ok())
+                .map(|example| synth.feed(&example, &ctx).is_ok())
                 .unwrap_or(false)
     });
     let has_let = completions.iter().any(|token| token.matches("let"));

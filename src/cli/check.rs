@@ -15,9 +15,9 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
+use aufbau::logic::fusion::{FusionNode, Synthesizer};
 use aufbau::logic::grammar::Grammar;
-use aufbau::logic::partial::MetaParser;
-use aufbau::logic::typing::Type;
+use aufbau::logic::typing::{Context, SharedType, Type};
 
 /// Type-check a program (or partial program) read from stdin.
 ///
@@ -73,8 +73,8 @@ pub fn run(args: &CheckCmd) {
     let input = input.trim_end_matches('\n');
 
     // ── 3. Partial type-check ────────────────────────────────────────────
-    let mut mp = MetaParser::new(grammar);
-    let typed = match mp.partial_typed(input) {
+    let mut synth = Synthesizer::new_with_max_depth(grammar, input, 64);
+    let typed = match synth.parse_with(&Context::new()) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("error: {}", e);
@@ -88,32 +88,28 @@ pub fn run(args: &CheckCmd) {
     }
 
     // ── 4. Choose which roots to display ────────────────────────────────
-    //
-    // Preference order:
-    //   a) complete, well-typed roots  (type is not Any / not a meta var)
-    //   b) complete roots with Any type
-    //   c) all remaining partial roots (when nothing complete exists)
-    //
-    // Unless --all is given we collapse multiple identical types into one.
-
-    let complete_roots: Vec<_> = typed.roots.iter().filter(|r| r.is_complete()).collect();
-    let partial_roots: Vec<_> = typed.roots.iter().filter(|r| !r.is_complete()).collect();
+    let runtime = synth.runtime().clone();
+    let complete_roots: Vec<_> = typed.roots().filter(|r| r.is_complete()).collect();
+    let partial_roots: Vec<_> = typed.roots().filter(|r| !r.is_complete()).collect();
 
     let is_partial = complete_roots.is_empty();
 
-    let display_roots: Vec<_> = if args.all {
-        typed.roots.iter().collect()
+    let display_roots: Vec<FusionNode> = if args.all {
+        typed.roots().collect()
     } else if !complete_roots.is_empty() {
-        // Prefer well-typed complete roots; fall back to any-typed ones.
-        let well_typed: Vec<_> = complete_roots
+        let well_typed: Vec<FusionNode> = complete_roots
             .iter()
-            .copied()
-            .filter(|r| !matches!(r.ty(), Type::Any | Type::Meta(_)))
+            .filter(|r| {
+                let ty: SharedType = r.ty(&runtime);
+                let ty_inner: &Type = &ty;
+                !matches!(ty_inner, Type::Any | Type::Meta(_))
+            })
+            .cloned()
             .collect();
         if !well_typed.is_empty() {
             well_typed
         } else {
-            complete_roots
+            complete_roots.clone()
         }
     } else {
         partial_roots
@@ -123,7 +119,8 @@ pub fn run(args: &CheckCmd) {
     let mut seen_types: Vec<String> = Vec::new();
     let mut unique_roots = Vec::new();
     for root in &display_roots {
-        let ty_s = format!("{}", root.ty());
+        let ty: SharedType = root.ty(&runtime);
+        let ty_s = format!("{}", ty);
         if args.all || !seen_types.contains(&ty_s) {
             seen_types.push(ty_s);
             unique_roots.push(*root);
@@ -136,19 +133,19 @@ pub fn run(args: &CheckCmd) {
         println!();
         if unique_roots.len() == 1 {
             let root = unique_roots[0];
-            let ty = root.ty();
+            let ty = root.ty(&runtime);
             println!("type : {}", ty);
         } else {
             println!("{} candidate type(s):", unique_roots.len());
             for (i, root) in unique_roots.iter().enumerate() {
-                println!("  [{}] : {}", i + 1, root.ty());
+                println!("  [{}] : {}", i + 1, root.ty(&runtime));
             }
         }
     } else {
         // Complete parse
         if unique_roots.len() == 1 {
             let root = unique_roots[0];
-            println!("{} : {}", input, root.ty());
+            println!("{} : {}", input, root.ty(&runtime));
             if args.ast {
                 println!();
                 print!("{}", root);
@@ -159,7 +156,7 @@ pub fn run(args: &CheckCmd) {
             println!();
             println!("{} type(s) (ambiguous parse):", unique_roots.len());
             for (i, root) in unique_roots.iter().enumerate() {
-                println!("  [{}] : {}", i + 1, root.ty());
+                println!("  [{}] : {}", i + 1, root.ty(&runtime));
                 if args.ast {
                     println!();
                     print!("{}", root);

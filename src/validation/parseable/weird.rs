@@ -263,6 +263,13 @@ fn diamond_valid_cases() -> Vec<ParseTestCase> {
         ParseTestCase::structural("diamond partial left", "< x"),
         ParseTestCase::structural("diamond partial right", "[ x"),
     ]
+    .into_iter()
+    .map(|c| {
+        c.with_typing()
+            .with_context(vec![("x", "X")])
+            .with_parse_max_depth(30)
+    })
+    .collect()
 }
 
 fn diamond_invalid_cases() -> Vec<ParseTestCase> {
@@ -307,6 +314,9 @@ fn epsilon_wrapped_valid_cases() -> Vec<ParseTestCase> {
         ParseTestCase::structural("ewrap both", "pre x post"),
         ParseTestCase::structural("ewrap partial pre", "pre"),
     ]
+    .into_iter()
+    .map(|c| c.with_typing().with_context(vec![("x", "X")]))
+    .collect()
 }
 
 fn epsilon_wrapped_invalid_cases() -> Vec<ParseTestCase> {
@@ -328,6 +338,9 @@ fn regex_valid_cases() -> Vec<ParseTestCase> {
         ParseTestCase::structural("regex paren", "( 42 )"),
         ParseTestCase::structural("regex partial tag", "XY ."),
     ]
+    .into_iter()
+    .map(|c| c.with_typing().with_context(vec![("abc", "Num")]))
+    .collect()
 }
 
 fn regex_invalid_cases() -> Vec<ParseTestCase> {

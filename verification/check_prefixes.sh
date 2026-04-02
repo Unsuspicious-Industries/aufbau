@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERIFICATION_DIR="$ROOT_DIR/verification"
+COQ_DUNE_BUILD_DIR="$VERIFICATION_DIR/_build/default/coq"
+COQ_SOURCE_DIR="$VERIFICATION_DIR/coq"
+COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
 DEFAULT_JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 PREFIX_FILE="$VERIFICATION_DIR/prefixes.txt"
 K=3
@@ -30,6 +33,10 @@ log_info() {
 
 log_ok() {
   printf '%b[ok]%b %s\n' "$C_OK" "$C_RESET" "$1"
+}
+
+current_rss_mb() {
+  awk '/VmRSS:/ { printf "%.1f", $2 / 1024.0 }' /proc/$$/status 2>/dev/null || printf '0.0'
 }
 
 log_err() {
@@ -166,6 +173,7 @@ spec_for_language() {
     stlc) printf '%s\n' "$ROOT_DIR/examples/stlc.auf" ;;
     fun) printf '%s\n' "$ROOT_DIR/examples/fun.auf" ;;
     imp) printf '%s\n' "$ROOT_DIR/examples/imp.auf" ;;
+    typescript) printf '%s\n' "$ROOT_DIR/examples/typescript.auf" ;;
     *)
       echo "error: unknown language '$1'" >&2
       return 1
@@ -175,7 +183,7 @@ spec_for_language() {
 
 language_supported() {
   case "$1" in
-    stlc|fun|imp) return 0 ;;
+    stlc|fun|imp|typescript) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -206,7 +214,30 @@ run_complete_k() {
 }
 
 coq_reverify_once() {
-  (cd "$VERIFICATION_DIR" && dune build coq/Common.vo coq/STLC.vo coq/Fun.vo coq/Imp.vo)
+  if command -v dune >/dev/null 2>&1; then
+    (cd "$VERIFICATION_DIR" && dune build coq/Common.vo coq/STLC.vo coq/Fun.vo coq/Imp.vo coq/Typescript.vo)
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  else
+    (cd "$COQ_SOURCE_DIR" && \
+      coqc -Q . verification.coq -noglob Common.v && \
+      coqc -Q . verification.coq -noglob STLC.v && \
+      coqc -Q . verification.coq -noglob Fun.v && \
+      coqc -Q . verification.coq -noglob Imp.v && \
+      coqc -Q . verification.coq -noglob Typescript.v)
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  fi
+}
+
+resolve_coq_build_dir() {
+  if [[ -f "$COQ_DUNE_BUILD_DIR/Common.vo" ]]; then
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  elif [[ -f "$COQ_SOURCE_DIR/Common.vo" ]]; then
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  elif command -v dune >/dev/null 2>&1; then
+    COQ_BUILD_DIR="$COQ_DUNE_BUILD_DIR"
+  else
+    COQ_BUILD_DIR="$COQ_SOURCE_DIR"
+  fi
 }
 
 if [[ ! "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
@@ -361,9 +392,13 @@ queue_check_job() {
   local prefix="$2"
   local spec_path="$3"
   local log_file
+  local completion_file
+  local result_file
 
   job_count=$((job_count + 1))
   log_file="$TMP_DIR/job_${job_count}.log"
+  completion_file="$TMP_DIR/job_${job_count}.programs"
+  result_file="$TMP_DIR/job_${job_count}.results"
 
   (
     echo "============================================================"
@@ -379,21 +414,42 @@ queue_check_job() {
 
     local completion_count=0
     local completion_failures=0
+    : > "$completion_file"
     while IFS= read -r completion || [[ -n "$completion" ]]; do
       [[ -z "$completion" ]] && continue
       completion_count=$((completion_count + 1))
       log_info "completion[$completion_count]: $completion"
-      if ! "$VERIFICATION_DIR/check.sh" --skip-reverify --program "$language" "$completion"; then
-        completion_failures=$((completion_failures + 1))
-      fi
+      printf '%s\n' "$completion" >> "$completion_file"
     done <<< "$completions"
 
     if [[ "$completion_count" -eq 0 ]]; then
       log_err "no completions returned"
       echo "__JOB_ZERO_COMPLETIONS__:1"
+      echo "__JOB_STATS__:0:0"
+      exit 0
+    fi
+
+    if ! python3 "$VERIFICATION_DIR/coq_batch_check.py" \
+      "$language" "$completion_file" --coq-build-dir "$COQ_BUILD_DIR" > "$result_file"; then
+      log_err "batch Coq verification failed"
+      completion_failures=$completion_count
+      echo "__JOB_PARSE_ERROR__:1"
+    else
+      while IFS='|' read -r idx status summary || [[ -n "$idx" ]]; do
+        [[ -z "$idx" ]] && continue
+      if [[ "$status" == "ok" ]]; then
+          printf 'coq-result[%s]: %s\n' "$idx" "$summary"
+          printf 'status[%s]: accepted by Coq verifier\n' "$idx"
+        else
+          printf 'coq-result[%s]: %s\n' "$idx" "$summary"
+          printf 'status[%s]: rejected by Coq verifier\n' "$idx"
+          completion_failures=$((completion_failures + 1))
+        fi
+      done < "$result_file"
     fi
 
     echo "__JOB_STATS__:${completion_count}:${completion_failures}"
+    echo "__JOB_MEMORY_MB__:$(current_rss_mb)"
   ) >"$log_file" 2>&1 &
 
   JOB_PIDS+=("$!")
@@ -407,6 +463,7 @@ total_prefixes="$(count_total_prefix_entries)"
 
 log_info "re-verifying Coq modules once for this run"
 coq_reverify_once
+resolve_coq_build_dir
 log_info "using $JOBS parallel jobs"
 log_info "search params: count=$K depth=${DEPTH:-default} states=${STATES:-default} children=${CHILDREN:-default} examples=${EXAMPLES:-default}"
 log_info "total prefixes to process: $total_prefixes"

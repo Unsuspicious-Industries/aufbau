@@ -124,16 +124,14 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
     suite_pb.set_prefix("suites");
 
     // Build thread pool if requested
-    if let Some(n) = args.jobs {
-        if n > 0 {
-            if let Err(e) = rayon::ThreadPoolBuilder::new()
-                .num_threads(n)
-                .stack_size(32 * 1024 * 1024)
-                .build_global()
-            {
-                eprintln!("Warning: failed to set rayon thread pool: {}", e);
-            }
-        }
+    if let Some(n) = args.jobs
+        && n > 0
+        && let Err(e) = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .stack_size(32 * 1024 * 1024)
+            .build_global()
+    {
+        eprintln!("Warning: failed to set rayon thread pool: {}", e);
     }
 
     let run_start = Instant::now();
@@ -315,6 +313,7 @@ fn write_profiles(
     eprintln!("WROTE_PROFILE {}", fail_path.display());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_reports(
     module_name: &str,
     results: &[CaseResult],
