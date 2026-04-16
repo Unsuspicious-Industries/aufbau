@@ -63,7 +63,8 @@ mjx-container svg {
 .proof,
 .example,
 .remark,
-.assumption {
+.assumption,
+.pseudocode {
     position: relative;
     margin: 1.4em 0;
     padding: 0.7em 1em 0.7em 1em;
@@ -82,7 +83,8 @@ mjx-container svg {
 .proof-title,
 .example-title,
 .remark-title,
-.assumption-title {
+.assumption-title,
+.pseudocode-title {
     display: block;
     font-size: 0.7em;
     font-weight: 600;
@@ -149,6 +151,17 @@ mjx-container svg {
 .assumption { border-left-color: #c8924a; background: rgba(200,146,74,0.08); }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   PSEUDOCODE - slate
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.pseudocode {
+    border-left-color: #6f7f92;
+    background: rgba(111,127,146,0.08);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    SIDEBAR - always show nested sections + subsection styling
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -195,7 +208,8 @@ ol.section li.chapter-item {
 .lemma p:first-of-type,
 .example p:first-of-type,
 .assumption p:first-of-type,
-.remark p:first-of-type {
+.remark p:first-of-type,
+.pseudocode p:first-of-type {
     margin-top: 0.5em;
 }
 
@@ -205,6 +219,7 @@ ol.section li.chapter-item {
 .example p:last-of-type,
 .assumption p:last-of-type,
 .proof p:last-of-type,
-.remark p:last-of-type {
+.remark p:last-of-type,
+.pseudocode p:last-of-type {
     margin-bottom: 0;
 }

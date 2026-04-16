@@ -56,7 +56,7 @@ Block(block) ::= '{' StatementList[stmts] '}'
 // Statement list
 Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
 
-StatementList(stmts) ::= Statement*
+StatementList ::= Statement StatementList | Statement
 
 // Top-level program is a block
 Program(program) ::= Block[main]
@@ -116,7 +116,7 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 ?T
 
 // Block: statements produce ?T (no ctx propagation)
-[Γ] ▷ stmts 
+Γ ▷ stmts 
 -------------- (block)
 ∅
 

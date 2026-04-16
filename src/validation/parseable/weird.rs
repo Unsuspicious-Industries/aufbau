@@ -18,7 +18,7 @@ const DEEP_NESTING: &str = r#"
     Atom ::= 'x'
     L1 ::= '(' L2 ')' | Atom
     L2 ::= '(' L3 ')' | L1
-    L3 ::= '(' L4 ')' | L2
+    L3 ::= '(' L3 ')' | L2
     start ::= L3
 "#;
 
@@ -213,6 +213,7 @@ fn right_valid_cases() -> Vec<ParseTestCase> {
     ]
 }
 
+
 fn right_invalid_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("right invalid char", "c"),
@@ -244,6 +245,7 @@ fn deep_valid_cases() -> Vec<ParseTestCase> {
     ]
 }
 
+
 fn deep_invalid_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("deep extra close", ")"),
@@ -255,14 +257,17 @@ fn deep_invalid_cases() -> Vec<ParseTestCase> {
 // --- Diamond ---
 fn diamond_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("diamond left", "< x >"),
-        ParseTestCase::structural("diamond right", "[ x ]"),
-        ParseTestCase::structural("diamond nested lr", "< [ x ] >"),
-        ParseTestCase::structural("diamond nested rl", "[ < x > ]"),
-        ParseTestCase::structural("diamond deep", "< < < x > > >"),
-        ParseTestCase::structural("diamond partial left", "< x"),
-        ParseTestCase::structural("diamond partial right", "[ x"),
+        ParseTestCase::valid("diamond left", "< x >"),
+        ParseTestCase::valid("diamond right", "[ x ]"),
+        ParseTestCase::valid("diamond nested lr", "< [ x ] >"),
+        ParseTestCase::valid("diamond nested rl", "[ < x > ]"),
+        ParseTestCase::valid("diamond deep", "< < < x > > >"),
+        ParseTestCase::valid("diamond partial left", "< x"),
+        ParseTestCase::valid("diamond partial right", "[ x"),
     ]
+    .into_iter()
+    .map(|c| c.with_context(vec![("x", "X")]))
+    .collect()
 }
 
 fn diamond_invalid_cases() -> Vec<ParseTestCase> {
@@ -277,15 +282,15 @@ fn diamond_invalid_cases() -> Vec<ParseTestCase> {
 // --- Mutual ---
 fn mutual_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("mutual number", "42"),
-        ParseTestCase::structural("mutual bind", "set x : Num = 1 then x"),
-        ParseTestCase::structural(
+        ParseTestCase::valid("mutual number", "42"),
+        ParseTestCase::valid("mutual bind", "set x : Num = 1 then x"),
+        ParseTestCase::valid(
             "mutual nested",
             "set x : Num = 1 then set y : Num = 2 then x",
         ),
-        ParseTestCase::structural("mutual paren", "( 7 )"),
-        ParseTestCase::structural("mutual partial bind", "set x : Num ="),
-        ParseTestCase::structural("mutual partial then", "set x : Num = 1 then"),
+        ParseTestCase::valid("mutual paren", "( 7 )"),
+        ParseTestCase::valid("mutual partial bind", "set x : Num ="),
+        ParseTestCase::valid("mutual partial then", "set x : Num = 1 then"),
     ]
 }
 
@@ -301,12 +306,15 @@ fn mutual_invalid_cases() -> Vec<ParseTestCase> {
 // --- Epsilon wrapped ---
 fn epsilon_wrapped_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("ewrap bare", "x"),
-        ParseTestCase::structural("ewrap pre", "pre x"),
-        ParseTestCase::structural("ewrap post", "x post"),
-        ParseTestCase::structural("ewrap both", "pre x post"),
-        ParseTestCase::structural("ewrap partial pre", "pre"),
+        ParseTestCase::valid("ewrap bare", "x"),
+        ParseTestCase::valid("ewrap pre", "pre x"),
+        ParseTestCase::valid("ewrap post", "x post"),
+        ParseTestCase::valid("ewrap both", "pre x post"),
+        ParseTestCase::valid("ewrap partial pre", "pre"),
     ]
+    .into_iter()
+    .map(|c| c.with_context(vec![("x", "X")]))
+    .collect()
 }
 
 fn epsilon_wrapped_invalid_cases() -> Vec<ParseTestCase> {
@@ -321,13 +329,16 @@ fn epsilon_wrapped_invalid_cases() -> Vec<ParseTestCase> {
 // --- Regex heavy ---
 fn regex_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("regex number", "42"),
-        ParseTestCase::structural("regex var", "abc"),
-        ParseTestCase::structural("regex tag", "FOO . 99"),
-        ParseTestCase::structural("regex nested tag", "A . B . 1"),
-        ParseTestCase::structural("regex paren", "( 42 )"),
-        ParseTestCase::structural("regex partial tag", "XY ."),
+        ParseTestCase::valid("regex number", "42"),
+        ParseTestCase::valid("regex var", "abc"),
+        ParseTestCase::valid("regex tag", "FOO . 99"),
+        ParseTestCase::valid("regex nested tag", "A . B . 1"),
+        ParseTestCase::valid("regex paren", "( 42 )"),
+        ParseTestCase::valid("regex partial tag", "XY ."),
     ]
+    .into_iter()
+    .map(|c| c.with_context(vec![("abc", "Num")]))
+    .collect()
 }
 
 fn regex_invalid_cases() -> Vec<ParseTestCase> {
@@ -341,11 +352,11 @@ fn regex_invalid_cases() -> Vec<ParseTestCase> {
 // --- Scoped ---
 fn scoped_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("scoped let", "def a : X = 1 in a"),
-        ParseTestCase::structural("scoped nested let", "def a : X = 1 in def b : X = 2 in a"),
-        ParseTestCase::structural("scoped block", "{ 5 }"),
-        ParseTestCase::structural("scoped let in block", "def a : X = 1 in { a }"),
-        ParseTestCase::structural("scoped partial def", "def a : X ="),
+        ParseTestCase::valid("scoped let", "def a : X = 1 in a"),
+        ParseTestCase::valid("scoped nested let", "def a : X = 1 in def b : X = 2 in a"),
+        ParseTestCase::valid("scoped block", "{ 5 }"),
+        ParseTestCase::valid("scoped let in block", "def a : X = 1 in { a }"),
+        ParseTestCase::valid("scoped partial def", "def a : X ="),
     ]
 }
 
@@ -360,10 +371,10 @@ fn scoped_invalid_cases() -> Vec<ParseTestCase> {
 // --- Stmt ---
 fn stmt_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("stmt empty block", "{ }"),
-        ParseTestCase::structural("stmt single decl", "{ var x : I = 1 ; }"),
-        ParseTestCase::structural("stmt two decls", "{ var x : I = 1 ; var y : I = 2 ; }"),
-        ParseTestCase::structural("stmt partial", "{ var x : I ="),
+        ParseTestCase::valid("stmt empty block", "{ }"),
+        ParseTestCase::valid("stmt single decl", "{ var x : I = 1 ; }"),
+        ParseTestCase::valid("stmt two decls", "{ var x : I = 1 ; var y : I = 2 ; }"),
+        ParseTestCase::valid("stmt partial", "{ var x : I ="),
     ]
 }
 
@@ -379,13 +390,13 @@ fn stmt_invalid_cases() -> Vec<ParseTestCase> {
 // --- Union choice ---
 fn union_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::structural("union int", "42"),
-        ParseTestCase::structural("union bool yes", "yes"),
-        ParseTestCase::structural("union bool no", "no"),
-        ParseTestCase::structural("union choice", "1 ? yes"),
-        ParseTestCase::structural("union nested", "1 ? 2 ? no"),
-        ParseTestCase::structural("union paren", "( yes )"),
-        ParseTestCase::structural("union partial", "1 ?"),
+        ParseTestCase::valid("union int", "42"),
+        ParseTestCase::valid("union bool yes", "yes"),
+        ParseTestCase::valid("union bool no", "no"),
+        ParseTestCase::valid("union choice", "1 ? yes"),
+        ParseTestCase::valid("union nested", "1 ? 2 ? no"),
+        ParseTestCase::valid("union paren", "( yes )"),
+        ParseTestCase::valid("union partial", "1 ?"),
     ]
 }
 
@@ -473,7 +484,7 @@ pub fn suites() -> Vec<(
 fn check_weird_parseable() {
     // Run each inline grammar's suite and ensure the parseable runner behaves as
     // expected (no failures in either valids or invalids).
-    for (name, grammar, valids, invalids) in suites() {
+    for (name, mut grammar, valids, invalids) in suites() {
         println!(
             "\n=== Weird suite: {} ({} valid + {} invalid) ===",
             name,
@@ -481,7 +492,7 @@ fn check_weird_parseable() {
             invalids.len()
         );
 
-        let (res_v, _) = run_parse_batch(&grammar, &valids);
+        let (res_v, _) = run_parse_batch(&mut grammar, &valids);
         assert_eq!(
             res_v.failed,
             0,
@@ -490,7 +501,7 @@ fn check_weird_parseable() {
             res_v.format_failures()
         );
 
-        let (res_i, _) = run_parse_batch(&grammar, &invalids);
+        let (res_i, _) = run_parse_batch(&mut grammar, &invalids);
         assert_eq!(
             res_i.failed,
             0,

@@ -395,6 +395,12 @@ Definition typecheck_program (input : string) : option unit :=
   | None => None
   end.
 
+(* Soundness of the executable checker:
+   whenever the verified IMP checker accepts a program, there exists a parsed
+   statement block [body] for that input, and that block is well-formed under
+   the verified block judgment [block_wf].
+
+   Again, this is a no-false-positives theorem, not a completeness theorem. *)
 Theorem typecheck_program_sound :
   forall input,
     typecheck_program input = Some tt ->
@@ -404,6 +410,15 @@ Proof.
   unfold typecheck_program in Htc.
   destruct (parse_program input) as [body|] eqn:Hparse; try discriminate.
   exists body. split; [reflexivity|exact Htc].
+Qed.
+
+(* Readable alias for the main IMP checker soundness theorem. *)
+Theorem imp_checker_soundness :
+  forall input,
+    typecheck_program input = Some tt ->
+    exists body, parse_program input = Some body /\ block_wf nil body.
+Proof.
+  exact typecheck_program_sound.
 Qed.
 
 End ImpLang.

@@ -23,11 +23,17 @@
   (run coqc -Q . verification.coq -noglob -o Imp.vo %{dep:Imp.v})))
 
 (rule
+ (targets Typescript.vo)
+ (deps Typescript.v Common.vo)
+ (action
+  (run coqc -Q . verification.coq -noglob -o Typescript.vo %{dep:Typescript.v})))
+
+(rule
  (targets Extract.vo)
- (deps Extract.v STLC.vo Fun.vo Imp.vo)
+ (deps Extract.v STLC.vo Fun.vo Imp.vo Typescript.vo)
  (action
   (run coqc -Q . verification.coq -noglob -o Extract.vo %{dep:Extract.v})))
 
 (alias
  (name coq)
- (deps Common.vo STLC.vo Fun.vo Imp.vo Extract.vo))
+ (deps Common.vo STLC.vo Fun.vo Imp.vo Typescript.vo Extract.vo))

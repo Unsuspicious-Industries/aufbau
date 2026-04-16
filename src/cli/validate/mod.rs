@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use serde_json::json;
 
 pub mod completable;
-pub mod complexity;
+
 pub mod parseable;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
@@ -17,8 +17,7 @@ pub enum ValidationModule {
     Completable,
     /// Run parseable validation tests (fast prefix parsing)
     Parseable,
-    /// Run complexity validation tests
-    Complexity,
+
 }
 
 #[derive(Args, Debug, Clone)]
@@ -41,17 +40,19 @@ pub struct ValidateCmd {
     /// If omitted, Rayon will use its default thread pool size.
     #[arg(long = "jobs", short = 'j', value_name = "N")]
     pub jobs: Option<usize>,
+
+    /// Override per-case completable timeout in seconds.
+    #[arg(long = "completable-timeout-secs", value_name = "N")]
+    pub completable_timeout_secs: Option<u64>,
 }
 
 pub fn run(args: &ValidateCmd) {
     match &args.module {
         Some(ValidationModule::Completable) => completable::run(args),
         Some(ValidationModule::Parseable) => parseable::run(args),
-        Some(ValidationModule::Complexity) => complexity::run(args),
         None => {
             completable::run(args);
             parseable::run(args);
-            complexity::run(args);
         }
     }
 }
@@ -124,16 +125,14 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
     suite_pb.set_prefix("suites");
 
     // Build thread pool if requested
-    if let Some(n) = args.jobs {
-        if n > 0 {
-            if let Err(e) = rayon::ThreadPoolBuilder::new()
-                .num_threads(n)
-                .stack_size(32 * 1024 * 1024)
-                .build_global()
-            {
-                eprintln!("Warning: failed to set rayon thread pool: {}", e);
-            }
-        }
+    if let Some(n) = args.jobs
+        && n > 0
+        && let Err(e) = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .stack_size(32 * 1024 * 1024)
+            .build_global()
+    {
+        eprintln!("Warning: failed to set rayon thread pool: {}", e);
     }
 
     let run_start = Instant::now();
@@ -147,16 +146,32 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
         case_pb.set_style(case_style.clone());
         case_pb.set_prefix(suite.name.to_string());
 
-        // Run cases in parallel
-        let indexed: Vec<(usize, &RunnableCase)> = suite.cases.iter().enumerate().collect();
-        let mut par_results: Vec<(usize, bool, String, Duration)> = indexed
-            .par_iter()
-            .map(|(idx, case)| {
-                let start = Instant::now();
-                let (passed, detail) = (case.run)();
-                (*idx, passed, detail, start.elapsed())
-            })
-            .collect();
+        let mut par_results: Vec<(usize, bool, String, Duration)> =
+            if module_name == "completable" {
+                suite
+                    .cases
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, case)| {
+                        let start = Instant::now();
+                        let (passed, detail) = (case.run)();
+                        (idx, passed, detail, start.elapsed())
+                    })
+                    .collect()
+            } else {
+                let indexed: Vec<(usize, &RunnableCase)> = suite.cases.iter().enumerate().collect();
+                let mut results: Vec<(usize, bool, String, Duration)> = indexed
+                    .par_iter()
+                    .map(|(idx, case)| {
+                        let start = Instant::now();
+                        let (passed, detail) = (case.run)();
+                        (*idx, passed, detail, start.elapsed())
+                    })
+                    .collect();
+                results.sort_by_key(|(idx, _, _, _)| *idx);
+                results
+            };
+
         par_results.sort_by_key(|(idx, _, _, _)| *idx);
 
         for (idx, passed, detail, duration) in par_results {
@@ -315,6 +330,7 @@ fn write_profiles(
     eprintln!("WROTE_PROFILE {}", fail_path.display());
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_reports(
     module_name: &str,
     results: &[CaseResult],
@@ -331,6 +347,7 @@ fn write_reports(
         .as_secs();
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let reports_dir = std::path::Path::new(manifest_dir)
+        .join("src")
         .join("validation")
         .join("reports");
     fs::create_dir_all(&reports_dir).expect("failed to create reports dir");

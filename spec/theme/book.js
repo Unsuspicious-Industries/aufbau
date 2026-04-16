@@ -922,6 +922,18 @@ aria-label="Show hidden lines"></button>';
     });
 })();
 
+(function mermaidInit() {
+    if (document.querySelector('.mermaid')) {
+        mermaid.init({
+            startOnLoad: false,
+            theme: document.querySelector('html').classList.contains('ayu') || 
+                   document.querySelector('html').classList.contains('coal') ||
+                   document.querySelector('html').classList.contains('navy') 
+                ? 'dark' : 'default'
+        }, '.mermaid');
+    }
+})();
+
 (function controllMenu() {
     const menu = document.getElementById('menu-bar');
 

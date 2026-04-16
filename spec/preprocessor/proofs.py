@@ -14,21 +14,23 @@ Where X is one of:
     E - Example
     R - Remark
     A - Assumption
+    C - Pseudocode
 """
 
 import re
 
 TYPE_MAP = {
-    'T': ('theorem', 'Theorem'),
-    'D': ('definition', 'Definition'),
-    'P': ('proof', 'Proof'),
-    'L': ('lemma', 'Lemma'),
-    'E': ('example', 'Example'),
-    'R': ('remark', 'Remark'),
-    'A': ('assumption', 'Assumption'),
+    "T": ("theorem", "Theorem"),
+    "D": ("definition", "Definition"),
+    "P": ("proof", "Proof"),
+    "L": ("lemma", "Lemma"),
+    "E": ("example", "Example"),
+    "R": ("remark", "Remark"),
+    "A": ("assumption", "Assumption"),
+    "C": ("pseudocode", "Pseudocode"),
 }
 
-PATTERN = r'>([TDPLERA])\s*(.*?)\n(.*?)\n<$'
+PATTERN = r">([TDPLERAC])\s*(.*?)\n(.*?)\n<$"
 
 
 def _replace_block(match):
@@ -36,7 +38,7 @@ def _replace_block(match):
     title = match.group(2).strip()
     body = match.group(3)
 
-    block_type, display_name = TYPE_MAP.get(symbol, ('note', 'Note'))
+    block_type, display_name = TYPE_MAP.get(symbol, ("note", "Note"))
     title_text = f"{display_name}" + (f": {title}" if title else "")
 
     return f'''<div class="{block_type}">

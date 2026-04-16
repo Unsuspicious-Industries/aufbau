@@ -6,10 +6,10 @@ title = "Aufbau Engine"
 
 [output.html]
 mathjax-support = true
-additional-js = ["theme/collapse-examples.js","theme/margin.js","theme/synth-widget.js"]
-additional-css = ["theme/proofs.css","theme/uncertainty.css","theme/status.css","theme/margin.css"]
+additional-js = ["theme/collapse-examples.js"]
+additional-css = ["theme/proofs.css","theme/uncertainty.css","theme/status.css"]
 
 [preprocessor.links]
 
 [preprocessor.custom]
-command = "python3 preprocessor"
+command = "python3 preprocessor/__main__.py"

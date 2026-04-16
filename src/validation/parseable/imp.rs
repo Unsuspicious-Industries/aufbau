@@ -1,8 +1,5 @@
 use super::*;
 
-// Empirical bound for IMP parseability prefixes under left-recursive arithmetic.
-const IMP_PARSE_MAX_DEPTH: usize = 41;
-
 #[cfg(test)]
 fn imp_grammar() -> Grammar {
     load_example_grammar("imp")
@@ -31,9 +28,6 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     ];
 
     cases
-        .into_iter()
-        .map(|c| c.with_parse_max_depth(IMP_PARSE_MAX_DEPTH))
-        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
@@ -80,11 +74,11 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
 
 #[test]
 fn valid_expressions_imp() {
-    let grammar = imp_grammar();
+    let mut grammar = imp_grammar();
     let cases = valid_expressions_cases();
 
     println!("\n=== IMP Valid Expressions ({} cases) ===", cases.len());
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "All {} tests passed in {:?} (avg: {:?})",
@@ -96,10 +90,10 @@ fn valid_expressions_imp() {
 
 #[test]
 fn invalid_expressions_imp() {
-    let grammar = imp_grammar();
+    let mut grammar = imp_grammar();
     let cases = invalid_expressions_cases();
     println!("\n=== IMP Invalid Expressions ({} cases) ===", cases.len());
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "All {} tests passed in {:?} (avg: {:?})",

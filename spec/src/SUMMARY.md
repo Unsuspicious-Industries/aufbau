@@ -2,42 +2,29 @@
 
 [Introduction](./intro.md)
 [Basic Concepts and Notations](./basic.md)
+[Regular expressions](./regex.md)
 
-# Foundations
+# Core Ideas
 
-- [Core Theoretical Foundation](./concepts/theory.md)
+- [Theoretical Foundation](./concepts/theory.md)
 - [Partial Trees and Forests](./concepts/trees.md)
 - [Binding Resolution](./concepts/binding.md)
-- [Type System](./concepts/typing_system.md)
-- [Regex Engine](./regex.md)
+- [Type System](./concepts/types.md)
+
+
+# Implementation
+
 - [Grammar files format](./spec.md)
-
-# Parsing
-
-- [Partial Parsing](./parsing.md)
-- [Tokenization](./tokenizer.md)
-
-
-# Typing
+- [Prefix Parsing](./implementation/parsing.md)
+- [Parser Correctness Lemmas](./implementation/correctness.md)
+- [Tokenization](./implementation/tokenizer.md)
 
 - [Type Inference](./typing.md)
-  - [Context](./typing/context.md)
-  - [Premises](./typing/premises.md)
-  - [Conclusion](./typing/conclusion.md)
 
-# Completion
-
-- [Completion](./completion.md)
-  - [Synthesizer](./completion/synthesizer.md)
-  - [Search](./completion/search.md)
-  - [Scoring](./completion/scoring.md)
+- [Completion](./implementation/completion.md)
+  - [Synthesizer](./implementation/synthesizer.md)
 
 # Verification
 
 - [Completability](./verification/completability.md)
-- [Validation](./verification/validation.md)
-
-
----
-
-- [Implementation Map](./implementation.md)
+- [Coq Oracle](./verification/coq.md)

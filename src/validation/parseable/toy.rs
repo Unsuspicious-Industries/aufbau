@@ -1,8 +1,5 @@
 use super::*;
 
-// Empirical bound for Toy parseability prefixes.
-const TOY_PARSE_MAX_DEPTH: usize = 27;
-
 #[cfg(test)]
 fn toy_grammar() -> Grammar {
     load_example_grammar("toy")
@@ -20,9 +17,6 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     ];
 
     cases
-        .into_iter()
-        .map(|c| c.with_parse_max_depth(TOY_PARSE_MAX_DEPTH))
-        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
@@ -36,16 +30,16 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
 
 #[test]
 fn valid_expressions_toy() {
-    let grammar = toy_grammar();
+    let mut grammar = toy_grammar();
     let cases = valid_expressions_cases();
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 }
 
 #[test]
 fn invalid_expressions_toy() {
-    let grammar = toy_grammar();
+    let mut grammar = toy_grammar();
     let cases = invalid_expressions_cases();
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 }

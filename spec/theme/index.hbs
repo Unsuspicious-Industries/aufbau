@@ -50,8 +50,13 @@
         <script>
             MathJax = {
                 tex: {
-                    inlineMath: [['$', '$']],
-                    displayMath: [['$$', '$$']]
+                    inlineMath: [['$', '$'], ['\\(', '\\)']],
+                    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                    processEscapes: true,
+                    processEnvironments: true
+                },
+                options: {
+                    skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
                 }
             };
         </script>
@@ -152,10 +157,10 @@
                 <div id="menu-bar" class="menu-bar sticky">
                     <div class="left-buttons">
                         <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
-                            {{fa "solid" "bars"}}
+                            <i class="fa fa-bars" aria-hidden="true"></i>
                         </label>
                         <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
-                            {{fa "solid" "paintbrush"}}
+                            <i class="fa fa-paint-brush" aria-hidden="true"></i>
                         </button>
                         <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
                             <li role="none"><button role="menuitem" class="theme" id="default_theme">Auto</button></li>
@@ -167,7 +172,7 @@
                         </ul>
                         {{#if search_enabled}}
                         <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-search-wrapper">
-                            {{fa "solid" "magnifying-glass"}}
+                            <i class="fa fa-search" aria-hidden="true"></i>
                         </button>
                         {{/if}}
                     </div>
@@ -177,17 +182,17 @@
                     <div class="right-buttons">
                         {{#if print_enable}}
                         <a href="{{ path_to_root }}print.html" title="Print this book" aria-label="Print this book">
-                            {{fa "solid" "print" "print-button"}}
+                            <i class="fa fa-print print-button" aria-hidden="true"></i>
                         </a>
                         {{/if}}
                         {{#if git_repository_url}}
                         <a href="{{git_repository_url}}" title="Git repository" aria-label="Git repository">
-                            {{fa git_repository_icon_class git_repository_icon}}
+                            <i class="{{git_repository_icon_class}} {{git_repository_icon}}" aria-hidden="true"></i>
                         </a>
                         {{/if}}
                         {{#if git_repository_edit_url}}
                         <a href="{{git_repository_edit_url}}" title="Suggest an edit" aria-label="Suggest an edit" rel="edit">
-                            {{fa "solid" "pencil" "git-edit-button"}}
+                            <i class="fa fa-pencil git-edit-button" aria-hidden="true"></i>
                         </a>
                         {{/if}}
 
@@ -200,7 +205,7 @@
                         <div class="search-wrapper">
                             <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
                             <div class="spinner-wrapper">
-                                {{fa "solid" "spinner" "fa-spin"}}
+                                <i class="fa fa-spinner fa-spin" aria-hidden="true"></i>
                             </div>
                         </div>
                     </form>
@@ -230,13 +235,13 @@
                         <!-- Mobile navigation buttons -->
                         {{#if previous}}
                             <a rel="prev" href="{{ path_to_root }}{{previous.link}}" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                                {{fa "solid" "angle-left"}}
+                                <i class="fa fa-angle-left" aria-hidden="true"></i>
                             </a>
                         {{/if}}
 
                         {{#if next}}
                             <a rel="next prefetch" href="{{ path_to_root }}{{next.link}}" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                                {{fa "solid" "angle-right"}}
+                                <i class="fa fa-angle-right" aria-hidden="true"></i>
                             </a>
                         {{/if}}
 
@@ -248,24 +253,24 @@
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
                 {{#if previous}}
                     <a rel="prev" href="{{ path_to_root }}{{previous.link}}" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
-                        {{fa "solid" "angle-left"}}
+                        <i class="fa fa-angle-left" aria-hidden="true"></i>
                     </a>
                 {{/if}}
 
                 {{#if next}}
                     <a rel="next prefetch" href="{{ path_to_root }}{{next.link}}" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
-                        {{fa "solid" "angle-right"}}
+                        <i class="fa fa-angle-right" aria-hidden="true"></i>
                     </a>
                 {{/if}}
             </nav>
 
         </div>
 
-        <template id=fa-eye>{{fa "solid" "eye"}}</template>
-        <template id=fa-eye-slash>{{fa "solid" "eye-slash"}}</template>
-        <template id=fa-copy>{{fa "regular" "copy"}}</template>
-        <template id=fa-play>{{fa "solid" "play"}}</template>
-        <template id=fa-clock-rotate-left>{{fa "solid" "clock-rotate-left"}}</template>
+        <template id=fa-eye><i class="fa fa-eye" aria-hidden="true"></i></template>
+        <template id=fa-eye-slash><i class="fa fa-eye-slash" aria-hidden="true"></i></template>
+        <template id=fa-copy><i class="fa fa-copy" aria-hidden="true"></i></template>
+        <template id=fa-play><i class="fa fa-play" aria-hidden="true"></i></template>
+        <template id=fa-clock-rotate-left><i class="fa fa-history" aria-hidden="true"></i></template>
 
         {{#if live_reload_endpoint}}
         <!-- Livereload script (if served using the cli tool) -->
@@ -333,6 +338,7 @@
 
         <script src="{{ resource "clipboard.min.js" }}"></script>
         <script src="{{ resource "highlight.js" }}"></script>
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
         <script src="{{ resource "book.js" }}"></script>
 
         <!-- Custom JS scripts -->

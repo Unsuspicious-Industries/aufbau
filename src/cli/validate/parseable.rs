@@ -10,14 +10,14 @@ pub fn run(args: &ValidateCmd) {
             let mut cases: Vec<RunnableCase> = Vec::with_capacity(valids.len() + invalids.len());
 
             for case in valids.into_iter().chain(invalids.into_iter()) {
-                let g = grammar.clone();
+                let g = std::sync::Mutex::new(grammar.clone());
                 let desc = case.description.to_string();
                 let input = case.input.to_string();
                 cases.push(RunnableCase {
                     desc,
                     input,
                     run: Box::new(move || {
-                        let result = parseable::run_parse_test(&g, &case);
+                        let result = parseable::run_parse_test(&mut g.lock().unwrap(), &case);
                         match result {
                             parseable::ParseResult::Pass { .. } => (true, String::new()),
                             parseable::ParseResult::Fail {

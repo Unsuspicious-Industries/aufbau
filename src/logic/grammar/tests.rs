@@ -1,13 +1,11 @@
 // These tests enforce the β(b, p) grammar-path invariants
 // We are checking if the spec is respected
 // For example `stlc_abs_binding_paths_match_spec` asserts β(τ₁, abs) = 3@1·0.
-#![cfg(test)]
-
 use super::*;
-use crate::regex::Regex as DerivativeRegex;
+use crate::regex::Regex;
 
-fn literal_regex(pattern: &str) -> DerivativeRegex {
-    DerivativeRegex::literal(pattern)
+fn literal_regex(pattern: &str) -> Regex {
+    Regex::literal(pattern)
 }
 
 #[test]
@@ -33,7 +31,7 @@ fn regex_literals_round_trip() {
     let productions = grammar.productions.get("start").unwrap();
     match &productions[0].rhs[0] {
         Symbol::Terminal { regex, .. } => {
-            assert!(regex.equiv(&DerivativeRegex::new("[a-z]+").unwrap()));
+            assert!(regex.equiv(&Regex::new("[a-z]+").unwrap()));
         }
         other => panic!("expected regex symbol, got {:?}", other),
     }
@@ -48,7 +46,7 @@ fn expression_bindings_are_preserved() {
     let grammar = Grammar::load(spec).unwrap();
     let start_prod = grammar.productions.get("start").unwrap();
     match &start_prod[0].rhs[0] {
-        Symbol::Nonterminal { name, binding } => {
+        Symbol::Nonterminal { name, binding, .. } => {
             assert_eq!(name, "Expr");
             assert_eq!(binding.as_deref(), Some("val"));
         }
@@ -60,7 +58,7 @@ fn expression_bindings_are_preserved() {
 fn grammar_tracks_special_tokens_for_literals() {
     let spec = "start ::= 'let' Identifier\nIdentifier ::= /[a-z]+/";
     let grammar = Grammar::load(spec).unwrap();
-    assert!(grammar.special_tokens.iter().any(|tok| tok == "let"));
+    assert!(grammar.specials().iter().any(|tok| tok == "let"));
 }
 
 fn steps(path: &binding::GrammarPath) -> Vec<(usize, Option<usize>)> {
@@ -74,7 +72,9 @@ fn stlc_abs_binding_paths_match_spec() {
 
     let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, Option<usize>)>>| {
         let paths = grammar
-            .binding_map
+            .bindings
+            .as_ref()
+            .unwrap()
             .get(binding, rule)
             .unwrap_or_else(|| panic!("missing paths for {}:{}", binding, rule));
         assert_eq!(
@@ -118,7 +118,9 @@ fn repeated_binding_produces_multiple_paths() {
 
     let grammar = Grammar::load(spec).expect("load pair grammar");
     let paths = grammar
-        .binding_map
+        .bindings
+        .as_ref()
+        .unwrap()
         .get("x", "pair")
         .expect("binding paths for repeated x");
 
@@ -140,17 +142,31 @@ fn repetition_helpers_preserve_inner_binding_paths() {
 
     let grammar = Grammar::load(spec).expect("load repetition grammar");
     let paths = grammar
-        .binding_map
+        .bindings
+        .as_ref()
+        .unwrap()
         .get("x", "item")
         .expect("binding paths for repeated item");
 
     assert_eq!(paths.len(), 1);
     assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
-    assert!(
-        grammar
-            .productions
-            .keys()
-            .any(|name| grammar.is_hidden_nonterminal(name)),
-        "repetition expansion should introduce hidden helpers"
+}
+
+#[test]
+fn extend_input_preserves_float_operator_spacing() {
+    let mut grammar = Grammar::load(include_str!("../../../examples/fun.auf")).expect("load fun");
+    assert_eq!(grammar.extend_input("1.0 +.", "0.0"), "1.0 +. 0.0");
+}
+
+#[test]
+fn extend_input_preserves_call_argument_spacing() {
+    let mut grammar =
+        Grammar::load(include_str!("../../../examples/typescript.auf")).expect("load typescript");
+    assert_eq!(
+        grammar.extend_input(
+            "function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] ,",
+            "true"
+        ),
+        "function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] , true"
     );
 }

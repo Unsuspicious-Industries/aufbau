@@ -1,15 +1,15 @@
 pub mod grammar;
-pub mod partial;
-pub mod segment;
+pub mod completion;
+
 
 pub mod debug;
+pub mod exp;
+pub mod fusion;
+pub mod parse;
 pub mod typing;
-
-pub mod search;
 
 pub mod binding;
 
-pub use grammar::{Segment, Tokenizer};
-pub use partial::{Parser, SppfForest};
+pub mod synth;
 
-pub use search::{search_complete, search_k, SearchConfig, SearchResult};
+pub use grammar::{Segment, Tokenizer};

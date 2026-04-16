@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+#[allow(clippy::type_complexity)]
 static CACHE: Lazy<Cache<(Regex, usize), Arc<HashSet<String>>>> =
     Lazy::new(|| Cache::builder().max_capacity(10_000).build());
 

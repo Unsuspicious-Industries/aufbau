@@ -41,6 +41,7 @@
 
           # Documentation / utils
           mdbook
+          mdbook-mermaid
           graphviz
           fd
           tokei
@@ -60,6 +61,7 @@
           rocqPkgs.vsrocq-language-server
           dune_3
           ocaml
+          why3
 
 
           # Libraries

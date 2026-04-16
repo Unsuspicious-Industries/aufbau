@@ -23,8 +23,7 @@ const NEGATION_TOKENS: &[&str; 2] = &["¬", "!"];
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Atom(s) => write!(f, "{}", s),
-            Type::Meta(s) => write!(f, "?{}", s),
+            Type::Meta(s) => write!(f, "{}", s),
             Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
             Type::Array(inner) => write!(f, "{}[]", inner),
@@ -162,9 +161,8 @@ impl Type {
         }
 
         // Case: parentheses, possibly unbalanced
-        if s.starts_with('(') {
+        if let Some(inner) = s.strip_prefix('(') {
             // fully balanced but parse failed -> treat as inner partial
-            let inner = &s[1..];
             if let Ok(inner_ty) = Type::parse(inner.trim_end_matches(')')) {
                 return Ok(Type::Partial(
                     Box::new(inner_ty),
@@ -254,7 +252,7 @@ impl Type {
             let ty = if let Some(rest) = s.strip_prefix('?') {
                 Type::Meta(rest.to_string())
             } else {
-                Type::Atom(s.to_string())
+                Type::Meta(s.to_string())
             };
             return Ok(Type::Partial(Box::new(ty), original_input.to_string()));
         }
@@ -292,11 +290,11 @@ impl Type {
 
         // Parentheses: only peel a wrapping pair if it encloses the *entire* expression.
         // Otherwise, leave it to the arrow/context-call parsing logic below.
-        if s.starts_with('(') {
+        if let Some(inner_suffix) = s.strip_prefix('(') {
             let depth = missing_closing_parens(s)?;
             if depth > 0 {
                 // Incomplete parens → partial type expecting a closing ')'
-                let inner = Self::parse_impl(&s[1..], raw_mode)?;
+                let inner = Self::parse_impl(inner_suffix, raw_mode)?;
                 if let Self::Partial(p, _d) = inner {
                     return Ok(Self::Partial(p, s.to_string()));
                 }
@@ -321,10 +319,10 @@ impl Type {
                 }
             }
 
-            if let Some(end) = wrapper_ends_at {
-                if end == s.len() - 1 {
-                    return Self::parse_impl(&s[1..s.len() - 1], raw_mode);
-                }
+            if let Some(end) = wrapper_ends_at
+                && end == s.len() - 1
+            {
+                return Self::parse_impl(&s[1..s.len() - 1], raw_mode);
             }
             // else: not a full wrapper, fall through
         }
@@ -350,21 +348,21 @@ impl Type {
         }
 
         // Parse context calls "Γ(x)", "(y)"
-        if let Some(paren_start) = s.find('(') {
-            if let Some(paren_end) = s.find(')') {
-                if paren_end > paren_start && paren_end == s.len() - 1 {
-                    let context = s[..paren_start].trim();
-                    let var = s[paren_start + 1..paren_end].trim();
-                    if !context.is_empty() && !var.is_empty() {
-                        // Validate context name contains only valid characters
-                        if context.chars().all(|c| {
-                            c.is_alphanumeric()
-                                || c == '_'
-                                || "ΓΔΘΛΣΦΨΩΞΠΡΤΥΧδγτλσφψωξπρυχ₁₂₃₄₅₆₇₈₉₀".contains(c)
-                        }) {
-                            return Ok(Type::ContextCall(context.to_string(), var.to_string()));
-                        }
-                    }
+        if let Some(paren_start) = s.find('(')
+            && let Some(paren_end) = s.find(')')
+            && paren_end > paren_start
+            && paren_end == s.len() - 1
+        {
+            let context = s[..paren_start].trim();
+            let var = s[paren_start + 1..paren_end].trim();
+            if !context.is_empty() && !var.is_empty() {
+                // Validate context name contains only valid characters
+                if context.chars().all(|c| {
+                    c.is_alphanumeric()
+                        || c == '_'
+                        || "ΓΔΘΛΣΦΨΩΞΠΡΤΥΧδγτλσφψωξπρυχ₁₂₃₄₅₆₇₈₉₀".contains(c)
+                }) {
+                    return Ok(Type::ContextCall(context.to_string(), var.to_string()));
                 }
             }
         }
@@ -379,7 +377,7 @@ impl Type {
             if raw_mode {
                 return Ok(Type::Raw(s.to_string()));
             } else {
-                return Ok(Type::Atom(s.to_string()));
+                return Ok(Type::Meta(s.to_string()));
             }
         }
 
@@ -586,8 +584,8 @@ mod tests {
         match t {
             Type::Union(parts) => {
                 assert_eq!(parts.len(), 2);
-                assert!(matches!(parts[0], Type::Atom(_)));
-                assert!(matches!(parts[1], Type::Atom(_)));
+                assert!(matches!(parts[0], Type::Meta(_)));
+                assert!(matches!(parts[1], Type::Meta(_)));
             }
             other => panic!("Expected union type, got {:?}", other),
         }
@@ -600,7 +598,7 @@ mod tests {
             Type::Union(parts) => {
                 assert_eq!(parts.len(), 2);
                 assert!(matches!(parts[0], Type::Arrow(_, _)));
-                assert!(matches!(parts[1], Type::Atom(_)));
+                assert!(matches!(parts[1], Type::Meta(_)));
             }
             other => panic!("Expected top-level union, got {:?}", other),
         }

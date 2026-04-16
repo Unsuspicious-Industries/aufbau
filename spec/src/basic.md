@@ -1,12 +1,14 @@
 #[D] Basic Concepts and Notations
 
-First, we are going to establish some simple concepts of programming language theory, so that we can refer to them later in the specification.
+## Formal languages
+
+First, we are going to establish some simple concepts of formal language theory, so that we can refer to them later in the specification.
 
 >D Alphabet 
 An **alphabet**, often noted sigma $\Sigma$ is a finite set of symbols. 
 <
 
-We are going to use shorthand notation for ranges of symbols in alphabets. For example `a-z` denotes all lowercase letters from `a` to `z`, and `0-9` denotes all digits from `0` to `9`.
+We are going to use shorthand notation for ranges of symbols in alphabets. For example $a\text{-}z$ denotes all lowercase letters from $a$ to $z$, and $0\text{-}9$ denotes all digits from $0$ to $9$.
 
 >E Alphabet Example
 For example, the alphabet for arithmetic expressions could be defined as:
@@ -61,8 +63,8 @@ $s \text{ completable in } L \iff \mathcal{C}_L(s) \neq \emptyset$
 Completability of $s$ in $L$ thus reduces to checking whether its completability set is non-empty. 
 
 >R Nullable Completability
-As an interesting edge case, if $s \in L$, then $s$ is **complete** in $L$ but also **completable** in $L$ and its **completability set** is the *nullable* set:
+As an interesting edge case, if $s \in L$, then $s$ is **complete** in $L$ but also **completable** in $L$ mean its **completability set** is nullable :
 $$
-s\in L \iff \mathcal{C}_L(s) = \\{\epsilon\\}
+s\in L \iff \varepsilon \in \mathcal{C}_L(s)
 $$
 <

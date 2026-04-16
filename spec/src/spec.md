@@ -2,7 +2,7 @@
 
 The grammar is composed of production rules with syntactic meaning and attached typing rules conveying semantic information about the language.
 
-The core data structures are defined in [`src/logic/grammar/mod.rs`](../../src/logic/grammar/mod.rs).
+The core data structures are defined in `src/logic/grammar/mod.rs`.
 
 ## Production Rules
 
@@ -20,21 +20,24 @@ Nonterminal(rule_name) ::= symbol₁ symbol₂ ... | alternative₂ | ...
 - `symbols`: sequence of terminals and nonterminals.
 <
 
-Bindings are resolved via **grammar paths** during type-checking. See [`src/logic/binding/grammar.rs`](../../src/logic/binding/grammar.rs) for the path construction algorithm.
+Bindings are resolved via **grammar paths** during type-checking. See the [Binding Resolution](concepts/binding.md) chapter for details.
 
 ### Epsilon Productions
 
 An epsilon production represents an empty alternative, written as `ε`.
 
+>E Epsilon Production
 ```spec
 // Optional tail matching zero or more Terms
 ProgramTail ::= Term ProgramTail | ε
 ```
+<
 
 ## Typing Rules
 
 Typing rules attach semantic information to productions using an inference-rule format.
 
+>D Typing Rule Syntax
 ```spec
 premise₁, premise₂, ...
 ------------------------ (rule_name)
@@ -42,10 +45,13 @@ conclusion
 ```
 
 The rule name in parentheses must match a `(rule_name)` annotation on a production.
+<
 
 ### Premises
 
 Premises express conditions for rule application.
+
+>D Premise Syntax
 
 | Syntax | Meaning |
 | :--- | :--- |
@@ -55,16 +61,20 @@ Premises express conditions for rule application.
 | `τ₁ = τ₂` | Types must unify |
 | `τ₁ ⊆ τ₂` | Type `τ₁` is a subtype of `τ₂` |
 | `Γ[x:τ]` | Extend context with binding `x:τ` |
+<
 
 ### Conclusions
 
 Conclusions specify the rule's result:
+
+>D Conclusion Syntax
 
 | Syntax | Meaning |
 | :--- | :--- |
 | `τ` | Return type `τ` |
 | `Γ(x)` | Look up type of `x` in context |
 | `Γ → Γ[x:τ] ⊢ τ` | Set type of `x` in context and return `τ` |
+<
 
 Checking mode (`▷`) is not implemented as a conclusion; use the check premise `Γ ▷ e` instead.
 
@@ -72,12 +82,14 @@ Checking mode (`▷`) is not implemented as a conclusion; use the check premise 
 
 A **meta-variable** (written `?A`, `?B`, etc.) is a placeholder unified during type checking, allowing rules to express polymorphic constraints.
 
+>E Meta-Variable Unification
 ```spec
 // ?A must unify with both the function's domain and the argument's type.
 Γ ⊢ f : ?A → ?B, Γ ⊢ e : ?A
 -------------------------------- (app)
 ?B
 ```
+<
 
 ### Context Operations
 
@@ -90,6 +102,8 @@ The typing context `Γ` maps variable names to types:
 
 Types in typing rules follow this syntax:
 
+>D Type Expression Syntax
+
 | Syntax | Description |
 | :--- | :--- |
 | `τ` | Type variable (from binding) |
@@ -101,21 +115,14 @@ Types in typing rules follow this syntax:
 | `⊤` | Top type (any) |
 | `∅` | Bottom type (none) |
 | `Γ(x)` | Context lookup |
+<
 
 ## Example: Simply-Typed Lambda Calculus
 
-A complete specification for STLC from [`examples/stlc.auf`](../../examples/stlc.auf):
+A complete specification for STLC from `examples/stlc.auf`:
 
+>E STLC Grammar
 ```spec
 {{#include ../../examples/stlc.auf}}
 ```
-
-## Source Files
-
-| Component | Path |
-| :--- | :--- |
-| Grammar structures | [`src/logic/grammar/mod.rs`](../../src/logic/grammar/mod.rs) |
-| Spec file loading | [`src/logic/grammar/load.rs`](../../src/logic/grammar/load.rs) |
-| Typing rules | [`src/logic/typing/rule.rs`](../../src/logic/typing/rule.rs) |
-| Type definitions | [`src/logic/typing/mod.rs`](../../src/logic/typing/mod.rs) |
-| Binding map | [`src/logic/binding/grammar.rs`](../../src/logic/binding/grammar.rs) |
+<

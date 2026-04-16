@@ -6,16 +6,6 @@
 
 use super::*;
 
-// Empirical bound for STLC parseability prefixes. This intentionally over-approximates
-// to stay on the safe side for left-recursive lambda/application prefixes.
-const STLC_PARSE_MAX_DEPTH: usize = 62;
-
-/// Note: These tests focus on parsing only, not type checking.
-/// For type checking tests, see the typing module tests.
-///
-/// The valid() method is used instead of valid() to avoid type checking
-/// overhead and focus on the core parsing performance.
-
 #[cfg(test)]
 fn stlc_grammar() -> Grammar {
     load_example_grammar("stlc")
@@ -48,24 +38,29 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         // === Applications in lambda bodies ===
         // Left-recursive application chains need extra depth: each application
         // step adds ~2 recursion levels, so depth ≈ 10 + 2*num_args.
-        ParseTestCase::valid("lambda with app", "λf:A->B.λx:A.f x").with_parse_max_depth(30),
-        ParseTestCase::valid("lambda with double app", "λf:A->B->C.λx:A.λy:B.f x y")
-            .with_parse_max_depth(30),
+        ParseTestCase::valid("lambda with app", "λf:A->B.λx:A.f x"),
+        ParseTestCase::valid("lambda with double app", "λf:A->B->C.λx:A.λy:B.f x y"),
         // === Complex nested cases ===
         ParseTestCase::valid("nested lambda with app", "λx:A.λy:B.f x y")
-            .with_context(vec![("f", "A->B->C")])
-            .with_parse_max_depth(30),
+            .with_context(vec![("f", "A->B->C")]),
         // === Parenthesized applications ===
-        // non typed
-        ParseTestCase::structural("paren app", "(f x)"),
-        ParseTestCase::structural("paren double app", "((f x) y)"),
-        ParseTestCase::structural("paren nested app", "x t y u r"),
+        // These require environments because the fusion parser is type-directed.
+        ParseTestCase::valid("paren app", "(f x)").with_context(vec![("f", "A->B"), ("x", "A")]),
+        ParseTestCase::valid("paren double app", "((f x) y)").with_context(vec![
+            ("f", "A->B->C"),
+            ("x", "A"),
+            ("y", "B"),
+        ]),
+        ParseTestCase::valid("paren nested app", "x t y u r").with_context(vec![
+            ("x", "A->B->C->D->E"),
+            ("t", "A"),
+            ("y", "B"),
+            ("u", "C"),
+            ("r", "D"),
+        ]),
     ];
 
     cases
-        .into_iter()
-        .map(|c| c.with_parse_max_depth(STLC_PARSE_MAX_DEPTH))
-        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
@@ -114,39 +109,31 @@ pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
         // Each application step adds ~2 recursion levels in the left-recursive grammar,
         // so we set depth = 10 + 2 * num_args as a safe budget.
         ParseTestCase::valid("simple left app", "f x")
-            .with_context(vec![("f", "A->B"), ("x", "A")])
-            .with_parse_max_depth(20),
+            .with_context(vec![("f", "A->B"), ("x", "A")]),
         ParseTestCase::valid("chained left app", "f x y")
-            .with_context(vec![("f", "A->B->C"), ("x", "A"), ("y", "B")])
-            .with_parse_max_depth(25),
-        ParseTestCase::valid("long chain left app", "f x y z w v u")
-            .with_context(vec![
-                ("f", "A->B->C->D->E->F->G"),
-                ("x", "A"),
-                ("y", "B"),
-                ("z", "C"),
-                ("w", "D"),
-                ("v", "E"),
-                ("u", "F"),
-            ])
-            .with_parse_max_depth(30),
+            .with_context(vec![("f", "A->B->C"), ("x", "A"), ("y", "B")]),
+        ParseTestCase::valid("long chain left app", "f x y z w v u").with_context(vec![
+            ("f", "A->B->C->D->E->F->G"),
+            ("x", "A"),
+            ("y", "B"),
+            ("z", "C"),
+            ("w", "D"),
+            ("v", "E"),
+            ("u", "F"),
+        ]),
         // === Test in lambda contexts ===
-        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y")
-            .with_parse_max_depth(30),
+        ParseTestCase::valid("lambda with chain", "λf:A->B->C.λx:A.λy:B.f x y"),
     ];
 
     cases
-        .into_iter()
-        .map(|c| c.with_parse_max_depth(STLC_PARSE_MAX_DEPTH))
-        .collect()
 }
 
 #[test]
 fn valid_expressions_stlc() {
-    let grammar = stlc_grammar();
+    let mut grammar = stlc_grammar();
     let cases = valid_expressions_cases();
     println!("\n=== STLC Valid Expressions ({} cases) ===", cases.len());
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",
@@ -160,10 +147,10 @@ fn valid_expressions_stlc() {
 
 #[test]
 fn invalid_expressions_stlc() {
-    let grammar = stlc_grammar();
+    let mut grammar = stlc_grammar();
     let cases = invalid_expressions_cases();
     println!("\n=== STLC Invalid Expressions ({} cases) ===", cases.len());
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",
@@ -173,13 +160,13 @@ fn invalid_expressions_stlc() {
 
 #[test]
 fn left_recursive_application_tests() {
-    let grammar = stlc_grammar();
+    let mut grammar = stlc_grammar();
     let cases = left_recursive_application_cases();
     println!(
         "\n=== STLC Left-Recursive Applications ({} cases) ===",
         cases.len()
     );
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
     println!(
         "✓ All {} cases passed in {:?} (avg {:?})\n",

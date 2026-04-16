@@ -2,8 +2,10 @@ use clap::{Args, Subcommand};
 use std::fs;
 use std::path::PathBuf;
 
-use aufbau::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
-use aufbau::logic::{grammar::Grammar, Parser};
+use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use aufbau::logic::synth::Synthesizer;
+use aufbau::logic::grammar::Grammar;
+use aufbau::logic::typing::Context;
 
 #[derive(Args, Debug, Clone)]
 pub struct LogicCmd {
@@ -129,7 +131,8 @@ fn run_viz(args: &VizArgs, debug_level: DebugLevel) {
     eprintln!("Starting viz server on http://{}", bind);
     let _ = debug_level; // silence for now; wired globally above
 
-    aufbau::viz::serve(&bind);
+    eprintln!("error: viz server has been removed");
+    std::process::exit(1);
 }
 
 fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) {
@@ -186,16 +189,22 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
         set_debug_input(Some(input.clone()));
     }
 
-    // Parse partial input
-    let mut parser = Parser::new(grammar.clone());
-    let completions = match parser.partial_typed(&input) {
-        Ok(typed) => typed.completions(&grammar),
+    // Parse partial input using fusion Synthesizer
+    let mut synth = Synthesizer::new(grammar, &input);
+    let typed = match synth.parse_with(&Context::new()) {
+        Ok(t) => t,
         Err(e) => {
-            eprintln!("parse/typing error: {}", e);
+            eprintln!("parse error: {}", e);
             std::process::exit(1);
         }
     };
-    let mut candidates = completions.tokens.clone();
+    let roots: Vec<_> = typed.roots().collect();
+    if roots.is_empty() {
+        eprintln!("parse error: no parse found for input");
+        std::process::exit(1);
+    }
+    let completions_set = synth.completions();
+    let mut candidates: Vec<String> = completions_set.iter().map(|c| c.to_pattern()).collect();
 
     // Apply max limit if specified
     if let Some(max) = args.max_completions {
@@ -212,7 +221,7 @@ fn run_complete(args: &CompleteArgs, with_input: bool, debug_level: DebugLevel) 
     println!();
 
     for (idx, token) in candidates.iter().enumerate() {
-        println!("  {}. '{}'", idx + 1, token.to_pattern());
+        println!("  {}. '{}'", idx + 1, token);
     }
 
     std::process::exit(0);

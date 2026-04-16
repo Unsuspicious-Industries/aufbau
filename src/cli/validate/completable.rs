@@ -9,7 +9,10 @@ pub fn run(args: &ValidateCmd) {
         .map(|(name, grammar, cases)| {
             let runnable_cases: Vec<RunnableCase> = cases
                 .into_iter()
-                .map(|case| {
+                .map(|mut case| {
+                    if let Some(timeout_secs) = args.completable_timeout_secs {
+                        case.timeout_secs = timeout_secs;
+                    }
                     let g = grammar.clone();
                     let desc = case.description.to_string();
                     let input = case.input.to_string();

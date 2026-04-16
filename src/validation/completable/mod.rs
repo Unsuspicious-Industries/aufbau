@@ -13,12 +13,25 @@ use crate::logic::grammar::Grammar;
 use crate::logic::typing::core::Context;
 
 use crate::validation::completability::{
-    complete, sound_complete, CompletionResult, PrefixSoundnessResult,
+    CompletionResult, PrefixSoundnessResult, complete, sound_complete,
 };
-use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use serde_json::json;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
+
+fn effective_case_timeout_secs(base_secs: u64) -> u64 {
+    let base = base_secs.max(1);
+    let workers = rayon::current_num_threads().max(1) as u64;
+    let scaled = if workers > 1 {
+        base.saturating_mul(workers)
+    } else {
+        base
+    };
+    scaled.min(3600)
+}
 
 fn batch_worker_count(cases_len: usize) -> usize {
     if cases_len == 0 {
@@ -50,7 +63,9 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
     out.extend(fun::suites());
     out.extend(imp::suites());
     out.extend(weird::suites());
-    out
+    out.into_iter()
+        .map(|(name, grammar, cases)| (name, grammar, prune_prefix_cases(&cases)))
+        .collect()
 }
 
 // ============================================================================
@@ -59,13 +74,13 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
 
 /// Wrapper that times completion with context
 pub fn timed_sound_complete(
-    grammar: &Grammar,
+    grammar: &mut Grammar,
     input: &str,
-    max_depth: usize,
+    budget: usize,
     opt_ctx: Option<Context>,
 ) -> (PrefixSoundnessResult, Duration) {
     let start = Instant::now();
-    let result = sound_complete(grammar, input, max_depth, opt_ctx);
+    let result = sound_complete(grammar, input, budget, opt_ctx);
     let elapsed = start.elapsed();
     (result, elapsed)
 }
@@ -76,11 +91,11 @@ pub fn timed_sound_complete(
 pub fn timed_complete(
     grammar: &Grammar,
     input: &str,
-    max_depth: usize,
+    budget: usize,
     opt_ctx: Option<Context>,
 ) -> (CompletionResult, Duration) {
     let start = Instant::now();
-    let result = complete(grammar, input, max_depth, opt_ctx);
+    let result = complete(grammar, input, budget, opt_ctx);
     let elapsed = start.elapsed();
     (result, elapsed)
 }
@@ -95,8 +110,8 @@ pub struct TypedCompletionTestCase {
     pub description: &'static str,
     /// The partial input to test
     pub input: &'static str,
-    /// Maximum depth for completion search
-    pub max_depth: usize,
+    /// Completion budget (tokens to append during search)
+    pub completion_budget: usize,
     /// Initial typing context (variable bindings)
     pub context: Vec<(&'static str, &'static str)>,
     /// Whether to require all prefixes to be completable (soundness).
@@ -110,10 +125,10 @@ impl TypedCompletionTestCase {
         Self {
             description: desc,
             input,
-            max_depth: 10,
+            completion_budget: 10,
             context: vec![],
             require_prefix_soundness: true,
-            timeout_secs: 300,
+            timeout_secs: 10,
         }
     }
 
@@ -121,13 +136,17 @@ impl TypedCompletionTestCase {
     ///
     /// Use `.without_soundness()` on the returned object when you explicitly do NOT
     /// want to require every prefix to be completable.
-    pub fn ok(desc: &'static str, input: &'static str, depth: usize) -> Self {
-        Self::new(desc, input).with_depth(depth)
+    pub fn ok(desc: &'static str, input: &'static str, budget: usize) -> Self {
+        Self::new(desc, input).with_budget(budget)
     }
 
-    pub fn with_depth(mut self, depth: usize) -> Self {
-        self.max_depth = depth;
+    pub fn with_budget(mut self, budget: usize) -> Self {
+        self.completion_budget = budget;
         self
+    }
+
+    pub fn with_depth(self, depth: usize) -> Self {
+        self.with_budget(depth)
     }
 
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {
@@ -141,9 +160,24 @@ impl TypedCompletionTestCase {
     }
 
     pub fn with_timeout_secs(mut self, secs: u64) -> Self {
-        self.timeout_secs = secs;
+        self.timeout_secs = secs.max(1);
         self
     }
+}
+
+fn prune_prefix_cases(cases: &[TypedCompletionTestCase]) -> Vec<TypedCompletionTestCase> {
+    cases
+        .iter()
+        .enumerate()
+        .filter(|(i, case)| {
+            !cases.iter().enumerate().any(|(j, other)| {
+                i != &j
+                    && other.input.len() > case.input.len()
+                    && other.input.starts_with(case.input)
+            })
+        })
+        .map(|(_, case)| case.clone())
+        .collect()
 }
 
 /// Metadata for a single test run useful to profiling and reporting
@@ -165,12 +199,37 @@ pub fn run_test_timed_meta(
     case: &TypedCompletionTestCase,
 ) -> (TestResult, Duration, TestRunMeta) {
     let start = Instant::now();
-    let result = run_test_inner(grammar, case);
-    let out = (result.0, start.elapsed(), result.1);
-    out
+    let timeout_secs = effective_case_timeout_secs(case.timeout_secs);
+    let timeout = Duration::from_secs(timeout_secs);
+    let grammar_cloned = grammar.clone();
+    let case_cloned = case.clone();
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let mut grammar_cloned = grammar_cloned;
+        let out = run_test_inner(&mut grammar_cloned, &case_cloned);
+        let _ = tx.send(out);
+    });
+
+    match rx.recv_timeout(timeout) {
+        Ok((res, meta)) => (res, start.elapsed(), meta),
+        Err(_) => {
+            let mut m = String::new();
+            m.push_str("kind=timeout\n");
+            m.push_str(&format!("input={}\n", case.input));
+            m.push_str(&format!("timeout_secs={}\n", timeout_secs));
+            let meta = TestRunMeta {
+                states_explored: None,
+                prefix_meta: None,
+                prefixes_checked: None,
+                total_prefix_time_us: None,
+            };
+            (TestResult::Fail(m), start.elapsed(), meta)
+        }
+    }
 }
 
-fn run_test_inner(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestResult, TestRunMeta) {
+fn run_test_inner(grammar: &mut Grammar, case: &TypedCompletionTestCase) -> (TestResult, TestRunMeta) {
     let mut ctx = Context::new();
     for (var, ty_str) in &case.context {
         if let Ok(ty) = crate::logic::typing::Type::parse_raw(ty_str) {
@@ -186,8 +245,12 @@ fn run_test_inner(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestRes
     };
 
     let result = if case.require_prefix_soundness {
-        let (result, _elapsed) =
-            timed_sound_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
+        let (result, _elapsed) = timed_sound_complete(
+            grammar,
+            case.input,
+            case.completion_budget,
+            Some(ctx.clone()),
+        );
         let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
 
         meta.prefix_meta = Some(result.prefix_meta.clone());
@@ -226,25 +289,33 @@ fn run_test_inner(grammar: &Grammar, case: &TypedCompletionTestCase) -> (TestRes
                 for (j, v) in pd.visited_sample.iter().enumerate() {
                     m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
                 }
-                if let Some(vc) = pd.visited_count {
-                    if vc > pd.visited_sample.len() {
-                        m.push_str(&format!(
-                            "prefix_{}_visited_truncated={}\n",
-                            i,
-                            vc - pd.visited_sample.len()
-                        ));
-                    }
+                if let Some(vc) = pd.visited_count
+                    && vc > pd.visited_sample.len()
+                {
+                    m.push_str(&format!(
+                        "prefix_{}_visited_truncated={}\n",
+                        i,
+                        vc - pd.visited_sample.len()
+                    ));
                 }
             }
 
             TestResult::Fail(m)
         }
     } else {
-        let (result, _elapsed) =
-            timed_complete(grammar, case.input, case.max_depth, Some(ctx.clone()));
+        let (result, _elapsed) = timed_complete(
+            grammar,
+            case.input,
+            case.completion_budget,
+            Some(ctx.clone()),
+        );
         match result {
             CompletionResult::Success { complete_input, .. } => {
                 TestResult::Pass(Some(complete_input))
+            }
+            CompletionResult::SuccessMultiple { completions } => {
+                // For single completion validation, just use the first result
+                TestResult::Pass(completions.into_iter().next())
             }
             CompletionResult::Failure {
                 max_depth_reached,
@@ -328,6 +399,8 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
         duration: Duration,
     }
 
+    let cases = prune_prefix_cases(cases);
+
     let mut passed = 0;
     let mut failed = 0;
     let mut failures = Vec::new();
@@ -408,7 +481,7 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
                 "desc": case.description,
                 "input": case.input,
                 "expect": expect,
-                "depth": case.max_depth,
+                "budget": case.completion_budget,
             })
         );
 

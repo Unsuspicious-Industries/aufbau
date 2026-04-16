@@ -26,63 +26,12 @@ pub mod toy;
 pub mod weird;
 // pub mod clike;
 
+use crate::logic::synth::Synthesizer;
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::MetaParser;
 use crate::logic::typing::core::Context;
 use crate::logic::typing::Type;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
-
-const DEPTH_BASE: usize = 10;
-const META_START_DEPTH: usize = 5;
-const META_DEPTH_FACTOR: f64 = 1.5;
-
-fn snap_meta_depth(target: usize) -> usize {
-    if target <= META_START_DEPTH {
-        return META_START_DEPTH;
-    }
-
-    let mut d = META_START_DEPTH;
-    while d < target {
-        let next = ((d as f64) * META_DEPTH_FACTOR).ceil() as usize;
-        d = if next <= d { d + 1 } else { next };
-    }
-    d
-}
-
-/// Compute a bounded max-depth for **valid** test cases based on input complexity.
-///
-/// Valid cases need to actually find a parse, so the budget is larger than for
-/// xfail cases.  Recursion depth needed is at most proportional to nesting level,
-/// which is at most proportional to input length.
-///
-///   depth = DEPTH_BASE + input.len() / 2
-///
-/// Examples:
-///   "42"                                                           →  11
-///   "1 + 2"                                                        →  12
-///   "let f: Int -> Int = (x: Int) => x * 2; f(21)"               →  33
-///   "(f: Int -> Int) => ((g: …) => ((h: …) => f(g(h(1)))))"       →  45
-pub fn valid_depth_for(input: &str) -> usize {
-    DEPTH_BASE + input.len() / 2
-}
-
-/// Compute a bounded max-depth for **xfail** test cases based on input complexity.
-///
-/// Xfail cases only need to confirm the input *fails*, so a tighter budget is
-/// appropriate — enough to rule out shallow parses without wasting time on deep
-/// left-recursive expansions.
-///
-///   depth = DEPTH_BASE + input.len() / 4
-///
-/// Examples:
-///   "x"                                          →  10
-///   "1 + 2.0"                                    →  11
-///   "let n: Int = 9.8; n"                        →  14
-///   "((x: Int) => x + 1)(2.0)"                   →  16
-pub fn xfail_depth_for(input: &str) -> usize {
-    DEPTH_BASE + input.len() / 4
-}
 
 // ============================================================================
 // Test Framework
@@ -124,82 +73,45 @@ pub struct ParseTestCase {
     pub input: &'static str,
     /// Whether this test is expected to fail (xfail)
     pub xfail: bool,
-    /// Whether to check typing (use partial_typed vs partial)
-    pub check_typing: bool,
     /// Initial typing context for typed parsing
     pub context: Vec<(&'static str, &'static str)>,
-    /// Optional MetaParser depth budget for this case.
-    ///
-    /// `None` means: let MetaParser decide adaptively (no cap).
-    /// All standard constructors (`valid`, `structural`, `invalid`, `type_error`)
-    /// set this to an input-length-derived bound to prevent hangs on left-recursive
-    /// grammars.  Use `with_parse_max_depth` to override on individual cases.
-    pub parse_max_depth: Option<usize>,
 }
 
 impl ParseTestCase {
-    /// Create a new test case expecting success
+    /// Create a new test case expecting success (all prefixes parseable).
     pub fn valid(desc: &'static str, input: &'static str) -> Self {
         Self {
             description: desc,
             input,
             xfail: false,
-            check_typing: true,
             context: vec![],
-            parse_max_depth: Some(valid_depth_for(input)),
         }
     }
 
-    /// Create a new test case expecting structural parse success (no type checking)
-    pub fn structural(desc: &'static str, input: &'static str) -> Self {
-        Self {
-            description: desc,
-            input,
-            xfail: false,
-            check_typing: false,
-            context: vec![],
-            parse_max_depth: Some(valid_depth_for(input)),
-        }
-    }
-
-    /// Create a new test case expecting parse failure (syntax error)
+    /// Create a new test case expecting parse failure (syntax error).
     pub fn invalid(desc: &'static str, input: &'static str) -> Self {
         Self {
             description: desc,
             input,
             xfail: true,
-            check_typing: false,
             context: vec![],
-            parse_max_depth: Some(xfail_depth_for(input)),
         }
     }
 
-    /// Create a new test case expecting type error (syntactically valid but type-invalid)
+    /// Create a new test case expecting type error (syntactically valid but
+    /// type-invalid — xfail because no complete well-typed tree should exist).
     pub fn type_error(desc: &'static str, input: &'static str) -> Self {
         Self {
             description: desc,
             input,
             xfail: true,
-            check_typing: true,
             context: vec![],
-            parse_max_depth: Some(xfail_depth_for(input)),
         }
     }
 
-    /// Enable type checking for this test
-    pub fn with_typing(mut self) -> Self {
-        self.check_typing = true;
-        self
-    }
-
-    /// Add typing context
+    /// Add typing context.
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {
         self.context = ctx;
-        self
-    }
-
-    pub fn with_parse_max_depth(mut self, depth: usize) -> Self {
-        self.parse_max_depth = Some(depth);
         self
     }
 }
@@ -209,11 +121,9 @@ impl ParseTestCase {
 /// Parallelized using Rayon by checking each prefix independently and then
 /// re-assembling results in order to preserve the original failure semantics.
 pub fn check_all_prefixes_parseable(
-    grammar: &Grammar,
+    grammar: &mut Grammar,
     input: &str,
-    check_typing: bool,
     ctx: &Context,
-    parse_max_depth: Option<usize>,
 ) -> ParseResult {
     let start = Instant::now();
     // Prefer token-boundary prefixes when tokenization succeeds. This keeps
@@ -246,49 +156,25 @@ pub fn check_all_prefixes_parseable(
     };
 
     let parse_prefix = |prefix: &str| {
-        // IMPORTANT: Use the test-case max depth for all prefixes when provided.
-        // Several left-recursive grammars (notably STLC/Fun) require deep bounds
-        // even for short prefixes; scaling down by prefix length causes false
-        // negatives in parseability checks.
-        let depth = match parse_max_depth {
-            Some(d) => snap_meta_depth(d),
-            None => snap_meta_depth(valid_depth_for(prefix)),
-        };
-        let mut parser = MetaParser::new(grammar.clone()).with_max_depth(depth);
-        let res: Result<(), String> = if check_typing {
-            parser.partial_typed_ctx(prefix, ctx).map(|_| ())
-        } else {
-            parser.partial(prefix).map(|_| ())
-        };
-        match res {
+        let mut synth = Synthesizer::new(grammar.clone(), prefix);
+        match synth.parse_with(ctx) {
             Ok(_) => None,
-            Err(e) => Some((e, depth)),
+            Err(e) => Some(e),
         }
     };
 
-    // High-depth prefix checks can consume too much memory when fully parallelized.
-    // Fall back to sequential execution for deep budgets to avoid OOM/SIGKILL.
-    let deep_budget = parse_max_depth.is_some_and(|d| snap_meta_depth(d) >= 41);
-    let results: Vec<Option<(String, usize)>> = if deep_budget {
-        prefixes
-            .iter()
-            .map(|(_, prefix)| parse_prefix(prefix))
-            .collect()
-    } else {
-        prefixes
-            .par_iter()
-            .map(|(_, prefix)| parse_prefix(prefix))
-            .collect()
-    };
+    let results: Vec<Option<String>> = prefixes
+        .par_iter()
+        .map(|(_, prefix)| parse_prefix(prefix))
+        .collect();
 
     let prefix_count = prefixes.len();
 
-    // Re-assemble results in original order and return the first failing prefix, if any
     for ((len, prefix), opt_err) in prefixes.into_iter().zip(results.into_iter()) {
-        if let Some((e, depth)) = opt_err {
+        if let Some(e) = opt_err {
             return ParseResult::Fail {
                 failing_prefix: prefix,
-                error: format!("{} (depth={})", e, depth),
+                error: e,
                 prefix_index: len,
             };
         }
@@ -300,55 +186,33 @@ pub fn check_all_prefixes_parseable(
     }
 }
 
-/// Check if input fails to parse (for xfail tests)
+/// Check if input fails to produce a complete well-typed parse (for xfail tests)
 pub fn check_parse_fails(
     grammar: &Grammar,
     input: &str,
-    check_typing: bool,
-    parse_max_depth: Option<usize>,
+    ctx: &Context,
 ) -> ParseResult {
     let start = Instant::now();
-    let mut parser = match parse_max_depth {
-        Some(d) => MetaParser::new(grammar.clone()).with_max_depth(d),
-        None => MetaParser::new(grammar.clone()),
-    };
-
-    if check_typing {
-        // For type errors, syntax may still parse. We only fail this check if a
-        // complete well-typed tree exists.
-        match parser.partial(input) {
-            Ok(ast) => {
-                if ast.typed_complete(grammar).is_ok() {
-                    ParseResult::Fail {
-                        failing_prefix: input.to_string(),
-                        error: "Expected type failure but found a complete well-typed tree"
-                            .to_string(),
-                        prefix_index: input.chars().count(),
-                    }
-                } else {
-                    ParseResult::Pass {
-                        duration: start.elapsed(),
-                        prefix_count: 1,
-                    }
+    let mut synth = Synthesizer::new(grammar.clone(), input);
+    match synth.parse_with(ctx) {
+        Ok(ast) => {
+            if ast.is_complete() {
+                ParseResult::Fail {
+                    failing_prefix: input.to_string(),
+                    error: "Expected failure but found a complete well-typed tree".to_string(),
+                    prefix_index: input.chars().count(),
+                }
+            } else {
+                ParseResult::Pass {
+                    duration: start.elapsed(),
+                    prefix_count: 1,
                 }
             }
-            Err(_) => ParseResult::Pass {
-                duration: start.elapsed(),
-                prefix_count: 1,
-            },
         }
-    } else {
-        match parser.partial(input) {
-            Ok(t) => ParseResult::Fail {
-                failing_prefix: input.to_string(),
-                error: format!("Expected parse/type failure but succeeded with {}", t).to_string(),
-                prefix_index: input.chars().count(),
-            },
-            Err(_) => ParseResult::Pass {
-                duration: start.elapsed(),
-                prefix_count: 1,
-            },
-        }
+        Err(_) => ParseResult::Pass {
+            duration: start.elapsed(),
+            prefix_count: 1,
+        },
     }
 }
 
@@ -364,20 +228,12 @@ fn build_context(pairs: &[(&str, &str)]) -> Context {
 }
 
 /// Run a single parseability test case
-pub fn run_parse_test(grammar: &Grammar, case: &ParseTestCase) -> ParseResult {
+pub fn run_parse_test(grammar: &mut Grammar, case: &ParseTestCase) -> ParseResult {
     let ctx = build_context(&case.context);
     if case.xfail {
-        // For xfail cases, we expect the full input to fail parsing
-        check_parse_fails(grammar, case.input, case.check_typing, case.parse_max_depth)
+        check_parse_fails(grammar, case.input, &ctx)
     } else {
-        // For valid cases, all prefixes should be parseable
-        check_all_prefixes_parseable(
-            grammar,
-            case.input,
-            case.check_typing,
-            &ctx,
-            case.parse_max_depth,
-        )
+        check_all_prefixes_parseable(grammar, case.input, &ctx)
     }
 }
 
@@ -423,7 +279,7 @@ impl BatchResult {
             }
         }
 
-        msg.push_str("\n");
+        msg.push('\n');
         msg.push_str("=".repeat(60).as_str());
         msg
     }
@@ -431,7 +287,7 @@ impl BatchResult {
 
 /// Run a batch of parseability test cases
 pub fn run_parse_batch(
-    grammar: &Grammar,
+    grammar: &mut Grammar,
     cases: &[ParseTestCase],
 ) -> (BatchResult, Vec<serde_json::Value>) {
     let start = Instant::now();
@@ -454,7 +310,7 @@ pub fn run_parse_batch(
             let (passed_flag, prefix_count, failing_prefix, error, prefix_index) = match &result {
                 ParseResult::Pass { prefix_count, .. } => (
                     true,
-                    Some(*prefix_count as usize),
+                    Some(*prefix_count),
                     None::<String>,
                     None::<String>,
                     None::<usize>,
@@ -581,19 +437,4 @@ pub fn load_example_grammar(name: &str) -> Grammar {
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
     Grammar::load(&content).unwrap_or_else(|e| panic!("Failed to load {}: {}", name, e))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::snap_meta_depth;
-
-    #[test]
-    fn snap_depth_uses_meta_rungs() {
-        assert_eq!(snap_meta_depth(1), 5);
-        assert_eq!(snap_meta_depth(5), 5);
-        assert_eq!(snap_meta_depth(6), 8);
-        assert_eq!(snap_meta_depth(10), 12);
-        assert_eq!(snap_meta_depth(23), 27);
-        assert_eq!(snap_meta_depth(40), 41);
-    }
 }

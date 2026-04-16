@@ -7,10 +7,22 @@ Exit codes: `0` success, `1` logical failure, `2` usage/IO error.
 
 ## `check`
 
+Run parseable validation, completable validation, and Rocq verification.
+
+```sh
+aufbau check -j 8 --completable-timeout-secs 30 --verify-jobs 8
+```
+
+Use `--skip-parseable`, `--skip-completable`, or `--skip-verify` to narrow the run.
+
+---
+
+## `typecheck`
+
 Type-check a program from stdin (complete or partial).
 
 ```sh
-echo "<program>" | aufbau check -s <spec>
+echo "<program>" | aufbau typecheck -s <spec>
 ```
 
 Complete programs print `<program> : <type>`. Partial programs print all
@@ -80,17 +92,29 @@ Serves a web UI at `http://127.0.0.1:5173`. Default port: `5173`.
 Run the built-in test suites.
 
 ```sh
-aufbau validate [-m <module>] [-f <filter>] [-j <N>] [--profile <file>]
+aufbau validate [-m <module>] [-f <filter>] [-j <N>] [--profile <file>] [--completable-timeout-secs <N>]
 ```
 
 Modules (`-m`): `completable`, `parseable`, `complexity`. Omit to run all three.
-Reports are written to `validation/reports/`.
+Reports are written to `src/validation/reports/`.
 
 | flag               | effect |
 |--------------------|--------|
 | `-f <substr>`      | filter suites by name |
 | `-j <N>`           | parallel worker threads |
+| `--completable-timeout-secs <N>` | override per-case completable timeout |
 | `--profile <file>` | write perf and failure JSON profiles |
+
+---
+
+## `verify`
+
+Run the OCaml/Rocq verification pipeline directly from Rust.
+
+```sh
+echo "<prefix>" | aufbau verify fun
+aufbau verify -f verification/prefixes/fun.txt --count 3 --jobs 8
+```
 
 ---
 

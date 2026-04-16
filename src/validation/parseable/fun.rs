@@ -1,10 +1,5 @@
 use super::*;
 
-// Empirical depth bound for parseable prefix checks on the Fun grammar.
-// The grammar is highly ambiguous around application/lambda prefixes; using
-// a uniform bound avoids short-prefix false negatives from under-budgeting.
-const FUN_PARSE_MAX_DEPTH: usize = 27;
-
 #[cfg(test)]
 fn fun_grammar() -> Grammar {
     load_example_grammar("fun")
@@ -13,32 +8,27 @@ fn fun_grammar() -> Grammar {
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         // === Literals ===
-        ParseTestCase::structural("integer literal", "42"),
-        ParseTestCase::structural("zero", "0"),
-        ParseTestCase::structural("float literal", "3.14"),
-        ParseTestCase::structural("boolean true", "true"),
-        ParseTestCase::structural("boolean false", "false"),
+        ParseTestCase::valid("integer literal", "42"),
+        ParseTestCase::valid("zero", "0"),
+        ParseTestCase::valid("float literal", "3.14"),
+        ParseTestCase::valid("boolean true", "true"),
+        ParseTestCase::valid("boolean false", "false"),
         // === Arithmetic ===
-        ParseTestCase::structural("int addition", "1 + 2"),
-        ParseTestCase::structural("int multiplication", "3 * 4"),
-        ParseTestCase::structural("float addition", "1.0 +. 2.5"),
-        ParseTestCase::structural("float division", "10.0 /. 2.0"),
-        ParseTestCase::structural("float op with completable int", "1.0 +. 2"),
+        ParseTestCase::valid("int addition", "1 + 2"),
+        ParseTestCase::valid("int multiplication", "3 * 4"),
+        ParseTestCase::valid("float addition", "1.0 +. 2.5"),
+        ParseTestCase::valid("float division", "10.0 /. 2.0"),
+        ParseTestCase::valid("float op with completable int", "1.0 +. 2"),
         // === Lambda ===
-        ParseTestCase::structural("simple lambda", "(x: Int) => x + 1").with_parse_max_depth(10),
-        ParseTestCase::structural("float lambda", "(x: Float) => x *. 2.0")
-            .with_parse_max_depth(10),
+        ParseTestCase::valid("simple lambda", "(x: Int) => x + 1"),
+        ParseTestCase::valid("float lambda", "(x: Float) => x *. 2.0"),
         // === Application ===
-        ParseTestCase::structural("lambda application", "((x: Int) => x + 1)(41)")
-            .with_parse_max_depth(12),
+        ParseTestCase::valid("lambda application", "((x: Int) => x + 1)(41)"),
         // === Let binding ===
-        ParseTestCase::structural("simple let", "let n: Int = 12; n + 1"),
+        ParseTestCase::valid("simple let", "let n: Int = 12; n + 1"),
     ];
 
     cases
-        .into_iter()
-        .map(|c| c.with_parse_max_depth(FUN_PARSE_MAX_DEPTH))
-        .collect()
 }
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
@@ -88,60 +78,19 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     ]
 }
 
-#[test]
-#[ignore = "depth probe - run manually to diagnose fun grammar performance"]
-fn probe_fun_parse_depth() {
-    use crate::logic::partial::MetaParser;
-    use std::time::Instant;
-    let grammar = fun_grammar();
-    let cases = [
-        ("simple", "42"),
-        ("lambda", "(x: Int) => x + 1"),
-        ("nested app", "(f: Int -> Int) => ((x: Int) => f(x))"),
-        (
-            "double compose",
-            "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
-        ),
-        (
-            "triple compose",
-            "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
-        ),
-        (
-            "higher-order app",
-            "(f: Int ) => (g: Int -> Int) => (x: Int) => f + g(x)",
-        ),
-    ];
-    for (name, input) in &cases {
-        println!("\n--- {} ({} chars) ---", name, input.len());
-        for &depth in &[5usize, 8, 10, 12, 15, 18, 20, 25, 30] {
-            let start = Instant::now();
-            let mut parser = MetaParser::new(grammar.clone())
-                .with_max_depth(depth)
-                .with_start_depth(depth);
-            let res = parser.partial(input);
-            let elapsed = start.elapsed();
-            println!(
-                "  depth={:2}: {} in {:?}",
-                depth,
-                if res.is_ok() { "OK  " } else { "FAIL" },
-                elapsed
-            );
-            if elapsed.as_secs() > 5 {
-                println!("  (too slow, stopping)");
-                break;
-            }
-        }
-    }
-}
+// FIXME: This test uses the old partial::MetaParser API which no longer exists
+// #[test]
+// #[ignore = "depth probe - run manually to diagnose fun grammar performance"]
+// fn probe_fun_parse_depth() { ... }
 
 #[test]
 fn valid_expressions_fun() {
-    let grammar = fun_grammar();
+    let mut grammar = fun_grammar();
     let cases = valid_expressions_cases();
 
     println!("\n=== Fun Valid Expressions ({} cases) ===", cases.len());
 
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
 
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 
@@ -155,12 +104,12 @@ fn valid_expressions_fun() {
 
 #[test]
 fn invalid_expressions_fun() {
-    let grammar = fun_grammar();
+    let mut grammar = fun_grammar();
     let cases = invalid_expressions_cases();
 
     println!("\n=== Fun Invalid Expressions ({} cases) ===", cases.len());
 
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
 
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 

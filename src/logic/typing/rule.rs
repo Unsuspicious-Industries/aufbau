@@ -126,11 +126,21 @@ impl TypingRule {
     pub fn used_bindings(&self) -> std::collections::HashSet<&str> {
         let mut bindings = std::collections::HashSet::new();
 
-        // From premises
+        fn collect_type_refs<'a>(ty: &'a Type, out: &mut std::collections::HashSet<&'a str>) {
+            match ty {
+                Type::Meta(name) => { out.insert(name.as_str()); }
+                Type::Arrow(a, b) => { collect_type_refs(a, out); collect_type_refs(b, out); }
+                Type::Array(inner) => { collect_type_refs(inner, out); }
+                Type::Union(items) => { for item in items { collect_type_refs(item, out); } }
+                _ => {}
+            }
+        }
+
         for premise in &self.premises {
             if let Some(setting) = &premise.setting {
-                for (var, _) in &setting.extensions {
+                for (var, ty) in &setting.extensions {
                     bindings.insert(var.as_str());
+                    collect_type_refs(ty, &mut bindings);
                 }
             }
             if let Some(judgment) = &premise.judgment {
@@ -139,27 +149,29 @@ impl TypingRule {
                         bindings.insert(term.as_str());
                     }
                     TypingJudgment::Ascription((term, t)) => {
-                        if let Type::Raw(b) = t {
-                            bindings.insert(b.as_str());
-                        }
+                        collect_type_refs(t, &mut bindings);
                         bindings.insert(term.as_str());
                     }
                     TypingJudgment::Membership(var, _) => {
                         bindings.insert(var.as_str());
                     }
-                    TypingJudgment::Operation { .. } => {}
+                    TypingJudgment::Operation { left, right, .. } => {
+                        collect_type_refs(left, &mut bindings);
+                        collect_type_refs(right, &mut bindings);
+                    }
                 }
             }
         }
 
-        // From conclusion
         if let Some(output) = &self.conclusion.context.output {
-            for (var, _) in &output.extensions {
+            for (var, ty) in &output.extensions {
                 bindings.insert(var.as_str());
+                collect_type_refs(ty, &mut bindings);
             }
         }
-        if let ConclusionKind::ContextLookup(_, var) = &self.conclusion.kind {
-            bindings.insert(var.as_str());
+        match &self.conclusion.kind {
+            ConclusionKind::Type(ty) => collect_type_refs(ty, &mut bindings),
+            ConclusionKind::ContextLookup(_, var) => { bindings.insert(var.as_str()); }
         }
 
         bindings
@@ -380,17 +392,17 @@ impl RuleParser {
     /// Try to parse a type operation: τ₁ = τ₂ or τ₁ ⊆ τ₂
     fn try_parse_operation(s: &str) -> Option<(Type, TypeOperation, Type)> {
         // Try equality
-        if let Some((l, r)) = s.split_once("=") {
-            if let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim())) {
-                return Some((left, TypeOperation::Equality, right));
-            }
+        if let Some((l, r)) = s.split_once("=")
+            && let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim()))
+        {
+            return Some((left, TypeOperation::Equality, right));
         }
         // Try inclusion (⊆ or <=)
         for sep in ["⊆ ", "<="] {
-            if let Some((l, r)) = s.split_once(sep) {
-                if let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim())) {
-                    return Some((left, TypeOperation::Inclusion, right));
-                }
+            if let Some((l, r)) = s.split_once(sep)
+                && let (Ok(left), Ok(right)) = (Type::parse(l.trim()), Type::parse(r.trim()))
+            {
+                return Some((left, TypeOperation::Inclusion, right));
             }
         }
         None

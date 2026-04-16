@@ -2,165 +2,25 @@ pub mod load;
 pub mod save;
 pub mod tokenizer;
 pub mod utils;
+pub mod symbol;
+pub mod production;
+pub mod extend;
 
 use crate::logic::binding::{self, BindingMap};
-pub use tokenizer::{Segment, Tokenizer, DEFAULT_DELIMITERS};
+pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
+pub use symbol::Symbol;
+pub use production::Production;
 
 #[cfg(test)]
 mod tests;
 
-use crate::regex::Regex as DerivativeRegex;
-use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
+pub type AltId = usize;
+pub type NtId = usize;
 
-// ANCHOR: Symbol
-#[derive(Debug, Clone)]
-pub enum Symbol {
-    Nonterminal {
-        name: String,
-        binding: Option<String>,
-    },
-    Terminal {
-        regex: DerivativeRegex,
-        binding: Option<String>,
-    },
-}
-// ANCHOR_END: Symbol
+// nt_idx, alt_idx
+pub type ProdId = (NtId, AltId);
 
-impl Eq for Symbol {}
-
-impl PartialEq for Symbol {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                Symbol::Nonterminal {
-                    name: a,
-                    binding: ba,
-                },
-                Symbol::Nonterminal {
-                    name: b,
-                    binding: bb,
-                },
-            ) => a == b && ba == bb,
-            (
-                Symbol::Terminal {
-                    regex: a,
-                    binding: ba,
-                    ..
-                },
-                Symbol::Terminal {
-                    regex: b,
-                    binding: bb,
-                    ..
-                },
-            ) => a.equiv(b) && ba == bb,
-            _ => false,
-        }
-    }
-}
-
-impl Hash for Symbol {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            Symbol::Nonterminal { name, binding } => {
-                0u8.hash(state);
-                name.hash(state);
-                binding.hash(state);
-            }
-            Symbol::Terminal { regex, binding, .. } => {
-                1u8.hash(state);
-                regex.to_pattern().hash(state);
-                binding.hash(state);
-            }
-        }
-    }
-}
-
-impl Symbol {
-    pub fn new(value: String) -> Self {
-        debug_trace!("grammar", "Creating symbol from value: {}", value);
-        if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
-            let literal = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
-                regex: DerivativeRegex::literal(&literal),
-                binding: None,
-            }
-        } else if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
-            let literal = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
-                regex: DerivativeRegex::literal(&literal),
-                binding: None,
-            }
-        } else if value.starts_with('/') && value.ends_with('/') && value.len() > 2 {
-            let pattern = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
-                regex: DerivativeRegex::new(&pattern).expect("invalid regex literal"),
-                binding: None,
-            }
-        } else {
-            Symbol::Nonterminal {
-                name: value,
-                binding: None,
-            }
-        }
-    }
-
-    pub fn with_binding(value: String, binding: String) -> Self {
-        Self::new(value).attach_binding(binding)
-    }
-
-    pub fn attach_binding(mut self, binding: String) -> Self {
-        match &mut self {
-            Symbol::Nonterminal { binding: slot, .. } | Symbol::Terminal { binding: slot, .. } => {
-                *slot = Some(binding);
-            }
-        }
-        self
-    }
-
-    pub fn binding(&self) -> Option<&String> {
-        match self {
-            Symbol::Nonterminal { binding, .. } | Symbol::Terminal { binding, .. } => {
-                binding.as_ref()
-            }
-        }
-    }
-
-    pub fn has_binding(&self) -> bool {
-        self.binding().is_some()
-    }
-
-    pub fn is_regex(&self) -> bool {
-        matches!(self, Symbol::Terminal { .. })
-    }
-
-    pub fn is_nonterminal(&self) -> bool {
-        matches!(self, Symbol::Nonterminal { .. })
-    }
-}
-
-/// A single production rule `left ::= right₀ right₁ …`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Production {
-    pub rule: Option<String>,
-    pub rhs: Vec<Symbol>,
-}
-
-impl std::fmt::Display for Production {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let symbols: Vec<String> = self
-            .rhs
-            .iter()
-            .map(|s| match s {
-                Symbol::Nonterminal { name, .. } => name.clone(),
-                Symbol::Terminal { regex, .. } => format!("/{}/", regex.to_pattern()),
-            })
-            .collect();
-        write!(f, "{}", symbols.join(" "))
-    }
-}
-
-use crate::debug_trace;
+use std::collections::HashMap;
 use crate::logic::typing::TypingRule;
 
 /// A complete grammar consisting of context-free productions and
@@ -169,25 +29,28 @@ use crate::logic::typing::TypingRule;
 pub struct Grammar {
     pub name: String,
     pub productions: HashMap<String, Vec<Production>>,
-    pub typing_rules: HashMap<String, TypingRule>,
-    pub special_tokens: Vec<String>,
+    pub nonterminals: Vec<String>,
+    pub rules: HashMap<String, TypingRule>,
+
+    // tokenization helpers
+    pub specials: Vec<String>,
     pub delimiters: Vec<char>,
+
     pub start: Option<String>,
-    pub binding_map: BindingMap,
-    pub hidden_nonterminals: HashSet<String>,
+
     /// Cached tokenizer (built lazily from special_tokens and delimiters)
-    tokenizer: Option<Tokenizer>,
+    pub tokenizer: Option<Tokenizer>,
+    /// Cached binding map (built lazily from productions and typing rules)
+    pub bindings: Option<BindingMap>,
 }
 
-// Note: Typing rules are intentionally excluded from equality comparison
-// for performance reasons. This may need revision if type-aware comparison
-// becomes necessary.
+// Simple eqaulity
+// Can be falsified but we don't care
 impl PartialEq for Grammar {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
-
 impl Eq for Grammar {}
 
 // Provide a stable, deterministic Hash implementation that mirrors the
@@ -204,74 +67,54 @@ impl std::hash::Hash for Grammar {
                 prods.hash(state);
             }
         }
-        let mut hidden: Vec<&String> = self.hidden_nonterminals.iter().collect();
-        hidden.sort();
-        hidden.hash(state);
-        self.special_tokens.hash(state);
+        self.specials.hash(state);
         self.delimiters.hash(state);
         self.start.hash(state);
-    }
-}
-
-impl Default for Grammar {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            productions: HashMap::default(),
-            typing_rules: HashMap::default(),
-            special_tokens: Vec::default(),
-            delimiters: DEFAULT_DELIMITERS.to_vec(),
-            start: None,
-            binding_map: BindingMap::new(),
-            hidden_nonterminals: HashSet::new(),
-            tokenizer: None,
-        }
     }
 }
 
 impl Grammar {
     /// Create an empty grammar
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            name: String::new(),
+            productions: HashMap::default(),
+            nonterminals: Vec::default(),
+            rules: HashMap::default(),
+            specials: Vec::default(),
+            delimiters: DEFAULT_DELIMITERS.to_vec(),
+            start: None,
+            bindings: None,
+            tokenizer: None,
+        }
     }
 
-    /// Create a grammar with the given productions
-    pub fn new_with_productions(productions: HashMap<String, Vec<Production>>) -> Self {
-        let mut grammar = Self::default();
-        grammar.productions = productions;
-        grammar
-    }
-
-    /// Rebuild the binding map from the current productions and typing rules
-    pub fn rebuild_bindings(&mut self) {
-        self.binding_map = binding::build_binding_map(self);
-    }
+    // ---------------------
+    // Data handling methods
+    //----------------------
 
     /// Add a special token to the grammar if not already present.
-    pub fn add_special_token(&mut self, token: String) {
-        if !self.special_tokens.contains(&token) {
-            self.special_tokens.push(token);
+    pub fn add_special(&mut self, token: String) {
+        if !self.specials.contains(&token) {
+            self.specials.push(token);
             self.tokenizer = None; // Invalidate cache
         }
     }
 
     /// Add a typing rule to the grammar.
     pub fn add_typing_rule(&mut self, rule: TypingRule) {
-        self.typing_rules.insert(rule.name.clone(), rule);
+        self.rules.insert(rule.name.clone(), rule);
     }
 
     /// Add a production rule to the grammar.
+    /// kinda complete but whatever
     pub fn add_production(&mut self, nt: String, prod: Production) {
+        if !self.productions.contains_key(&nt) {
+            self.nonterminals.push(nt.clone());
+        }
         self.productions.entry(nt.clone()).or_default().push(prod);
     }
 
-    pub fn add_hidden_nonterminal(&mut self, nt: String) {
-        self.hidden_nonterminals.insert(nt);
-    }
-
-    pub fn is_hidden_nonterminal(&self, nt: &str) -> bool {
-        self.hidden_nonterminals.contains(nt)
-    }
 
     /// Set the start nonterminal.
     pub fn set_start<S: Into<String>>(&mut self, start: S) {
@@ -279,78 +122,89 @@ impl Grammar {
     }
 
     /// Get the start nonterminal if available.
-    pub fn start_nonterminal(&self) -> Option<&String> {
+    pub fn start(&self) -> Option<&String> {
         self.start.as_ref()
+    }
+    
+    // Rebuild the binding map from the current productions and typing rules
+    pub fn build_bindings(&mut self) {
+        self.bindings = Some(binding::build_binding_map(self));
+    }
+        /// Build and cache the tokenizer from current special_tokens and delimiters.
+    pub fn build_tokenizer(&mut self) {
+        if self.tokenizer.is_none() {
+            self.tokenizer = Some(Tokenizer::new(
+                self.specials.clone(),
+                self.delimiters.clone(),
+            ));
+        }
+    }
+
+    pub fn production_count(&self) -> usize {
+        self.nonterminals.len()
+    }
+
+    pub fn production(&self, nt: &str) -> Option<&Vec<Production>> {
+        self.productions.get(nt)
+    }
+
+    pub fn nt(&self, idx: usize) -> Option<&str> {
+        self.nonterminals.get(idx).map(|n| n.as_str())
+    }
+
+    pub fn nt_index(&self, name: &str) -> Option<usize> {
+        self.nonterminals.iter().position(|n| n == name)
+    }
+
+    pub fn productions_at(&self, idx: usize) -> Option<&Vec<Production>> {
+        self.nt(idx).and_then(|nts| self.productions.get(nts))
+    }
+
+    pub fn prod(&self, pid: ProdId) -> Option<Production> {
+        self.productions_at(pid.0)?.get(pid.1).cloned()
+    }
+
+    pub fn specials(&self) -> &Vec<String> {
+        &self.specials
+    }
+
+    pub fn rules(&self) -> &HashMap<String, TypingRule> {
+        &self.rules
+    }
+
+    pub fn productions(&self) -> impl Iterator<Item = (&str, &Vec<Production>)> {
+        self.productions.iter().map(|(k, v)| (k.as_str(), v))
     }
 
     /// Check if a symbol is nullable (can match zero tokens).
-    pub fn symbol_nullable(&self, symbol: &Symbol) -> bool {
+    pub fn nu(&self, symbol: &Symbol) -> bool {
         match symbol {
             Symbol::Terminal { .. } => false,
             Symbol::Nonterminal { name: nt, .. } => {
                 let nt = self.productions.get(nt);
                 nt.map(|prod| {
                     prod.iter()
-                        .all(|s| s.rhs.iter().all(|sym| self.symbol_nullable(sym)))
+                        .all(|s| s.rhs.iter().all(|sym| self.nu(sym)))
                 })
                 .unwrap_or(false)
             }
         }
     }
 
-    /// Build and cache the tokenizer from current special_tokens and delimiters.
-    pub fn prepare_tokenizer(&mut self) {
-        if self.tokenizer.is_none() {
-            self.tokenizer = Some(Tokenizer::new(
-                self.special_tokens.clone(),
-                self.delimiters.clone(),
-            ));
-        }
-    }
-
     /// Tokenize input using the grammar's special tokens and delimiters.
-    pub fn tokenize(&self, input: &str) -> Result<Vec<Segment>, String> {
-        let result = match &self.tokenizer {
-            Some(tok) => tok.tokenize(input),
-            None => {
-                // Build tokenizer on-the-fly if not cached
-                let tok = Tokenizer::new(self.special_tokens.clone(), self.delimiters.clone());
-                tok.tokenize(input)
-            }
-        };
-        match result {
-            Ok(segments) => Ok(segments),
-            Err(err) => Err(err),
+    pub fn tokenize(&mut self, input: &str) -> Result<Vec<Segment>, String> {
+        if self.tokenizer.is_none() {
+            self.build_tokenizer();
         }
+
+        self.tokenizer
+            .as_ref()
+            .unwrap()
+            .tokenize(input)
     }
 
-    pub fn nt_regex(&self, nt: &String) -> DerivativeRegex {
-        let nt = self.productions.get(nt);
-        nt.map(|prod| {
-            let mut regexes = Vec::new();
-            for prod in prod {
-                let mut prod_regexes = Vec::new();
-                for sym in &prod.rhs {
-                    prod_regexes.push(self.symbol_regex(sym.clone()));
-                }
-                regexes.push(DerivativeRegex::concat_many(prod_regexes));
-            }
-            DerivativeRegex::union_many(regexes)
-        })
-        .unwrap_or(DerivativeRegex::Epsilon)
+    pub fn extend_input(&mut self, input: &str, token: &str) -> String {
+        extend::extend_input(self, input, token)
     }
 
-    pub fn symbol_regex(&self, symbol: Symbol) -> DerivativeRegex {
-        match symbol {
-            Symbol::Nonterminal { name, .. } => self.nt_regex(&name),
-            Symbol::Terminal { regex, .. } => regex.clone(),
-        }
-    }
-
-    pub fn as_regex(&self) -> DerivativeRegex {
-        match self.start_nonterminal() {
-            Some(start) => self.nt_regex(start),
-            None => DerivativeRegex::Epsilon,
-        }
-    }
 }

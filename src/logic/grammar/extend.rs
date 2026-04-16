@@ -1,0 +1,71 @@
+use super::Grammar;
+
+pub fn extend_input(grammar: &mut Grammar, input: &str, token: &str) -> String {
+    if input.ends_with(char::is_whitespace) || token.starts_with(char::is_whitespace) {
+        return format!("{}{}", input, token);
+    }
+
+    let no_space = format!("{}{}", input, token);
+    if concatenation_preserves_tokens(grammar, input, token, &no_space) {
+        return normalized_concat(grammar, input, token).unwrap_or(no_space);
+    }
+
+    let with_space = format!("{} {}", input, token);
+    if concatenation_preserves_tokens(grammar, input, token, &with_space) {
+        return normalized_concat(grammar, input, token).unwrap_or(with_space);
+    }
+
+    let last = input.chars().next_back();
+    let first = token.chars().next();
+    let needs_space = matches!((last, first), (Some(l), Some(r)) if needs_separator(grammar, l, r));
+    if needs_space {
+        format!("{} {}", input, token)
+    } else {
+        no_space
+    }
+}
+
+fn concatenation_preserves_tokens(
+    grammar: &mut Grammar,
+    input: &str,
+    token: &str,
+    combined: &str,
+) -> bool {
+    let Ok(left) = grammar.tokenize(input) else {
+        return false;
+    };
+    let Ok(right) = grammar.tokenize(token) else {
+        return false;
+    };
+    let Ok(joined) = grammar.tokenize(combined) else {
+        return false;
+    };
+
+    let expected: Vec<_> = left
+        .iter()
+        .chain(right.iter())
+        .map(|segment| (segment.as_str().to_string(), segment.is_partial_special))
+        .collect();
+    let actual: Vec<_> = joined
+        .iter()
+        .map(|segment| (segment.as_str().to_string(), segment.is_partial_special))
+        .collect();
+    expected == actual
+}
+
+fn normalized_concat(grammar: &mut Grammar, input: &str, token: &str) -> Option<String> {
+    let left = grammar.tokenize(input).ok()?;
+    let right = grammar.tokenize(token).ok()?;
+    Some(
+        left.iter()
+            .chain(right.iter())
+            .map(|segment| segment.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+fn needs_separator(grammar: &mut Grammar, left: char, right: char) -> bool {
+    let delim = |ch: char| ch.is_whitespace() || grammar.delimiters.contains(&ch);
+    !delim(left) && !delim(right) && left.is_ascii_alphanumeric() && right.is_ascii_alphanumeric()
+}

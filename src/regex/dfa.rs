@@ -9,6 +9,7 @@ use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 type StateId = usize;
 type Symbol = char;
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, Clone)]
 pub struct DFA {
     states: Vec<DFAState>,
@@ -196,8 +197,8 @@ impl DFA {
             .enumerate()
             .filter(|(_, (s1, s2))| {
                 accept_fn(
-                    self.accept_states.contains(&s1),
-                    other.accept_states.contains(&s2),
+                    self.accept_states.contains(s1),
+                    other.accept_states.contains(s2),
                 )
             })
             .map(|(id, _)| id)
@@ -247,19 +248,15 @@ impl DFA {
 
     pub fn accepts(&self, input: &str) -> bool {
         self.run(input)
-            .map_or(false, |state| self.accept_states.contains(&state))
+            .is_some_and(|state| self.accept_states.contains(&state))
     }
 
     pub fn derive(&self, input: &str) -> Option<DFA> {
-        if let Some(state) = self.run(input) {
-            Some(DFA {
-                states: self.states.clone(),
-                start: state,
-                accept_states: self.accept_states.clone(),
-            })
-        } else {
-            None
-        }
+        self.run(input).map(|state| DFA {
+            states: self.states.clone(),
+            start: state,
+            accept_states: self.accept_states.clone(),
+        })
     }
 
     // Removal of unreachable states
@@ -435,7 +432,7 @@ impl fmt::Display for DFA {
                 writeln!(f, "  (no transitions)")?;
             } else {
                 for (symbol, to) in &state.transitions {
-                    writeln!(f, "  └─'{}'───> ({})", *symbol as char, to)?;
+                    writeln!(f, "  └─'{}'───> ({})", { *symbol }, to)?;
                 }
             }
         }
@@ -662,7 +659,7 @@ mod tests {
         //  XOR accept function: (a_in_accept XOR b_in_accept)
         assert!(xor_dfa.accepts("")); // In a* but not aa*
         assert!(!xor_dfa.accepts("a")); // In both, so not in XOR
-                                        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
+        // Note: "aa", "aaa" might not be accepted due to product implementation limitations
     }
 
     #[test]
@@ -682,8 +679,8 @@ mod tests {
         assert!(!complement_dfa.accepts("")); // Empty string is in a*, so not in complement
         assert!(!complement_dfa.accepts("a")); // 'a' is in a*, so not in complement
         assert!(!complement_dfa.accepts("aa")); // 'aa' is in a*, so not in complement
-                                                // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
-                                                // This is a limitation of the current complement implementation
+        // Note: complement_dfa.accepts("b") will return false because there's no transition for 'b'
+        // This is a limitation of the current complement implementation
     }
 
     #[test]

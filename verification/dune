@@ -1,0 +1,16 @@
+(library
+ (name aufbau_bindings)
+ (wrapped false)
+ (modules aufbau))
+
+(executable
+ (name orchestrator)
+ (modules orchestrator)
+ (libraries unix str aufbau_bindings)
+ (link_flags
+  (:standard
+   -cclib -L%{env:AUFBAU_ROOT=}/target/release
+   -cclib -laufbau
+   -cclib -lpthread
+   -cclib -ldl
+   -cclib -lm)))

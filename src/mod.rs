@@ -1,9 +1,7 @@
 pub mod logic;
+pub mod ffi;
 pub mod regex;
 pub mod validation;
-pub mod viz;
-
-pub mod exp;
 
 #[macro_use]
 mod utils;
@@ -13,3 +11,4 @@ pub mod testing;
 
 // Re-export debug macros at crate level
 pub use logic::debug::*;
+

@@ -2,12 +2,12 @@ pub mod check;
 pub mod complete;
 pub mod complete_k;
 pub mod examine;
-pub mod exp;
 pub mod logic;
+pub mod typecheck;
 pub mod validate;
 pub mod verify;
 
-use aufbau::logic::debug::{add_module_filter, set_debug_input, set_debug_level, DebugLevel};
+use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -36,16 +36,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Type-check a program (or partial program) read from stdin.
-    ///
-    /// Reads a grammar spec from --spec and the program from stdin, then
-    /// runs the partial type-checker.  For complete programs the inferred
-    /// type is printed; for partial programs every surviving candidate type
-    /// is shown so callers can see what completions remain possible.
-    ///
-    /// Exit codes: 0 = typed OK (complete or partial), 1 = parse/type error,
-    /// 2 = usage/I-O error.
+    /// Run parseable/completable validation and Rocq verification.
     Check(self::check::CheckCmd),
+
+    /// Type-check a program (or partial program) read from stdin.
+    Typecheck(self::typecheck::TypecheckCmd),
 
     /// Complete a partial program read from stdin using the type-aware synthesizer.
     ///
@@ -66,14 +61,11 @@ pub enum Commands {
     /// Run validation test suites with progress and report
     Validate(self::validate::ValidateCmd),
 
-    /// Complete a prefix and validate it against the Coq verifier
+    /// Validate a prefix or program against the Rocq verifier.
     Verify(self::verify::VerifyCmd),
 
     /// Quick helper to examine completability for an input or test-case
     Examine(self::examine::ExamineCmd),
-
-    /// Run experimental parser/cache/SPPF benchmarks
-    Exp(self::exp::ExpCmd),
 }
 
 pub fn run() {
@@ -105,12 +97,12 @@ pub fn run() {
 
     match &cli.command {
         Commands::Check(args) => self::check::run(args),
+        Commands::Typecheck(args) => self::typecheck::run(args),
         Commands::Complete(args) => self::complete::run(args),
         Commands::CompleteK(args) => self::complete_k::run(args),
         Commands::Logic(_) => self::logic::dispatch(&cli),
         Commands::Validate(args) => self::validate::run(args),
         Commands::Verify(args) => self::verify::run(args),
         Commands::Examine(args) => self::examine::run(args),
-        Commands::Exp(args) => self::exp::run(args),
     }
 }

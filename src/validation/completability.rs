@@ -4,30 +4,11 @@
 // We use partial parsing and typing to check completion and prefix soundness.
 
 use crate::logic::grammar::Grammar;
-use crate::logic::partial::Synthesizer;
-use crate::logic::typing::tree::TypedNode;
+use crate::logic::synth::{self, SearchResult};
 use crate::logic::typing::Context;
-use crate::logic::{search_complete, SearchConfig, SearchResult};
-use crate::regex::Regex as DerivativeRegex;
+use rayon::prelude::*;
 
-#[derive(Debug)]
-pub enum CompletionResult {
-    Success {
-        complete_input: String,
-        ast: TypedNode,
-        completion_path: Vec<DerivativeRegex>,
-        completion_depth: usize,
-    },
-    Failure {
-        max_depth_reached: usize,
-        states_explored: usize,
-        visited_states: Vec<String>,
-    },
-    Invalid(String),
-    Inconsistency(String),
-    Error(String),
-}
-
+/// Per-prefix diagnostics collected while checking prefix soundness.
 #[derive(Debug, Clone)]
 pub struct PrefixDetail {
     pub prefix: String,
@@ -38,6 +19,11 @@ pub struct PrefixDetail {
     pub visited_sample: Vec<String>,
 }
 
+/// Result of checking whether every relevant prefix remains completable.
+///
+/// This is the main validation signal for soundness: if `is_sound` is true,
+/// then each checked prefix stays partially valid and can be extended to a
+/// complete expression.
 #[derive(Debug)]
 pub struct PrefixSoundnessResult {
     pub is_sound: bool,
@@ -49,175 +35,154 @@ pub struct PrefixSoundnessResult {
     pub prefix_meta: Vec<PrefixDetail>,
 }
 
-pub fn complete(
-    grammar: &Grammar,
-    input: &str,
-    max_depth: usize,
-    opt_ctx: Option<Context>,
-) -> CompletionResult {
-    let ctx = opt_ctx.unwrap_or_else(Context::new);
+/// Public completion result used by validation callers.
+pub type CompletionResult = SearchResult;
 
-    let search_config = SearchConfig {
-        max_depth,
-        ..Default::default()
-    };
+/// Shorter alias for the prefix soundness report.
+pub type SoundnessResult = PrefixSoundnessResult;
 
-    match search_complete(grammar, input, &search_config, &ctx) {
-        SearchResult::Success {
-            complete_input,
-            ast,
-            completion_path,
-            depth,
-        } => CompletionResult::Success {
-            complete_input,
-            ast,
-            completion_path,
-            completion_depth: depth,
-        },
-        SearchResult::Invalid { message } => CompletionResult::Invalid(message),
-        SearchResult::Exhausted {
-            max_depth: depth,
-            states_explored,
-            visited_states,
-        } => CompletionResult::Failure {
-            max_depth_reached: depth,
-            states_explored,
-            visited_states,
-        },
+fn completion_ctx(opt_ctx: Option<Context>) -> Context {
+    opt_ctx.unwrap_or_default()
+}
+
+/// Choose the prefix boundaries we want to validate.
+///
+/// When tokenization succeeds we only check token-aligned cuts, because those
+/// are the meaningful user-visible partial states. If tokenization fails, we
+/// fall back to character prefixes so malformed intermediate text is still
+/// reported as unsound.
+fn prefixes_to_check(grammar: &Grammar, input: &str) -> Vec<(usize, String)> {
+    let chars: Vec<char> = input.chars().collect();
+    let mut grammar = grammar.clone();
+
+    if let Ok(segments) = grammar.tokenize(input) {
+        let mut cuts = vec![0usize];
+        cuts.extend(segments.iter().map(|segment| segment.end));
+        if !cuts.contains(&input.len()) {
+            cuts.push(input.len());
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        cuts.into_iter()
+            .map(|byte_end| {
+                let prefix = input[..byte_end].to_string();
+                (prefix.chars().count(), prefix)
+            })
+            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+            .collect()
+    } else {
+        (0..=chars.len())
+            .map(|len| (len, chars[..len].iter().collect::<String>()))
+            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+            .collect()
     }
 }
 
+/// Attempt to complete a partial input into a fully-typed expression.
+pub fn complete(
+    grammar: &Grammar,
+    input: &str,
+    budget: usize,
+    opt_ctx: Option<Context>,
+) -> CompletionResult {
+    synth::complete(grammar, input, budget, opt_ctx)
+}
+
+/// Return up to `count` normalized completions for a partial input.
+///
+/// This is a convenience wrapper for CLI and FFI surfaces that only need the
+/// completed strings rather than the full search diagnostics.
+pub fn complete_k(
+    grammar: &Grammar,
+    input: &str,
+    budget: usize,
+    count: usize,
+    opt_ctx: Option<Context>,
+) -> Vec<String> {
+    synth::complete_k(grammar, input, budget, count, opt_ctx)
+}
+
+/// Check prefix soundness for an input.
+///
+/// The input is sound when every checked prefix can still be completed to a
+/// full expression, which means partial validity is preserved throughout the
+/// incremental construction of the input.
 pub fn sound_complete(
     grammar: &Grammar,
     input: &str,
-    max_depth: usize,
+    budget: usize,
     opt_ctx: Option<Context>,
 ) -> PrefixSoundnessResult {
+    let ctx = completion_ctx(opt_ctx);
     let chars: Vec<char> = input.chars().collect();
-    let ctx = opt_ctx.unwrap_or_else(Context::new);
+    let prefixes = prefixes_to_check(grammar, input);
 
-    // Prefer token-boundary prefixes when tokenization succeeds. Character-level
-    // prefix checking on long ambiguous inputs is prohibitively expensive and
-    // does not add meaningful signal for completable validation.
-    let prefixes: Vec<(usize, String)> = match grammar.tokenize(input) {
-        Ok(segments) => {
-            let mut cuts = vec![0usize];
-            cuts.extend(segments.iter().map(|s| s.end));
-            if !cuts.contains(&input.len()) {
-                cuts.push(input.len());
-            }
-            cuts.sort_unstable();
-            cuts.dedup();
-            cuts.into_iter()
-                .map(|byte_end| {
-                    let p = input[..byte_end].to_string();
-                    (p.chars().count(), p)
-                })
-                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-                .collect()
-        }
-        Err(_) => (0..=chars.len())
-            .map(|len| (len, chars[..len].iter().collect::<String>()))
-            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-            .collect(),
-    };
-
-    let mut prefix_synth = Synthesizer::new(grammar.clone(), "");
+    #[allow(clippy::type_complexity)]
     let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
-        .iter()
-        .map(|(len, prefix)| {
-            // Use a stable per-case depth budget across prefixes.
-            // Inflating by remaining characters causes severe blowups on short
-            // prefixes (especially empty input) in ambiguous grammars.
-            let depth_budget = max_depth;
+        .par_iter()
+        .enumerate()
+        .map(|(prefix_idx, (len, prefix))| {
             let start = std::time::Instant::now();
 
-            let sound_tokens =
-                |synth: &mut Synthesizer, tokens: &crate::logic::partial::CompletionSet| {
-                    completion_tokens_are_sound(synth, tokens, &ctx)
-                };
-
-            if *len == chars.len() {
-                let tokens = prefix_synth.feed(prefix.clone(), &ctx);
-                if let Ok(typed) = prefix_synth.partial_typed_ctx(&ctx) {
-                    if typed.is_complete() && sound_tokens(&mut prefix_synth, &tokens) {
-                        let detail = PrefixDetail {
-                            prefix: prefix.clone(),
-                            ok: true,
-                            time_us: start.elapsed().as_micros(),
-                            states_explored: Some(0),
-                            visited_count: Some(0),
-                            visited_sample: vec![],
-                        };
-                        return (*len, detail, Some(prefix.clone()), None);
-                    }
-                }
-
-                let result = complete(grammar, prefix, depth_budget, Some(ctx.clone()));
-                let elapsed_us = start.elapsed().as_micros();
-                return match result {
-                    CompletionResult::Success { complete_input, .. } => {
-                        let detail = PrefixDetail {
-                            prefix: prefix.clone(),
-                            ok: true,
-                            time_us: elapsed_us,
-                            states_explored: None,
-                            visited_count: None,
-                            visited_sample: vec![],
-                        };
-                        (*len, detail, Some(complete_input), None)
-                    }
-                    CompletionResult::Failure {
-                        visited_states,
-                        states_explored,
-                        ..
-                    } => {
-                        let visited_sample = visited_states.iter().take(20).cloned().collect();
-                        let detail = PrefixDetail {
-                            prefix: prefix.clone(),
-                            ok: false,
-                            time_us: elapsed_us,
-                            states_explored: Some(states_explored),
-                            visited_count: Some(visited_states.len()),
-                            visited_sample,
-                        };
-                        (*len, detail, None, Some(visited_states))
-                    }
-                    CompletionResult::Invalid(_)
-                    | CompletionResult::Error(_)
-                    | CompletionResult::Inconsistency(_) => {
-                        let detail = PrefixDetail {
-                            prefix: prefix.clone(),
-                            ok: false,
-                            time_us: elapsed_us,
-                            states_explored: None,
-                            visited_count: None,
-                            visited_sample: vec![],
-                        };
-                        (*len, detail, None, None)
-                    }
-                };
-            }
-
-            let tokens = prefix_synth.feed(prefix.clone(), &ctx);
-            let ok = match prefix_synth.partial() {
-                Ok(partial) => {
-                    prefix_ok(grammar, &ctx, &partial, &tokens)
-                        && completion_tokens_are_sound(&mut prefix_synth, &tokens, &ctx)
-                }
-                Err(_) => false,
-            };
+            let tokens_to_end = prefixes.len().saturating_sub(1).saturating_sub(prefix_idx);
+            let prefix_budget = budget + tokens_to_end;
+            let result = complete(grammar, prefix, prefix_budget, Some(ctx.clone()));
 
             let elapsed_us = start.elapsed().as_micros();
-            let detail = PrefixDetail {
-                prefix: prefix.clone(),
-                ok,
-                time_us: elapsed_us,
-                states_explored: None,
-                visited_count: None,
-                visited_sample: vec![],
-            };
-            (*len, detail, None, None)
+            match result {
+                CompletionResult::Success { complete_input, .. } => {
+                    let detail = PrefixDetail {
+                        prefix: prefix.clone(),
+                        ok: true,
+                        time_us: elapsed_us,
+                        states_explored: Some(0),
+                        visited_count: Some(1),
+                        visited_sample: vec![],
+                    };
+                    (*len, detail, Some(complete_input), None)
+                }
+                CompletionResult::SuccessMultiple { completions } => {
+                    // For single completion validation, just use the first result
+                    let detail = PrefixDetail {
+                        prefix: prefix.clone(),
+                        ok: true,
+                        time_us: elapsed_us,
+                        states_explored: Some(0),
+                        visited_count: Some(completions.len()),
+                        visited_sample: vec![],
+                    };
+                    (*len, detail, completions.into_iter().next(), None)
+                }
+                CompletionResult::Failure {
+                    visited_states,
+                    states_explored,
+                    ..
+                } => {
+                    let visited_sample = visited_states.iter().take(20).cloned().collect();
+                    let detail = PrefixDetail {
+                        prefix: prefix.clone(),
+                        ok: false,
+                        time_us: elapsed_us,
+                        states_explored: Some(states_explored),
+                        visited_count: Some(visited_states.len()),
+                        visited_sample,
+                    };
+                    (*len, detail, None, Some(visited_states))
+                }
+                CompletionResult::Invalid(_)
+                | CompletionResult::Error(_)
+                | CompletionResult::Inconsistency(_) => {
+                    let detail = PrefixDetail {
+                        prefix: prefix.clone(),
+                        ok: false,
+                        time_us: elapsed_us,
+                        states_explored: None,
+                        visited_count: None,
+                        visited_sample: vec![],
+                    };
+                    (*len, detail, None, None)
+                }
+            }
         })
         .collect();
 
@@ -260,48 +225,21 @@ pub fn sound_complete(
     }
 }
 
-pub fn is_completable(grammar: &Grammar, input: &str, max_depth: usize) -> bool {
+pub fn is_completable(grammar: &Grammar, input: &str, budget: usize) -> bool {
     matches!(
-        complete(grammar, input, max_depth, None),
+        complete(grammar, input, budget, None),
         CompletionResult::Success { .. }
     )
-}
-
-fn prefix_ok(
-    grammar: &Grammar,
-    ctx: &Context,
-    partial: &crate::logic::SppfForest,
-    tokens: &crate::logic::partial::CompletionSet,
-) -> bool {
-    // Prefix soundness accepts any root that is currently typable or
-    // typing-indeterminate (partial), even if the root is syntactically
-    // incomplete. This is required for states like `... in` where the
-    // body has not started yet.
-    partial.has_valid_or_partial_ctx(grammar, ctx) || !tokens.is_empty()
-}
-
-fn completion_tokens_are_sound(
-    synth: &mut Synthesizer,
-    tokens: &crate::logic::partial::CompletionSet,
-    ctx: &Context,
-) -> bool {
-    tokens.iter().all(|token| {
-        token
-            .example()
-            .map(|example| synth.try_extend(&example, ctx).is_ok())
-            .unwrap_or(false)
-    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::logic::grammar::Grammar;
-    use crate::logic::partial::MetaParser;
-    use crate::logic::partial::Synthesizer;
+    use crate::logic::synth::Synthesizer;
 
     #[test]
-    fn prefix_ok_accepts_typed_partial_complete_identifier() {
+    fn complete_accepts_typed_partial_complete_identifier() {
         let spec = r#"
             Identifier ::= /[a-z]+/
             Variable(var) ::= Identifier[x]
@@ -318,14 +256,17 @@ mod tests {
             .unwrap();
 
         let mut synth = Synthesizer::new(grammar.clone(), "f");
-        let partial = synth.partial().unwrap();
-        let tokens = synth.completions_ctx(&ctx);
+        let typed = synth.parse_with(&ctx).unwrap();
 
-        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+        assert!(!typed.is_empty());
+        assert!(matches!(
+            complete(&grammar, "f", 16, Some(ctx)),
+            CompletionResult::Success { .. }
+        ));
     }
 
     #[test]
-    fn prefix_ok_accepts_context_extending_prefix_before_body() {
+    fn complete_accepts_context_extending_prefix_before_body() {
         let spec = r#"
             Identifier ::= /[a-z]+/
             Type ::= 'int' | 'bool'
@@ -344,15 +285,14 @@ mod tests {
 
         let grammar = Grammar::load(spec).unwrap();
         let ctx = Context::new();
-        let mut synth = Synthesizer::new(grammar.clone(), "let x : int in");
-        let partial = synth.partial().unwrap();
-        let tokens = synth.completions_ctx(&ctx);
-
-        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+        assert!(matches!(
+            complete(&grammar, "let x : int in", 16, Some(ctx)),
+            CompletionResult::Success { .. }
+        ));
     }
 
     #[test]
-    fn prefix_ok_accepts_nested_let_prefix_before_inner_body() {
+    fn complete_accepts_nested_let_prefix_before_inner_body() {
         let spec = r#"
             Identifier ::= /[a-z]+/
             Type ::= 'int' | 'bool'
@@ -371,11 +311,10 @@ mod tests {
 
         let grammar = Grammar::load(spec).unwrap();
         let ctx = Context::new();
-        let mut synth = Synthesizer::new(grammar.clone(), "let x : int in let y : bool in");
-        let partial = synth.partial().unwrap();
-        let tokens = synth.completions_ctx(&ctx);
-
-        assert!(prefix_ok(&grammar, &ctx, &partial, &tokens));
+        assert!(matches!(
+            complete(&grammar, "let x : int in let y : bool in", 16, Some(ctx)),
+            CompletionResult::Success { .. }
+        ));
     }
 
     #[test]
@@ -431,12 +370,12 @@ mod tests {
         let grammar = crate::validation::parseable::load_example_grammar("fun");
         let result = complete(&grammar, "(", 4, Some(Context::new()));
         if let CompletionResult::Success { complete_input, .. } = result {
-            let mut mp = MetaParser::new(grammar).with_max_depth(62);
-            let typed = mp.partial_typed(&complete_input).unwrap_or_else(|e| {
+            let mut synth = Synthesizer::new(grammar.clone(), &complete_input);
+            let typed = synth.parse_with(&Context::new()).unwrap_or_else(|e| {
                 panic!("completion should type-check: {} ({})", complete_input, e)
             });
             assert!(
-                typed.clone().complete().is_ok(),
+                typed.is_complete(),
                 "completion should be complete typed tree: {}",
                 complete_input
             );
@@ -450,14 +389,42 @@ mod tests {
         let result = complete(&grammar, input, 2, Some(Context::new()));
 
         if let CompletionResult::Success { complete_input, .. } = result {
-            let mut mp = MetaParser::new(grammar).with_max_depth(62);
-            let typed = mp.partial_typed(&complete_input).unwrap_or_else(|e| {
+            let mut synth = Synthesizer::new(grammar.clone(), &complete_input);
+            let typed = synth.parse_with(&Context::new()).unwrap_or_else(|e| {
                 panic!(
                     "garbage completion returned for pathological prefix: {} ({})",
                     complete_input, e
                 )
             });
-            assert!(typed.clone().complete().is_ok());
+            assert!(typed.is_complete());
         }
+    }
+
+    #[test]
+    fn soundness_holds_for_every_prefix_of_valid_typed_expression() {
+        let spec = r#"
+            Identifier ::= /[a-z]+/
+            Type ::= 'int' | 'bool'
+            Variable(var) ::= Identifier[x]
+            Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
+            Expression ::= Variable | Let
+
+            x ∈ Γ
+            ----------- (var)
+            Γ(x)
+
+            Γ[x:τ] ⊢ e : ?T
+            ------------------------ (let)
+            ?T
+        "#;
+
+        let grammar = Grammar::load(spec).unwrap();
+        let result = sound_complete(&grammar, "let x : int in x", 8, Some(Context::new()));
+
+        assert!(
+            result.is_sound,
+            "valid expression should remain prefix-sound, failing_prefix={:?}",
+            result.failing_prefix
+        );
     }
 }

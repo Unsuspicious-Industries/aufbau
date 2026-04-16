@@ -51,16 +51,16 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
 
 #[test]
 fn valid_expressions_arithmetic() {
-    let grammar = arithmetic_grammar();
+    let mut grammar = arithmetic_grammar();
     let cases = valid_expressions_cases();
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 }
 
 #[test]
 fn invalid_expressions_arithmetic() {
-    let grammar = arithmetic_grammar();
+    let mut grammar = arithmetic_grammar();
     let cases = invalid_expressions_cases();
-    let (res, _cases_json) = run_parse_batch(&grammar, &cases);
+    let (res, _cases_json) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 }

@@ -13,7 +13,9 @@ CONTEXT.md
 # Temporary files
 tmp
 proptest
-/validation/
+
+# Validation reports
+src/validation/reports/
 
 # Profiling data
 perf.data*
@@ -27,6 +29,7 @@ flamegraph.svg
 *.swo
 .opencode
 .code-workspace
+.ruff_cache
 
 # Python
 __pycache__/
