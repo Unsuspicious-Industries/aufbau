@@ -1,5 +1,6 @@
 pub mod arena;
 pub mod parser;
+pub mod state;
 
 #[cfg(test)]
 mod display;
@@ -10,11 +11,12 @@ mod testing;
 #[cfg(test)]
 mod tests;
 
+pub use crate::logic::error::PrefixError;
 pub use arena::{
-    AltId, Binding, ChildRef, CtxId,  NodeId, NodeStatus, NtId, ParseArena, ProdId,
-    Span, TypeId,
+    AltId, Binding, ChildRef, CtxId, NodeId, NodeStatus, NtId, ParseArena, ProdId, Span, TypeId,
 };
 pub use parser::{Item, Tables, Task};
+pub use state::{Next, State};
 
 use super::grammar::{Grammar, Segment};
 

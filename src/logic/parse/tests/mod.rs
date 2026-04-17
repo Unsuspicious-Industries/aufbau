@@ -1,8 +1,10 @@
-use crate::set_debug_level;
-use crate::DebugLevel;
-use crate::logic::fusion::{NodeStatus, TransitionError, TypingRuntime};
+use crate::logic::error::TransitionError;
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{CtxId, ProdId, TypeId};
+use crate::logic::parse::NodeStatus;
+use crate::logic::typing::TypingRuntime;
+use crate::set_debug_level;
+use crate::DebugLevel;
 
 use super::*;
 
@@ -10,7 +12,6 @@ mod utils;
 pub(crate) use utils::*;
 
 mod dedup;
-mod env_ctx;
 mod frontier;
 mod parse;
 mod prune;

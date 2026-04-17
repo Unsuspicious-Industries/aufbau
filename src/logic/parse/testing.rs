@@ -1,5 +1,6 @@
 use super::{Item, TypedParser};
-use crate::logic::fusion::{PrefixError, TypingRuntime};
+use crate::logic::error::PrefixError;
+use crate::logic::typing::{Obligations, TypingRuntime};
 
 #[cfg(test)]
 impl<T: TypingRuntime> TypedParser<T> {
@@ -17,7 +18,7 @@ impl<T: TypingRuntime> TypedParser<T> {
             .productions_at(nt)
             .map(|p| (0..p.len()).map(|i| (nt, i)).collect())
             .unwrap_or_default();
-        self.seed(&prods, pos, ctx, &[]);
+        self.seed(&prods, pos, ctx, &Obligations::empty());
     }
 
     pub(crate) fn process_for_test(&mut self, item: Item) -> Result<(), PrefixError> {

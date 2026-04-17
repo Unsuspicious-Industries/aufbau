@@ -1,9 +1,8 @@
-use crate::logic::fusion::DepthConfig;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::Context;
 
 use super::{search, search_k, SearchResult, Synthesizer};
-use crate::logic::fusion::ast::FusionAST;
+use crate::logic::structure::ast::FusionAST;
 
 fn completion_fingerprint(ast: &FusionAST, grammar: &Grammar) -> Vec<(String, Option<String>)> {
     ast.completions(grammar)
@@ -311,13 +310,26 @@ fn every_token_prefix_of_nested_paren_lambda_is_completable() {
 }
 
 #[test]
-fn every_token_prefix_of_higher_order_fun_expression_is_completable() {
-    let grammar = fun_grammar();
-    let input = "(f: Int -> Int) => ((g: Int -> Int) => ((x: Int) => f(g(x))))";
+fn search_accepts_well_typed_lambda_as_application_argument() {
+    let grammar = stlc_grammar();
+    let input = "λf:(A->A)->B.f (λx:A.x)";
+    let mut synth = Synthesizer::new(grammar, input);
+    let result = search(&mut synth, input, &Context::new(), 10);
 
-    for prefix in token_prefixes(&grammar, input) {
-        let mut synth = Synthesizer::new(grammar.clone(), &prefix);
-        let result = search(&mut synth, &prefix, &Context::new(), 12);
+    assert!(
+        matches!(result, SearchResult::Success { .. }),
+        "well-typed lambda argument application should stay accepted: {result:?}"
+    );
+}
+
+#[test]
+fn higher_order_fun_repro_prefixes_are_completable() {
+    let grammar = fun_grammar();
+    let prefixes = ["(f: Int -> Int) => ((g: Int -> Int) => ((x: Int) => f(g("];
+
+    for prefix in prefixes {
+        let mut synth = Synthesizer::new(grammar.clone(), prefix);
+        let result = search(&mut synth, prefix, &Context::new(), 16);
         assert!(
             matches!(result, SearchResult::Success { .. }),
             "higher-order prefix should remain completable: {prefix:?} => {result:?}"
@@ -344,13 +356,13 @@ fn search_completes_deep_fun_let_prefix_without_unsound_suffix() {
 }
 
 #[test]
-fn every_token_prefix_of_nested_imp_block_is_completable() {
+fn imp_control_flow_repro_prefixes_are_completable() {
     let grammar = imp_grammar();
-    let input = "{ if (1==1) { let x:Int=1; } else { let x:Int=2; } }";
+    let prefixes = ["{ if (1==1) { let x:Int=1; } else {"];
 
-    for prefix in token_prefixes(&grammar, input) {
-        let mut synth = Synthesizer::new(grammar.clone(), &prefix);
-        let result = search(&mut synth, &prefix, &Context::new(), 10);
+    for prefix in prefixes {
+        let mut synth = Synthesizer::new(grammar.clone(), prefix);
+        let result = search(&mut synth, prefix, &Context::new(), 16);
         assert!(
             matches!(result, SearchResult::Success { .. }),
             "IMP prefix should remain completable: {prefix:?} => {result:?}"

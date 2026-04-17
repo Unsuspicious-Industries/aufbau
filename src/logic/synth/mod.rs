@@ -1,17 +1,18 @@
 use crate::debug_debug;
 use crate::debug_trace;
 use crate::logic::completion::CompletionSet;
-use crate::logic::fusion::TypedParser;
 use crate::logic::grammar::Grammar;
+use crate::logic::parse::{CtxId, TypedParser};
+use crate::logic::structure::ast::FusionAST;
 use crate::logic::typing::Context;
 use crate::regex::Regex;
 use std::time::Instant;
 
-use crate::logic::fusion::ast::FusionAST;
 use crate::logic::typing::runtime::RuleRuntime;
 
 pub mod atoms;
 pub mod search;
+#[cfg(test)]
 mod tests;
 
 pub use atoms::collect_atoms;
@@ -170,7 +171,7 @@ impl Synthesizer {
     fn parse(
         &mut self,
         input: String,
-        ctx_id: crate::logic::fusion::CtxId,
+        ctx_id: CtxId,
     ) -> Result<FusionAST, String> {
         let start = Instant::now();
         match self.parser.parse(&input, ctx_id) {
@@ -240,6 +241,6 @@ pub fn complete_k(
     }
 }
 
-fn ctx_id(ctx: &Context, runtime: &RuleRuntime) -> crate::logic::fusion::CtxId {
+fn ctx_id(ctx: &Context, runtime: &RuleRuntime) -> CtxId {
     runtime.intern_context(ctx.clone())
 }

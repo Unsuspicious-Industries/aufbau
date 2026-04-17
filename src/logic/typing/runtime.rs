@@ -4,9 +4,10 @@ use std::rc::Rc;
 
 use crate::debug_trace;
 use crate::logic::Segment;
-use crate::logic::typing::state::{Obligation, TransitionError, TransitionResult, TypingRuntime};
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{CtxId, Lexeme, NodeStatus, ProdId, TypeId, ANY_TYPE};
+use crate::logic::error::{TransitionError, TransitionResult};
+use crate::logic::typing::{Obligations, TypingRuntime};
 use crate::logic::typing::rule::{ConclusionKind, Premise, TypeOperation, TypingJudgment};
 use crate::logic::typing::{Context, Type, TypingRule, equal};
 
@@ -98,22 +99,22 @@ impl RuleRuntime {
 
     // ── Obligation-based helpers ─────────────────────────────────────────────
 
-    fn ob_lexeme<'a>(obligations: &'a [Obligation], name: &str) -> Option<&'a Lexeme> {
+    fn ob_lexeme<'a>(obligations: &'a Obligations, name: &str) -> Option<&'a Lexeme> {
         obligations
             .iter()
             .find(|o| o.name == name)
             .and_then(|o| o.value.as_ref())
     }
 
-    fn ob_value(&self, obligations: &[Obligation], name: &str) -> Option<String> {
+    fn ob_value(&self, obligations: &Obligations, name: &str) -> Option<String> {
         Self::ob_lexeme(obligations, name).and_then(|lexeme| lexeme.value(&self.s))
     }
 
-    fn ob_type(&self, obligations: &[Obligation], name: &str) -> Option<TypeId> {
+    fn ob_type(&self, obligations: &Obligations, name: &str) -> Option<TypeId> {
         obligations.iter().find(|o| o.name == name).and_then(|o| o.actual)
     }
 
-    fn ob_type_resolved(&self, obligations: &[Obligation], name: &str) -> Option<Type> {
+    fn ob_type_resolved(&self, obligations: &Obligations, name: &str) -> Option<Type> {
         if let Some(id) = self.ob_type(obligations, name) {
             if id != ANY_TYPE {
                 return self.type_of(id);
@@ -129,7 +130,7 @@ impl RuleRuntime {
         &self,
         ty: &Type,
         subst: &HashMap<String, Type>,
-        obligations: &[Obligation],
+        obligations: &Obligations,
         ctx: &Context,
         typed_partial: &mut bool,
     ) -> Option<Type> {
@@ -239,7 +240,7 @@ impl RuleRuntime {
     fn apply_premise(
         &self,
         premise: &Premise,
-        obligations: &[Obligation],
+        obligations: &Obligations,
         ctx: &mut Context,
         subst: &mut HashMap<String, Type>,
         typed_partial: &mut bool,
@@ -399,7 +400,7 @@ impl RuleRuntime {
     fn apply_rule(
         &self,
         rule: &TypingRule,
-        obligations: &[Obligation],
+        obligations: &Obligations,
         ctx: &mut Context,
         subst: &mut HashMap<String, Type>,
         typed_partial: &mut bool,
@@ -412,7 +413,7 @@ impl RuleRuntime {
     fn inferred_type(
         &self,
         prod: ProdId,
-        obligations: &[Obligation],
+        obligations: &Obligations,
     ) -> Option<TypeId> {
         let rule = self
             .production_rule_name(prod)
@@ -444,7 +445,7 @@ impl RuleRuntime {
     fn apply_context_output(
         &self,
         output: &crate::logic::typing::rule::TypeSetting,
-        obligations: &[Obligation],
+        obligations: &Obligations,
         ctx: &Context,
         subst: &HashMap<String, Type>,
         status: NodeStatus,
@@ -483,7 +484,7 @@ impl TypingRuntime for RuleRuntime {
         _dot: usize,
         binding: Option<&str>,
         ctx: CtxId,
-        obligations: &[Obligation],
+        obligations: &Obligations,
     ) -> Result<CtxId, TransitionError> {
         let rule_name = self.production_rule_name(prod);
         let rule = rule_name
@@ -556,7 +557,7 @@ impl TypingRuntime for RuleRuntime {
         &self,
         prod: ProdId,
         ctx: CtxId,
-        obligations: &[Obligation],
+        obligations: &Obligations,
         status: NodeStatus,
     ) -> Result<(TypeId, CtxId, bool), TransitionError> {
         let rule = self

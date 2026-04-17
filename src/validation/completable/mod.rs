@@ -10,7 +10,7 @@ pub mod weird;
 pub mod imp;
 
 use crate::logic::grammar::Grammar;
-use crate::logic::typing::core::Context;
+use crate::logic::typing::Context;
 
 use crate::validation::completability::{
     CompletionResult, PrefixSoundnessResult, complete, sound_complete,

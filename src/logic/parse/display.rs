@@ -1,11 +1,12 @@
 use crate::logic::grammar::Segment;
 use crate::logic::parse::arena::TypeId;
-use crate::logic::typing::state::TypingRuntime;
+use crate::logic::typing::TypingRuntime;
 
 use super::{ChildRef, NodeId, TypedParser};
 use crate::logic::parse::arena::{ParseArena, Span};
 
-use crate::logic::fusion::{Lexeme, State};
+use crate::logic::parse::arena::Lexeme;
+use crate::logic::parse::State;
 
 pub fn render_node_text<T: TypingRuntime>(
     parser: &TypedParser<T>,
@@ -23,7 +24,11 @@ pub fn render_node_text<T: TypingRuntime>(
     for child in &alt.children {
         match child {
             ChildRef::Node(child_id) => parts.push(render_node_text(parser, *child_id, segments)),
-            ChildRef::Terminal(Lexeme { matched: span, complete, .. }) => {
+            ChildRef::Terminal(Lexeme {
+                matched: span,
+                complete,
+                ..
+            }) => {
                 if *complete {
                     parts.push(render_span(*span, segments));
                 }
@@ -77,7 +82,11 @@ fn render_pretty(
                     ChildRef::Node(child_id) => {
                         render_pretty(arena, *child_id, segments, indent + 1, out)
                     }
-                    ChildRef::Terminal(Lexeme { matched: span, complete, open }) => out.push_str(&format!(
+                    ChildRef::Terminal(Lexeme {
+                        matched: span,
+                        complete,
+                        open,
+                    }) => out.push_str(&format!(
                         "{}  term {:?} complete={} open={} text='{}'\n",
                         pad,
                         span,

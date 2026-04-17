@@ -1,5 +1,5 @@
 use super::*;
-use crate::logic::typing::state::Obligation;
+use crate::logic::typing::Obligations;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StubTyping;
@@ -11,7 +11,7 @@ impl TypingRuntime for StubTyping {
         _dot: usize,
         _binding: Option<&str>,
         ctx: CtxId,
-        _obligations: &[Obligation],
+        _obligations: &Obligations,
     ) -> Result<CtxId, TransitionError> {
         Ok(ctx)
     }
@@ -20,7 +20,7 @@ impl TypingRuntime for StubTyping {
         &self,
         _prod: ProdId,
         ctx: CtxId,
-        _obligations: &[Obligation],
+        _obligations: &Obligations,
         _status: NodeStatus,
     ) -> Result<(TypeId, CtxId, bool), TransitionError> {
         Ok((0, ctx, true))
@@ -37,7 +37,7 @@ impl TypingRuntime for RejectingTyping {
         _dot: usize,
         _binding: Option<&str>,
         ctx: CtxId,
-        _obligations: &[Obligation],
+        _obligations: &Obligations,
     ) -> Result<CtxId, TransitionError> {
         Ok(ctx)
     }
@@ -46,7 +46,7 @@ impl TypingRuntime for RejectingTyping {
         &self,
         _prod: ProdId,
         _ctx: CtxId,
-        _obligations: &[Obligation],
+        _obligations: &Obligations,
         _status: NodeStatus,
     ) -> Result<(TypeId, CtxId, bool), TransitionError> {
         Err(TransitionError::Rejected)

@@ -9,8 +9,8 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use aufbau::logic::fusion::FusionNode;
 use aufbau::logic::grammar::Grammar;
+use aufbau::logic::structure::FusionNode;
 use aufbau::logic::synth::Synthesizer;
 use aufbau::logic::typing::{Context, SharedType, Type};
 

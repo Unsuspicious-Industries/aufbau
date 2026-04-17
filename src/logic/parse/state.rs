@@ -1,3 +1,5 @@
+//! Parser-level state objects for prefix parsing and continuation.
+
 use crate::logic::grammar::Symbol;
 use crate::logic::parse::arena::{NodeId, Span};
 use crate::logic::parse::Item;
@@ -22,12 +24,7 @@ impl Default for Next {
     }
 }
 
-/// The parser state tracking one chosen root, frontier for continuation.
-///
-/// Note that the ParseArena is tracked separately by the parser struct,
-/// while roots and frontier are returned here.
-/// This state allows checking completion or starting an incremental extension
-/// by monotonic operations.
+/// One chosen root together with the frontier needed for continuation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct State {
     pub span: Span,
@@ -43,26 +40,6 @@ impl Default for State {
             root: 0,
             next: Next::default(),
             frontier: None,
-        }
-    }
-}
-
-
-// Weird might wanna remove
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PrefixError {
-    pub input_len: usize,
-    pub message: String,
-}
-
-impl std::error::Error for PrefixError {}
-
-impl PrefixError {
-    /// Time: O(1). Space: O(1).
-    pub fn rejected(input_len: usize, message: impl Into<String>) -> Self {
-        Self {
-            input_len,
-            message: message.into(),
         }
     }
 }

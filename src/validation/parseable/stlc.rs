@@ -110,8 +110,11 @@ pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
         // so we set depth = 10 + 2 * num_args as a safe budget.
         ParseTestCase::valid("simple left app", "f x")
             .with_context(vec![("f", "A->B"), ("x", "A")]),
-        ParseTestCase::valid("chained left app", "f x y")
-            .with_context(vec![("f", "A->B->C"), ("x", "A"), ("y", "B")]),
+        ParseTestCase::valid("chained left app", "f x y").with_context(vec![
+            ("f", "A->B->C"),
+            ("x", "A"),
+            ("y", "B"),
+        ]),
         ParseTestCase::valid("long chain left app", "f x y z w v u").with_context(vec![
             ("f", "A->B->C->D->E->F->G"),
             ("x", "A"),

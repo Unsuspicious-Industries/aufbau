@@ -284,14 +284,19 @@ fn repro_let_prefix_before_body() {
         ?T
     "#;
     let result = parse(spec, "let x : int in", &Context::new());
-    assert!(result.is_ok(), "prefix 'let x : int in' should parse: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "prefix 'let x : int in' should parse: {:?}",
+        result
+    );
 }
 
 // ── Isolation tests for weird grammars (frontier lifting termination) ────────
 
 #[test]
 fn repro_weird_epsilon_empty() {
-    let g = Grammar::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
+    let g =
+        Grammar::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
     let mut synth = Synthesizer::new(g, "");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "epsilon empty: {:?}", result);
@@ -299,7 +304,8 @@ fn repro_weird_epsilon_empty() {
 
 #[test]
 fn repro_weird_epsilon_a() {
-    let g = Grammar::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
+    let g =
+        Grammar::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
     let mut synth = Synthesizer::new(g, "a");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "epsilon a: {:?}", result);
@@ -315,7 +321,8 @@ fn repro_weird_deep_x() {
 
 #[test]
 fn repro_weird_stmt_empty_block() {
-    let g = Grammar::load(r#"
+    let g = Grammar::load(
+        r#"
     Identifier ::= /[a-z]+/
     Type ::= 'I' | 'B'
     Variable(var) ::= Identifier[x]
@@ -344,7 +351,9 @@ fn repro_weird_stmt_empty_block() {
     [Γ] ▷ stmts
     ----------- (block)
     ∅
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let mut synth = Synthesizer::new(g, "{ }");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "stmt empty block: {:?}", result);
@@ -352,7 +361,8 @@ fn repro_weird_stmt_empty_block() {
 
 #[test]
 fn repro_weird_diamond_deep() {
-    let g = Grammar::load(r#"
+    let g = Grammar::load(
+        r#"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
     Left(left) ::= '<' Term[inner] '>'
@@ -371,7 +381,9 @@ fn repro_weird_diamond_deep() {
     Γ ⊢ inner : ?T
     ----------- (right)
     ?T
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let ctx = ctx_of(&[("x", "X")]);
     let mut synth = Synthesizer::new(g, "< < < x > > >");
     let result = synth.parse_with(&ctx);
@@ -380,7 +392,8 @@ fn repro_weird_diamond_deep() {
 
 #[test]
 fn repro_weird_scoped_let() {
-    let g = Grammar::load(r#"
+    let g = Grammar::load(
+        r#"
     Identifier ::= /[a-z]+/
     Type ::= 'X' | 'Y'
     Variable(var) ::= Identifier[x]
@@ -404,7 +417,9 @@ fn repro_weird_scoped_let() {
     [Γ] ⊢ inner : ?T
     ----------- (scoped)
     ?T
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let mut synth = Synthesizer::new(g, "def a : X = 1 in a");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "scoped let: {:?}", result);
@@ -422,7 +437,8 @@ fn repro_weird_mutual_nested() {
 
 #[test]
 fn repro_weird_union_partial() {
-    let g = Grammar::load(r#"
+    let g = Grammar::load(
+        r#"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
@@ -443,7 +459,9 @@ fn repro_weird_union_partial() {
     Γ ⊢ a : ?A, Γ ⊢ b : ?B
     ----------- (choice)
     ?A | ?B
-    "#).unwrap();
+    "#,
+    )
+    .unwrap();
     let mut synth = Synthesizer::new(g, "1 ?");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "union partial: {:?}", result);

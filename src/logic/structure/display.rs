@@ -1,10 +1,10 @@
-use crate::logic::{fusion::Lexeme, grammar::Segment};
+use crate::logic::grammar::Segment;
+use crate::logic::parse::arena::Lexeme;
 use crate::logic::parse::arena::TypeId;
-use crate::logic::typing::state::TypingRuntime;
+use crate::logic::typing::TypingRuntime;
 
-use super::{ChildRef, NodeId, TypedParser,PrefixError,State};
-use crate::logic::parse::arena::{ParseArena, Span};
-
+use crate::logic::parse::arena::{ChildRef, NodeId, ParseArena, Span};
+use crate::logic::parse::{State, TypedParser};
 
 pub fn render_node_text<T: TypingRuntime>(
     parser: &TypedParser<T>,
@@ -22,7 +22,11 @@ pub fn render_node_text<T: TypingRuntime>(
     for child in &alt.children {
         match child {
             ChildRef::Node(child_id) => parts.push(render_node_text(parser, *child_id, segments)),
-            ChildRef::Terminal(Lexeme{matched:span, complete, open}) => {
+            ChildRef::Terminal(Lexeme {
+                matched: span,
+                complete,
+                open: _,
+            }) => {
                 if *complete {
                     parts.push(render_span(*span, segments));
                 }
@@ -76,7 +80,11 @@ fn render_pretty(
                     ChildRef::Node(child_id) => {
                         render_pretty(arena, *child_id, segments, indent + 1, out)
                     }
-                    ChildRef::Terminal(Lexeme{matched:span, complete, open}) => out.push_str(&format!(
+                    ChildRef::Terminal(Lexeme {
+                        matched: span,
+                        complete,
+                        open,
+                    }) => out.push_str(&format!(
                         "{}  term {:?} complete={} open={} text='{}'\n",
                         pad,
                         span,
@@ -127,14 +135,6 @@ pub fn pretty_prefix_state<T: TypingRuntime>(
 
     out
 }
-
-
-impl std::fmt::Display for PrefixError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
 impl std::fmt::Display for State {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(

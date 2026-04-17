@@ -48,4 +48,3 @@ fn prune_does_not_introduce_alternatives_not_in_grammar() {
         }
     }
 }
-

@@ -1,6 +1,7 @@
 pub mod load;
 pub mod save;
 pub mod tokenizer;
+pub mod typing;
 pub mod utils;
 pub mod symbol;
 pub mod production;

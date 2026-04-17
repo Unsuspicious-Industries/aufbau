@@ -2,7 +2,7 @@ use super::utils::{
     ParsedRhs,  parse_inference_rule, parse_nonterminal, parse_production,
     parse_rhs,
 };
-use crate::logic::grammar::{Grammar, Production, Symbol, TypingRule};
+use crate::logic::grammar::{Grammar, Production, TypingRule};
 
 impl Grammar {
     /// Parse the textual specification into a `Grammar`.
@@ -109,4 +109,3 @@ impl Grammar {
         Ok(grammar)
     }
 }
-

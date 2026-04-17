@@ -16,6 +16,7 @@ pub const MAX_REPETITION_ITERATIONS: usize = 1000;
 
 use std::cell::RefCell;
 
+use crate::logic::typing::ContextTransition;
 use crate::{debug_trace, logic::Segment};
 
 pub use crate::logic::grammar::{AltId, NtId, ProdId};
@@ -39,8 +40,7 @@ pub struct Span {
     pub end: u32,
 }
 
-
-#[derive(Clone,Hash, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Hash, Copy, Debug, PartialEq, Eq)]
 pub struct Lexeme {
     pub matched: Span,
     pub open: bool,
@@ -48,7 +48,7 @@ pub struct Lexeme {
 }
 
 impl Lexeme {
-    pub fn new(span:Span, complete: bool, open: bool) -> Self {
+    pub fn new(span: Span, complete: bool, open: bool) -> Self {
         Self {
             matched: span,
             open,
@@ -58,13 +58,18 @@ impl Lexeme {
 
     pub fn value<'a>(&self, s: &[Segment]) -> Option<String> {
         if self.matched.end as usize <= s.len() {
-            Some(s[self.matched.start as usize..self.matched.end as usize].iter().map(|s| s.as_str()).collect::<Vec<&str>>().join(" "))
+            Some(
+                s[self.matched.start as usize..self.matched.end as usize]
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<&str>>()
+                    .join(" "),
+            )
         } else {
             None
         }
     }
 }
-
 
 /// Whether a node is a fully accepted parse or only a typed prefix.
 ///
@@ -98,7 +103,6 @@ pub enum ChildRef {
     Terminal(Lexeme),
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PackedAlt {
     pub prod: ProdId,
@@ -124,8 +128,7 @@ pub struct ArenaNode {
     /// Propagated bottom-up so that parent obligations carry the open flag
     /// for prefix-aware typing (e.g. context prefix lookup).
     pub open: bool,
-    pub env_in: Option<CtxId>,
-    pub env_out: Option<CtxId>,
+    pub ctr: Option<ContextTransition>,
     pub bindings: Vec<Binding>,
     pub alts: AltRange,
 }
@@ -192,7 +195,6 @@ impl ParseArena {
         id
     }
 
-
     /// Time: O(1). Space: O(1).
     pub fn node(&self, id: NodeId) -> Option<std::cell::Ref<'_, ArenaNode>> {
         std::cell::Ref::filter_map(self.nodes.borrow(), |nodes| nodes.get(id)).ok()
@@ -229,19 +231,29 @@ impl ParseArena {
     pub fn complete(&self, child: &ChildRef) -> bool {
         match child {
             ChildRef::Node(node_id) => self
-                .nodes.borrow()
+                .nodes
+                .borrow()
                 .get(*node_id)
                 .is_some_and(|node| node.status == NodeStatus::Complete),
-            ChildRef::Terminal(Lexeme {matched:_,open:_,complete}) => *complete,
+            ChildRef::Terminal(Lexeme {
+                matched: _,
+                open: _,
+                complete,
+            }) => *complete,
         }
     }
     pub fn open(&self, child: &ChildRef) -> bool {
         match child {
             ChildRef::Node(node_id) => self
-                .nodes.borrow()
+                .nodes
+                .borrow()
                 .get(*node_id)
                 .is_some_and(|node| node.open),
-            ChildRef::Terminal(Lexeme {matched:_,open,complete:_}) => *open,
+            ChildRef::Terminal(Lexeme {
+                matched: _,
+                open,
+                complete: _,
+            }) => *open,
         }
     }
 }

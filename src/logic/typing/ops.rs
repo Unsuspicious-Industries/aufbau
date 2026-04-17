@@ -6,7 +6,7 @@
 //! formal spec in §1.7, replacing the ad-hoc set_meta/solve_meta system.
 
 use crate::logic::typing::Type;
-use crate::logic::typing::core::Context;
+use crate::logic::typing::Context;
 use std::collections::HashMap;
 
 pub fn is_unresolved(ty: &Type) -> bool {

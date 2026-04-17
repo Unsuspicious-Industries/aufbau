@@ -5,9 +5,10 @@ use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::logic::parse::parser::Completion;
 use crate::logic::parse::Item;
+use crate::logic::typing::{ContextTransition, Obligations};
 
 fn push_test_node(
-    parser: &mut TypedParser<impl crate::logic::fusion::TypingRuntime>,
+    parser: &mut TypedParser<impl crate::logic::typing::TypingRuntime>,
     nt: usize,
     start: usize,
     end: usize,
@@ -15,12 +16,14 @@ fn push_test_node(
     parser.arena.push_node(
         ArenaNode {
             nt,
-            span: Span { start: start as u32, end: end as u32 },
+            span: Span {
+                start: start as u32,
+                end: end as u32,
+            },
             status: NodeStatus::Complete,
             ty: 0,
             open: false,
-            env_in: Some(0),
-            env_out: Some(0),
+            ctr: Some(ContextTransition::identity(0)),
             bindings: vec![],
             alts: AltRange { start: 0, len: 0 },
         },
@@ -34,9 +37,8 @@ fn test_item(prod: ProdId, pos: usize) -> Item {
         dot: 0,
         start: pos,
         pos,
-        ctx: 0,
-        ctx_in: 0,
-        obligations: vec![],
+        ctr: ContextTransition::identity(0),
+        obligations: Obligations::empty(),
         children: vec![],
     }
 }
@@ -86,7 +88,7 @@ fn enqueue_process_distinguishes_different_ctx() {
 
     let item1 = test_item((start_nt, 0), 0);
     let mut item2 = item1.clone();
-    item2.ctx = 99;
+    item2.ctr = ContextTransition::identity(99);
 
     parser.enqueue_process_for_test(item1);
     parser.enqueue_process_for_test(item2);
@@ -104,7 +106,12 @@ fn complete_inserts_into_seen_complete_on_first_call() {
     let node_id = push_test_node(&mut parser, a_nt, 0, 1);
 
     parser
-        .complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node_id })
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node_id,
+        })
         .unwrap();
 
     // Main loop dedup is span-based: (nt, start, end).
@@ -126,8 +133,22 @@ fn complete_deduplicates_same_span() {
     let node1 = push_test_node(&mut parser, a_nt, 0, 1);
     let node2 = push_test_node(&mut parser, a_nt, 0, 1);
 
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node1 }).unwrap();
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node2 }).unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node1,
+        })
+        .unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node2,
+        })
+        .unwrap();
 
     // Same span → one entry in seen_complete
     assert_eq!(parser.tables.seen_complete.len(), 1);
@@ -144,8 +165,22 @@ fn completed_nodes_records_all_nodes_regardless_of_seen_complete() {
     let node2 = push_test_node(&mut parser, a_nt, 0, 1);
     assert_ne!(node1, node2);
 
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node1 }).unwrap();
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node2 }).unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node1,
+        })
+        .unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node2,
+        })
+        .unwrap();
 
     let recorded = parser.tables.completed_nodes.get(&(a_nt, 0, 1)).unwrap();
     assert_eq!(recorded.len(), 2);
@@ -172,18 +207,35 @@ fn complete_wakes_waiter_only_on_first_call() {
     parser.tables.seen_process.clear();
 
     let node1 = push_test_node(&mut parser, a_nt, 0, 1);
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node1 }).unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node1,
+        })
+        .unwrap();
     let items_after_first = parser.tables.agenda.len();
 
     parser.tables.agenda.clear();
     parser.tables.seen_process.clear();
 
     let node2 = push_test_node(&mut parser, a_nt, 0, 1);
-    parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node: node2 }).unwrap();
+    parser
+        .complete_for_test(Completion {
+            nt: a_nt,
+            start: 0,
+            end: 1,
+            node: node2,
+        })
+        .unwrap();
     let items_after_second = parser.tables.agenda.len();
 
     assert!(items_after_first > 0);
-    assert_eq!(items_after_second, 0, "same span should not re-wake in main loop");
+    assert_eq!(
+        items_after_second, 0,
+        "same span should not re-wake in main loop"
+    );
 }
 
 #[test]
@@ -196,7 +248,14 @@ fn results_table_records_end_position_once() {
 
     for _ in 0..3 {
         let node = push_test_node(&mut parser, a_nt, 0, 1);
-        parser.complete_for_test(Completion { nt: a_nt, start: 0, end: 1, node }).unwrap();
+        parser
+            .complete_for_test(Completion {
+                nt: a_nt,
+                start: 0,
+                end: 1,
+                node,
+            })
+            .unwrap();
     }
 
     let ends = parser.tables.results.get(&(a_nt, 0)).unwrap();

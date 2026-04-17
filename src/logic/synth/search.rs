@@ -1,10 +1,12 @@
 use crate::logic::completion::CompletionSet;
-use crate::logic::fusion::ast::FusionForest;
-use crate::logic::fusion::{PrefixError, RuleRuntime, TypedParser};
+use crate::logic::error::PrefixError;
 use crate::logic::grammar::Grammar;
+use crate::logic::parse::{CtxId, TypedParser};
+use crate::logic::structure::ast::FusionForest;
 use crate::logic::synth::atoms::gather_candidates;
 use crate::logic::synth::Synthesizer;
 use crate::logic::typing::Context;
+use crate::logic::typing::runtime::RuleRuntime;
 use crate::regex::Regex;
 use std::collections::{HashSet, VecDeque};
 use std::rc::Rc;
@@ -13,7 +15,7 @@ use std::rc::Rc;
 pub enum SearchResult {
     Success {
         complete_input: String,
-        ast: crate::logic::fusion::FusionAST,
+        ast: crate::logic::structure::FusionAST,
         completion_path: Vec<Regex>,
         completion_depth: usize,
     },
@@ -33,9 +35,9 @@ pub enum SearchResult {
 struct SearchState {
     input: Rc<String>,
     path: Rc<Vec<Regex>>,
-    ctx_id: crate::logic::fusion::CtxId,
+    ctx_id: CtxId,
     parser: TypedParser<RuleRuntime>,
-    ast: crate::logic::fusion::ast::FusionAST,
+    ast: crate::logic::structure::ast::FusionAST,
     segments: Rc<Vec<crate::logic::grammar::Segment>>,
 }
 
@@ -87,7 +89,7 @@ fn parse_state(
     grammar: &mut Grammar,
     runtime: &RuleRuntime,
     input: &str,
-    ctx_id: crate::logic::fusion::CtxId,
+    ctx_id: CtxId,
     max_depth: usize,
 ) -> Result<SearchState, PrefixError> {
     const MIN_PARSE_DEPTH: u16 = 12;
@@ -140,17 +142,6 @@ fn extend_state(
         ast,
         segments: Rc::new(segments),
     })
-}
-
-fn normalize(grammar: &mut Grammar, input: &str) -> String {
-    match grammar.tokenize(input) {
-        Ok(segments) => segments
-            .iter()
-            .map(|seg| seg.as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-        Err(_) => input.to_string(),
-    }
 }
 
 fn candidate_inputs(grammar: &mut Grammar, st: &SearchState, candidate: &str) -> Vec<String> {
@@ -208,9 +199,8 @@ fn bfs_multi(
 
     if let Some(st) = queue.front() {
         if let Some(SearchResult::Success { complete_input, .. }) = st.verified_success() {
-            let normalized = normalize(grammar, &complete_input);
-            if seen_results.insert(normalized.clone()) {
-                completions.push(normalized);
+            if seen_results.insert(complete_input.clone()) {
+                completions.push(complete_input);
                 if completions.len() >= k {
                     return Some(SearchResult::SuccessMultiple { completions });
                 }
@@ -230,11 +220,14 @@ fn bfs_multi(
 
         if st.view().is_complete() {
             if let Some(SearchResult::Success { complete_input, .. }) = st.verified_success() {
-                let normalized = normalize(grammar, &complete_input);
-                if seen_results.insert(normalized.clone()) {
-                    completions.push(normalized);
+                if seen_results.insert(complete_input.clone()) {
+                    completions.push(complete_input);
                     if completions.len() >= k {
-                        return Some(SearchResult::SuccessMultiple { completions });
+                        return Some(if k == 1 {
+                            st.verified_success()?
+                        } else {
+                            SearchResult::SuccessMultiple { completions }
+                        });
                     }
                 }
             }
@@ -275,9 +268,8 @@ fn bfs_multi(
                         if let Some(SearchResult::Success { complete_input, .. }) =
                             next.verified_success()
                         {
-                            let normalized = normalize(grammar, &complete_input);
-                            if seen_results.insert(normalized.clone()) {
-                                completions.push(normalized);
+                            if seen_results.insert(complete_input.clone()) {
+                                completions.push(complete_input);
                                 if completions.len() >= k {
                                     return Some(if k == 1 {
                                         next.verified_success()?
@@ -313,28 +305,7 @@ pub fn search(
     ctx: &Context,
     max_depth: usize,
 ) -> SearchResult {
-    match search_k(synth, input, ctx, max_depth, 1) {
-        SearchResult::SuccessMultiple { mut completions } => {
-            let Some(complete_input) = completions.pop() else {
-                return SearchResult::Failure {
-                    max_depth_reached: 0,
-                    states_explored: 0,
-                    visited_states: Vec::new(),
-                };
-            };
-
-            let runtime = synth.runtime().clone();
-            let mut grammar = synth.grammar().clone();
-            let ctx_id = runtime.intern_context(ctx.clone());
-            match parse_state(&mut grammar, &runtime, &complete_input, ctx_id, max_depth) {
-                Ok(state) => state.verified_success().unwrap_or(SearchResult::Invalid(
-                    "search returned a non-verifiable completion".into(),
-                )),
-                Err(err) => SearchResult::Invalid(err.to_string()),
-            }
-        }
-        other => other,
-    }
+    search_k(synth, input, ctx, max_depth, 1)
 }
 
 pub fn search_k(
@@ -367,7 +338,7 @@ pub fn search_k(
             let mut completions = Vec::new();
 
             if let Some(SearchResult::Success { complete_input, .. }) = init.verified_success() {
-                completions.push(normalize(&mut grammar, &complete_input));
+                completions.push(complete_input);
             }
 
             if let Some(results) = bfs_multi(
@@ -390,7 +361,7 @@ pub fn search_k(
             let mut states: Vec<_> = visited.into_iter().collect();
             states.sort();
             return SearchResult::Failure {
-                max_depth_reached: 0,
+                max_depth_reached: max_depth,
                 states_explored: explored,
                 visited_states: states,
             };
@@ -417,7 +388,7 @@ pub fn search_k(
     let mut states: Vec<_> = visited.into_iter().collect();
     states.sort();
     SearchResult::Failure {
-        max_depth_reached: 0,
+        max_depth_reached: max_depth,
         states_explored: explored,
         visited_states: states,
     }

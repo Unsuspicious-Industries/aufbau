@@ -213,7 +213,6 @@ fn right_valid_cases() -> Vec<ParseTestCase> {
     ]
 }
 
-
 fn right_invalid_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("right invalid char", "c"),
@@ -244,7 +243,6 @@ fn deep_valid_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("deep ((x))", "((x))"),
     ]
 }
-
 
 fn deep_invalid_cases() -> Vec<ParseTestCase> {
     vec![

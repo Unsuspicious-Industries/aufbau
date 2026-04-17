@@ -1,12 +1,11 @@
 use crate::debug_trace;
-use crate::logic::binding::GrammarPath;
 use crate::logic::grammar::{Grammar, Segment, Symbol};
 use crate::regex::PrefixStatus;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::logic::fusion::ast::{FusionAST, FusionForest};
-use crate::logic::fusion::{PrefixError, TransitionError};
-use crate::logic::typing::state::{Obligation, TypingRuntime};
+use crate::logic::error::{PrefixError, TransitionError};
+use crate::logic::structure::ast::{FusionAST, FusionForest};
+use crate::logic::typing::{ContextTransition, Obligations, TypingRuntime};
 
 use crate::logic::parse::arena::{
     AltRange,
@@ -36,9 +35,8 @@ pub struct Item {
     pub dot: usize,
     pub start: usize,
     pub pos: usize,
-    pub ctx: CtxId,
-    pub ctx_in: CtxId,
-    pub obligations: Vec<Obligation>,
+    pub ctr: ContextTransition,
+    pub obligations: Obligations,
     pub children: Vec<ChildRef>,
 }
 
@@ -79,136 +77,6 @@ pub struct Tables {
     pub frontier: Vec<Item>,
 }
 
-
-fn create_obligations(grammar: &Grammar, prod: ProdId) -> Vec<Obligation> {
-    let Some(production) = grammar.prod(prod) else {
-        return vec![];
-    };
-    let Some(rule_name) = &production.rule else {
-        return vec![];
-    };
-    let Some(binding_map) = &grammar.bindings else {
-        return vec![];
-    };
-    let Some(rule) = grammar.rules().get(rule_name.as_str()) else {
-        return vec![];
-    };
-
-    let alt = prod.1;
-    rule.used_bindings()
-        .into_iter()
-        .filter_map(|name| {
-            let paths = binding_map.get(name, rule_name)?;
-            let filtered: Vec<GrammarPath> = paths
-                .iter()
-                .filter(|p| {
-                    p.steps()
-                        .first()
-                        .map_or(true, |s| s.a.map_or(true, |a| a == alt))
-                })
-                .cloned()
-                .collect();
-            if filtered.is_empty() {
-                return None;
-            }
-            Some(Obligation {
-                name: name.to_string(),
-                paths: filtered,
-                value: None,
-                actual: None,
-            })
-        })
-        .collect()
-}
-
-fn step_obligations(obligations: &[Obligation], dot: usize, alt: usize) -> Vec<Obligation> {
-    obligations
-        .iter()
-        .filter_map(|ob| {
-            let stepped: Vec<GrammarPath> = ob
-                .paths
-                .iter()
-                .filter_map(|p| {
-                    let steps = p.steps();
-                    let first = steps.first()?;
-                    if first.i == dot && first.a.map_or(true, |a| a == alt) {
-                        Some(GrammarPath::from(steps[1..].to_vec()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if stepped.is_empty() {
-                return None;
-            }
-            Some(Obligation {
-                name: ob.name.clone(),
-                paths: stepped,
-                value: ob.value.clone(),
-                actual: ob.actual,
-            })
-        })
-        .collect()
-}
-
-
-fn fill_nonterminal_obligation(
-    obligations: &mut [Obligation],
-    dot: usize,
-    alt: usize,
-    node: &ArenaNode,
-) {
-    for ob in obligations.iter_mut() {
-        if !ob.has_matched() && ob.matches(dot, alt) {
-            let complete = node.status == NodeStatus::Complete;
-            ob.value = Some(Lexeme::new(node.span, complete, node.open));
-            ob.actual = Some(node.ty);
-            continue;
-        }
-        // Multi-step: inherit from child's resolved bindings
-        for child_binding in &node.bindings {
-            if child_binding.name == ob.name {
-                ob.value = child_binding.value.clone();
-                ob.actual = child_binding.ty;
-                break;
-            }
-        }
-    }
-}
-
-fn prune_from_obligations(obligations: &[Obligation], nt: NtId, grammar: &Grammar) -> Vec<ProdId> {
-    let total = grammar.productions_at(nt).map_or(0, |p| p.len());
-    if total == 0 {
-        return vec![];
-    }
-    let all = || (0..total).map(|i| (nt, i)).collect::<Vec<_>>();
-
-    let mut constrained: HashSet<usize> = HashSet::new();
-    let mut any_none = false;
-
-    for ob in obligations {
-        for path in &ob.paths {
-            if let Some(first) = path.steps().first() {
-                match first.a {
-                    Some(a) if a < total => {
-                        constrained.insert(a);
-                    }
-                    None => {
-                        any_none = true;
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    if any_none || constrained.is_empty() {
-        all()
-    } else {
-        constrained.into_iter().map(|a| (nt, a)).collect()
-    }
-}
-
 // ── Engine ───────────────────────────────────────────────────────────────────
 
 impl<T> TypedParser<T>
@@ -216,7 +84,13 @@ where
     T: TypingRuntime,
 {
     pub(super) fn enqueue_process(&mut self, item: Item) {
-        let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
+        let key = (
+            item.prod,
+            item.dot,
+            item.start,
+            item.pos,
+            item.ctr.target,
+        );
         if self.tables.seen_process.insert(key) {
             self.tables.agenda.push_back(Task::Process(item));
         }
@@ -231,39 +105,24 @@ where
         prods: &[ProdId],
         pos: usize,
         ctx: CtxId,
-        parent_obs: &[Obligation],
+        parent_obs: &Obligations,
     ) {
         for &prod in prods {
-            let mut obligations = step_obligations_for_seed(parent_obs, prod.1);
-            obligations.extend(create_obligations(&self.grammar, prod));
+            let mut obligations = parent_obs.for_seed(prod.1);
+            obligations.extend(Obligations::create(
+                &self.grammar,
+                prod,
+                obligations.root().clone(),
+            ));
             self.enqueue_process(Item {
                 prod,
                 dot: 0,
                 start: pos,
                 pos,
-                ctx,
-                ctx_in: ctx,
+                ctr: ContextTransition::identity(ctx),
                 obligations,
                 children: Vec::new(),
             });
-        }
-    }
-
-    fn child_text(&self, child: &ChildRef) -> Option<String> {
-        match child {
-            ChildRef::Terminal(l) => l.value(
-                // combine all segs[i].text() for i in the span, separated by spaces
-                &self.segs(),
-        ).map(|s| s.to_string()),
-            ChildRef::Node(id) => {
-                let node = self.arena.node(*id)?;
-                // convert segments to text and join with spaces
-                Some(self.segs()[node.span.start as usize..node.span.end as usize]
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<&str>>()
-                    .join(" "))
-            }
         }
     }
 
@@ -313,7 +172,7 @@ where
         };
 
         let status = regex.prefix_match(segment.as_str());
-        let at_end = item.pos + 1 >= self.segs().len(); 
+        let at_end = item.pos + 1 >= self.segs().len();
         let (complete, open) = match status {
             PrefixStatus::NoMatch => return Ok(None),
             PrefixStatus::Prefix(_) => (false, at_end), // only open if at end of input
@@ -324,7 +183,11 @@ where
             start: segment.index as u32,
             end: segment.index as u32 + 1,
         };
-        let l = Lexeme { matched: span, complete, open };
+        let l = Lexeme {
+            matched: span,
+            complete,
+            open,
+        };
 
         #[cfg(test)]
         debug_trace!(
@@ -344,22 +207,12 @@ where
 
         let mut next = item.clone();
         if symbol.binding().is_some() {
-            // checking if any obligation matches this terminal
-            next.obligations.iter_mut().filter(|o| !o.has_matched()).for_each(|ob| {
-                let hit = ob.paths.iter().any(|p| {
-                    let s = p.steps();
-                    s.len() == 1 && s[0].i == item.dot && s[0].a.map_or(true, |a| a == item.prod.1)
-                });
-                // setting obligaiton value to the terminal
-                if hit {
-                    ob.value = Some(l.clone());
-                }
-            });
+            // Terminal bindings discharge only the obligations that point here.
+            next.obligations.resolve_terminal(item.dot, item.prod.1, &l);
         }
         next.dot += 1;
         next.pos = item.pos + 1;
         next.children.push(ChildRef::Terminal(l));
-
 
         if complete {
             Ok(Some(next))
@@ -392,7 +245,11 @@ where
             .grammar
             .prod(item.prod)
             .is_some_and(|p| p.rule.is_some());
-        let finalize_ctx = if has_rule { item.ctx_in } else { item.ctx };
+        let finalize_ctx = if has_rule {
+            item.ctr.source
+        } else {
+            item.ctr.target
+        };
         match self
             .typing
             .finalize(item.prod, finalize_ctx, &item.obligations, syntax_status)
@@ -405,7 +262,7 @@ where
                 };
                 // Propagate open flag bottom-up: any leaf terminal extensible
                 // at end-of-input, or any child node with open=true.
-                let any_open = item.children.iter().any(|child|self.arena.open(child));
+                let any_open = item.children.iter().any(|child| self.arena.open(child));
                 let ty = if ty == ANY_TYPE {
                     self.infer_type_from_children(&item.children).unwrap_or(ty)
                 } else {
@@ -426,8 +283,7 @@ where
                     status,
                     ty,
                     open: any_open,
-                    env_in: Some(item.ctx_in),
-                    env_out: Some(ctx_out),
+                    ctr: Some(self.typing.context_transition(item.ctr.source, ctx_out)),
                     bindings,
                     alts: AltRange { start: 0, len: 0 },
                 };
@@ -467,18 +323,19 @@ where
         found
     }
 
-    fn resume_from_child(&mut self, parent: &Item, node_id: NodeId) -> Option<Item> {
+    fn resume(&mut self, parent: &Item, node_id: NodeId) -> Option<Item> {
         let node = self.arena.node(node_id)?.clone();
         let mut resumed = parent.clone();
-        fill_nonterminal_obligation(
-            &mut resumed.obligations,
-            parent.dot,
-            parent.prod.1,
-            &node
-        );
+        resumed
+            .obligations
+            .resolve_nonterminal(parent.dot, parent.prod.1, &node);
         resumed.dot += 1;
         resumed.pos = node.span.end as usize;
-        resumed.ctx = node.env_out.unwrap_or(parent.ctx);
+        resumed.ctr = resumed.ctr.retarget(
+            node.ctr
+                .as_ref()
+                .map_or(parent.ctr.target, |transition| transition.target),
+        );
         resumed.children.push(ChildRef::Node(node_id));
         Some(resumed)
     }
@@ -520,7 +377,7 @@ where
                 .cloned()
             {
                 for waiter in waiters {
-                    if let Some(resumed) = self.resume_from_child(&waiter.item, completion.node) {
+                    if let Some(resumed) = self.resume(&waiter.item, completion.node) {
                         self.enqueue_process(resumed);
                     }
                 }
@@ -569,7 +426,7 @@ where
                     item.prod,
                     item.dot,
                     binding,
-                    item.ctx,
+                    item.ctr.target,
                     &item.obligations,
                 ) {
                     Ok(ctx) => ctx,
@@ -597,16 +454,16 @@ where
                         .cloned()
                         .unwrap_or_default();
                     for node_id in nodes {
-                        if let Some(resumed) = self.resume_from_child(&item, node_id) {
+                        if let Some(resumed) = self.resume(&item, node_id) {
                             self.enqueue_process(resumed);
                         }
                     }
                 }
 
                 // Seed child productions with stepped obligations for pruning
-                let stepped = step_obligations(&item.obligations, item.dot, item.prod.1);
-                let prods = prune_from_obligations(&stepped, nt, &self.grammar);
-                self.seed(&prods, item.pos, child_ctx, &stepped);
+                let stepped = item.obligations.step(item.dot, item.prod.1);
+                let prods = stepped.prune(nt, &self.grammar);
+                self.seed(&prods, item.pos, child_ctx, &stepped.at_child(item.dot));
                 Ok(())
             }
         }
@@ -708,7 +565,7 @@ where
                 .cloned()
                 .unwrap_or_default();
             for waiter in waiters {
-                if let Some(resumed) = self.resume_from_child(&waiter.item, node_id) {
+                if let Some(resumed) = self.resume(&waiter.item, node_id) {
                     queue.push_back(resumed);
                 }
             }
@@ -807,13 +664,13 @@ where
             .and_then(|nt| self.grammar.nt_index(nt))
             .ok_or_else(|| PrefixError::rejected(input.len(), "missing start symbol"))?;
 
-        // Seed start 
+        // Seed start
         let start_prods: Vec<ProdId> = self
             .grammar
             .productions_at(start)
             .map(|prods| (0..prods.len()).map(|idx| (start, idx)).collect())
             .unwrap_or_default();
-        self.seed(&start_prods, 0, ctx, &[]);
+        self.seed(&start_prods, 0, ctx, &Obligations::empty());
 
         // Main loop
         while let Some(task) = self.tables.agenda.pop_front() {
@@ -852,38 +709,4 @@ where
         }
         Ok(self.materialize(&roots, self.segs().to_vec(), self.input.clone()))
     }
-}
-
-/// When seeding a child nonterminal, the stepped obligations from the parent
-/// need to be further distributed per-alt. For each alt `a`, we keep only
-/// obligations whose (now first) path step has `a` matching, or `a == None`.
-fn step_obligations_for_seed(stepped: &[Obligation], alt: usize) -> Vec<Obligation> {
-    stepped
-        .iter()
-        .filter_map(|ob| {
-            let kept: Vec<GrammarPath> = ob
-                .paths
-                .iter()
-                .filter(|p| {
-                    p.steps()
-                        .first()
-                        .map_or(true, |s| s.a.map_or(true, |a| a == alt))
-                })
-                .cloned()
-                .collect();
-            if kept.is_empty() && !ob.paths.iter().any(|p| p.is_empty()) {
-                return None;
-            }
-            Some(Obligation {
-                name: ob.name.clone(),
-                paths: if kept.is_empty() {
-                    ob.paths.clone()
-                } else {
-                    kept
-                },
-                value: ob.value.clone(),
-                actual: ob.actual,
-            })
-        })
-        .collect()
 }

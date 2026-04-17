@@ -7,12 +7,14 @@ pub fn extend_input(grammar: &mut Grammar, input: &str, token: &str) -> String {
 
     let no_space = format!("{}{}", input, token);
     if concatenation_preserves_tokens(grammar, input, token, &no_space) {
-        return normalized_concat(grammar, input, token).unwrap_or(no_space);
+        // Preserve the concrete surface form whenever token boundaries survive.
+        // Search reasons over actual prefixes, not a whitespace-normalized proxy.
+        return no_space;
     }
 
     let with_space = format!("{} {}", input, token);
     if concatenation_preserves_tokens(grammar, input, token, &with_space) {
-        return normalized_concat(grammar, input, token).unwrap_or(with_space);
+        return with_space;
     }
 
     let last = input.chars().next_back();
@@ -51,18 +53,6 @@ fn concatenation_preserves_tokens(
         .map(|segment| (segment.as_str().to_string(), segment.is_partial_special))
         .collect();
     expected == actual
-}
-
-fn normalized_concat(grammar: &mut Grammar, input: &str, token: &str) -> Option<String> {
-    let left = grammar.tokenize(input).ok()?;
-    let right = grammar.tokenize(token).ok()?;
-    Some(
-        left.iter()
-            .chain(right.iter())
-            .map(|segment| segment.as_str())
-            .collect::<Vec<_>>()
-            .join(" "),
-    )
 }
 
 fn needs_separator(grammar: &mut Grammar, left: char, right: char) -> bool {

@@ -26,9 +26,9 @@ pub mod toy;
 pub mod weird;
 // pub mod clike;
 
-use crate::logic::synth::Synthesizer;
 use crate::logic::grammar::Grammar;
-use crate::logic::typing::core::Context;
+use crate::logic::synth::Synthesizer;
+use crate::logic::typing::Context;
 use crate::logic::typing::Type;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
@@ -187,11 +187,7 @@ pub fn check_all_prefixes_parseable(
 }
 
 /// Check if input fails to produce a complete well-typed parse (for xfail tests)
-pub fn check_parse_fails(
-    grammar: &Grammar,
-    input: &str,
-    ctx: &Context,
-) -> ParseResult {
+pub fn check_parse_fails(grammar: &Grammar, input: &str, ctx: &Context) -> ParseResult {
     let start = Instant::now();
     let mut synth = Synthesizer::new(grammar.clone(), input);
     match synth.parse_with(ctx) {

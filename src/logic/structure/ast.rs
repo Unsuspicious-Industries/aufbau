@@ -1,29 +1,16 @@
-//! Arena-backed typed AST — owns its data, zero materialization overhead.
-//!
-//! `FusionAST` holds a `ParseArena`, segments, and input text. All properties
-//! (text, type, completeness, children, scoring signals) are computed on-demand
-//! by traversing the arena. No intermediate tree is ever cloned.
-//!
-//! The parser guarantees that every node stored in the arena has been accepted
-//! by the typing runtime and assigned a concrete inferred type. In other words,
-//! `FusionAST` is a typed forest: it may contain complete trees and typed
-//! partial prefixes, but never ill-typed nodes.
-//!
-//! `FusionForest` is the borrowed hypertree semantics over that arena. Search,
-//! scoring, and completion should prefer the forest view; `FusionAST` is the
-//! owned realization boundary.
+//! Arena-backed typed structural views over parser output.
 
 use crate::debug_trace;
-use crate::logic::fusion::Lexeme;
 use crate::logic::grammar::{Grammar, Segment, Symbol};
+use crate::logic::parse::arena::Lexeme;
 use crate::logic::typing::{SharedType, Type, intern_type};
 use crate::regex::Regex;
 use std::collections::{BTreeSet, HashSet};
 
-use super::runtime::RuleRuntime;
 use crate::logic::parse::arena::{
     ChildRef, NodeId, NodeStatus, ParseArena, Span,
 };
+use crate::logic::typing::runtime::RuleRuntime;
 
 // ============================================================================
 // FusionAST — owns arena, computes everything on-demand
@@ -38,7 +25,7 @@ pub struct FusionAST {
 }
 
 pub struct FusionForest<'a> {
-    grammar: &'a Grammar,
+    _grammar: &'a Grammar,
     arena: &'a ParseArena,
     segments: &'a [Segment],
     roots: &'a [NodeId],
@@ -207,7 +194,7 @@ impl FusionAST {
 
     pub(crate) fn view(&self) -> FusionForest<'_> {
         FusionForest {
-            grammar: &self.grammar,
+            _grammar: &self.grammar,
             arena: &self.arena,
             segments: &self.segments,
             roots: &self.roots,
@@ -225,7 +212,7 @@ impl<'a> FusionForest<'a> {
         input: &'a str,
     ) -> Self {
         Self {
-            grammar,
+            _grammar: grammar,
             arena,
             segments,
             roots,
@@ -390,7 +377,7 @@ impl<'a> FusionNode<'a> {
                             ast: self.ast,
                             node_id: *id,
                         }),
-                        ChildRef::Terminal(Lexeme{matched:span, complete, open}) => FusionChild::Terminal {
+                        ChildRef::Terminal(Lexeme{matched:span, complete, open: _}) => FusionChild::Terminal {
                             text: render_span(*span, &self.ast.segments),
                             complete: *complete,
                         },
@@ -441,7 +428,7 @@ impl<'a> FusionForestNode<'a> {
                             forest: self.forest,
                             node_id: *id,
                         }),
-                        ChildRef::Terminal(Lexeme{matched:span, complete, open}) => FusionForestChild::Terminal {
+                        ChildRef::Terminal(Lexeme{matched:span, complete, open: _}) => FusionForestChild::Terminal {
                             text: render_span(*span, self.forest.segments),
                             complete: *complete,
                         },
@@ -718,7 +705,7 @@ fn text_from_node(arena: &ParseArena, segments: &[Segment], node_id: NodeId) -> 
                     parts.push(s);
                 }
             }
-            ChildRef::Terminal(Lexeme{matched: span, complete, open}) => {
+            ChildRef::Terminal(Lexeme{matched: span, complete, open: _}) => {
                 if *complete {
                     let s = render_span(*span, segments);
                     if !s.is_empty() {
