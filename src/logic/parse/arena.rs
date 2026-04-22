@@ -80,8 +80,17 @@ impl Lexeme {
 ///   only as a prefix approximation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeStatus {
-    Complete,
-    Partial,
+    Closed, // complete closed
+    Partial, // partial
+    Extensible, // complete but open to extension at end-of-input
+}
+impl NodeStatus {
+    pub fn complete(&self) -> bool {
+        matches!(self, NodeStatus::Closed) || matches!(self, NodeStatus::Extensible)
+    }
+    pub fn open(&self) -> bool {
+        matches!(self, NodeStatus::Partial) || matches!(self, NodeStatus::Extensible)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,10 +133,6 @@ pub struct ArenaNode {
     pub span: Span,
     pub status: NodeStatus,
     pub ty: TypeId,
-    /// True when any leaf terminal in this subtree is extensible at end-of-input.
-    /// Propagated bottom-up so that parent obligations carry the open flag
-    /// for prefix-aware typing (e.g. context prefix lookup).
-    pub open: bool,
     pub ctr: Option<ContextTransition>,
     pub bindings: Vec<Binding>,
     pub alts: AltRange,
@@ -135,7 +140,7 @@ pub struct ArenaNode {
 
 impl ArenaNode {
     pub fn is_complete(&self) -> bool {
-        self.status == NodeStatus::Complete
+        self.status.complete()
     }
 }
 
@@ -234,7 +239,7 @@ impl ParseArena {
                 .nodes
                 .borrow()
                 .get(*node_id)
-                .is_some_and(|node| node.status == NodeStatus::Complete),
+                .is_some_and(|node| node.status.complete()),
             ChildRef::Terminal(Lexeme {
                 matched: _,
                 open: _,
@@ -248,7 +253,7 @@ impl ParseArena {
                 .nodes
                 .borrow()
                 .get(*node_id)
-                .is_some_and(|node| node.open),
+                .is_some_and(|node| node.status.open()),
             ChildRef::Terminal(Lexeme {
                 matched: _,
                 open,

@@ -12,3 +12,5 @@ pub mod testing;
 // Re-export debug macros at crate level
 pub use logic::debug::*;
 
+pub mod complexity;
+

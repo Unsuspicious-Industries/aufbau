@@ -15,11 +15,10 @@ pub struct PySynthesizer {
 #[pymethods]
 impl PySynthesizer {
     #[new]
-    #[pyo3(signature = (spec_source, input = "", max_depth = None))]
-    fn new(spec_source: String, input: &str, max_depth: Option<usize>) -> PyResult<Self> {
+    #[pyo3(signature = (spec_source, input = ""))]
+    fn new(spec_source: String, input: &str) -> PyResult<Self> {
         let grammar = Grammar::load(&spec_source)
             .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {}", e)))?;
-        let _ = max_depth;
         let synth = Synthesizer::new(grammar, input);
         Ok(Self {
             spec_source,
@@ -47,41 +46,49 @@ impl PySynthesizer {
     }
 
     fn tokens(&mut self) -> Vec<String> {
-        self.synth
-            .completions_with(&self.ctx)
-            .iter()
-            .map(|t| t.to_pattern())
-            .collect()
+        match self.synth.allowed_tokens_with(&self.ctx) {
+            Ok(tokens) => tokens.iter().map(|t| t.to_pattern()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     fn token_examples(&mut self) -> Vec<String> {
-        self.synth
-            .completions_with(&self.ctx)
-            .iter()
-            .filter_map(|t| t.example())
-            .collect()
+        match self.synth.allowed_tokens_with(&self.ctx) {
+            Ok(tokens) => tokens.iter().filter_map(|t| t.example()).collect(),
+            Err(_) => Vec::new(),
+        }
     }
-
+    // state altering
     fn feed(&mut self, token: &str) -> PyResult<String> {
         self.synth
-            .feed(token, &self.ctx)
+            .feed_with(token, &self.ctx)
+            .map(|ast| ast.to_string())
+            .map_err(PyRuntimeError::new_err)
+    }
+    // not state altering
+    fn try_feed(&mut self, token: &str) -> PyResult<String> {
+        self.synth
+            .try_feed(token)
             .map(|ast| ast.to_string())
             .map_err(PyRuntimeError::new_err)
     }
 
-    fn add_binding(&mut self, name: &str, ty: &str) -> PyResult<()> {
+    // context utils
+
+    fn add_to_ctx(&mut self, name: &str, ty: &str) -> PyResult<()> {
         let ty = Type::parse_raw(ty)
             .map_err(|e| PyValueError::new_err(format!("invalid type '{}': {}", ty, e)))?;
         self.ctx.add(name.to_string(), ty);
         Ok(())
     }
 
-    fn clear_bindings(&mut self) {
+    fn clear_ctx(&mut self) {
         self.ctx = Context::new();
     }
 
-    fn ast(&self) -> Option<String> {
-        self.synth.ast().map(|a| a.to_string())
+    // getting an AST string representaton
+    fn ast_str(&mut self) -> Option<String> {
+        self.synth.ast().ok().map(|a| a.to_string())
     }
 
     fn is_complete(&mut self) -> bool {
@@ -92,31 +99,152 @@ impl PySynthesizer {
     }
 }
 
+#[pyclass(unsendable, name = "Regex")]
+#[derive(Clone)]
+pub struct PyRegex {
+    regex: Regex,
+}
+
+#[pymethods]
+impl PyRegex {
+    #[new]
+    fn new(pattern: &str) -> PyResult<Self> {
+        let regex = Regex::from_str(pattern)
+            .map_err(|e| PyValueError::new_err(format!("invalid regex: {}", e)))?;
+        Ok(Self { regex })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Regex({})", self.regex.to_pattern())
+    }
+
+    fn __str__(&self) -> String {
+        self.regex.to_pattern()
+    }
+
+    fn matches(&self, text: &str) -> bool {
+        self.regex.matches(text)
+    }
+
+    fn prefix_match(&self, prefix: &str) -> PyPrefixStatus {
+        PyPrefixStatus::from(self.regex.prefix_match(prefix))
+    }
+
+    fn derivative(&self, text: &str) -> Self {
+        Self {
+            regex: self.regex.derivative(text),
+        }
+    }
+
+    fn deriv(&self, character: &str) -> PyResult<Self> {
+        let mut chars = character.chars();
+        let c = chars
+            .next()
+            .ok_or_else(|| PyValueError::new_err("character must be a non-empty string"))?;
+        if chars.next().is_some() {
+            return Err(PyValueError::new_err(
+                "character must be a single Unicode character",
+            ));
+        }
+        Ok(Self {
+            regex: self.regex.deriv(c),
+        })
+    }
+
+    fn is_empty(&self) -> bool {
+        self.regex.is_empty()
+    }
+
+    fn is_nullable(&self) -> bool {
+        self.regex.is_nullable()
+    }
+
+    fn match_len(&self, text: &str) -> Option<usize> {
+        self.regex.match_len(text)
+    }
+
+    fn to_pattern(&self) -> String {
+        self.regex.to_pattern()
+    }
+}
+
+#[pyclass(unsendable, name = "PrefixStatus")]
+#[derive(Clone)]
+pub struct PyPrefixStatus {
+    kind: String,
+    regex: Option<PyRegex>,
+}
+
+#[pymethods]
+impl PyPrefixStatus {
+    #[getter]
+    fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    #[getter]
+    fn regex(&self) -> Option<PyRegex> {
+        self.regex.clone()
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.regex {
+            Some(regex) => format!("PrefixStatus.{}({})", self.kind, regex.to_pattern()),
+            None => format!("PrefixStatus.{}", self.kind),
+        }
+    }
+
+    fn is_complete(&self) -> bool {
+        matches!(self.kind.as_str(), "complete" | "extensible")
+    }
+
+    fn is_prefix(&self) -> bool {
+        self.kind == "prefix"
+    }
+
+    fn is_extensible(&self) -> bool {
+        self.kind == "extensible"
+    }
+
+    fn is_no_match(&self) -> bool {
+        self.kind == "no_match"
+    }
+}
+
+impl From<PrefixStatus> for PyPrefixStatus {
+    fn from(status: PrefixStatus) -> Self {
+        match status {
+            PrefixStatus::Extensible(regex) => Self {
+                kind: "extensible".to_string(),
+                regex: Some(PyRegex { regex }),
+            },
+            PrefixStatus::Complete => Self {
+                kind: "complete".to_string(),
+                regex: None,
+            },
+            PrefixStatus::Prefix(regex) => Self {
+                kind: "prefix".to_string(),
+                regex: Some(PyRegex { regex }),
+            },
+            PrefixStatus::NoMatch => Self {
+                kind: "no_match".to_string(),
+                regex: None,
+            },
+        }
+    }
+}
+
 #[pyfunction]
 fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-#[pyfunction]
-fn regex_matches(pattern: &str, text: &str) -> PyResult<bool> {
-    let regex = Regex::from_str(pattern)
-        .map_err(|e| PyValueError::new_err(format!("invalid regex: {}", e)))?;
-    Ok(regex.matches(text))
-}
-
-#[pyfunction]
-fn regex_prefix_valid(pattern: &str, prefix: &str) -> PyResult<bool> {
-    let regex = Regex::from_str(pattern)
-        .map_err(|e| PyValueError::new_err(format!("invalid regex: {}", e)))?;
-    Ok(!matches!(regex.prefix_match(prefix), PrefixStatus::NoMatch))
-}
-
 #[pymodule]
-fn aufbau_python(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn aufbau(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySynthesizer>()?;
+    m.add_class::<PyRegex>()?;
+    m.add_class::<PyPrefixStatus>()?;
     m.add_function(wrap_pyfunction!(version, m)?)?;
-    m.add_function(wrap_pyfunction!(regex_matches, m)?)?;
-    m.add_function(wrap_pyfunction!(regex_prefix_valid, m)?)?;
     Ok(())
 }
 
@@ -141,8 +269,30 @@ mod tests {
     }
 
     #[test]
+    fn python_synth_exported_as_module_class() {
+        pyo3::prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let module = PyModule::new(py, "aufbau").unwrap();
+            super::aufbau(py, &module).unwrap();
+
+            let synth_class = module.getattr("Synthesizer").unwrap();
+            let instance = synth_class.call1((SPEC, "", None::<usize>)).unwrap();
+
+            let input = instance.call_method0("input").unwrap();
+            assert_eq!(input.extract::<String>().unwrap(), "");
+        });
+    }
+
+    #[test]
     fn python_regex_helpers_work() {
-        assert!(regex_matches("x", "x").unwrap());
-        assert!(regex_prefix_valid("xy", "x").unwrap());
+        let regex = PyRegex::new("a*b").unwrap();
+        assert!(regex.matches("ab"));
+
+        let prefix_status = regex.prefix_match("a");
+        assert!(prefix_status.is_prefix());
+        assert!(!prefix_status.is_no_match());
+
+        let derived = regex.derivative("ab");
+        assert!(derived.is_nullable());
     }
 }

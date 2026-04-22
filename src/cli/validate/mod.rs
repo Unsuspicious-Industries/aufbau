@@ -13,7 +13,7 @@ pub mod parseable;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum ValidationModule {
-    /// Run completable validation tests (BFS completion search)
+    /// Run feed-acceptance validation tests
     Completable,
     /// Run parseable validation tests (fast prefix parsing)
     Parseable,
@@ -41,7 +41,7 @@ pub struct ValidateCmd {
     #[arg(long = "jobs", short = 'j', value_name = "N")]
     pub jobs: Option<usize>,
 
-    /// Override per-case completable timeout in seconds.
+    /// Override per-case feed-suite timeout in seconds.
     #[arg(long = "completable-timeout-secs", value_name = "N")]
     pub completable_timeout_secs: Option<u64>,
 }

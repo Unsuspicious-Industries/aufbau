@@ -2,6 +2,7 @@
 // We are checking if the spec is respected
 // For example `stlc_abs_binding_paths_match_spec` asserts β(τ₁, abs) = 3@1·0.
 use super::*;
+use crate::logic::typing::Type;
 use crate::regex::Regex;
 
 fn literal_regex(pattern: &str) -> Regex {
@@ -61,7 +62,7 @@ fn grammar_tracks_special_tokens_for_literals() {
     assert!(grammar.specials().iter().any(|tok| tok == "let"));
 }
 
-fn steps(path: &binding::GrammarPath) -> Vec<(usize, Option<usize>)> {
+fn steps(path: &binding::GrammarPath) -> Vec<(usize, usize)> {
     path.steps().iter().map(|s| (s.i, s.a)).collect()
 }
 
@@ -70,7 +71,7 @@ fn stlc_abs_binding_paths_match_spec() {
     let spec = include_str!("../../../examples/stlc.auf");
     let grammar = Grammar::load(spec).expect("load stlc");
 
-    let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, Option<usize>)>>| {
+    let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, usize)>>| {
         let paths = grammar
             .bindings
             .as_ref()
@@ -95,14 +96,14 @@ fn stlc_abs_binding_paths_match_spec() {
         }
     };
 
-    assert_path("a", "lambda", vec![vec![(1, Some(0))]]);
-    assert_path("e", "lambda", vec![vec![(5, Some(0))]]);
-    assert_path("τ", "lambda", vec![vec![(3, Some(0))]]);
+    assert_path("a", "lambda", vec![vec![(1, 0)]]);
+    assert_path("e", "lambda", vec![vec![(5, 0)]]);
+    assert_path("τ", "lambda", vec![vec![(3, 0)]]);
 
     // Application rule binding paths (from examples/stlc.auf)
     // Application(app) ::= AtomicExpression[l] AtomicExpression[r]
-    assert_path("l", "app", vec![vec![(0, Some(0))]]);
-    assert_path("r", "app", vec![vec![(1, Some(0))]]);
+    assert_path("l", "app", vec![vec![(0, 0)]]);
+    assert_path("r", "app", vec![vec![(1, 0)]]);
 }
 
 #[test]
@@ -125,8 +126,8 @@ fn repeated_binding_produces_multiple_paths() {
         .expect("binding paths for repeated x");
 
     assert_eq!(paths.len(), 2, "repeated binding should keep both paths");
-    assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
-    assert_eq!(steps(&paths[1]), vec![(2, Some(0))]);
+    assert_eq!(steps(&paths[0]), vec![(0, 0)]);
+    assert_eq!(steps(&paths[1]), vec![(2, 0)]);
 }
 
 #[test]
@@ -149,7 +150,7 @@ fn repetition_helpers_preserve_inner_binding_paths() {
         .expect("binding paths for repeated item");
 
     assert_eq!(paths.len(), 1);
-    assert_eq!(steps(&paths[0]), vec![(0, Some(0))]);
+    assert_eq!(steps(&paths[0]), vec![(0, 0)]);
 }
 
 #[test]
@@ -169,4 +170,61 @@ fn extend_input_preserves_call_argument_spacing() {
         ),
         "function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] , true"
     );
+}
+
+#[test]
+fn fill_injects_synthetic_type_rules_for_unary_nonterminal_wrappers() {
+    let grammar = Grammar::load(
+        "A ::= B\nA ::= C\nB ::= /[0-9]+/\nC ::= /[a-z]+/\n",
+    )
+    .expect("load unary wrapper grammar");
+
+    let productions = grammar.productions.get("A").expect("A productions");
+    assert_eq!(productions.len(), 2);
+
+    let mut seen_bindings = std::collections::HashSet::new();
+
+    let nt_idx = grammar.nt_index("A").expect("A exists");
+    for (alt_idx, prod) in productions.iter().enumerate() {
+        let rule_name = grammar
+            .rule_for_prod((nt_idx, alt_idx))
+            .expect("synthetic rule attached");
+        let rule = grammar.rules().get(rule_name).expect("synthetic rule exists");
+        let child_binding = prod.rhs[0].binding().unwrap();
+        assert!(seen_bindings.insert(child_binding.clone()), "synthetic bindings must be unique for A");
+
+        match &rule.conclusion.kind {
+            crate::logic::typing::rule::ConclusionKind::Type(Type::Meta(name)) => {
+                assert_eq!(name, child_binding);
+            }
+            other => panic!("unexpected conclusion kind: {:?}", other),
+        }
+
+        let premise = rule
+            .premises
+            .iter()
+            .find(|p| p.judgment.is_some())
+            .expect("rule has a premise");
+        match &premise.judgment {
+            Some(crate::logic::typing::rule::TypingJudgment::Ascription((term, ty))) => {
+                assert_eq!(term, child_binding);
+                assert_eq!(ty, &Type::Meta(child_binding.clone()));
+            }
+            _ => panic!("unexpected premise type"),
+        }
+    }
+}
+
+#[test]
+fn fill_injects_synthetic_type_rules_for_individual_unary_wrapper_productions() {
+    let grammar = Grammar::load(
+        "A ::= B\nA ::= 'x'\nB ::= /[0-9]+/\n",
+    )
+    .expect("load mixed unary wrapper grammar");
+
+    let productions = grammar.productions.get("A").expect("A productions");
+    assert_eq!(productions.len(), 2);
+    let nt_idx = grammar.nt_index("A").expect("A exists");
+    assert!(grammar.rule_for_prod((nt_idx, 0)).is_some(), "wrapper production should get a synthetic rule");
+    assert!(grammar.rule_for_prod((nt_idx, 1)).is_none(), "terminal production should not get a synthetic rule");
 }

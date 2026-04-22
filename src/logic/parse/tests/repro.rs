@@ -139,6 +139,7 @@ fn repro_stlc_identity_a() {
 /// STLC: prefix 'λ' alone should produce a partial parse.
 #[test]
 fn repro_stlc_partial_lambda() {
+    set_debug_level(DebugLevel::Trace);
     let g = load_example_grammar("stlc");
     let mut synth = Synthesizer::new(g, "λ");
     let result = synth.parse_with(&Context::new());
@@ -157,10 +158,24 @@ fn repro_fun_integer() {
 /// Fun: partial prefix '1 +' should yield a partial parse.
 #[test]
 fn repro_fun_partial_add() {
+    set_debug_level(DebugLevel::Trace);
     let g = load_example_grammar("fun");
     let mut synth = Synthesizer::new(g, "1 +");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "parse '1 +' in Fun failed: {:?}", result);
+}
+
+#[test]
+fn repro_fun_prefix_lambda_app_open_paren() {
+    set_debug_level(DebugLevel::Trace);
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+    let g = load_example_grammar("fun");
+    let prefix = "((x: Int) => x + 1)(";
+    let mut synth = Synthesizer::new(g, prefix);
+    let result = synth.parse_with(&Context::new());
+    println!("repro prefix='{}' result={:?}", prefix, result);
+    assert!(result.is_ok(), "parse '{}' in Fun failed: {:?}", prefix, result);
 }
 
 /// Imp: basic block.
@@ -202,6 +217,7 @@ fn repro_toy_concat() {
 /// (e.g. "2.0"), so the parser should produce a partial parse.
 #[test]
 fn repro_fun_float_partial() {
+    set_debug_level(DebugLevel::Trace);
     let g = load_example_grammar("fun");
     let mut synth = Synthesizer::new(g, "1.0 +. 2");
     let result = synth.parse_with(&Context::new());
@@ -344,13 +360,6 @@ fn repro_weird_stmt_empty_block() {
     ----------- (decl)
     Γ → Γ[name:τ] ⊢ ∅
 
-    Γ ▷ head, Γ ▷ tail
-    ----------- (seq)
-    ∅
-
-    [Γ] ▷ stmts
-    ----------- (block)
-    ∅
     "#,
     )
     .unwrap();

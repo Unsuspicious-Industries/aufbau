@@ -6,6 +6,7 @@ pub mod utils;
 pub mod symbol;
 pub mod production;
 pub mod extend;
+pub mod fill;
 
 use crate::logic::binding::{self, BindingMap};
 pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
@@ -31,6 +32,7 @@ pub struct Grammar {
     pub name: String,
     pub productions: HashMap<String, Vec<Production>>,
     pub nonterminals: Vec<String>,
+    pub nonterminal_rules: HashMap<String, String>,
     pub rules: HashMap<String, TypingRule>,
 
     // tokenization helpers
@@ -81,6 +83,7 @@ impl Grammar {
             name: String::new(),
             productions: HashMap::default(),
             nonterminals: Vec::default(),
+            nonterminal_rules: HashMap::default(),
             rules: HashMap::default(),
             specials: Vec::default(),
             delimiters: DEFAULT_DELIMITERS.to_vec(),
@@ -105,6 +108,35 @@ impl Grammar {
     /// Add a typing rule to the grammar.
     pub fn add_typing_rule(&mut self, rule: TypingRule) {
         self.rules.insert(rule.name.clone(), rule);
+    }
+
+    /// Attach a typing rule name to a nonterminal.
+    pub fn set_nonterminal_rule(&mut self, nt: String, rule_name: String) -> Result<(), String> {
+        if let Some(existing) = self.nonterminal_rules.get(&nt) {
+            if existing != &rule_name {
+                return Err(format!(
+                    "Conflicting typing rules for nonterminal {}: {} vs {}",
+                    nt, existing, rule_name
+                ));
+            }
+        } else {
+            self.nonterminal_rules.insert(nt.clone(), rule_name);
+        }
+        if !self.productions.contains_key(&nt) && !self.nonterminals.contains(&nt) {
+            self.nonterminals.push(nt.clone());
+        }
+        Ok(())
+    }
+
+    /// Get the typing rule name associated with a nonterminal.
+    pub fn nonterminal_rule(&self, nt: &str) -> Option<&String> {
+        self.nonterminal_rules.get(nt)
+    }
+
+    /// Get the typing rule name associated with a production.
+    pub fn rule_for_prod(&self, prod: ProdId) -> Option<&String> {
+        self.nt(prod.0)
+            .and_then(|nt| self.nonterminal_rules.get(nt))
     }
 
     /// Add a production rule to the grammar.

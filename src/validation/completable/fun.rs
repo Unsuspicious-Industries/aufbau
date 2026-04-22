@@ -119,6 +119,7 @@ fn let_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("let equals", "let x: Int =", 3),
         T::ok("let value", "let x: Int = 1", 2),
         T::ok("let semicolon", "let x: Int = 1;", 2),
+        T::ok("nested let prefix", "let x: Int = 1; let y: Int =", 3),
     ]
 }
 
@@ -146,22 +147,19 @@ fn application_cases() -> Vec<TypedCompletionTestCase> {
             "(f: Int -> Int) => ((g: Int -> Int) => ((x: Int) => f(g(x))))",
             3,
         )
-        .with_timeout_secs(10)
-        .without_soundness(),
+        .with_timeout_secs(10),
         T::ok(
             "higher-order compose concrete arg",
             "(f: Int -> Int) => ((g: Int -> Int) => f(g(1)))",
             3,
         )
-        .with_timeout_secs(10)
-        .without_soundness(),
+        .with_timeout_secs(10),
         T::ok(
             "higher-order triple compose concrete arg",
             "(f: Int -> Int) => ((g: Int -> Int) => ((h: Int -> Int) => f(g(h(1)))))",
             4,
         )
-        .with_timeout_secs(10)
-        .without_soundness(),
+        .with_timeout_secs(10),
         T::ok("apply var arg", "f(x)", 1).with_context(vec![("f", "Int -> Int"), ("x", "Int")]),
     ]
 }
@@ -173,6 +171,7 @@ fn paren_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("paren float", "(1.0)", 1),
         T::ok("nested parens", "((1))", 1),
         T::ok("deep parens", "(((42)))", 1),
+        T::ok("paren operator prefix", "(1 +", 2),
         T::ok("paren var", "(x)", 1).with_context(vec![("x", "Int")]),
     ]
 }
@@ -202,6 +201,7 @@ fn prefix_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("let colon", "let x:", 5),
         T::ok("lambda param", "(x", 6),
         T::ok("lambda colon", "(x:", 5),
+        T::ok("higher order prefix", "let f: Int -> Int = (x: Int) =>", 4),
     ]
 }
 
@@ -231,17 +231,18 @@ fn check_completable_float_arithmetic() {
 }
 
 #[test]
-fn float_chain_with_int_operand_is_unsound() {
+fn nested_paren_int_add_replays_cleanly() {
     let mut grammar = fun_grammar();
-    let _input = "let a : ( Float -> ( Float ) ) = 0.0 +. 0.0 +. 0 + ( let a : Float =";
     let result = crate::validation::completability::sound_complete(
         &mut grammar,
         "(1 + 2)",
-        3,
         Some(Context::new()),
     );
 
-    assert!(!result.is_sound, "nested paren int add should stay unsound");
+    assert!(
+        result.is_sound,
+        "nested paren int add should replay through feed"
+    );
 }
 
 #[test]
@@ -250,7 +251,6 @@ fn repro_complex_paren_int_add_stays_prefix_sound() {
     let result = crate::validation::completability::sound_complete(
         &mut grammar,
         "((1 + 2))",
-        4,
         Some(Context::new()),
     );
 

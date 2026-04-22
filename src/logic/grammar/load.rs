@@ -76,11 +76,12 @@ impl Grammar {
                         }
 
                         // Create productions for each alternative
+                        if let Some(rule_name) = rule_name.clone() {
+                            grammar.set_nonterminal_rule(name.clone(), rule_name)?;
+                        }
+
                         for alt_symbols in alternatives.into_iter() {
-                            let production = Production {
-                                rule: rule_name.clone(),
-                                rhs: alt_symbols,
-                            };
+                            let production = Production { rhs: alt_symbols };
                             grammar.add_production(name.clone(), production);
                         }
                     } else {
@@ -99,6 +100,9 @@ impl Grammar {
         {
             grammar.set_start(last.clone());
         }
+
+        // Add synthetic typing rules for unary nonterminal wrappers.
+        grammar = super::fill::fill(grammar);
 
         // Build the binding map
         grammar.build_bindings();

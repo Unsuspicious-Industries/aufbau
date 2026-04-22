@@ -54,20 +54,16 @@ impl AsRef<[usize]> for TreePath {
 }
 
 /// One grammar-space transition.
-/// `i` selects a child index and `a` optionally constrains the active alternative.
+/// `i` selects a child index and `a` constrains the active alternative.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PathStep {
     pub i: usize,
-    pub a: Option<usize>,
+    pub a: usize,
 }
 
 impl PathStep {
-    pub fn new(i: usize, a: Option<usize>) -> Self {
+    pub fn new(i: usize, a: usize) -> Self {
         Self { i, a }
-    }
-
-    pub fn a(&self) -> usize {
-        self.a.unwrap_or(0)
     }
 }
 
@@ -129,10 +125,7 @@ impl GrammarPath {
     }
 
     pub fn alts(&self) -> Vec<usize> {
-        self.steps
-            .iter()
-            .map(|step| step.a.unwrap_or_default())
-            .collect()
+        self.steps.iter().map(|step| step.a).collect()
     }
 
     pub fn indices(&self) -> Vec<usize> {

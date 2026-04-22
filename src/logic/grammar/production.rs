@@ -3,7 +3,6 @@ use super::Symbol;
 /// A single production rule `left ::= right₀ right₁ …`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Production {
-    pub rule: Option<String>,
     pub rhs: Vec<Symbol>,
 }
 
@@ -18,5 +17,21 @@ impl std::fmt::Display for Production {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let symbols: Vec<String> = self.rhs.iter().map(|s| fmt_symbol(s)).collect();
         write!(f, "{}", symbols.join(" "))
+    }
+}
+
+// make the production directly indexable by rhs indice
+impl std::ops::Index<usize> for Production {
+    type Output = Symbol;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.rhs[index]
+    }
+}
+
+// .len() for production
+impl Production {
+    pub fn len(&self) -> usize {
+        self.rhs.len()
     }
 }

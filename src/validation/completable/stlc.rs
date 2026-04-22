@@ -43,10 +43,12 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("function type annotation", "λf:A->B.f", 10),
         T::ok("nested function type", "λf:(A->B)->C.f", 10),
         T::ok("curried type", "λf:A->B->C.f", 10),
+        T::ok("partial curried type", "λf:A->B->C.", 10),
         // Application expressions
         T::ok("simple app", "λf:A->B.f x", 10).with_context(vec![("x", "'A'")]),
         T::ok("app in body", "λf:A->B.λx:A.f x", 10),
         T::ok("partial app", "λf:A->B.f", 10),
+        T::ok("nested app prefix", "λf:A->B->C.λx:A.f x", 10),
         // complex compositoin
         //T::ok("lambda in application", "λf:A->B.f(λx:A.x)", 10),
         // Parenthesized expressions
@@ -55,6 +57,7 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("nested parens", "((λx:A.x))", 10),
         T::ok("open paren prefix", "(", 8),
         T::ok("paren then lambda", "(λ", 7),
+        T::ok("app paren prefix", "(λx:A.x", 8),
         // Variables with context
         T::ok("bound var in ctx", "x", 10).with_context(vec![("x", "'A'")]),
         T::ok("multiple vars in ctx", "x", 10).with_context(vec![("x", "'A'"), ("y", "'B'")]),

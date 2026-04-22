@@ -35,7 +35,7 @@ pub struct Item {
     pub dot: usize,
     pub start: usize,
     pub pos: usize,
-    pub ctr: ContextTransition,
+    pub ctx: CtxId,
     pub obligations: Obligations,
     pub children: Vec<ChildRef>,
 }
@@ -62,20 +62,30 @@ pub enum Task {
 #[derive(Clone, Debug, Default)]
 pub struct Tables {
     pub agenda: VecDeque<Task>,
-    /// Classic Earley dedup: one item per (production, dot, start, pos, ctx).
-    /// Children are NOT part of the key — different derivations at the same
-    /// position are packed into the forest, not split into separate items.
+
+    // Dedup with: prod, dot, start, pos, ctx
     pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId)>,
-    /// Classic Earley: one completion chain per (nt, start, end) span.
-    /// Multiple nodes at the same span are recorded in `completed_nodes`
-    /// but only the first triggers waiter resumption during the main loop.
-    /// Frontier lifting has its own type-aware propagation (see `lift_frontier`).
+    // Dedup with: nt, start, end
     pub seen_complete: HashSet<(NtId, usize, usize)>,
     pub results: HashMap<(NtId, usize), Vec<usize>>,
     pub completed_nodes: HashMap<(NtId, usize, usize), Vec<NodeId>>,
     pub waiters: HashMap<(NtId, usize), Vec<Waiter>>,
     pub frontier: Vec<Item>,
 }
+
+// inveriants and theoretical basis to the engine
+
+// Items procesing
+//
+// > For every live item,
+// > item.ctx is the effective context after applying the exported transforms
+// > of all already-resumed closed children to the left.
+//
+// Obligation fr future nodes processing
+// In order to save up useless stuff we state, unproven that:
+// > Any two obligation stores,
+// > compatible with the same process key are future-equivalent for the parser.
+// --- Obligation Reconstructibility Hypothesis ---
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
@@ -84,13 +94,7 @@ where
     T: TypingRuntime,
 {
     pub(super) fn enqueue_process(&mut self, item: Item) {
-        let key = (
-            item.prod,
-            item.dot,
-            item.start,
-            item.pos,
-            item.ctr.target,
-        );
+        let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
         if self.tables.seen_process.insert(key) {
             self.tables.agenda.push_back(Task::Process(item));
         }
@@ -119,7 +123,7 @@ where
                 dot: 0,
                 start: pos,
                 pos,
-                ctr: ContextTransition::identity(ctx),
+                ctx,
                 obligations,
                 children: Vec::new(),
             });
@@ -129,12 +133,12 @@ where
     /// Try to match a regex terminal against the current segment.
     ///
     /// Four cases:
-    ///   - Past end of input → item goes to frontier (waiting for more input).
-    ///   - NoMatch → item is dead, dropped.
-    ///   - Prefix → the segment starts a valid match but needs more characters.
+    ///   - Past end of input -> item goes to frontier (waiting for more input).
+    ///   - NoMatch -> item is dead, dropped.
+    ///   - Prefix -> the segment starts a valid match but needs more characters.
     ///     At end of input this becomes a frontier lexeme that does not yet
     ///     satisfy the terminal symbol. Mid-input it's dead.
-    ///   - Complete / Extensible → full match, item advances normally.
+    ///   - Complete / Extensible -> full match, item advances normally.
     pub(super) fn consume(
         &mut self,
         item: &Item,
@@ -223,12 +227,13 @@ where
     }
 
     pub(super) fn finish(&mut self, item: &Item) -> Result<Option<NodeId>, PrefixError> {
-        let syntax_complete = self.alt_is_complete(item);
-        let syntax_status = if syntax_complete {
-            NodeStatus::Complete
-        } else {
-            NodeStatus::Partial
+        let any_open = item.children.iter().any(|child| self.arena.open(child));
+        let status = match (self.alt_is_complete(item), any_open) {
+            (true, true) => NodeStatus::Extensible,
+            (true, false) => NodeStatus::Closed,
+            (false, _) => NodeStatus::Partial, // partial always at EOI
         };
+
         #[cfg(test)]
         debug_trace!(
             "fusion_parser",
@@ -238,36 +243,14 @@ where
             item.dot,
             item.start,
             item.pos,
-            syntax_status,
+            status,
             item.children.len()
         );
-        let has_rule = self
-            .grammar
-            .prod(item.prod)
-            .is_some_and(|p| p.rule.is_some());
-        let finalize_ctx = if has_rule {
-            item.ctr.source
-        } else {
-            item.ctr.target
-        };
         match self
             .typing
-            .finalize(item.prod, finalize_ctx, &item.obligations, syntax_status)
+            .finalize(item.prod, item.ctx, &item.obligations, status)
         {
-            Ok((ty, ctx_out, typed_complete)) => {
-                let status = if syntax_complete && typed_complete {
-                    NodeStatus::Complete
-                } else {
-                    NodeStatus::Partial
-                };
-                // Propagate open flag bottom-up: any leaf terminal extensible
-                // at end-of-input, or any child node with open=true.
-                let any_open = item.children.iter().any(|child| self.arena.open(child));
-                let ty = if ty == ANY_TYPE {
-                    self.infer_type_from_children(&item.children).unwrap_or(ty)
-                } else {
-                    ty
-                };
+            Ok((ty, ctr)) => {
                 let bindings: Vec<Binding> = item
                     .obligations
                     .iter()
@@ -282,8 +265,7 @@ where
                     },
                     status,
                     ty,
-                    open: any_open,
-                    ctr: Some(self.typing.context_transition(item.ctr.source, ctx_out)),
+                    ctr: ctr,
                     bindings,
                     alts: AltRange { start: 0, len: 0 },
                 };
@@ -300,44 +282,40 @@ where
                     "finalize rejected nt={} alt={} status={:?}",
                     self.grammar.nt(item.prod.0).unwrap_or("<?>"),
                     item.prod.1,
-                    syntax_status,
+                    status,
                 );
                 Ok(None)
             }
         }
     }
 
-    fn infer_type_from_children(&self, children: &[ChildRef]) -> Option<TypeId> {
-        let mut found = None;
-        for child in children {
-            if let ChildRef::Node(id) = child {
-                let ty = self.arena.node(*id)?.ty;
-                if ty != ANY_TYPE {
-                    if found.is_some() {
-                        return None; // ambiguous: multiple typed children
-                    }
-                    found = Some(ty);
-                }
-            }
-        }
-        found
-    }
-
-    fn resume(&mut self, parent: &Item, node_id: NodeId) -> Option<Item> {
-        let node = self.arena.node(node_id)?.clone();
+    // node id is a completions to parent
+    fn resume(&mut self, parent: &Item, node_id: NodeId) -> Result<Item, PrefixError> {
+        let node = self
+            .arena
+            .node(node_id)
+            .ok_or(PrefixError::rejected(
+                parent.pos,
+                "missing node during resume",
+            ))?
+            .clone();
         let mut resumed = parent.clone();
         resumed
             .obligations
             .resolve_nonterminal(parent.dot, parent.prod.1, &node);
         resumed.dot += 1;
         resumed.pos = node.span.end as usize;
-        resumed.ctr = resumed.ctr.retarget(
-            node.ctr
-                .as_ref()
-                .map_or(parent.ctr.target, |transition| transition.target),
-        );
         resumed.children.push(ChildRef::Node(node_id));
-        Some(resumed)
+        // apply the context transforms
+        if let Some(ctr) = node.ctr.clone() {
+            resumed.ctx = self.typing.apply_transform(resumed.ctx, ctr).map_err(|e| {
+                PrefixError::rejected(
+                    resumed.pos,
+                    format!("context transition failed during resume: {:?}", e),
+                )
+            })?;
+        }
+        Ok(resumed)
     }
 
     pub(super) fn complete(&mut self, completion: Completion) -> Result<(), PrefixError> {
@@ -377,7 +355,7 @@ where
                 .cloned()
             {
                 for waiter in waiters {
-                    if let Some(resumed) = self.resume(&waiter.item, completion.node) {
+                    if let Ok(resumed) = self.resume(&waiter.item, completion.node) {
                         self.enqueue_process(resumed);
                     }
                 }
@@ -422,16 +400,14 @@ where
                 })?;
                 let binding = symbol.binding().map(String::as_str);
 
-                let child_ctx = match self.typing.descend(
-                    item.prod,
-                    item.dot,
-                    binding,
-                    item.ctr.target,
-                    &item.obligations,
-                ) {
-                    Ok(ctx) => ctx,
-                    Err(TransitionError::Rejected) => return Ok(()),
-                };
+                let child_ctx =
+                    match self
+                        .typing
+                        .descend(item.prod, binding, item.ctx, &item.obligations)
+                    {
+                        Ok(ctx) => ctx,
+                        Err(TransitionError::Rejected) => return Ok(()),
+                    };
 
                 self.tables
                     .waiters
@@ -454,7 +430,7 @@ where
                         .cloned()
                         .unwrap_or_default();
                     for node_id in nodes {
-                        if let Some(resumed) = self.resume(&item, node_id) {
+                        if let Ok(resumed) = self.resume(&item, node_id) {
                             self.enqueue_process(resumed);
                         }
                     }
@@ -483,7 +459,11 @@ where
     ///      type-identical nodes at the same span. Type-DISTINCT nodes
     ///      DO propagate (e.g. Integer vs partial-Float at position 2..3).
     fn lift_frontier(&mut self) -> Result<(), PrefixError> {
-        let mut seen_items: HashSet<(ProdId, usize, usize, usize)> = HashSet::new();
+        // item-level dedup prevents re-processing the same frontier item, which could
+        // prod, dot, start, pos, ctx
+        let mut seen_items: HashSet<(ProdId, usize, usize, usize, CtxId)> = HashSet::new();
+        // node-level dedup prevents re-propagating the same node as a completion, which could
+        // nt, start, end, type
         let mut seen_nodes: HashSet<(NtId, u32, u32, TypeId)> = HashSet::new();
         let mut queue: VecDeque<Item> = self.tables.frontier.drain(..).collect();
 
@@ -499,7 +479,7 @@ where
                 item.pos,
                 item.children.len()
             );
-            if !seen_items.insert((item.prod, item.dot, item.start, item.pos)) {
+            if !seen_items.insert((item.prod, item.dot, item.start, item.pos, item.ctx)) {
                 #[cfg(test)]
                 debug_trace!(
                     "fusion_parser",
@@ -565,7 +545,7 @@ where
                 .cloned()
                 .unwrap_or_default();
             for waiter in waiters {
-                if let Some(resumed) = self.resume(&waiter.item, node_id) {
+                if let Ok(resumed) = self.resume(&waiter.item, node_id) {
                     queue.push_back(resumed);
                 }
             }

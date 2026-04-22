@@ -1,5 +1,4 @@
 pub mod grammar;
-pub mod completion;
 pub mod error;
 pub mod path;
 
@@ -20,12 +19,13 @@ use crate::logic::typing::{ContextTransition, Obligations};
 
 pub use grammar::{Segment, Tokenizer};
 
+
+
 /// Parser-facing semantic interface.
 pub trait TypingRuntime {
     fn descend(
         &self,
         prod: ProdId,
-        dot: usize,
         binding: Option<&str>,
         ctx: CtxId,
         obligations: &Obligations,
@@ -37,11 +37,8 @@ pub trait TypingRuntime {
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
-    ) -> Result<(TypeId, CtxId, bool), TransitionError>;
+    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError>;
 
-    fn set_segs(&mut self, _s: &[Segment]) {}
-
-    fn context_transition(&self, source: CtxId, target: CtxId) -> ContextTransition {
-        ContextTransition::opaque(source, target)
-    }
+    fn set_segs(&mut self, s: &[Segment]) {}
+    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError>;
 }

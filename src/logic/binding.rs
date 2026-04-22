@@ -64,12 +64,11 @@ pub fn build_binding_map(grammar: &Grammar) -> BindingMap {
     let mut binding_map = BindingMap::new();
 
     for (nt_name, productions) in &grammar.productions {
-        for (alt_idx, production) in productions.iter().enumerate() {
-            let rule_name = match &production.rule {
-                Some(rule) => rule.clone(),
-                None => continue,
-            };
+        let Some(rule_name) = grammar.nonterminal_rule(nt_name) else {
+            continue;
+        };
 
+        for (alt_idx, production) in productions.iter().enumerate() {
             let mut path = GrammarPath::new();
             let mut stack = HashSet::new();
             collect_paths(
@@ -77,7 +76,7 @@ pub fn build_binding_map(grammar: &Grammar) -> BindingMap {
                 nt_name,
                 alt_idx,
                 production,
-                &rule_name,
+                rule_name,
                 &mut path,
                 &mut stack,
                 &mut binding_map,
@@ -115,7 +114,7 @@ fn collect_paths(
         match symbol {
             Symbol::Terminal { binding, .. } => {
                 if let Some(binding_name) = binding {
-                    path.push(PathStep::new(child_idx, Some(current_alt)));
+                    path.push(PathStep::new(child_idx, current_alt));
                     binding_map.insert(rule_name, binding_name, path.clone());
                     path.pop();
                 }
@@ -123,22 +122,22 @@ fn collect_paths(
             Symbol::Nonterminal { name, binding, .. } => {
                 // Binding attached directly to the child non-terminal.
                 if let Some(binding_name) = binding {
-                    path.push(PathStep::new(child_idx, Some(current_alt)));
+                    path.push(PathStep::new(child_idx, current_alt));
                     binding_map.insert(rule_name, binding_name, path.clone());
                     path.pop();
                 }
 
                 if let Some(child_productions) = grammar.productions.get(name) {
                     for (child_alt, child_prod) in child_productions.iter().enumerate() {
-                        // If the child production defines its own rule, it's a boundary.
+                        // If the child nonterminal carries its own typing rule, it's a boundary.
                         // We should not look for bindings for the current `rule_name` inside it.
-                        if child_prod.rule.is_some() {
+                        if grammar.nonterminal_rule(name).is_some() {
                             continue;
                         }
 
                         // PathStep stores the current node's alternative index.
                         // We are still at `current_nt` here.
-                        path.push(PathStep::new(child_idx, Some(current_alt)));
+                        path.push(PathStep::new(child_idx, current_alt));
                         collect_paths(
                             grammar,
                             name,

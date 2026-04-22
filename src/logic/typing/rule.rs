@@ -7,6 +7,8 @@
 //! - **Parsing**: Converting text to rule structures
 //! - **Display**: Pretty-printing rules
 
+use crate::logic::typing::ContextTransition;
+
 use super::Type;
 use regex::Regex;
 use std::fmt;
@@ -44,8 +46,6 @@ pub struct TypeSetting {
 /// A judgment that can appear in premises
 #[derive(Debug, Clone)]
 pub enum TypingJudgment {
-    /// pure check
-    Check(Term),
     /// Type ascription: e : τ
     Ascription(TypeAscription),
     /// Context membership: x ∈ Γ
@@ -65,6 +65,17 @@ pub struct Premise {
     pub setting: Option<TypeSetting>,
     /// Optional judgment
     pub judgment: Option<TypingJudgment>,
+}
+
+// status after premise evaluation
+// - Satisfied : eveything good, got eveythng
+// - Unknown: cant eval, alright
+// - Contradiction: something is wrong, rule fails
+// lattice structure: Contradiction < Unknown < Satisfied
+pub enum PremiseStatus {
+    Satisfied,
+    Unknown,
+    Contradiction,
 }
 
 /// Context transform specification in a conclusion
@@ -115,6 +126,16 @@ pub struct TypingRule {
     /// Conclusion (result)
     pub conclusion: Conclusion,
 }
+// rule result
+pub enum RuleResult {
+    /// Rule applied successfully, with variable bindings
+    Success((Type, Option<ContextTransition>)),
+    /// some unknowns, can't determine yet
+    Partial(Type),
+    /// Rule application failed due to a contradiction
+    Contradiction,
+}
+
 
 // =============================================================================
 // RULE ANALYSIS
@@ -145,9 +166,7 @@ impl TypingRule {
             }
             if let Some(judgment) = &premise.judgment {
                 match judgment {
-                    TypingJudgment::Check(term) => {
-                        bindings.insert(term.as_str());
-                    }
+
                     TypingJudgment::Ascription((term, t)) => {
                         collect_type_refs(t, &mut bindings);
                         bindings.insert(term.as_str());
@@ -306,20 +325,6 @@ impl RuleParser {
                 judgment: Some(TypingJudgment::Ascription(ascription)),
             }));
         }
-        // Check judgment: Γ ▷ e
-        else if let Some((setting_part, ascr_part)) = s.split_once('▷') {
-            let setting = Self::parse_setting(setting_part.trim())?;
-            if ascr_part.trim().is_empty() {
-                return Err(format!(
-                    "Invalid check premise: missing term after '▷' in '{}'",
-                    s
-                ));
-            }
-            return Ok(Some(Premise {
-                setting: Some(setting),
-                judgment: Some(TypingJudgment::Check(ascr_part.trim().to_string())),
-            }));
-        }
         // Type operation: τ₁ = τ₂ or τ₁ ⊆ τ₂
         else if let Some((left, op, right)) = Self::try_parse_operation(s) {
             return Ok(Some(Premise {
@@ -338,6 +343,7 @@ impl RuleParser {
 
     /// Parse a type setting: Γ or Γ[x:τ₁][y:τ₂]
     pub fn parse_setting(s: &str) -> Result<TypeSetting, String> {
+        println!("Parsing setting: '{}'", s);
         let s = s.trim();
         if s.starts_with('[') && s.ends_with(']') && s.len() >= 2 {
             let inner = s[1..s.len() - 1].trim();
@@ -512,7 +518,6 @@ impl fmt::Display for TypeSetting {
 impl fmt::Display for TypingJudgment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TypingJudgment::Check(term) => write!(f, "check({})", term),
             TypingJudgment::Ascription((term, ty)) => write!(f, "{} : {}", term, ty),
             TypingJudgment::Membership(var, ctx) => write!(f, "{} ∈ {}", var, ctx),
             TypingJudgment::Operation { left, op, right } => {

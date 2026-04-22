@@ -1,245 +1,182 @@
-// Completability Validation
-//
-// A string s is completable in L if there exists s' such that ss' in L.
-// We use partial parsing and typing to check completion and prefix soundness.
-
 use crate::logic::grammar::Grammar;
-use crate::logic::synth::{self, SearchResult};
+use crate::logic::synth::Synthesizer;
 use crate::logic::typing::Context;
-use rayon::prelude::*;
 
-/// Per-prefix diagnostics collected while checking prefix soundness.
-#[derive(Debug, Clone)]
-pub struct PrefixDetail {
-    pub prefix: String,
-    pub ok: bool,
-    pub time_us: u128,
-    pub states_explored: Option<usize>,
-    pub visited_count: Option<usize>,
-    pub visited_sample: Vec<String>,
-}
-
-/// Result of checking whether every relevant prefix remains completable.
-///
-/// This is the main validation signal for soundness: if `is_sound` is true,
-/// then each checked prefix stays partially valid and can be extended to a
-/// complete expression.
 #[derive(Debug)]
 pub struct PrefixSoundnessResult {
     pub is_sound: bool,
     pub failing_prefix: Option<String>,
     pub prefixes_checked: usize,
-    pub prefix_details: Vec<(String, bool)>,
-    pub complete_string: Option<String>,
-    pub failing_prefix_visited_states: Option<Vec<String>>,
-    pub prefix_meta: Vec<PrefixDetail>,
+    pub accepted_input: String,
+    pub failure: Option<String>,
 }
 
-/// Public completion result used by validation callers.
-pub type CompletionResult = SearchResult;
-
-/// Shorter alias for the prefix soundness report.
 pub type SoundnessResult = PrefixSoundnessResult;
 
 fn completion_ctx(opt_ctx: Option<Context>) -> Context {
     opt_ctx.unwrap_or_default()
 }
 
-/// Choose the prefix boundaries we want to validate.
-///
-/// When tokenization succeeds we only check token-aligned cuts, because those
-/// are the meaningful user-visible partial states. If tokenization fails, we
-/// fall back to character prefixes so malformed intermediate text is still
-/// reported as unsound.
-fn prefixes_to_check(grammar: &Grammar, input: &str) -> Vec<(usize, String)> {
-    let chars: Vec<char> = input.chars().collect();
+fn replay_tokens(grammar: &Grammar, input: &str) -> Vec<String> {
     let mut grammar = grammar.clone();
-
-    if let Ok(segments) = grammar.tokenize(input) {
-        let mut cuts = vec![0usize];
-        cuts.extend(segments.iter().map(|segment| segment.end));
-        if !cuts.contains(&input.len()) {
-            cuts.push(input.len());
-        }
-        cuts.sort_unstable();
-        cuts.dedup();
-        cuts.into_iter()
-            .map(|byte_end| {
-                let prefix = input[..byte_end].to_string();
-                (prefix.chars().count(), prefix)
-            })
-            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-            .collect()
-    } else {
-        (0..=chars.len())
-            .map(|len| (len, chars[..len].iter().collect::<String>()))
-            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-            .collect()
+    match grammar.tokenize(input) {
+        Ok(segments) => segments
+            .into_iter()
+            .map(|segment| segment.text().to_string())
+            .collect(),
+        Err(_) => input.chars().map(|ch| ch.to_string()).collect(),
     }
 }
 
-/// Attempt to complete a partial input into a fully-typed expression.
-pub fn complete(
-    grammar: &Grammar,
-    input: &str,
-    budget: usize,
-    opt_ctx: Option<Context>,
-) -> CompletionResult {
-    synth::complete(grammar, input, budget, opt_ctx)
+fn token_fingerprint(grammar: &Grammar, input: &str) -> Result<Vec<String>, String> {
+    let mut grammar = grammar.clone();
+    grammar
+        .tokenize(input)
+        .map(|segments| {
+            segments
+                .into_iter()
+                .map(|segment| segment.text().to_string())
+                .collect()
+        })
+        .map_err(|err| err.to_string())
 }
 
-/// Return up to `count` normalized completions for a partial input.
-///
-/// This is a convenience wrapper for CLI and FFI surfaces that only need the
-/// completed strings rather than the full search diagnostics.
-pub fn complete_k(
-    grammar: &Grammar,
-    input: &str,
-    budget: usize,
-    count: usize,
-    opt_ctx: Option<Context>,
-) -> Vec<String> {
-    synth::complete_k(grammar, input, budget, count, opt_ctx)
+fn invalid_continuation_candidates(tokens: &[String], expected_next: &str) -> Vec<String> {
+    let mut candidates = tokens
+        .iter()
+        .filter(|token| token.as_str() != expected_next)
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.extend(
+        [")", "(", "let", "in", "else", ";", ":", "=>", "@"]
+            .into_iter()
+            .filter(|token| *token != expected_next)
+            .map(str::to_string),
+    );
+    candidates.sort();
+    candidates.dedup();
+    candidates
 }
 
-/// Check prefix soundness for an input.
-///
-/// The input is sound when every checked prefix can still be completed to a
-/// full expression, which means partial validity is preserved throughout the
-/// incremental construction of the input.
+pub fn check_feed_soundness(
+    grammar: &Grammar,
+    input: &str,
+    opt_ctx: Option<Context>,
+) -> Result<(), String> {
+    let ctx = completion_ctx(opt_ctx);
+    let tokens = replay_tokens(grammar, input);
+    let mut synth = Synthesizer::new(grammar.clone(), "");
+
+    for (idx, token) in tokens.iter().enumerate() {
+        let prefix = synth.input().to_string();
+        synth.feed_with(token, &ctx).map_err(|err| {
+            format!("feed rejected expected token {token:?} after {prefix:?}: {err}")
+        })?;
+
+        let actual = token_fingerprint(grammar, synth.input())
+            .map_err(|err| format!("tokenization failed after feeding {token:?}: {err}"))?;
+        if actual != tokens[..=idx] {
+            return Err(format!(
+                "token fingerprint drift after feeding {token:?}: expected {:?}, got {:?}",
+                &tokens[..=idx],
+                actual
+            ));
+        }
+
+        let mut saw_rejected_alternative = false;
+        for alternative in invalid_continuation_candidates(&tokens, token) {
+            let mut probe = Synthesizer::new(grammar.clone(), synth.input());
+            probe.set_ctx(ctx.clone());
+            if probe.feed(&alternative).is_err() {
+                saw_rejected_alternative = true;
+                break;
+            }
+        }
+
+        if !saw_rejected_alternative {
+            return Err(format!(
+                "no invalid continuation rejected after prefix {:?}",
+                synth.input()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 pub fn sound_complete(
     grammar: &Grammar,
     input: &str,
-    budget: usize,
     opt_ctx: Option<Context>,
 ) -> PrefixSoundnessResult {
     let ctx = completion_ctx(opt_ctx);
-    let chars: Vec<char> = input.chars().collect();
-    let prefixes = prefixes_to_check(grammar, input);
+    let tokens = replay_tokens(grammar, input);
+    let mut synth = Synthesizer::new(grammar.clone(), "");
 
-    #[allow(clippy::type_complexity)]
-    let results: Vec<(usize, PrefixDetail, Option<String>, Option<Vec<String>>)> = prefixes
-        .par_iter()
-        .enumerate()
-        .map(|(prefix_idx, (len, prefix))| {
-            let start = std::time::Instant::now();
+    for (idx, token) in tokens.iter().enumerate() {
+        let prefix = synth.input().to_string();
+        let result = synth.feed_with(token, &ctx);
 
-            let tokens_to_end = prefixes.len().saturating_sub(1).saturating_sub(prefix_idx);
-            let prefix_budget = budget + tokens_to_end;
-            let result = complete(grammar, prefix, prefix_budget, Some(ctx.clone()));
-
-            let elapsed_us = start.elapsed().as_micros();
-            match result {
-                CompletionResult::Success { complete_input, .. } => {
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: true,
-                        time_us: elapsed_us,
-                        states_explored: Some(0),
-                        visited_count: Some(1),
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, Some(complete_input), None)
-                }
-                CompletionResult::SuccessMultiple { completions } => {
-                    // For single completion validation, just use the first result
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: true,
-                        time_us: elapsed_us,
-                        states_explored: Some(0),
-                        visited_count: Some(completions.len()),
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, completions.into_iter().next(), None)
-                }
-                CompletionResult::Failure {
-                    visited_states,
-                    states_explored,
-                    ..
-                } => {
-                    let visited_sample = visited_states.iter().take(20).cloned().collect();
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: false,
-                        time_us: elapsed_us,
-                        states_explored: Some(states_explored),
-                        visited_count: Some(visited_states.len()),
-                        visited_sample,
-                    };
-                    (*len, detail, None, Some(visited_states))
-                }
-                CompletionResult::Invalid(_)
-                | CompletionResult::Error(_)
-                | CompletionResult::Inconsistency(_) => {
-                    let detail = PrefixDetail {
-                        prefix: prefix.clone(),
-                        ok: false,
-                        time_us: elapsed_us,
-                        states_explored: None,
-                        visited_count: None,
-                        visited_sample: vec![],
-                    };
-                    (*len, detail, None, None)
+        match result {
+            Ok(_) => {
+                let expected = tokens[..=idx].to_vec();
+                match token_fingerprint(grammar, synth.input()) {
+                    Ok(actual) if actual == expected => {}
+                    Ok(actual) => {
+                        return PrefixSoundnessResult {
+                            is_sound: false,
+                            failing_prefix: Some(prefix),
+                            prefixes_checked: idx + 1,
+                            accepted_input: synth.input().to_string(),
+                            failure: Some(format!(
+                                "token fingerprint drift: expected {:?}, got {:?}",
+                                expected, actual
+                            )),
+                        };
+                    }
+                    Err(err) => {
+                        return PrefixSoundnessResult {
+                            is_sound: false,
+                            failing_prefix: Some(prefix),
+                            prefixes_checked: idx + 1,
+                            accepted_input: synth.input().to_string(),
+                            failure: Some(err),
+                        };
+                    }
                 }
             }
-        })
-        .collect();
-
-    let mut prefix_details = Vec::with_capacity(results.len());
-    let mut prefix_meta = Vec::with_capacity(results.len());
-    let mut failing_prefix = None;
-    let mut failing_prefix_visited_states = None;
-    let mut complete_string = None;
-
-    let mut full_completion = None;
-    for (len, detail, completion, visited_states) in results {
-        prefix_details.push((detail.prefix.clone(), detail.ok));
-
-        if len == chars.len() && completion.is_some() {
-            full_completion = completion.clone();
+            Err(err) => {
+                return PrefixSoundnessResult {
+                    is_sound: false,
+                    failing_prefix: Some(prefix),
+                    prefixes_checked: idx + 1,
+                    accepted_input: synth.input().to_string(),
+                    failure: Some(err),
+                };
+            }
         }
-
-        if detail.ok && complete_string.is_none() {
-            complete_string = completion;
-        }
-
-        if !detail.ok && failing_prefix.is_none() {
-            failing_prefix = Some(detail.prefix.clone());
-            failing_prefix_visited_states = visited_states;
-        }
-
-        prefix_meta.push(detail);
     }
 
-    let complete_string = full_completion.or(complete_string);
-
     PrefixSoundnessResult {
-        is_sound: failing_prefix.is_none(),
-        failing_prefix,
-        prefixes_checked: prefix_details.len(),
-        prefix_details,
-        complete_string,
-        failing_prefix_visited_states,
-        prefix_meta,
+        is_sound: true,
+        failing_prefix: None,
+        prefixes_checked: tokens.len(),
+        accepted_input: synth.input().to_string(),
+        failure: None,
     }
 }
 
 pub fn is_completable(grammar: &Grammar, input: &str, budget: usize) -> bool {
-    matches!(
-        complete(grammar, input, budget, None),
-        CompletionResult::Success { .. }
-    )
+    let _ = budget;
+    sound_complete(grammar, input, None).is_sound
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logic::grammar::Grammar;
-    use crate::logic::synth::Synthesizer;
 
     #[test]
-    fn complete_accepts_typed_partial_complete_identifier() {
+    fn sound_complete_accepts_typed_identifier_replay() {
         let spec = r#"
             Identifier ::= /[a-z]+/
             Variable(var) ::= Identifier[x]
@@ -249,24 +186,19 @@ mod tests {
             ----------- (var)
             Γ(x)
         "#;
-
         let grammar = Grammar::load(spec).unwrap();
         let ctx = Context::new()
             .extend("foo".into(), crate::logic::typing::Type::Raw("bool".into()))
             .unwrap();
 
-        let mut synth = Synthesizer::new(grammar.clone(), "f");
-        let typed = synth.parse_with(&ctx).unwrap();
+        let result = sound_complete(&grammar, "foo", Some(ctx));
 
-        assert!(!typed.is_empty());
-        assert!(matches!(
-            complete(&grammar, "f", 16, Some(ctx)),
-            CompletionResult::Success { .. }
-        ));
+        assert!(result.is_sound);
+        assert_eq!(result.accepted_input, "foo");
     }
 
     #[test]
-    fn complete_accepts_context_extending_prefix_before_body() {
+    fn sound_complete_accepts_context_extending_let_prefix() {
         let spec = r#"
             Identifier ::= /[a-z]+/
             Type ::= 'int' | 'bool'
@@ -282,149 +214,40 @@ mod tests {
             ------------------------ (let)
             ?T
         "#;
-
         let grammar = Grammar::load(spec).unwrap();
-        let ctx = Context::new();
-        assert!(matches!(
-            complete(&grammar, "let x : int in", 16, Some(ctx)),
-            CompletionResult::Success { .. }
-        ));
-    }
 
-    #[test]
-    fn complete_accepts_nested_let_prefix_before_inner_body() {
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            Type ::= 'int' | 'bool'
-            Variable(var) ::= Identifier[x]
-            Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
-            Expression ::= Variable | Let
-
-            x ∈ Γ
-            ----------- (var)
-            Γ(x)
-
-            Γ[x:τ] ⊢ e : ?T
-            ------------------------ (let)
-            ?T
-        "#;
-
-        let grammar = Grammar::load(spec).unwrap();
-        let ctx = Context::new();
-        assert!(matches!(
-            complete(&grammar, "let x : int in let y : bool in", 16, Some(ctx)),
-            CompletionResult::Success { .. }
-        ));
-    }
-
-    #[test]
-    fn complete_accepts_keyword_prefix_requiring_separator() {
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            Let ::= 'let' Identifier ':' 'int' 'in' Identifier
-            Expression ::= Let | Identifier
-        "#;
-        let grammar = Grammar::load(spec).unwrap();
-        let result = complete(&grammar, "let", 6, Some(Context::new()));
-        assert!(matches!(result, CompletionResult::Success { .. }));
-    }
-
-    #[test]
-    fn complete_accepts_keyword_and_name_prefix() {
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            Let ::= 'let' Identifier ':' 'int' 'in' Identifier
-            Expression ::= Let | Identifier
-        "#;
-        let grammar = Grammar::load(spec).unwrap();
-        let result = complete(&grammar, "let x", 6, Some(Context::new()));
-        assert!(matches!(result, CompletionResult::Success { .. }));
-    }
-
-    #[test]
-    fn typed_completions_keep_separator_when_later_premise_term_missing() {
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            Int ::= /[0-9]+/
-            Var(var) ::= Identifier[x]
-            Let(let) ::= 'let' Identifier[a] '=' Int[v] ';' Var[b]
-            Expr ::= Let | Var
-
-            x ∈ Γ
-            ----------- (var)
-            Γ(x)
-
-            Γ[a:'int'] ⊢ b : ?T
-            ------------------- (let)
-            ?T
-        "#;
-        let grammar = Grammar::load(spec).unwrap();
-        let mut synth = Synthesizer::new(grammar, "let a = 1");
-        let tokens = synth.completions();
-
-        assert!(!tokens.is_empty());
-    }
-
-    #[test]
-    fn successful_completion_is_syntactic_and_typed() {
-        let grammar = crate::validation::parseable::load_example_grammar("fun");
-        let result = complete(&grammar, "(", 4, Some(Context::new()));
-        if let CompletionResult::Success { complete_input, .. } = result {
-            let mut synth = Synthesizer::new(grammar.clone(), &complete_input);
-            let typed = synth.parse_with(&Context::new()).unwrap_or_else(|e| {
-                panic!("completion should type-check: {} ({})", complete_input, e)
-            });
-            assert!(
-                typed.is_complete(),
-                "completion should be complete typed tree: {}",
-                complete_input
-            );
-        }
-    }
-
-    #[test]
-    fn pathological_prefix_never_returns_garbage_completion() {
-        let grammar = crate::validation::parseable::load_example_grammar("fun");
-        let input = "let ( a ) + true ( let a : A -> A -> A ->";
-        let result = complete(&grammar, input, 2, Some(Context::new()));
-
-        if let CompletionResult::Success { complete_input, .. } = result {
-            let mut synth = Synthesizer::new(grammar.clone(), &complete_input);
-            let typed = synth.parse_with(&Context::new()).unwrap_or_else(|e| {
-                panic!(
-                    "garbage completion returned for pathological prefix: {} ({})",
-                    complete_input, e
-                )
-            });
-            assert!(typed.is_complete());
-        }
-    }
-
-    #[test]
-    fn soundness_holds_for_every_prefix_of_valid_typed_expression() {
-        let spec = r#"
-            Identifier ::= /[a-z]+/
-            Type ::= 'int' | 'bool'
-            Variable(var) ::= Identifier[x]
-            Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
-            Expression ::= Variable | Let
-
-            x ∈ Γ
-            ----------- (var)
-            Γ(x)
-
-            Γ[x:τ] ⊢ e : ?T
-            ------------------------ (let)
-            ?T
-        "#;
-
-        let grammar = Grammar::load(spec).unwrap();
-        let result = sound_complete(&grammar, "let x : int in x", 8, Some(Context::new()));
+        let result = sound_complete(&grammar, "let x : int in x", Some(Context::new()));
 
         assert!(
             result.is_sound,
-            "valid expression should remain prefix-sound, failing_prefix={:?}",
+            "failing_prefix={:?}",
             result.failing_prefix
         );
+    }
+
+    #[test]
+    fn sound_complete_reports_failing_prefix_when_feed_rejects_next_token() {
+        let grammar = Grammar::load("Start ::= 'x'").unwrap();
+
+        let result = sound_complete(&grammar, "x y", Some(Context::new()));
+
+        assert!(!result.is_sound);
+        assert_eq!(result.failing_prefix.as_deref(), Some("x"));
+    }
+
+    #[test]
+    fn check_feed_soundness_replays_tokens_and_rejects_bad_alternatives() {
+        let grammar = Grammar::load(
+            r#"
+                Number ::= /[0-9]+/
+                Expr ::= Number | '(' Expr ')'
+                Start ::= Expr '+' Expr
+            "#,
+        )
+        .unwrap();
+
+        let result = check_feed_soundness(&grammar, "(1) + 2", Some(Context::new()));
+
+        assert!(result.is_ok(), "{result:?}");
     }
 }

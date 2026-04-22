@@ -15,7 +15,7 @@ impl Grammar {
             if let Some(alts) = self.productions.get(nt) {
                 let mut first = true;
                 for prod in alts {
-                    let lhs = if let Some(rule_name) = &prod.rule {
+                    let lhs = if let Some(rule_name) = self.nonterminal_rule(nt) {
                         format!("{}({})", nt, rule_name)
                     } else {
                         nt.clone()
@@ -112,22 +112,6 @@ fn format_premises(premises: &[crate::logic::typing::Premise]) -> String {
             }
             (None, Some(TypingJudgment::Ascription((term, ty)))) => {
                 format!("{} : {}", term, ty)
-            }
-            (None, Some(TypingJudgment::Check(term))) => {
-                format!("▷ {}", term)
-            }
-            (Some(setting), Some(TypingJudgment::Check(term))) => {
-                if setting.extensions.is_empty() {
-                    format!("{} ▷ {}", setting.name, term)
-                } else {
-                    let exts = setting
-                        .extensions
-                        .iter()
-                        .map(|(v, t)| format!("[{}:{}]", v, t))
-                        .collect::<Vec<_>>()
-                        .join("");
-                    format!("{}{} ▷ {}", setting.name, exts, term)
-                }
             }
             (None, Some(TypingJudgment::Membership(var, ctx))) => {
                 format!("{} ∈ {}", var, ctx)

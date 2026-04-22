@@ -2,7 +2,7 @@
 
 use crate::logic::path::TreePath;
 use crate::logic::typing::rule::TypeOperation;
-use crate::logic::typing::Type;
+use crate::logic::typing::{Type, TypeAscription};
 use std::collections::BTreeMap;
 
 /// Typing environment for a derivation point.
@@ -19,6 +19,17 @@ impl Context {
 
     pub fn lookup(&self, x: &str) -> Option<&Type> {
         self.bindings.get(x)
+    }
+
+    pub fn merge(&self, other: &Self) -> Self {
+        let mut new = self.clone();
+        for (k, v) in &other.bindings {
+            new.bindings.insert(k.clone(), v.clone());
+        }
+        for (k, v) in &other.unresolved_bindings {
+            new.unresolved_bindings.insert(k.clone(), v.clone());
+        }
+        new
     }
 
     pub fn lookup_unresolved(&self, path: &TreePath) -> Option<&Type> {
@@ -77,50 +88,25 @@ pub struct ContextEdit {
 /// A context morphism between two interned contexts.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct ContextTransition {
-    pub source: usize,
-    pub target: usize,
-    pub edits: Vec<ContextEdit>,
+    pub transforms: Vec<TypeAscription>,
 }
 
 impl ContextTransition {
-    pub fn identity(ctx: usize) -> Self {
+    pub fn identity() -> Self {
         Self {
-            source: ctx,
-            target: ctx,
-            edits: Vec::new(),
-        }
-    }
-
-    pub fn opaque(source: usize, target: usize) -> Self {
-        Self {
-            source,
-            target,
-            edits: Vec::new(),
-        }
-    }
-
-    pub fn retarget(&self, target: usize) -> Self {
-        Self {
-            source: self.source,
-            target,
-            edits: self.edits.clone(),
+            transforms: Vec::new(),
         }
     }
 
     pub fn compose(&self, next: &Self) -> Self {
-        debug_assert_eq!(self.target, next.source);
-        let mut edits = self.edits.clone();
-        edits.extend(next.edits.clone());
+        let mut new_transforms = self.transforms.clone();
+        new_transforms.extend(next.transforms.clone());
         Self {
-            source: self.source,
-            target: next.target,
-            edits,
+            transforms: new_transforms,
         }
     }
 
-    pub fn is_identity(&self) -> bool {
-        self.source == self.target && self.edits.is_empty()
-    }
+
 }
 
 /// Semantic classification of a parsed tree.

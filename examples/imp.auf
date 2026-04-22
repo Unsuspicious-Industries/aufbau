@@ -100,28 +100,18 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 ------------------------------ (assign)
 ∅
 
-// If statement: condition is Bool, body produces ?T (no ctx propagation from block)
-Γ ⊢ cond : 'Bool', [Γ] ⊢ then_block : ?T
+// If statement: condition is Bool, body produces ?T 
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T
 --------------------------------------- (if)
 ?T
 
 // If-else: both branches produce same type
-Γ ⊢ cond : 'Bool', [Γ] ⊢ then_block : ?T, [Γ] ⊢ else_block : ?T
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
 ------------------------------------------------------------ (if_else)
 ?T
 
 // While: condition is Bool, body produces ?T
-Γ ⊢ cond : 'Bool', [Γ] ⊢ body : ?T
+Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
 -------------------------------- (while)
 ?T
 
-// Block: statements produce ?T (no ctx propagation)
-Γ ▷ stmts 
--------------- (block)
-∅
-
-
-// Program
-Γ ▷ main 
--------------- (program)
-∅

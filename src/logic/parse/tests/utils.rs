@@ -1,5 +1,5 @@
 use super::*;
-use crate::logic::typing::Obligations;
+use crate::logic::typing::{ContextTransition, Obligations};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StubTyping;
@@ -8,7 +8,6 @@ impl TypingRuntime for StubTyping {
     fn descend(
         &self,
         _prod: ProdId,
-        _dot: usize,
         _binding: Option<&str>,
         ctx: CtxId,
         _obligations: &Obligations,
@@ -22,8 +21,11 @@ impl TypingRuntime for StubTyping {
         ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, CtxId, bool), TransitionError> {
-        Ok((0, ctx, true))
+    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
+        Ok((0, Some(ContextTransition::identity())))
+    }
+    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError> {
+        Ok(ctx) // no-op for testing
     }
 }
 
@@ -34,7 +36,6 @@ impl TypingRuntime for RejectingTyping {
     fn descend(
         &self,
         _prod: ProdId,
-        _dot: usize,
         _binding: Option<&str>,
         ctx: CtxId,
         _obligations: &Obligations,
@@ -48,8 +49,11 @@ impl TypingRuntime for RejectingTyping {
         _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, CtxId, bool), TransitionError> {
+    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
         Err(TransitionError::Rejected)
+    }
+    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError> {
+        Ok(ctx) // no-op for testing
     }
 }
 

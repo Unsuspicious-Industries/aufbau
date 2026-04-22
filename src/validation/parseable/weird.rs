@@ -139,7 +139,7 @@ const SCOPED: &str = r#"
     ----------- (letb)
     ?R
 
-    [Γ] ⊢ inner : ?T
+    Γ ⊢ inner : ?T
     ----------- (scoped)
     ?T
 "#;
@@ -167,13 +167,6 @@ const STMT: &str = r#"
     ----------- (decl)
     Γ → Γ[name:τ] ⊢ ∅
 
-    Γ ▷ head, Γ ▷ tail
-    ----------- (seq)
-    ∅
-
-    [Γ] ▷ stmts
-    ----------- (block)
-    ∅
 "#;
 
 /// Union-typed choice operator producing union types.

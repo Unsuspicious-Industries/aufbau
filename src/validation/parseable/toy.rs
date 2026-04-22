@@ -25,6 +25,9 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("double colon", "beep::Fizz"),
         ParseTestCase::invalid("unknown word", "blip: Fizz"),
         ParseTestCase::invalid("unknown type", "beep: Fuzz"),
+        ParseTestCase::invalid("dangling concat", "beep: Fizz +"),
+        ParseTestCase::invalid("broken chorus", "beep: Fizz x"),
+        ParseTestCase::invalid("mismatched paren suffix", "(beep: Fizz))"),
     ]
 }
 

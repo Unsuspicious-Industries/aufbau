@@ -95,11 +95,15 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("hash", "#x"),
         ParseTestCase::invalid("dollar", "$x"),
         ParseTestCase::invalid("backslash", "\\x"),
-        ParseTestCase::type_error("unbound variable", "x"),
-        ParseTestCase::type_error("unbound in app", "f x"),
-        ParseTestCase::type_error("unbound func", "f"),
-        ParseTestCase::type_error("var outside scope", "λx:A.y"),
-        ParseTestCase::type_error("shadowed var used outside", "λx:A.(λy:B.x) y"),
+        ParseTestCase::invalid("double application dot", "λx:A..x y"),
+        ParseTestCase::invalid("bad paren application", "(f x)) y"),
+        ParseTestCase::invalid("unbound variable", "x"),
+        ParseTestCase::invalid("unbound in app", "f x"),
+        ParseTestCase::invalid("unbound func", "f"),
+        ParseTestCase::invalid("var outside scope", "λx:A.y"),
+        ParseTestCase::invalid("shadowed var used outside", "λx:A.(λy:B.x) y"),
+        ParseTestCase::invalid("apply unresolved callee", "x x"),
+        ParseTestCase::invalid("lambda escapes scope", "(λx:A.x) y"),
     ]
 }
 

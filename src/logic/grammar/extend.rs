@@ -5,14 +5,20 @@ pub fn extend_input(grammar: &mut Grammar, input: &str, token: &str) -> String {
         return format!("{}{}", input, token);
     }
 
+    if input.is_empty() {
+        return token.to_string();
+    }
+
     let no_space = format!("{}{}", input, token);
+    let with_space = format!("{} {}", input, token);
+    if should_preserve_separator(input, token) {
+        return with_space;
+    }
+
     if concatenation_preserves_tokens(grammar, input, token, &no_space) {
-        // Preserve the concrete surface form whenever token boundaries survive.
-        // Search reasons over actual prefixes, not a whitespace-normalized proxy.
         return no_space;
     }
 
-    let with_space = format!("{} {}", input, token);
     if concatenation_preserves_tokens(grammar, input, token, &with_space) {
         return with_space;
     }
@@ -25,6 +31,25 @@ pub fn extend_input(grammar: &mut Grammar, input: &str, token: &str) -> String {
     } else {
         no_space
     }
+}
+
+fn should_preserve_separator(input: &str, token: &str) -> bool {
+    let Some(left) = input.chars().next_back() else {
+        return false;
+    };
+    let Some(right) = token.chars().next() else {
+        return false;
+    };
+
+    if !right.is_ascii_alphanumeric() {
+        return false;
+    }
+
+    if left.is_ascii_alphanumeric() {
+        return true;
+    }
+
+    !matches!(left, ':' | '=')
 }
 
 fn concatenation_preserves_tokens(

@@ -12,11 +12,9 @@ pub mod imp;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::Context;
 
-use crate::validation::completability::{
-    CompletionResult, PrefixSoundnessResult, complete, sound_complete,
-};
-use rayon::ThreadPoolBuilder;
+use crate::validation::completability::{sound_complete, PrefixSoundnessResult};
 use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use serde_json::json;
 use std::sync::mpsc;
 use std::thread;
@@ -72,30 +70,14 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
 // Performance Debugging Infrastructure
 // ============================================================================
 
-/// Wrapper that times completion with context
+/// Wrapper that times feed-based prefix replay with context.
 pub fn timed_sound_complete(
     grammar: &mut Grammar,
     input: &str,
-    budget: usize,
     opt_ctx: Option<Context>,
 ) -> (PrefixSoundnessResult, Duration) {
     let start = Instant::now();
-    let result = sound_complete(grammar, input, budget, opt_ctx);
-    let elapsed = start.elapsed();
-    (result, elapsed)
-}
-
-/// Simpler wrapper that times completion without prefix soundness checking.
-/// Use this for cases where we only care if the full input is completable,
-/// not whether all prefixes are completable.
-pub fn timed_complete(
-    grammar: &Grammar,
-    input: &str,
-    budget: usize,
-    opt_ctx: Option<Context>,
-) -> (CompletionResult, Duration) {
-    let start = Instant::now();
-    let result = complete(grammar, input, budget, opt_ctx);
+    let result = sound_complete(grammar, input, opt_ctx);
     let elapsed = start.elapsed();
     (result, elapsed)
 }
@@ -110,12 +92,8 @@ pub struct TypedCompletionTestCase {
     pub description: &'static str,
     /// The partial input to test
     pub input: &'static str,
-    /// Completion budget (tokens to append during search)
-    pub completion_budget: usize,
     /// Initial typing context (variable bindings)
     pub context: Vec<(&'static str, &'static str)>,
-    /// Whether to require all prefixes to be completable (soundness).
-    pub require_prefix_soundness: bool,
     /// Timeout in seconds for the test (default: 180 = 3 minutes)
     pub timeout_secs: u64,
 }
@@ -125,37 +103,17 @@ impl TypedCompletionTestCase {
         Self {
             description: desc,
             input,
-            completion_budget: 10,
             context: vec![],
-            require_prefix_soundness: true,
             timeout_secs: 10,
         }
     }
 
-    /// Expect-pass helper: completable input. Prefix-soundness is now required by default.
-    ///
-    /// Use `.without_soundness()` on the returned object when you explicitly do NOT
-    /// want to require every prefix to be completable.
-    pub fn ok(desc: &'static str, input: &'static str, budget: usize) -> Self {
-        Self::new(desc, input).with_budget(budget)
-    }
-
-    pub fn with_budget(mut self, budget: usize) -> Self {
-        self.completion_budget = budget;
-        self
-    }
-
-    pub fn with_depth(self, depth: usize) -> Self {
-        self.with_budget(depth)
+    pub fn ok(desc: &'static str, input: &'static str, _budget: usize) -> Self {
+        Self::new(desc, input)
     }
 
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {
         self.context = ctx;
-        self
-    }
-
-    pub fn without_soundness(mut self) -> Self {
-        self.require_prefix_soundness = false;
         self
     }
 
@@ -183,13 +141,7 @@ fn prune_prefix_cases(cases: &[TypedCompletionTestCase]) -> Vec<TypedCompletionT
 /// Metadata for a single test run useful to profiling and reporting
 #[derive(Debug, Clone)]
 pub struct TestRunMeta {
-    pub states_explored: Option<usize>,
-    /// Per-prefix metadata collected during prefix soundness checks (if any)
-    pub prefix_meta: Option<Vec<crate::validation::completability::PrefixDetail>>,
-    /// Total number of prefixes checked (if available)
     pub prefixes_checked: Option<usize>,
-    /// Sum of per-prefix times in microseconds (if available)
-    pub total_prefix_time_us: Option<u128>,
 }
 
 /// Run a single typed completion test case, returning timing info and metadata.
@@ -219,17 +171,17 @@ pub fn run_test_timed_meta(
             m.push_str(&format!("input={}\n", case.input));
             m.push_str(&format!("timeout_secs={}\n", timeout_secs));
             let meta = TestRunMeta {
-                states_explored: None,
-                prefix_meta: None,
                 prefixes_checked: None,
-                total_prefix_time_us: None,
             };
             (TestResult::Fail(m), start.elapsed(), meta)
         }
     }
 }
 
-fn run_test_inner(grammar: &mut Grammar, case: &TypedCompletionTestCase) -> (TestResult, TestRunMeta) {
+fn run_test_inner(
+    grammar: &mut Grammar,
+    case: &TypedCompletionTestCase,
+) -> (TestResult, TestRunMeta) {
     let mut ctx = Context::new();
     for (var, ty_str) in &case.context {
         if let Ok(ty) = crate::logic::typing::Type::parse_raw(ty_str) {
@@ -238,131 +190,31 @@ fn run_test_inner(grammar: &mut Grammar, case: &TypedCompletionTestCase) -> (Tes
     }
 
     let mut meta = TestRunMeta {
-        states_explored: None,
-        prefix_meta: None,
         prefixes_checked: None,
-        total_prefix_time_us: None,
     };
 
-    let result = if case.require_prefix_soundness {
-        let (result, _elapsed) = timed_sound_complete(
-            grammar,
-            case.input,
-            case.completion_budget,
-            Some(ctx.clone()),
-        );
-        let total_prefix_time: u128 = result.prefix_meta.iter().map(|pd| pd.time_us).sum();
+    let (result, _elapsed) = timed_sound_complete(grammar, case.input, Some(ctx.clone()));
+    meta.prefixes_checked = Some(result.prefixes_checked);
 
-        meta.prefix_meta = Some(result.prefix_meta.clone());
-        meta.prefixes_checked = Some(result.prefixes_checked);
-        meta.total_prefix_time_us = Some(total_prefix_time);
-
-        if result.is_sound {
-            TestResult::Pass(result.complete_string)
-        } else {
-            let mut m = String::new();
-            m.push_str("kind=unsound_completion\n");
-            m.push_str(&format!("input={}\n", case.input));
-            m.push_str(&format!("prefixes_checked={}\n", result.prefixes_checked));
-            m.push_str(&format!("prefix_total_time_us={}\n", total_prefix_time));
-
-            if let Some(ref fp) = result.failing_prefix {
-                m.push_str(&format!("failing_prefix={}\n", fp));
-            }
-            if let Some(ref complete) = result.complete_string {
-                m.push_str(&format!("completed_to={}\n", complete));
-            }
-
-            if let Some(ref visited) = result.failing_prefix_visited_states {
-                m.push_str(&format!("failing_visited_count={}\n", visited.len()));
-                for (i, state) in visited.iter().enumerate() {
-                    m.push_str(&format!("failing_visited_{}={}\n", i, state));
-                }
-            }
-
-            m.push_str(&format!("prefix_count={}\n", result.prefix_details.len()));
-            for (i, pd) in result.prefix_meta.iter().enumerate() {
-                m.push_str(&format!(
-                    "prefix_{} ok={} time_us={} states_explored={:?} visited_count={:?}\n",
-                    i, pd.ok, pd.time_us, pd.states_explored, pd.visited_count
-                ));
-                for (j, v) in pd.visited_sample.iter().enumerate() {
-                    m.push_str(&format!("prefix_{}_visited_{}={}\n", i, j, v));
-                }
-                if let Some(vc) = pd.visited_count
-                    && vc > pd.visited_sample.len()
-                {
-                    m.push_str(&format!(
-                        "prefix_{}_visited_truncated={}\n",
-                        i,
-                        vc - pd.visited_sample.len()
-                    ));
-                }
-            }
-
-            TestResult::Fail(m)
-        }
+    let result = if result.is_sound {
+        TestResult::Pass(Some(result.accepted_input))
     } else {
-        let (result, _elapsed) = timed_complete(
-            grammar,
-            case.input,
-            case.completion_budget,
-            Some(ctx.clone()),
-        );
-        match result {
-            CompletionResult::Success { complete_input, .. } => {
-                TestResult::Pass(Some(complete_input))
-            }
-            CompletionResult::SuccessMultiple { completions } => {
-                // For single completion validation, just use the first result
-                TestResult::Pass(completions.into_iter().next())
-            }
-            CompletionResult::Failure {
-                max_depth_reached,
-                states_explored,
-                visited_states,
-            } => {
-                meta.states_explored = Some(visited_states.len());
+        let mut m = String::new();
+        m.push_str("kind=feed_replay_failed\n");
+        m.push_str(&format!("input={}\n", case.input));
+        m.push_str(&format!("prefixes_checked={}\n", result.prefixes_checked));
 
-                let mut m = String::new();
-                m.push_str("kind=completion_failed\n");
-                m.push_str(&format!("input={}\n", case.input));
-                m.push_str(&format!("states_explored={}\n", states_explored));
-                m.push_str(&format!("max_depth_reached={}\n", max_depth_reached));
-                m.push_str(&format!("visited_count={}\n", visited_states.len()));
-                for (i, state) in visited_states.iter().take(20).enumerate() {
-                    m.push_str(&format!("visited_{}={}\n", i, state));
-                }
-                if visited_states.len() > 20 {
-                    m.push_str(&format!(
-                        "visited_truncated={}\n",
-                        visited_states.len() - 20
-                    ));
-                }
-                TestResult::Fail(m)
-            }
-            CompletionResult::Invalid(msg) => {
-                let mut m = String::new();
-                m.push_str("kind=invalid\n");
-                m.push_str(&format!("input={}\n", case.input));
-                m.push_str(&format!("reason={}\n", msg));
-                TestResult::Fail(m)
-            }
-            CompletionResult::Error(msg) => {
-                let mut m = String::new();
-                m.push_str("kind=error\n");
-                m.push_str(&format!("input={}\n", case.input));
-                m.push_str(&format!("reason={}\n", msg));
-                TestResult::Fail(m)
-            }
-            CompletionResult::Inconsistency(msg) => {
-                let mut m = String::new();
-                m.push_str("kind=inconsistency\n");
-                m.push_str(&format!("input={}\n", case.input));
-                m.push_str(&format!("reason={}\n", msg));
-                TestResult::Fail(m)
-            }
+        if let Some(ref fp) = result.failing_prefix {
+            m.push_str(&format!("failing_prefix={}\n", fp));
         }
+        if !result.accepted_input.is_empty() {
+            m.push_str(&format!("accepted_prefix={}\n", result.accepted_input));
+        }
+        if let Some(ref failure) = result.failure {
+            m.push_str(&format!("failure={}\n", failure));
+        }
+
+        TestResult::Fail(m)
     };
     (result, meta)
 }
@@ -481,7 +333,6 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
                 "desc": case.description,
                 "input": case.input,
                 "expect": expect,
-                "budget": case.completion_budget,
             })
         );
 

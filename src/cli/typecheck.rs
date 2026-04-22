@@ -3,7 +3,7 @@
 //! Reads a grammar specification from `--spec` and a program from stdin,
 //! then runs the partial type-checker. For complete programs it prints the
 //! inferred type; for partial programs it prints every candidate partial
-//! type so the caller can see what completions are still possible.
+//! type so the caller can see which token steps remain admissible.
 
 use clap::Args;
 use std::io::{self, Read};

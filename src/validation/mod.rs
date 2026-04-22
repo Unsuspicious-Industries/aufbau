@@ -4,18 +4,17 @@
 ///
 /// ## Submodules
 ///
-/// - `completability`: Core completion algorithm and prefix soundness checking
-/// - `completable`: Slow but thorough completion tests (BFS exploration)
-/// - `parseable`: Fast prefix-parseability tests (no completion search)
+/// - `completability`: Feed-replay and prefix soundness helpers
+/// - `completable`: Slow but thorough feed-acceptance suites
+/// - `parseable`: Fast prefix-parseability tests
 ///
 /// ## Key Guarantees
 ///
-/// 1. **Prefix Soundness**: Any completable string has all prefixes completable
-/// 2. **Type Safety**: Completions respect typing rules
-/// 3. **Completeness**: Completion results are fully parsed (no holes)
+/// 1. **Prefix Soundness**: Accepted strings stay feed-accepting at every prefix
+/// 2. **Type Safety**: Accepted token steps respect typing rules
+/// 3. **Closure**: Derived witnesses are fully parsed (no holes)
 ///
 pub mod completability;
-
 
 pub mod completable;
 

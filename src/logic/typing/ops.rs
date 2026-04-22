@@ -106,7 +106,7 @@ impl Unifier {
     }
 
     /// Look up a meta variable binding
-    pub fn resolve(&self, name: &str) -> Option<&Type> {
+    pub fn resolve_meta(&self, name: &str) -> Option<&Type> {
         self.substitution.get(name)
     }
 
@@ -117,10 +117,6 @@ impl Unifier {
             return self.unify(&existing, ty);
         }
 
-        // Occurs check: prevent infinite types
-        if self.occurs_in(name, ty) {
-            return UnifyResult::Fail(format!("Occurs check: ?{} appears in {}", name, ty));
-        }
 
         self.substitution.insert(name.to_string(), ty.clone());
         UnifyResult::Ok
@@ -253,7 +249,7 @@ impl Unifier {
             (Type::Any, Type::Any) => UnifyResult::Ok,
 
             // Any vs concrete: indeterminate (Any is top, not a concrete type)
-            (Type::Any, _) | (_, Type::Any) => UnifyResult::Indeterminate,
+            (Type::Any, _) | (_, Type::Any) => UnifyResult::Ok,
 
             // Union types: unify point-wise (same arity/ordering for now)
             (Type::Union(a), Type::Union(b)) => {
@@ -374,19 +370,6 @@ impl Unifier {
         }
     }
 
-    /// Occurs check: does meta variable ?name appear in ty (after walking)?
-    fn occurs_in(&self, name: &str, ty: &Type) -> bool {
-        let ty = self.walk(ty);
-        match &ty {
-            Type::Meta(n) => n == name,
-            Type::Arrow(a, b) => self.occurs_in(name, a) || self.occurs_in(name, b),
-            Type::Array(inner) => self.occurs_in(name, inner),
-            Type::Union(parts) => parts.iter().any(|p| self.occurs_in(name, p)),
-            Type::Not(a) => self.occurs_in(name, a),
-            Type::Partial(t, _) | Type::PathOf(t, _) => self.occurs_in(name, t),
-            _ => false,
-        }
-    }
 }
 
 // =============================================================================
@@ -531,6 +514,6 @@ mod tests {
         let lhs = parse("?A | 'Bool'");
         let rhs = parse("'Int' | 'Bool'");
         assert!(unifier.unify(&lhs, &rhs).is_ok());
-        assert!(matches!(unifier.resolve("A"), Some(Type::Raw(name)) if name == "Int"));
+        assert!(matches!(unifier.resolve_meta("A"), Some(Type::Raw(name)) if name == "Int"));
     }
 }

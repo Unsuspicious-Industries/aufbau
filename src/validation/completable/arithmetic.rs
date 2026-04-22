@@ -37,9 +37,11 @@ fn completable_cases() -> Vec<TypedCompletionTestCase> {
         T::ok("chain ops", "1 + 2 * 3", 3),
         T::ok("open paren", "(", 3),
         T::ok("paren number", "(42", 2),
+        T::ok("paren operator prefix", "(1 +", 3),
         T::ok("closed paren", "(42)", 2),
         T::ok("nested parens", "((1))", 3),
         T::ok("complex paren", "(x + y) * z", 4),
+        T::ok("deep operator prefix", "x * (y +", 4),
     ]
 }
 
@@ -76,37 +78,18 @@ fn check_completable() {
 #[test]
 fn repro_chain_operator_prefix_is_completable() {
     let grammar = arithmetic_grammar();
-    let result = crate::validation::completability::complete(&grammar, "1 + 2 *", 3, None);
+    let result = crate::validation::completability::sound_complete(&grammar, "1 + 2 *", None);
 
     assert!(
-        matches!(result, CompletionResult::Success { .. }),
-        "expected chain operator prefix to complete, got {result:?}"
-    );
-}
-
-#[test]
-fn repro_chain_operator_prefix_completes_even_without_space() {
-    let mut grammar = arithmetic_grammar();
-    let result = crate::validation::completability::complete(&grammar, "1 + 2 *", 3, None);
-
-    let CompletionResult::Success { complete_input, .. } = result else {
-        panic!("expected successful completion");
-    };
-    assert!(
-        grammar
-            .tokenize(&complete_input)
-            .is_ok_and(|segments| segments
-                .last()
-                .is_some_and(|segment| segment.text() == "0" || segment.text() == "x")),
-        "completion should remain valid regardless of spacing, got {complete_input:?}"
+        result.is_sound,
+        "expected chain operator prefix to replay through feed, got {result:?}"
     );
 }
 
 #[test]
 fn repro_chain_operator_expression_stays_prefix_sound() {
     let mut grammar = arithmetic_grammar();
-    let result =
-        crate::validation::completability::sound_complete(&mut grammar, "1 + 2 * 3", 3, None);
+    let result = crate::validation::completability::sound_complete(&mut grammar, "1 + 2 * 3", None);
 
     assert!(
         result.is_sound,
@@ -118,10 +101,10 @@ fn repro_chain_operator_expression_stays_prefix_sound() {
 #[test]
 fn repro_complex_paren_operator_prefix_is_completable() {
     let grammar = arithmetic_grammar();
-    let result = crate::validation::completability::complete(&grammar, "(x + y) *", 4, None);
+    let result = crate::validation::completability::sound_complete(&grammar, "(x + y) *", None);
 
     assert!(
-        matches!(result, CompletionResult::Success { .. }),
-        "expected complex paren operator prefix to complete, got {result:?}"
+        result.is_sound,
+        "expected complex paren operator prefix to replay through feed, got {result:?}"
     );
 }

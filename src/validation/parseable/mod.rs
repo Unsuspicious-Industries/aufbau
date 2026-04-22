@@ -9,9 +9,8 @@
 //!
 //! - **Valid expressions**: Complete expressions that should parse fully,
 //!   and all their prefixes should parse partially
-//! - **Invalid expressions**: Syntax errors that should fail to parse
-//! - **Type errors (xfails)**: Syntactically valid but semantically invalid
-//!   (e.g., unbound variables, type mismatches)
+//! - **Invalid expressions**: Syntax or semantic errors that should fail to parse
+//!   (xfail: includes unbound variables, type mismatches, etc.)
 //!
 //! ## Performance
 //!
@@ -98,16 +97,7 @@ impl ParseTestCase {
         }
     }
 
-    /// Create a new test case expecting type error (syntactically valid but
-    /// type-invalid — xfail because no complete well-typed tree should exist).
-    pub fn type_error(desc: &'static str, input: &'static str) -> Self {
-        Self {
-            description: desc,
-            input,
-            xfail: true,
-            context: vec![],
-        }
-    }
+    // `type_error` is intentionally removed: use `invalid` for all xfail cases.
 
     /// Add typing context.
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {

@@ -50,6 +50,11 @@
           git-lfs
           gh
 
+          # Python packaging
+          python3
+          python3Packages.pip
+          maturin
+
           # Linker & toolchain
           binutils
           nix-ld
@@ -100,6 +105,7 @@
             export OPENSSL_INCLUDE_DIR="${pkgs.openssl.dev}/include"
             export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig:$PKG_CONFIG_PATH"
             export LIBRARY_PATH="${pkgs.openssl.out}/lib:$LIBRARY_PATH"
+            export PYO3_PYTHON="${pkgs.python3}/bin/python3"
 
           '';
         };

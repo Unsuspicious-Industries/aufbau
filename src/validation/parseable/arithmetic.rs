@@ -46,6 +46,10 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("percent op", "1 %"),
         ParseTestCase::invalid("extra close", "1)"),
         ParseTestCase::invalid("misplaced close", "(1))"),
+        ParseTestCase::invalid("empty close after operator", "1 + )"),
+        ParseTestCase::invalid("dangling nested operator", "(1 +) *"),
+        ParseTestCase::invalid("double close suffix", "((1 + 2)))"),
+        ParseTestCase::invalid("identifier starts with digit", "1abc"),
     ]
 }
 

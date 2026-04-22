@@ -3,12 +3,17 @@ requires = ["maturin>=1.4,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "aufbau-python"
+name = "aufbau-rs"
 version = "0.1.0"
-description = "Python bindings for aufbau typed constrained decoding"
+description = "Python bindings for the aufbau typed feed engine"
 requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/Unsuspicious-Industries/aufbau"
+Repository = "https://github.com/Unsuspicious-Industries/aufbau"
 
 [tool.maturin]
 features = ["python-ffi", "pyo3/extension-module"]
-module-name = "aufbau_python"
+module-name = "aufbau"
 bindings = "pyo3"
+target-version = "3.13"

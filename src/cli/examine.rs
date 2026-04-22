@@ -8,7 +8,7 @@ use aufbau::logic::grammar::Grammar;
 use aufbau::logic::typing::Context;
 use aufbau::validation::completable::{self, TypedCompletionTestCase};
 
-/// Quick helper to examine completability for an input or a named test case
+/// Quick helper to examine feed acceptance for an input or a named test case
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum ExpectedOutcome {
     Ok,
@@ -35,11 +35,11 @@ pub struct ExamineCmd {
     pub filter: Option<String>,
 
     /// Expected outcome for the checked input/case.
-    /// In completable mode, only `ok` is supported.
+    /// In feed-check mode, only `ok` is supported.
     #[arg(long = "expected", value_enum)]
     pub expected: Option<ExpectedOutcome>,
 
-    /// Require prefix-soundness check (default: use full completion only for --input)
+    /// Require prefix-soundness check for raw input
     #[arg(long = "sound", action = clap::ArgAction::SetTrue)]
     pub sound: bool,
 
@@ -52,27 +52,8 @@ pub struct ExamineCmd {
     #[arg(long = "dump-ast", action = clap::ArgAction::SetTrue)]
     pub dump_ast: bool,
 
-    /// Print completion sets and example tokens
-    #[arg(long = "dump-completions", action = clap::ArgAction::SetTrue)]
-    pub dump_completions: bool,
 }
 
-fn dump_completions(grammar: &Grammar, input: &str, ctx: &Context) {
-    let mut synth = Synthesizer::new(grammar.clone(), input);
-    let typed = synth.completions_with(ctx);
-    println!("\n-- completions --");
-    for (i, token) in typed.iter().enumerate() {
-        println!(
-            "  [{}] token='{}' example={:?}",
-            i,
-            token.to_pattern(),
-            token.example()
-        );
-    }
-    if typed.is_empty() {
-        println!("  (no completions)");
-    }
-}
 
 fn collect_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
     let mut out = Vec::new();
@@ -118,7 +99,7 @@ pub fn run(args: &ExamineCmd) {
         }
 
         // Pick the first match (convenience) and run it with full test harness
-        let (suite_name, grammar, mut case) = matches.remove(0);
+        let (suite_name, grammar, case) = matches.remove(0);
 
         set_debug_input(Some(case.input.to_string()));
 
@@ -132,12 +113,7 @@ pub fn run(args: &ExamineCmd) {
                     );
                 }
             }
-            // Always override depth when explicitly provided on the CLI
-            case.completion_budget = args.depth;
-            eprintln!("Overrode case expected={:?} depth={}", exp, args.depth);
-        } else {
-            // If no explicit expected was given still allow depth override
-            case.completion_budget = args.depth;
+            eprintln!("Overrode case expected={:?}", exp);
         }
 
         eprintln!(
@@ -185,9 +161,7 @@ pub fn run(args: &ExamineCmd) {
                     }
                 }
 
-                if args.dump_completions {
-                    dump_completions(&grammar, case_input, &ctx);
-                }
+
             }
             Err(e) => {
                 eprintln!("parser.partial() error: {}", e);
@@ -216,44 +190,8 @@ pub fn run(args: &ExamineCmd) {
         println!("\n=== Detailed metadata ===");
         println!("case.input = '{}'", case.input);
         println!("case.description = '{}'", case.description);
-        println!("case.completion_budget = {}", case.completion_budget);
-
-        if let Some(se) = meta.states_explored {
-            println!("states_explored = {}", se);
-        }
         if let Some(pc) = meta.prefixes_checked {
             println!("prefixes_checked = {}", pc);
-        }
-        if let Some(tus) = meta.total_prefix_time_us {
-            println!("prefix_total_time_us = {}", tus);
-        }
-
-        if let Some(prefix_meta) = meta.prefix_meta {
-            println!("\nPer-prefix metadata (full):");
-            for (i, pd) in prefix_meta.iter().enumerate() {
-                println!("--- prefix[{}] = '{}' ---", i, pd.prefix);
-                println!("  ok = {}", pd.ok);
-                println!("  time_us = {}", pd.time_us);
-                println!("  states_explored = {:?}", pd.states_explored);
-                println!("  visited_count = {:?}", pd.visited_count);
-                if !pd.visited_sample.is_empty() {
-                    println!("  visited_sample ({}):", pd.visited_sample.len());
-                    for (j, s) in pd.visited_sample.iter().enumerate() {
-                        println!("    [{}] {}", j, s);
-                    }
-                }
-            }
-        }
-
-        // For convenience, also print failing prefix visited states if present in the TestResult message
-        if let aufbau::validation::completable::TestResult::Fail(msg) = &result {
-            for line in msg.lines() {
-                if line.starts_with("failing_visited_")
-                    || line.starts_with("failing_prefix_visited_states=")
-                {
-                    println!("DETAIL: {}", line);
-                }
-            }
         }
 
         // If we have a completed string, print it
@@ -269,9 +207,6 @@ pub fn run(args: &ExamineCmd) {
     // Mode 2: run ad-hoc input against a provided grammar spec
     if let Some(input) = &args.input {
         let input_str = input.as_str();
-        if args.dump_completions {
-            set_debug_input(Some(input_str.to_string()));
-        }
         let spec_path = match &args.spec {
             Some(p) => p.clone(),
             None => {
@@ -299,86 +234,32 @@ pub fn run(args: &ExamineCmd) {
             }
         };
 
-        if args.dump_completions {
-            let ctx = Context::new();
-            dump_completions(&grammar, input_str, &ctx);
-        }
-
         if args.sound {
-            let (res, dur) =
-                completable::timed_sound_complete(&mut grammar, input_str, args.depth, None);
+            let (res, dur) = completable::timed_sound_complete(&mut grammar, input_str, None);
             println!("sound_complete: time={} ms", dur.as_millis());
             println!("  is_sound = {}", res.is_sound);
             if let Some(fp) = res.failing_prefix {
                 println!("  failing_prefix = '{}'", fp);
             }
-            if let Some(sv) = res.failing_prefix_visited_states {
-                println!("  failing_prefix_visited_states = {:?}", sv);
-            }
             println!("  prefixes_checked = {}", res.prefixes_checked);
-            if let Some(comp) = res.complete_string {
-                println!("  completed_to = '{}'", comp);
-            }
-            if !res.prefix_meta.is_empty() {
-                println!("\nPer-prefix metadata:");
-                for (i, pd) in res.prefix_meta.iter().enumerate() {
-                    println!(
-                        "  [{}] prefix='{}' ok={} time_us={} states_explored={:?} visited_count={:?} ",
-                        i, pd.prefix, pd.ok, pd.time_us, pd.states_explored, pd.visited_count
-                    );
-                }
+            println!("  accepted_input = '{}'", res.accepted_input);
+            if let Some(failure) = res.failure {
+                println!("  failure = '{}'", failure);
             }
 
             std::process::exit(if res.is_sound { 0 } else { 1 });
         } else {
-            let res = completable::timed_complete(&grammar, input_str, args.depth, None);
-            println!("complete: time={} ms", res.1.as_millis());
-            match &res.0 {
-                aufbau::validation::completability::CompletionResult::Success {
-                    complete_input,
-                    completion_depth: depth,
-                    ..
-                } => {
-                    println!(
-                        "  Success: completed_to='{}' depth={}",
-                        complete_input, depth
-                    );
-                    std::process::exit(0);
-                }
-                aufbau::validation::completability::CompletionResult::SuccessMultiple { completions } => {
-                    // For examine command, just use the first result
-                    if let Some(complete_input) = completions.first() {
-                        println!(
-                            "  Success: completed_to='{}' (found {} completions)",
-                            complete_input, completions.len()
-                        );
-                        std::process::exit(0);
-                    } else {
-                        println!("  Error: SuccessMultiple returned empty list");
-                        std::process::exit(2);
-                    }
-                }
-                aufbau::validation::completability::CompletionResult::Failure {
-                    max_depth_reached,
-                    states_explored,
-                    visited_states,
-                } => {
-                    println!(
-                        "  Failure: max_depth_reached={} states_explored={}",
-                        max_depth_reached, states_explored
-                    );
-                    if !visited_states.is_empty() {
-                        println!("  visited_states sample: {:?}", visited_states);
-                    }
-                    std::process::exit(1);
-                }
-                aufbau::validation::completability::CompletionResult::Invalid(msg)
-                | aufbau::validation::completability::CompletionResult::Inconsistency(msg)
-                | aufbau::validation::completability::CompletionResult::Error(msg) => {
-                    println!("  Error: {}", msg);
-                    std::process::exit(2);
-                }
+            let (res, dur) = completable::timed_sound_complete(&mut grammar, input_str, None);
+            println!("feed_replay: time={} ms", dur.as_millis());
+            println!("  accepted = {}", res.is_sound);
+            if let Some(prefix) = res.failing_prefix {
+                println!("  failing_prefix = '{}'", prefix);
             }
+            println!("  accepted_input = '{}'", res.accepted_input);
+            if let Some(failure) = res.failure {
+                println!("  failure = '{}'", failure);
+            }
+            std::process::exit(if res.is_sound { 0 } else { 1 });
         }
     }
 

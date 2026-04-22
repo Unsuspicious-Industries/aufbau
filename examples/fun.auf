@@ -44,14 +44,18 @@ AtomicExpression ::= Variable
                    | Lambda
                    | '(' Expression ')'
 
+// Postfix application: allow repeated application without extra parentheses
+PostfixTail ::= '(' Expression ')' PostfixTail | ε
+PostfixExpression ::= AtomicExpression PostfixTail
+
 // Binary integer operation
 IntBinary(bin_int) ::= Expression[left] IntOp[op] Expression[right]
 
 // Binary float operation
 FloatBinary(bin_float) ::= Expression[left] FloatOp[op] Expression[right]
 
-// Application
-Application(app) ::= AtomicExpression[func] '(' Expression[arg] ')'
+// Application is now any postfix expression (possibly chained)
+Application(app) ::= PostfixExpression
 
 // Top-level expression
 Expression ::= IntBinary

@@ -7,13 +7,13 @@ Exit codes: `0` success, `1` logical failure, `2` usage/IO error.
 
 ## `check`
 
-Run parseable validation, completable validation, and Rocq verification.
+Run parseable validation and completable validation.
 
 ```sh
-aufbau check -j 8 --completable-timeout-secs 30 --verify-jobs 8
+aufbau check -j 8 --completable-timeout-secs 30
 ```
 
-Use `--skip-parseable`, `--skip-completable`, or `--skip-verify` to narrow the run.
+Use `--skip-parseable` or `--skip-completable` to narrow the run.
 
 ---
 
@@ -95,7 +95,7 @@ Run the built-in test suites.
 aufbau validate [-m <module>] [-f <filter>] [-j <N>] [--profile <file>] [--completable-timeout-secs <N>]
 ```
 
-Modules (`-m`): `completable`, `parseable`, `complexity`. Omit to run all three.
+Modules (`-m`): `completable`, `parseable`. Omit to run both.
 Reports are written to `src/validation/reports/`.
 
 | flag               | effect |
@@ -104,17 +104,6 @@ Reports are written to `src/validation/reports/`.
 | `-j <N>`           | parallel worker threads |
 | `--completable-timeout-secs <N>` | override per-case completable timeout |
 | `--profile <file>` | write perf and failure JSON profiles |
-
----
-
-## `verify`
-
-Run the OCaml/Rocq verification pipeline directly from Rust.
-
-```sh
-echo "<prefix>" | aufbau verify fun
-aufbau verify -f verification/prefixes/fun.txt --count 3 --jobs 8
-```
 
 ---
 

@@ -101,7 +101,7 @@ impl FusionAST {
             .filter(|&id| {
                 self.arena
                     .node(id)
-                    .is_some_and(|node| node.status == NodeStatus::Complete)
+                    .is_some_and(|node| node.status.complete())
             })
             .collect();
         if roots.is_empty() {
@@ -769,7 +769,7 @@ fn collect_bound_texts_rec(arena: &ParseArena, node_id: NodeId, s:&[Segment], ou
 fn node_has_complete_alt(arena: &ParseArena, node_id: NodeId) -> bool {
     arena
         .node(node_id)
-        .is_some_and(|node| node.status == NodeStatus::Complete)
+        .is_some_and(|node| node.status.complete())
         && arena.alts_for(node_id).is_some_and(|alts| {
         alts.iter().any(|alt| {
             alt.children.iter().all(|child| match child {

@@ -32,7 +32,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
 
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::type_error("assign before decl", "{x=5;"),
+        ParseTestCase::invalid("assign before decl", "{x=5;"),
         ParseTestCase::invalid("missing type for declaration", "{let x=5;"),
         ParseTestCase::invalid("missing value", "{let x:Int;"),
         ParseTestCase::invalid("wrong type token", "{let x:String=5;"),
@@ -45,19 +45,28 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("missing open brace", "let"),
         ParseTestCase::invalid("close brace first", "}"),
         ParseTestCase::invalid("random chars", "@#$;"),
-        ParseTestCase::type_error("unbound var", "{ let y:Int=x; }"),
-        ParseTestCase::type_error("unbound var", "{ let y:Int=1; let z:Int=y-x; }"),
-        ParseTestCase::type_error("use before decl", "{ let y:Int=x+1; let x:Int=5; }"),
-        ParseTestCase::type_error("union mismatch", "{ let u:Int|Bool=1+2; let z:Int=u+1; }"),
-        ParseTestCase::type_error(
+        ParseTestCase::invalid("missing block close", "{ let x:Int=1; "),
+        ParseTestCase::invalid(
+            "if missing else block brace",
+            "{ if (1==1) { let x:Int=1; } else let y:Int=2; }",
+        ),
+        ParseTestCase::invalid(
+            "while missing condition close",
+            "{ while (1==1 { let x:Int=1; } }",
+        ),
+        ParseTestCase::invalid("unbound var", "{ let y:Int=x; }"),
+        ParseTestCase::invalid("unbound var", "{ let y:Int=1; let z:Int=y-x; }"),
+        ParseTestCase::invalid("use before decl", "{ let y:Int=x+1; let x:Int=5; }"),
+        ParseTestCase::invalid("union mismatch", "{ let u:Int|Bool=1+2; let z:Int=u+1; }"),
+        ParseTestCase::invalid(
             "union used as int",
             "{ let u:Int|Bool=true; let z:Int=u+1; }",
         ),
-        ParseTestCase::type_error(
+        ParseTestCase::invalid(
             "if branch context isolation",
             "{ if (1==1) { let x:Int=1; } else { let y:Int=x; } }",
         ),
-        ParseTestCase::type_error(
+        ParseTestCase::invalid(
             "while body does not leak bindings",
             "{ while (1==1) { let x:Int=1; } let y:Int=x; }",
         ),
@@ -65,10 +74,12 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
             "if condition missing comparator",
             "{ if 1 { let x:Int=1; } else { let x:Int=2; } }",
         ),
-        ParseTestCase::type_error(
+        ParseTestCase::invalid(
             "while condition type mismatch",
             "{ while (1==true) { let x:Int=1; } }",
         ),
+        ParseTestCase::invalid("bool declaration from int", "{ let flag:Bool=1; }"),
+        ParseTestCase::invalid("assignment from bool to int", "{ let x:Int=1; x=true; }"),
     ]
 }
 

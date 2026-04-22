@@ -68,10 +68,9 @@ fn resolve_nonterminal_obligations_captures_child_type() {
     let node = ArenaNode {
         nt: pair,
         span: Span { start: 0, end: 1 },
-        status: NodeStatus::Complete,
+        status: NodeStatus::Closed, 
         ty: 7,
-        open: false,
-        ctr: Some(ContextTransition::identity(0)),
+        ctr: Some(ContextTransition::identity()),
         bindings: Vec::new(),
         alts: AltRange { start: 0, len: 0 },
     };

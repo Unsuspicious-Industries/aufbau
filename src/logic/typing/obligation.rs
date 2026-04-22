@@ -31,7 +31,7 @@ impl Obligation {
     fn matches(&self, dot: usize, alt: usize) -> bool {
         self.paths.iter().any(|path| {
             let steps = path.steps();
-            steps.len() == 1 && steps[0].i == dot && steps[0].a.map_or(true, |a| a == alt)
+            steps.len() == 1 && steps[0].i == dot && steps[0].a == alt
         })
     }
 
@@ -42,7 +42,7 @@ impl Obligation {
             .filter_map(|path| {
                 let steps = path.steps();
                 let first = steps.first()?;
-                if first.i == dot && first.a.map_or(true, |a| a == alt) {
+                if first.i == dot && first.a == alt {
                     Some(GrammarPath::from(steps[1..].to_vec()))
                 } else {
                     None
@@ -62,11 +62,7 @@ impl Obligation {
         let paths: Vec<GrammarPath> = self
             .paths
             .iter()
-            .filter(|path| {
-                path.steps()
-                    .first()
-                    .map_or(true, |step| step.a.map_or(true, |a| a == alt))
-            })
+            .filter(|path| path.steps().first().map_or(true, |step| step.a == alt))
             .cloned()
             .collect();
 
@@ -82,8 +78,8 @@ impl Obligation {
         if !self.has_matched() && self.matches(dot, alt) {
             self.value = Some(Lexeme::new(
                 node.span,
-                node.status == NodeStatus::Complete,
-                node.open,
+                node.status.complete(),
+                node.status.open(),
             ));
             self.actual = Some(node.ty);
             return;
@@ -118,10 +114,10 @@ impl<'a> IntoIterator for &'a Obligations {
 impl Obligations {
     /// Create the obligations induced by a production at `root`.
     pub fn create(grammar: &Grammar, prod: ProdId, root: TreePath) -> Self {
-        let Some(production) = grammar.prod(prod) else {
+        let Some(_) = grammar.prod(prod) else {
             return Self::new(root, Vec::new());
         };
-        let Some(rule_name) = &production.rule else {
+        let Some(rule_name) = grammar.rule_for_prod(prod) else {
             return Self::new(root, Vec::new());
         };
         let Some(binding_map) = &grammar.bindings else {
@@ -139,11 +135,7 @@ impl Obligations {
                 let paths = binding_map.get(name, rule_name)?;
                 let filtered: Vec<GrammarPath> = paths
                     .iter()
-                    .filter(|path| {
-                        path.steps()
-                            .first()
-                            .map_or(true, |step| step.a.map_or(true, |a| a == alt))
-                    })
+                    .filter(|path| path.steps().first().map_or(true, |step| step.a == alt))
                     .cloned()
                     .collect();
 
@@ -256,18 +248,15 @@ impl Obligations {
         for obligation in &self.items {
             for path in &obligation.paths {
                 if let Some(first) = path.steps().first() {
-                    match first.a {
-                        Some(a) if a < total => {
-                            constrained.insert(a);
-                        }
-                        None => unconstrained = true,
-                        _ => {}
+                    let a = first.a;
+                    if a < total {
+                        constrained.insert(a);
                     }
                 }
             }
         }
 
-        if unconstrained || constrained.is_empty() {
+        if constrained.is_empty() {
             (0..total).map(|alt| (nt, alt)).collect()
         } else {
             constrained.into_iter().map(|alt| (nt, alt)).collect()

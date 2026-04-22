@@ -20,10 +20,9 @@ fn push_test_node(
                 start: start as u32,
                 end: end as u32,
             },
-            status: NodeStatus::Complete,
+            status: NodeStatus::Closed,
             ty: 0,
-            open: false,
-            ctr: Some(ContextTransition::identity(0)),
+            ctr: Some(ContextTransition::identity()),
             bindings: vec![],
             alts: AltRange { start: 0, len: 0 },
         },
@@ -37,7 +36,7 @@ fn test_item(prod: ProdId, pos: usize) -> Item {
         dot: 0,
         start: pos,
         pos,
-        ctr: ContextTransition::identity(0),
+        ctx: 0,
         obligations: Obligations::empty(),
         children: vec![],
     }
@@ -78,23 +77,6 @@ fn enqueue_process_allows_different_syntactic_positions() {
     assert_eq!(parser.tables.agenda.len(), 2);
 }
 
-#[test]
-fn enqueue_process_distinguishes_different_ctx() {
-    let grammar = Grammar::load("Start ::= 'a'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
-    parser.set_input("a").unwrap();
-
-    let start_nt = parser.grammar.nt_index("Start").unwrap();
-
-    let item1 = test_item((start_nt, 0), 0);
-    let mut item2 = item1.clone();
-    item2.ctr = ContextTransition::identity(99);
-
-    parser.enqueue_process_for_test(item1);
-    parser.enqueue_process_for_test(item2);
-
-    assert_eq!(parser.tables.agenda.len(), 2);
-}
 
 #[test]
 fn complete_inserts_into_seen_complete_on_first_call() {
