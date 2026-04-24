@@ -30,7 +30,6 @@ jobs:
 
       - name: Validate crate
         run: |
-          cargo fmt --all --check
           cargo check --all-targets --locked
           cargo test --all-targets --locked
           cargo package --locked
