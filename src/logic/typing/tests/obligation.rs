@@ -41,10 +41,12 @@ fn step_obligations_advances_only_matching_paths() {
 
     assert_eq!(stepped.len(), 1);
     assert_eq!(stepped.as_slice()[0].name, "x");
-    assert!(stepped.as_slice()[0]
-        .paths
-        .iter()
-        .all(|path| path.is_empty()));
+    assert!(
+        stepped.as_slice()[0]
+            .paths
+            .iter()
+            .all(|path| path.is_empty())
+    );
 }
 
 #[test]
@@ -68,7 +70,7 @@ fn resolve_nonterminal_obligations_captures_child_type() {
     let node = ArenaNode {
         nt: pair,
         span: Span { start: 0, end: 1 },
-        status: NodeStatus::Closed, 
+        status: NodeStatus::Closed,
         ty: 7,
         ctr: Some(ContextTransition::identity()),
         bindings: Vec::new(),

@@ -1,7 +1,6 @@
 //! Formal typing environments and tree-level status objects.
 
 use crate::logic::path::TreePath;
-use crate::logic::typing::rule::TypeOperation;
 use crate::logic::typing::{Type, TypeAscription};
 use std::collections::BTreeMap;
 
@@ -77,14 +76,6 @@ impl Context {
     }
 }
 
-/// One composable context assignment.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-pub struct ContextEdit {
-    pub name: String,
-    pub ty: Type,
-    pub overwrite: bool,
-}
-
 /// A context morphism between two interned contexts.
 #[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct ContextTransition {
@@ -105,8 +96,6 @@ impl ContextTransition {
             transforms: new_transforms,
         }
     }
-
-
 }
 
 /// Semantic classification of a parsed tree.
@@ -130,4 +119,3 @@ impl TreeStatus {
         }
     }
 }
-

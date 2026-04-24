@@ -1,8 +1,6 @@
 use super::Symbol;
 use regex::Regex as ExternalRegex;
 
-
-
 // collection of utils for working with grammar definitions
 pub fn is_regex(pattern: &str) -> bool {
     // Only slash-delimited patterns: /regex/
@@ -114,7 +112,7 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
             let (base_token, binding) = split_binding(&token)?;
             if base_token == "ε" {
                 // epsion is for empty alternative
-                if binding.is_some()  {
+                if binding.is_some() {
                     return Err("Epsilon production cannot carry a binding".into());
                 }
                 if is_epsilon_alt || !symbols_in_alt.is_empty() {
@@ -214,8 +212,6 @@ fn split_binding(token: &str) -> Result<(String, Option<String>), String> {
 
     Ok((value, Some(binding)))
 }
-
-
 
 fn literal_token_value(token: &str) -> Option<String> {
     if token.len() >= 2

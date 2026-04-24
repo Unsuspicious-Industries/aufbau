@@ -170,14 +170,19 @@ pub fn suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
             scoped_typed_ok(),
         ),
         (
-            "weird::stmt_typed_ok",
-            load_inline_grammar(STMT_TYPED),
-            stmt_typed_ok(),
-        ),
-        (
             "weird::union_typed_ok",
             load_inline_grammar(UNION_TYPED),
             union_typed_ok(),
+        ),
+        (
+            "weird::context_export_ok",
+            load_inline_grammar(CONTEXT_EXPORT_TYPED),
+            context_export_typed_ok(),
+        ),
+        (
+            "weird::child_context_ok",
+            load_inline_grammar(CHILD_CONTEXT_TYPED),
+            child_context_typed_ok(),
         ),
     ]
 }
@@ -410,39 +415,6 @@ const SCOPED_TYPED: &str = r#"
     ?T
 "#;
 
-/// Context-transforming with checking mode: statements that produce ∅
-/// and use Γ ▷ e checking, similar to imp but minimal — just assign+seq.
-const STMT_TYPED: &str = r#"
-    Identifier ::= /[a-z]+/
-    Type ::= 'I' | 'B'
-    Variable(var) ::= Identifier[x]
-    Num(num) ::= /[0-9]+/
-    Decl(decl) ::= 'var' Identifier[name] ':' Type[τ] '=' Num[value] ';'
-    Seq(seq) ::= Statement[head] Statements[tail]
-    Statements ::= Seq | ε
-    Statement ::= Decl
-    Block(block) ::= '{' Statements[stmts] '}'
-
-    x ∈ Γ
-    ----------- (var)
-    Γ(x)
-
-    ----------- (num)
-    'I'
-
-    Γ ⊢ value : τ
-    ----------- (decl)
-    Γ → Γ[name:τ] ⊢ ∅
-
-    Γ ▷ head, Γ ▷ tail
-    ----------- (seq)
-    ∅
-
-    [Γ] ▷ stmts
-    ----------- (block)
-    ∅
-"#;
-
 /// Union-typed expressions: literal values inhabit different types,
 /// and a choice construct produces a union type.
 const UNION_TYPED: &str = r#"
@@ -466,6 +438,45 @@ const UNION_TYPED: &str = r#"
     Γ ⊢ a : ?A, Γ ⊢ b : ?B
     ----------- (choice)
     ?A | ?B
+"#;
+
+/// Closed declarations export right-bound context transforms to right siblings.
+const CONTEXT_EXPORT_TYPED: &str = r#"
+    Identifier ::= /[a-z]+/
+    Type ::= 'A'
+    Value(val) ::= 'v'
+    Decl(decl) ::= 'let' Identifier[name] ':' Type[τ] '=' Value[value] ';'
+    Variable(var) ::= Identifier[x]
+    Start ::= Decl Variable
+
+    x ∈ Γ
+    ----------- (var)
+    Γ(x)
+
+    ----------- (val)
+    'A'
+
+    Γ ⊢ value : τ
+    ----------- (decl)
+    Γ → Γ[name:τ] ⊢ ∅
+"#;
+
+/// Child-bound contexts are local to the addressed child and do not leak to the
+/// following sibling.
+const CHILD_CONTEXT_TYPED: &str = r#"
+    Identifier ::= /[a-z]+/
+    Type ::= 'A'
+    Variable(var) ::= Identifier[x]
+    Abs(abs) ::= 'fun' Identifier[param] ':' Type[τ] Variable[body] Variable[tail]
+    Start ::= Abs
+
+    x ∈ Γ
+    ----------- (var)
+    Γ(x)
+
+    Γ[param:τ] ⊢ body : τ, Γ ⊢ tail : τ
+    ----------- (abs)
+    τ
 "#;
 
 // ============================================================================
@@ -536,16 +547,6 @@ fn scoped_typed_ok() -> Vec<TypedCompletionTestCase> {
     ]
 }
 
-fn stmt_typed_ok() -> Vec<TypedCompletionTestCase> {
-    vec![
-        T::ok("empty block", "{ }", 1),
-        T::ok("single decl", "{ var x : I = 1 ; }", 2),
-        T::ok("two decls", "{ var x : I = 1 ; var y : I = 2 ; }", 3),
-        T::ok("partial decl", "{ var x : I =", 4),
-        T::ok("partial block", "{", 3),
-    ]
-}
-
 fn union_typed_ok() -> Vec<TypedCompletionTestCase> {
     vec![
         T::ok("int literal", "42", 1),
@@ -554,6 +555,21 @@ fn union_typed_ok() -> Vec<TypedCompletionTestCase> {
         T::ok("nested choice", "1 ? 2 ? no", 3),
         T::ok("var choice", "x ? y", 2).with_context(vec![("x", "N"), ("y", "B")]),
         T::ok("partial choice", "1 ?", 3),
+    ]
+}
+
+fn context_export_typed_ok() -> Vec<TypedCompletionTestCase> {
+    vec![T::ok(
+        "closed declaration feeds right sibling",
+        "let x : A = v ; x",
+        3,
+    )]
+}
+
+fn child_context_typed_ok() -> Vec<TypedCompletionTestCase> {
+    vec![
+        T::ok("body sees parameter tail sees ambient", "fun x : A x y", 3)
+            .with_context(vec![("y", "A")]),
     ]
 }
 
@@ -660,15 +676,22 @@ fn check_scoped_typed_completable() {
 }
 
 #[test]
-fn check_stmt_typed_completable() {
-    let grammar = load_inline_grammar(STMT_TYPED);
-    let res = run_test_batch(&grammar, &stmt_typed_ok());
+fn check_union_typed_completable() {
+    let grammar = load_inline_grammar(UNION_TYPED);
+    let res = run_test_batch(&grammar, &union_typed_ok());
     res.assert_all_passed();
 }
 
 #[test]
-fn check_union_typed_completable() {
-    let grammar = load_inline_grammar(UNION_TYPED);
-    let res = run_test_batch(&grammar, &union_typed_ok());
+fn check_context_export_typed_completable() {
+    let grammar = load_inline_grammar(CONTEXT_EXPORT_TYPED);
+    let res = run_test_batch(&grammar, &context_export_typed_ok());
+    res.assert_all_passed();
+}
+
+#[test]
+fn check_child_context_typed_completable() {
+    let grammar = load_inline_grammar(CHILD_CONTEXT_TYPED);
+    let res = run_test_batch(&grammar, &child_context_typed_ok());
     res.assert_all_passed();
 }

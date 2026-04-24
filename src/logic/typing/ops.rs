@@ -5,8 +5,8 @@
 //! The Unifier provides proper Hindley-Milner style unification following the
 //! formal spec in §1.7, replacing the ad-hoc set_meta/solve_meta system.
 
-use crate::logic::typing::Type;
 use crate::logic::typing::Context;
+use crate::logic::typing::Type;
 use std::collections::HashMap;
 
 pub fn is_unresolved(ty: &Type) -> bool {
@@ -44,9 +44,13 @@ impl UnifyResult {
     }
 }
 
-/// Proper unification engine following §1.7 of the formal spec.
+/// Legacy local unification helper.
 ///
-/// Manages a substitution map σ: MetaVar → Type and provides:
+/// This is not the semantic foundation of the parser. Rule metas are local
+/// placeholders, so using this helper across distinct premise scopes is unsound
+/// unless an explicit scope/path discipline is added.
+///
+/// It manages a substitution map σ: MetaVar → Type and provides:
 /// - `unify(τ₁, τ₂)`: attempt to make τ₁ and τ₂ equal under σ
 /// - `apply(τ)`: substitute all bound meta variables in τ
 /// - `resolve(name)`: look up a meta variable binding
@@ -110,6 +114,22 @@ impl Unifier {
         self.substitution.get(name)
     }
 
+    /// Seed unresolved metas from an external witness source.
+    /// Existing bindings are preserved; each name is queried at most once.
+    pub fn seed<I, F>(&mut self, names: I, mut resolve: F)
+    where
+        I: IntoIterator<Item = String>,
+        F: FnMut(&str) -> Option<Type>,
+    {
+        for name in names {
+            if self.resolve_meta(&name).is_none()
+                && let Some(resolved) = resolve(&name)
+            {
+                let _ = self.bind(&name, &resolved);
+            }
+        }
+    }
+
     /// Bind a meta variable, with occurs check
     pub fn bind(&mut self, name: &str, ty: &Type) -> UnifyResult {
         // If already bound, unify the existing binding with the new type
@@ -117,6 +137,9 @@ impl Unifier {
             return self.unify(&existing, ty);
         }
 
+        if occurs_meta(name, ty) {
+            return UnifyResult::Fail(format!("Occurs check failed: ?{} occurs in {}", name, ty));
+        }
 
         self.substitution.insert(name.to_string(), ty.clone());
         UnifyResult::Ok
@@ -198,6 +221,10 @@ impl Unifier {
         let t2 = self.walk(&self.resolve_ctx_call(t2, true));
 
         match (&t1, &t2) {
+            // Invariant: same-name metas are not globally identical by default.
+            // Scope-sensitive meta solving must be modeled explicitly elsewhere.
+            //(Type::Meta(a), Type::Meta(b)) if a == b => UnifyResult::Ok,
+
             // Identical types
             (Type::Raw(a), Type::Raw(b)) => {
                 if a == b {
@@ -369,7 +396,6 @@ impl Unifier {
             _ => ty.clone(),
         }
     }
-
 }
 
 // =============================================================================
@@ -489,6 +515,7 @@ fn occurs_meta(name: &str, ty: &Type) -> bool {
 mod tests {
     use super::*;
     use crate::logic::typing::Type;
+    use proptest::prelude::*;
 
     fn parse(t: &str) -> Type {
         Type::parse(t).expect("type should parse")
@@ -515,5 +542,38 @@ mod tests {
         let rhs = parse("'Int' | 'Bool'");
         assert!(unifier.unify(&lhs, &rhs).is_ok());
         assert!(matches!(unifier.resolve_meta("A"), Some(Type::Raw(name)) if name == "Int"));
+    }
+
+    #[test]
+    fn seed_preserves_existing_binding() {
+        let mut unifier = Unifier::new();
+        assert!(unifier.bind("A", &parse("'Int' ")).is_ok());
+        unifier.seed(vec!["A".to_string()], |_| Some(parse("'Bool'")));
+        assert_eq!(unifier.resolve_meta("A"), Some(&parse("'Int'")));
+    }
+
+    #[test]
+    fn seed_only_binds_requested_names() {
+        let mut unifier = Unifier::new();
+        unifier.seed(vec!["A".to_string()], |name| match name {
+            "A" => Some(parse("'Int'")),
+            _ => Some(parse("'Bool'")),
+        });
+        assert_eq!(unifier.resolve_meta("A"), Some(&parse("'Int'")));
+        assert_eq!(unifier.resolve_meta("B"), None);
+    }
+
+    proptest! {
+        #[test]
+        fn prop_seed_binds_each_name_at_most_once(name in "[A-Z]{1,3}") {
+            let mut unifier = Unifier::new();
+            let mut calls = 0usize;
+            unifier.seed(vec![name.clone(), name.clone(), name.clone()], |_| {
+                calls += 1;
+                Some(parse("'Int'"))
+            });
+            prop_assert_eq!(calls, 1);
+            prop_assert_eq!(unifier.resolve_meta(&name), Some(&parse("'Int'")));
+        }
     }
 }

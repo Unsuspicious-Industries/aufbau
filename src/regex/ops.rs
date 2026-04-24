@@ -134,7 +134,7 @@ pub fn prefix_match(r: &Regex, s: &str) -> PrefixStatus {
     let d = derivative(r, s).simplify();
     if is_empty(&d) {
         PrefixStatus::NoMatch
-    } else if matches!(&d, Regex::Empty) {
+    } else if matches!(&d, Regex::Epsilon) {
         PrefixStatus::Complete
     } else if is_nullable(&d) {
         PrefixStatus::Extensible(d)

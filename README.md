@@ -13,7 +13,6 @@ Exported API:
 - Class `Synthesizer(spec_source, input="", max_depth=None)`
   - `parse()`, `tokens()`, `token_examples()`, `feed(token)`, `try_feed(token)`
   - `set_input(input)`, `input()`, `ast()`, `is_complete()`
-  - `add_binding(name, ty)`, `clear_bindings()`
 - Class `Regex(pattern)`
   - `matches(text)`, `prefix_match(prefix)`, `derivative(text)`, `deriv(character)`
   - `is_empty()`, `is_nullable()`, `match_len(text)`, `to_pattern()`

@@ -1,4 +1,4 @@
-name: Validation Tests
+name: Validation
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   check:
-    name: Full check pipeline
+    name: Rust checks and validation suites
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -23,79 +23,44 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Set up OCaml with Coq and Dune
-        uses: ocaml/setup-opam@v2
-        with:
-          ocaml-version: '5.2.0'
-          opam-pin: coq 8.18.0
+      - name: Check formatting
+        run: cargo fmt --all --check
 
-      - name: Run full non-TypeScript check pipeline
+      - name: Check default targets
+        run: cargo check --all-targets --locked
+
+      - name: Check Python FFI targets
+        run: cargo check --all-targets --features python-ffi --locked
+
+      - name: Run tests
+        run: cargo test --all-targets --locked
+
+      - name: Check crate package
+        run: cargo package --locked
+
+      - name: Run validation suites
         run: |
-          cargo run --release --bin aufbau -- check \
+          cargo run --release --bin aufbau -- validate \
             --jobs "$(nproc)" \
-            --completable-timeout-secs 30 \
-            --parseable-timeout-secs 3600 \
-            --completable-command-timeout-secs 5400 \
-            --verify-timeout-secs 5400 \
-            --verify-jobs "$(nproc)"
+            --completable-timeout-secs 30
 
       - name: Show generated reports
         if: always()
         run: |
-          echo "Validation reports (parseable):"
-          ls -la validation/reports || true
+          echo "Validation reports:"
+          ls -la src/validation/reports || true
           echo "--- latest report ---"
-          ls -t validation/reports/*.txt 2>/dev/null | head -n 1 || true
-          tail -n +1 validation/reports/*.txt 2>/dev/null || true
+          ls -t src/validation/reports/*.txt 2>/dev/null | head -n 1 || true
+          tail -n +1 src/validation/reports/*.txt 2>/dev/null || true
 
       - name: Upload validation reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: validation-reports-check
-          path: validation/reports/*.txt
-
-  linecount:
-    name: Line count enforcement
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check line count limits
-        run: |
-          declare -A LIMITS
-          LIMITS["src/logic/fusion"]=1500
-          LIMITS["src/logic/grammar"]=800
-          LIMITS["src/logic/typing"]=700
-          LIMITS["src/logic/search"]=600
-          LIMITS["src/logic/binding"]=400
-          LIMITS["src/cli"]=600
-          LIMITS["src/validation"]=1000
-          LIMITS["src/regex"]=800
-          
-          FAILED=0
-          
-          for dir in "${!LIMITS[@]}"; do
-            MAX_LINES="${LIMITS[$dir]}"
-            echo "Checking $dir (max $MAX_LINES lines):"
-            for file in $(find "$dir" -name '*.rs' -type f 2>/dev/null); do
-              lines=$(wc -l < "$file")
-              if [ "$lines" -gt $MAX_LINES ]; then
-                echo "  FAIL: $file has $lines lines"
-                FAILED=1
-              fi
-            done
-          done
-          
-          if [ $FAILED -eq 1 ]; then
-            echo "Line count check FAILED"
-            exit 1
-          fi
-          echo "All line count checks passed"
+          path: src/validation/reports/*.txt

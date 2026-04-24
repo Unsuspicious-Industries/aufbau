@@ -8,12 +8,11 @@ pub mod rule;
 pub mod runtime;
 pub mod types;
 
-
 #[cfg(test)]
 mod tests;
 
 pub use crate::logic::TypingRuntime;
-pub use context::{Context, ContextEdit, ContextTransition, TreeStatus};
+pub use context::{Context, ContextTransition, TreeStatus};
 pub use obligation::{Obligation, Obligations};
 pub use ops::{Unifier, UnifyResult, equal, subtype};
 pub use pool::{SharedType, intern_type};

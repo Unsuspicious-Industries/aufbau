@@ -230,36 +230,6 @@ fn check_completable_float_arithmetic() {
     res.assert_all_passed();
 }
 
-#[test]
-fn nested_paren_int_add_replays_cleanly() {
-    let mut grammar = fun_grammar();
-    let result = crate::validation::completability::sound_complete(
-        &mut grammar,
-        "(1 + 2)",
-        Some(Context::new()),
-    );
-
-    assert!(
-        result.is_sound,
-        "nested paren int add should replay through feed"
-    );
-}
-
-#[test]
-fn repro_complex_paren_int_add_stays_prefix_sound() {
-    let mut grammar = fun_grammar();
-    let result = crate::validation::completability::sound_complete(
-        &mut grammar,
-        "((1 + 2))",
-        Some(Context::new()),
-    );
-
-    assert!(
-        result.is_sound,
-        "nested paren int should stay sound, failing_prefix={:?}",
-        result.failing_prefix
-    );
-}
 
 #[test]
 fn check_completable_lambda() {

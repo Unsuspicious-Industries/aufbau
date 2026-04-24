@@ -17,7 +17,6 @@ pub enum ValidationModule {
     Completable,
     /// Run parseable validation tests (fast prefix parsing)
     Parseable,
-
 }
 
 #[derive(Args, Debug, Clone)]
@@ -47,6 +46,19 @@ pub struct ValidateCmd {
 }
 
 pub fn run(args: &ValidateCmd) {
+    // Rayon allows the global thread pool to be configured once per process.
+    // Configure it here, before any module runs, so `validate` can execute both
+    // completable and parseable suites without warning on the second module.
+    if let Some(n) = args.jobs
+        && n > 0
+        && let Err(e) = rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .stack_size(32 * 1024 * 1024)
+            .build_global()
+    {
+        eprintln!("Warning: failed to set rayon thread pool: {}", e);
+    }
+
     match &args.module {
         Some(ValidationModule::Completable) => completable::run(args),
         Some(ValidationModule::Parseable) => parseable::run(args),
@@ -124,17 +136,6 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
     suite_pb.set_style(suite_style);
     suite_pb.set_prefix("suites");
 
-    // Build thread pool if requested
-    if let Some(n) = args.jobs
-        && n > 0
-        && let Err(e) = rayon::ThreadPoolBuilder::new()
-            .num_threads(n)
-            .stack_size(32 * 1024 * 1024)
-            .build_global()
-    {
-        eprintln!("Warning: failed to set rayon thread pool: {}", e);
-    }
-
     let run_start = Instant::now();
     let mut results: Vec<CaseResult> = Vec::with_capacity(total_cases);
     let mut profile_records: Vec<serde_json::Value> = Vec::new();
@@ -146,31 +147,31 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
         case_pb.set_style(case_style.clone());
         case_pb.set_prefix(suite.name.to_string());
 
-        let mut par_results: Vec<(usize, bool, String, Duration)> =
-            if module_name == "completable" {
-                suite
-                    .cases
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, case)| {
-                        let start = Instant::now();
-                        let (passed, detail) = (case.run)();
-                        (idx, passed, detail, start.elapsed())
-                    })
-                    .collect()
-            } else {
-                let indexed: Vec<(usize, &RunnableCase)> = suite.cases.iter().enumerate().collect();
-                let mut results: Vec<(usize, bool, String, Duration)> = indexed
-                    .par_iter()
-                    .map(|(idx, case)| {
-                        let start = Instant::now();
-                        let (passed, detail) = (case.run)();
-                        (*idx, passed, detail, start.elapsed())
-                    })
-                    .collect();
-                results.sort_by_key(|(idx, _, _, _)| *idx);
-                results
-            };
+        let mut par_results: Vec<(usize, bool, String, Duration)> = if module_name == "completable"
+        {
+            suite
+                .cases
+                .iter()
+                .enumerate()
+                .map(|(idx, case)| {
+                    let start = Instant::now();
+                    let (passed, detail) = (case.run)();
+                    (idx, passed, detail, start.elapsed())
+                })
+                .collect()
+        } else {
+            let indexed: Vec<(usize, &RunnableCase)> = suite.cases.iter().enumerate().collect();
+            let mut results: Vec<(usize, bool, String, Duration)> = indexed
+                .par_iter()
+                .map(|(idx, case)| {
+                    let start = Instant::now();
+                    let (passed, detail) = (case.run)();
+                    (*idx, passed, detail, start.elapsed())
+                })
+                .collect();
+            results.sort_by_key(|(idx, _, _, _)| *idx);
+            results
+        };
 
         par_results.sort_by_key(|(idx, _, _, _)| *idx);
 

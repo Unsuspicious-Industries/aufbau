@@ -1,4 +1,4 @@
-//! Validation Test Suite for Constrained Generation
+//! Slower empirical suites built on feed replay.
 
 pub mod arithmetic;
 
@@ -12,9 +12,9 @@ pub mod imp;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::Context;
 
-use crate::validation::completability::{sound_complete, PrefixSoundnessResult};
-use rayon::prelude::*;
+use crate::validation::completability::{PrefixSoundnessResult, check_incremental_feed_replay};
 use rayon::ThreadPoolBuilder;
+use rayon::prelude::*;
 use serde_json::json;
 use std::sync::mpsc;
 use std::thread;
@@ -52,7 +52,7 @@ fn batch_worker_count(cases_len: usize) -> usize {
 // Suite Registry
 // ============================================================================
 
-/// Collect all completable test suites.
+/// Collect all replay-soundness suites.
 pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)> {
     let mut out = Vec::new();
     out.extend(arithmetic::suites());
@@ -61,31 +61,14 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
     out.extend(fun::suites());
     out.extend(imp::suites());
     out.extend(weird::suites());
-    out.into_iter()
-        .map(|(name, grammar, cases)| (name, grammar, prune_prefix_cases(&cases)))
-        .collect()
+    out
 }
 
-// ============================================================================
-// Performance Debugging Infrastructure
-// ============================================================================
-
-/// Wrapper that times feed-based prefix replay with context.
-pub fn timed_sound_complete(
-    grammar: &mut Grammar,
-    input: &str,
-    opt_ctx: Option<Context>,
-) -> (PrefixSoundnessResult, Duration) {
-    let start = Instant::now();
-    let result = sound_complete(grammar, input, opt_ctx);
-    let elapsed = start.elapsed();
-    (result, elapsed)
-}
 // ============================================================================
 // Test Framework - Core Verification Utilities
 // ============================================================================
 
-/// A test case for typed completion verification
+/// A test case for typed feed-replay verification.
 #[derive(Debug, Clone)]
 pub struct TypedCompletionTestCase {
     /// Human-readable description
@@ -123,28 +106,13 @@ impl TypedCompletionTestCase {
     }
 }
 
-fn prune_prefix_cases(cases: &[TypedCompletionTestCase]) -> Vec<TypedCompletionTestCase> {
-    cases
-        .iter()
-        .enumerate()
-        .filter(|(i, case)| {
-            !cases.iter().enumerate().any(|(j, other)| {
-                i != &j
-                    && other.input.len() > case.input.len()
-                    && other.input.starts_with(case.input)
-            })
-        })
-        .map(|(_, case)| case.clone())
-        .collect()
-}
-
 /// Metadata for a single test run useful to profiling and reporting
 #[derive(Debug, Clone)]
 pub struct TestRunMeta {
     pub prefixes_checked: Option<usize>,
 }
 
-/// Run a single typed completion test case, returning timing info and metadata.
+/// Run a single typed replay test case, returning timing info and metadata.
 /// All failure messages are structured as key=value lines for machine parsing.
 pub fn run_test_timed_meta(
     grammar: &Grammar,
@@ -193,7 +161,9 @@ fn run_test_inner(
         prefixes_checked: None,
     };
 
-    let (result, _elapsed) = timed_sound_complete(grammar, case.input, Some(ctx.clone()));
+    let start = Instant::now();
+    let result = check_incremental_feed_replay(grammar, case.input, Some(ctx.clone()));
+    let _elapsed = start.elapsed();
     meta.prefixes_checked = Some(result.prefixes_checked);
 
     let result = if result.is_sound {
@@ -250,8 +220,6 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
         result: TestResult,
         duration: Duration,
     }
-
-    let cases = prune_prefix_cases(cases);
 
     let mut passed = 0;
     let mut failed = 0;

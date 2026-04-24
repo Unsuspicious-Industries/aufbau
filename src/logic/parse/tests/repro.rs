@@ -2,6 +2,7 @@ use super::*;
 use crate::logic::synth::Synthesizer;
 use crate::logic::typing::Context;
 use crate::logic::typing::Type;
+use crate::validation::parseable::check_all_prefixes_parseable;
 use crate::validation::parseable::load_example_grammar;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -175,7 +176,12 @@ fn repro_fun_prefix_lambda_app_open_paren() {
     let mut synth = Synthesizer::new(g, prefix);
     let result = synth.parse_with(&Context::new());
     println!("repro prefix='{}' result={:?}", prefix, result);
-    assert!(result.is_ok(), "parse '{}' in Fun failed: {:?}", prefix, result);
+    assert!(
+        result.is_ok(),
+        "parse '{}' in Fun failed: {:?}",
+        prefix,
+        result
+    );
 }
 
 /// Imp: basic block.
@@ -213,6 +219,36 @@ fn repro_toy_concat() {
     assert!(result.is_ok(), "toy concat failed: {:?}", result);
 }
 
+#[test]
+#[ignore = "debug trace for toy typed value"]
+fn trace_toy_typed_value() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+    let g = load_example_grammar("toy");
+    let input = "beep: Fizz";
+    let mut synth = Synthesizer::new(g, input);
+    let result = synth.parse_with(&Context::new());
+    println!("toy typed value input='{}' result={:?}", input, result);
+    assert!(result.is_ok(), "toy typed value failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for fun float operator prefix"]
+fn trace_fun_float_op_prefix() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+    let g = load_example_grammar("fun");
+    let input = "10 /.";
+    let mut synth = Synthesizer::new(g, input);
+    let result = synth.parse_with(&Context::new());
+    println!("fun float-op prefix input='{}' result={:?}", input, result);
+    assert!(result.is_ok(), "fun float-op prefix failed: {:?}", result);
+}
+
 /// Fun: "1.0 +. 2" — the trailing "2" is a prefix of a valid Float
 /// (e.g. "2.0"), so the parser should produce a partial parse.
 #[test]
@@ -224,6 +260,243 @@ fn repro_fun_float_partial() {
     assert!(result.is_ok(), "fun float partial failed: {:?}", result);
     let ast = result.unwrap();
     assert!(!ast.is_complete(), "should be partial, not complete");
+}
+
+#[test]
+#[ignore = "debug trace for context-flow investigation"]
+fn trace_imp_context_flow_seq_decl_use() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("imp");
+    let input = "{ let x:Int=5; let y:Int=x; }";
+    let mut synth = Synthesizer::new(g, input);
+    let result = synth.parse_with(&Context::new());
+    println!("imp trace input='{}' result={:?}", input, result);
+    assert!(result.is_ok(), "imp context flow failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for application-path investigation"]
+fn trace_fun_apply_bool_context() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("fun");
+    let mut synth = Synthesizer::new(g, "f(true)");
+    let result = synth.parse_with(&ctx_of(&[("f", "Bool -> Int")]));
+    println!("fun trace input='f(true)' result={:?}", result);
+    assert!(result.is_ok(), "fun bool application failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for application-prefix investigation"]
+fn trace_fun_apply_open_paren_prefix() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("fun");
+    let mut synth = Synthesizer::new(g, "f(");
+    let result = synth.parse_with(&ctx_of(&[("f", "Bool -> Int")]));
+    println!("fun trace input='f(' result={:?}", result);
+    assert!(result.is_ok(), "fun open-paren prefix failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for stlc left-application investigation"]
+fn trace_stlc_left_app_ctx() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("stlc");
+    let mut synth = Synthesizer::new(g, "f x");
+    let result = synth.parse_with(&ctx_of(&[("f", "A->B"), ("x", "A")]));
+    println!("stlc trace input='f x' result={:?}", result);
+    assert!(result.is_ok(), "stlc left app failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for lambda-scoped STLC chain"]
+fn trace_stlc_lambda_chain_ctx() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("stlc");
+    let input = "λf:A->B->C.λx:A.λy:B.f x";
+    let mut synth = Synthesizer::new(g, input);
+    let result = synth.parse_with(&Context::new());
+    println!(
+        "stlc lambda-chain trace input='{}' result={:?}",
+        input, result
+    );
+    assert!(result.is_ok(), "stlc lambda chain failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for parenthesized STLC app chain prefix"]
+fn trace_stlc_paren_double_app_prefix() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let g = load_example_grammar("stlc");
+    let input = "((f x) y";
+    let mut synth = Synthesizer::new(g, input);
+    let result = synth.parse_with(&ctx_of(&[("f", "A->B->C"), ("x", "A"), ("y", "B")]));
+    println!(
+        "stlc paren double app prefix input='{}' result={:?}",
+        input, result
+    );
+    assert!(
+        result.is_ok(),
+        "stlc paren double app prefix failed: {:?}",
+        result
+    );
+}
+
+#[test]
+#[ignore = "debug trace for long left-application investigation"]
+fn trace_stlc_long_left_app_ctx() {
+    let g = load_example_grammar("stlc");
+    let mut synth = Synthesizer::new(g, "f x y z w v u");
+    let result = synth.parse_with(&ctx_of(&[
+        ("f", "A->B->C->D->E->F->G"),
+        ("x", "A"),
+        ("y", "B"),
+        ("z", "C"),
+        ("w", "D"),
+        ("v", "E"),
+        ("u", "F"),
+    ]));
+    println!("stlc long trace result={:?}", result);
+    assert!(result.is_ok(), "stlc long left app failed: {:?}", result);
+}
+
+#[test]
+#[ignore = "debug trace for parseable STLC prefix runner"]
+fn trace_stlc_parseable_prefix_runner() {
+    let mut grammar = load_example_grammar("stlc");
+    let result =
+        check_all_prefixes_parseable(&mut grammar, "f x", &ctx_of(&[("f", "A->B"), ("x", "A")]));
+    println!("stlc parseable prefix runner result={:?}", result);
+    assert!(matches!(
+        result,
+        crate::validation::parseable::ParseResult::Pass { .. }
+    ));
+}
+
+#[test]
+#[ignore = "debug trace for sequential STLC prefixes"]
+fn trace_stlc_prefixes_sequential() {
+    let grammar = load_example_grammar("stlc");
+    let ctx = ctx_of(&[("f", "A->B"), ("x", "A")]);
+    for prefix in ["f", "f x"] {
+        let mut synth = Synthesizer::new(grammar.clone(), prefix);
+        let result = synth.parse_with(&ctx);
+        println!("stlc sequential prefix='{}' result={:?}", prefix, result);
+        assert!(result.is_ok(), "prefix {} failed: {:?}", prefix, result);
+    }
+}
+
+#[test]
+#[ignore = "debug trace for transparent unary propagation"]
+fn trace_transparent_unary_propagation() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let grammar = crate::logic::grammar::Grammar::load(
+        r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Wrap ::= Variable
+        Start ::= Wrap
+
+        x ∈ Γ
+        ----------- (var)
+        Γ(x)
+        "#,
+    )
+    .unwrap();
+    let mut synth = Synthesizer::new(grammar, "x");
+    let ast = synth.parse_with(&ctx_of(&[("x", "'X'")])).unwrap();
+    let arena = ast.arena();
+    println!(
+        "type0={:?} type1={:?} type2={:?}",
+        synth.runtime().type_of(0),
+        synth.runtime().type_of(1),
+        synth.runtime().type_of(2)
+    );
+    for id in 0..arena.node_count() {
+        let node = arena.node(id).unwrap();
+        println!(
+            "node id={} nt={} status={:?} ty={:?}",
+            id,
+            synth.grammar().nt(node.nt).unwrap_or("<?>"),
+            node.status,
+            synth.runtime().type_of(node.ty)
+        );
+    }
+    for &id in ast.root_ids() {
+        let node = arena.node(id).unwrap();
+        println!(
+            "root id={} nt={} status={:?} ty={:?}",
+            id,
+            synth.grammar().nt(node.nt).unwrap_or("<?>"),
+            node.status,
+            synth.runtime().type_of(node.ty)
+        );
+    }
+}
+
+#[test]
+#[ignore = "debug trace for epsilon-wrapped prefix investigation"]
+fn trace_weird_pre_prefix() {
+    set_debug_level(DebugLevel::Trace);
+    crate::clear_module_filters();
+    crate::add_module_filter("fusion_parser");
+    crate::add_module_filter("fusion_typing");
+
+    let grammar = Grammar::load(
+        r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Prefix ::= 'pre' | ε
+        Suffix ::= 'post' | ε
+        Wrapped(wrap) ::= Prefix[p] Core[c] Suffix[s]
+        Core ::= Variable
+        Start ::= Wrapped
+
+        x ∈ Γ
+        ----------- (var)
+        Γ(x)
+
+        Γ ⊢ c : ?T
+        ----------- (wrap)
+        ?T
+    "#,
+    )
+    .unwrap();
+    let mut synth = Synthesizer::new(grammar, "pre");
+    let result = synth.parse_with(&ctx_of(&[("x", "T")]));
+    println!("weird trace input='pre' result={:?}", result);
+    assert!(
+        result.is_ok(),
+        "epsilon-wrapped prefix failed: {:?}",
+        result
+    );
 }
 
 // ── Prefix soundness repros ──────────────────────────────────────────────────

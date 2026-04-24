@@ -7,9 +7,7 @@ use crate::logic::typing::{SharedType, Type, intern_type};
 use crate::regex::Regex;
 use std::collections::{BTreeSet, HashSet};
 
-use crate::logic::parse::arena::{
-    ChildRef, NodeId, NodeStatus, ParseArena, Span,
-};
+use crate::logic::parse::arena::{ChildRef, NodeId, NodeStatus, ParseArena, Span};
 use crate::logic::typing::runtime::RuleRuntime;
 
 // ============================================================================
@@ -121,18 +119,22 @@ impl FusionAST {
         self.view().is_complete()
     }
 
+    pub fn is_exact(&self) -> bool {
+        self.view().is_exact()
+    }
+
     pub fn has_complete_root(&self) -> bool {
         self.is_complete()
     }
-
-
 
     pub fn grounded_root_count(&self, runtime: &RuleRuntime) -> usize {
         self.roots
             .iter()
             .filter(|&&id| {
                 self.arena.node(id).is_some_and(|n| {
-                    runtime.type_of(n.ty).is_some_and(|t| !matches!(t, Type::Any))
+                    runtime
+                        .type_of(n.ty)
+                        .is_some_and(|t| !matches!(t, Type::Any))
                 })
             })
             .count()
@@ -145,9 +147,6 @@ impl FusionAST {
         })
     }
 
-    pub fn completions(&self, grammar: &Grammar) -> Vec<Regex> {
-        self.view().completions(grammar)
-    }
 
     pub fn segments(&self) -> &[Segment] {
         &self.segments
@@ -167,26 +166,7 @@ impl FusionAST {
         self.view().node_count()
     }
 
-    /// Count completeness signal: fraction of complete terminals.
-    pub fn completeness_score(&self) -> f64 {
-        self.view().completeness_score()
-    }
-
-    pub fn production_fullness_score(&self, grammar: &Grammar) -> f64 {
-        self.view().production_fullness_score(grammar)
-    }
-
-    pub fn leaf_terminal_count(&self) -> usize {
-        self.view().leaf_terminal_count()
-    }
-
-    pub fn min_open_slots(&self, grammar: &Grammar) -> usize {
-        self.view().min_open_slots(grammar)
-    }
-
-    pub fn min_tree_depth(&self) -> usize {
-        self.view().min_tree_depth()
-    }
+ 
 
     pub fn bound_texts(&self) -> Vec<String> {
         self.view().bound_texts(&self.segments)
@@ -229,17 +209,25 @@ impl<'a> FusionForest<'a> {
     pub(crate) fn text(&self) -> &'a str {
         self.input
     }
-    pub(crate) fn segs(&self) -> &'a [Segment] {
-        self.segments
-    }
     pub(crate) fn is_complete(&self) -> bool {
-        debug_trace!("fusion", "FusionForest::is_complete: input='{}' roots={}", self.input, self.roots.len());
+        debug_trace!(
+            "fusion",
+            "FusionForest::is_complete: input='{}' roots={}",
+            self.input,
+            self.roots.len()
+        );
         let result = self
             .roots
             .iter()
             .any(|&id| node_has_complete_alt(self.arena, id));
         debug_trace!("fusion", "is_complete: result={}", result);
         result
+    }
+
+    pub(crate) fn is_exact(&self) -> bool {
+        self.roots
+            .iter()
+            .any(|&id| node_has_exact_alt(self.arena, id))
     }
     pub(crate) fn node_count(&self) -> usize {
         self.arena.node_count()
@@ -251,61 +239,10 @@ impl<'a> FusionForest<'a> {
         }
         out.into_iter().collect()
     }
-    pub(crate) fn roots(&self) -> impl Iterator<Item = FusionForestNode<'_>> + '_ {
-        self.roots.iter().map(move |&id| FusionForestNode {
-            forest: self,
-            node_id: id,
-        })
-    }
-    pub(crate) fn completions(&self, grammar: &Grammar) -> Vec<Regex> {
-        debug_trace!("fusion", "FusionForest::completions: input='{}'", self.input);
-        let mut ranked = Vec::new();
-        for node in self.roots() {
-            node.collect_valid_tokens_ranked(grammar, &mut ranked, 0);
-        }
-        ranked.sort_by(|(ap, _), (bp, _)| ap.cmp(bp));
-        let mut seen = HashSet::new();
-        let out: Vec<Regex> = ranked
-            .into_iter()
-            .filter_map(|(_, token)| seen.insert(token.clone()).then_some(token))
-            .collect();
-        debug_trace!("fusion", "completions: count={}", out.len());
-        out
-    }
-    pub(crate) fn completeness_score(&self) -> f64 {
-        self.roots()
-            .map(|node| node.completeness_score())
-            .fold(0.0_f64, f64::max)
-    }
-    pub(crate) fn production_fullness_score(&self, grammar: &Grammar) -> f64 {
-        self.roots()
-            .map(|node| node.production_fullness_score(grammar))
-            .fold(0.0_f64, f64::max)
-    }
-    pub(crate) fn leaf_terminal_count(&self) -> usize {
-        self.leafs().count()
-    }
-    pub(crate) fn min_open_slots(&self, grammar: &Grammar) -> usize {
-        self.roots()
-            .map(|node| node.count_open_slots(grammar))
-            .min()
-            .unwrap_or(0)
-    }
-    pub(crate) fn min_tree_depth(&self) -> usize {
-        self.roots().map(|node| node.max_depth()).min().unwrap_or(0)
-    }
 
-    // Leafs are the terminal leaves of the forest, read as an iterable view.
-    pub(crate) fn leafs(&self) -> Leafs<'_> {
-        Leafs::new(self.roots().collect())
-    }
+    
 }
 
-#[derive(Clone, Copy)]
-pub struct FusionForestNode<'a> {
-    forest: &'a FusionForest<'a>,
-    node_id: NodeId,
-}
 
 // ============================================================================
 // FusionNode — borrowed view into a FusionAST
@@ -352,11 +289,7 @@ impl<'a> FusionNode<'a> {
             .alts_for(self.node_id)
             .map(|alts| {
                 alts.first()
-                    .map(|alt| {
-                        grammar
-                            .prod(alt.prod)
-                            .map(|p| p.rhs.len()).unwrap()
-                    })
+                    .map(|alt| grammar.prod(alt.prod).map(|p| p.rhs.len()).unwrap())
                     .unwrap_or(0)
             })
             .unwrap_or(0)
@@ -377,7 +310,11 @@ impl<'a> FusionNode<'a> {
                             ast: self.ast,
                             node_id: *id,
                         }),
-                        ChildRef::Terminal(Lexeme{matched:span, complete, open: _}) => FusionChild::Terminal {
+                        ChildRef::Terminal(Lexeme {
+                            matched: span,
+                            complete,
+                            open: _,
+                        }) => FusionChild::Terminal {
                             text: render_span(*span, &self.ast.segments),
                             complete: *complete,
                         },
@@ -389,221 +326,9 @@ impl<'a> FusionNode<'a> {
     }
 }
 
-impl<'a> FusionForestNode<'a> {
-    fn child_count(&self) -> usize {
-        self.forest
-            .arena
-            .alts_for(self.node_id)
-            .map(|alts| alts.first().map(|alt| alt.children.len()).unwrap_or(0))
-            .unwrap_or(0)
-    }
-    fn rhs_len(&self, grammar: &Grammar) -> usize {
-        self.forest
-            .arena
-            .alts_for(self.node_id)
-            .map(|alts| {
-                alts.first()
-                    .map(|alt| {
-                        grammar
-                            .prod(alt.prod)
-                            .map(|p| p.rhs.len())
-                            .unwrap_or(alt.children.len())
-                    })
-                    .unwrap_or(0)
-            })
-            .unwrap_or(0)
-    }
-    fn children(&self) -> impl Iterator<Item = FusionForestChild<'a>> + 'a {
-        let alts_data = self
-            .forest
-            .arena
-            .alts_for(self.node_id)
-            .and_then(|alts| alts.first().cloned());
-        let children: Vec<_> = alts_data
-            .map(|alt| {
-                alt.children
-                    .iter()
-                    .map(|c| match c {
-                        ChildRef::Node(id) => FusionForestChild::Node(FusionForestNode {
-                            forest: self.forest,
-                            node_id: *id,
-                        }),
-                        ChildRef::Terminal(Lexeme{matched:span, complete, open: _}) => FusionForestChild::Terminal {
-                            text: render_span(*span, self.forest.segments),
-                            complete: *complete,
-                        },
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        children.into_iter()
-    }
-    fn collect_valid_tokens_ranked(
-        &self,
-        grammar: &Grammar,
-        tokens: &mut Vec<(usize, Regex)>,
-        priority: usize,
-    ) {
-        let Some(alts) = self.forest.arena.alts_for(self.node_id) else {
-            return;
-        };
-        if alts.is_empty() {
-            return;
-        }
 
-        for alt in alts.iter() {
-            let rhs = grammar.prod(alt.prod)
-                .map(|p| p.rhs.clone())
-                .unwrap_or_default();
 
-            let mut dot = 0usize;
-            while dot < alt.children.len() {
-                match alt.children[dot] {
-                    ChildRef::Terminal(Lexeme{matched: _, complete: true, open: _}) => dot += 1,
-                    ChildRef::Node(child_id) if node_has_complete_alt(self.forest.arena, child_id) => {
-                        dot += 1
-                    }
-                    _ => break,
-                }
-            }
 
-            let alt_priority = priority + progress_penalty(dot);
-
-            if dot < alt.children.len()
-                && let ChildRef::Node(child_id) = alt.children[dot]
-                && self
-                    .forest
-                    .arena
-                    .node(child_id)
-                    .is_some_and(|n| n.status == NodeStatus::Partial)
-            {
-                FusionForestNode {
-                    forest: self.forest,
-                    node_id: child_id,
-                }
-                .collect_valid_tokens_ranked(grammar, tokens, alt_priority);
-                if let Some(symbol) = rhs.get(dot) {
-                    push_first_set(tokens, first_set(symbol, grammar), alt_priority + 1);
-                }
-                continue;
-            }
-
-            if let Some(symbol) = rhs.get(dot) {
-                push_first_set(tokens, first_set(symbol, grammar), alt_priority);
-            }
-        }
-    }
-    fn completeness_score(&self) -> f64 {
-        let (mut score, mut total) = (0.0_f64, 0usize);
-        self.count_completeness(&mut score, &mut total);
-        if total == 0 {
-            0.0
-        } else {
-            ((score / total as f64) * 2.0).min(2.0)
-        }
-    }
-    fn count_completeness(&self, score: &mut f64, total: &mut usize) {
-        *total += 1;
-        for child in self.children() {
-            match child {
-                FusionForestChild::Terminal { text, complete } => {
-                    if complete {
-                        *score += 1.0
-                    } else {
-                        *score += 0.5 * (1.0 / (text.len() as f64 + 1.0));
-                    }
-                }
-                FusionForestChild::Node(node) => node.count_completeness(score, total),
-            }
-        }
-    }
-    fn production_fullness_score(&self, grammar: &Grammar) -> f64 {
-        let (mut sum_sq, mut count) = (0.0_f64, 0usize);
-        self.collect_fullness(grammar, &mut sum_sq, &mut count);
-        if count == 0 {
-            0.0
-        } else {
-            (sum_sq / count as f64).sqrt()
-        }
-    }
-    fn collect_fullness(&self, grammar: &Grammar, sum_sq: &mut f64, count: &mut usize) {
-        let expected = self.rhs_len(grammar);
-        let filled = self.child_count();
-        if expected > 0 && filled > 0 {
-            let ratio = (filled.min(expected) as f64) / (expected as f64);
-            *sum_sq += ratio * ratio;
-            *count += 1;
-        }
-        for child in self.children() {
-            if let FusionForestChild::Node(node) = child {
-                node.collect_fullness(grammar, sum_sq, count);
-            }
-        }
-    }
-    fn count_open_slots(&self, grammar: &Grammar) -> usize {
-        let expected = self.rhs_len(grammar);
-        let filled = self.child_count();
-        let mut open = expected.saturating_sub(filled);
-        for child in self.children() {
-            if let FusionForestChild::Node(node) = child {
-                open += node.count_open_slots(grammar);
-            }
-        }
-        open
-    }
-    fn max_depth(&self) -> usize {
-        1 + self
-            .children()
-            .filter_map(|child| match child {
-                FusionForestChild::Node(node) => Some(node.max_depth()),
-                FusionForestChild::Terminal { .. } => None,
-            })
-            .max()
-            .unwrap_or(0)
-    }
-}
-
-enum FusionForestChild<'a> {
-    Node(FusionForestNode<'a>),
-    Terminal { text: String, complete: bool },
-}
-
-pub(crate) struct Leafs<'a> {
-    nodes: Vec<FusionForestNode<'a>>,
-    terms: Vec<String>,
-}
-
-impl<'a> Leafs<'a> {
-    fn new(nodes: Vec<FusionForestNode<'a>>) -> Self {
-        Self {
-            nodes,
-            terms: Vec::new(),
-        }
-    }
-}
-
-impl<'a> Iterator for Leafs<'a> {
-    type Item = String;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if let Some(term) = self.terms.pop() {
-                return Some(term);
-            }
-            let node = self.nodes.pop()?;
-            for child in node.children() {
-                match child {
-                    FusionForestChild::Node(node) => self.nodes.push(node),
-                    FusionForestChild::Terminal { text, .. } => self.terms.push(text),
-                }
-            }
-        }
-    }
-}
-
-fn progress_penalty(consumed_children: usize) -> usize {
-    255usize.saturating_sub(consumed_children.min(255))
-}
 
 // ============================================================================
 // FusionChild — either a node or a terminal
@@ -705,7 +430,11 @@ fn text_from_node(arena: &ParseArena, segments: &[Segment], node_id: NodeId) -> 
                     parts.push(s);
                 }
             }
-            ChildRef::Terminal(Lexeme{matched: span, complete, open: _}) => {
+            ChildRef::Terminal(Lexeme {
+                matched: span,
+                complete,
+                open: _,
+            }) => {
                 if *complete {
                     let s = render_span(*span, segments);
                     if !s.is_empty() {
@@ -725,15 +454,16 @@ fn render_span(span: Span, segments: &[Segment]) -> String {
         .join(" ")
 }
 
-fn push_first_set(
-    tokens: &mut Vec<(usize, Regex)>,
-    next: Vec<Regex>,
-    priority: usize,
-) {
+fn push_first_set(tokens: &mut Vec<(usize, Regex)>, next: Vec<Regex>, priority: usize) {
     tokens.extend(next.into_iter().map(|token| (priority, token)));
 }
 
-fn collect_bound_texts_rec(arena: &ParseArena, node_id: NodeId, s:&[Segment], out: &mut BTreeSet<String>) {
+fn collect_bound_texts_rec(
+    arena: &ParseArena,
+    node_id: NodeId,
+    s: &[Segment],
+    out: &mut BTreeSet<String>,
+) {
     let Some(node) = arena.node(node_id) else {
         return;
     };
@@ -753,7 +483,11 @@ fn collect_bound_texts_rec(arena: &ParseArena, node_id: NodeId, s:&[Segment], ou
                 .flat_map(|alt| alt.children.iter())
                 .filter_map(|child| match child {
                     ChildRef::Node(child_id) => Some(*child_id),
-                    ChildRef::Terminal(Lexeme{matched: _, complete: _, open: _}) => None,
+                    ChildRef::Terminal(Lexeme {
+                        matched: _,
+                        complete: _,
+                        open: _,
+                    }) => None,
                 })
                 .collect()
         })
@@ -771,13 +505,33 @@ fn node_has_complete_alt(arena: &ParseArena, node_id: NodeId) -> bool {
         .node(node_id)
         .is_some_and(|node| node.status.complete())
         && arena.alts_for(node_id).is_some_and(|alts| {
-        alts.iter().any(|alt| {
-            alt.children.iter().all(|child| match child {
-                ChildRef::Terminal(Lexeme{matched: _, complete, open: _}) => *complete,
-                ChildRef::Node(child_id) => node_has_complete_alt(arena, *child_id),
+            alts.iter().any(|alt| {
+                alt.children.iter().all(|child| match child {
+                    ChildRef::Terminal(Lexeme {
+                        matched: _,
+                        complete,
+                        open: _,
+                    }) => *complete,
+                    ChildRef::Node(child_id) => node_has_complete_alt(arena, *child_id),
+                })
             })
         })
-    })
+}
+
+fn node_has_exact_alt(arena: &ParseArena, node_id: NodeId) -> bool {
+    arena.node(node_id).is_some_and(|node| node.status.exact())
+        && arena.alts_for(node_id).is_some_and(|alts| {
+            alts.iter().any(|alt| {
+                alt.children.iter().all(|child| match child {
+                    ChildRef::Terminal(Lexeme {
+                        matched: _,
+                        complete,
+                        open,
+                    }) => *complete && !open,
+                    ChildRef::Node(child_id) => node_has_exact_alt(arena, *child_id),
+                })
+            })
+        })
 }
 
 fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<Regex> {

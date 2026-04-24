@@ -18,13 +18,17 @@ impl TypingRuntime for StubTyping {
     fn finalize(
         &self,
         _prod: ProdId,
-        ctx: CtxId,
+        _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
     ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
         Ok((0, Some(ContextTransition::identity())))
     }
-    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError> {
+    fn apply_transform(
+        &self,
+        ctx: CtxId,
+        _transform: ContextTransition,
+    ) -> Result<CtxId, TransitionError> {
         Ok(ctx) // no-op for testing
     }
 }
@@ -52,25 +56,11 @@ impl TypingRuntime for RejectingTyping {
     ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
         Err(TransitionError::Rejected)
     }
-    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError> {
+    fn apply_transform(
+        &self,
+        ctx: CtxId,
+        _transform: ContextTransition,
+    ) -> Result<CtxId, TransitionError> {
         Ok(ctx) // no-op for testing
     }
-}
-
-pub(crate) fn grammar_with_word() -> Grammar {
-    Grammar::load("Start ::= /[a-z]+/").expect("failed to load test grammar")
-}
-pub(crate) fn grammar_with_direct_left_recursion() -> Grammar {
-    Grammar::load("Start ::= A\nA ::= 'a' | A 'x'")
-        .expect("failed to load direct left recursion grammar")
-}
-pub(crate) fn grammar_with_incomplete_production() -> Grammar {
-    Grammar::load("Start ::= 'x' 'y'").expect("failed to load incomplete production grammar")
-}
-pub(crate) fn grammar_with_ambiguous_roots() -> Grammar {
-    Grammar::load("Start ::= A | B\nA ::= 'x'\nB ::= 'x'")
-        .expect("failed to load ambiguous roots grammar")
-}
-pub(crate) fn grammar_with_expression() -> Grammar {
-    Grammar::load("Factor ::= 'a' | '(' Expr ')'\nTermTail ::= '*' Factor TermTail | ε\nTerm ::= Factor TermTail\nExprTail ::= '+' Term ExprTail | ε\nExpr ::= Term ExprTail\nStart ::= Expr").expect("failed to load expression grammar")
 }

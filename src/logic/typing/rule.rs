@@ -136,7 +136,6 @@ pub enum RuleResult {
     Contradiction,
 }
 
-
 // =============================================================================
 // RULE ANALYSIS
 // =============================================================================
@@ -149,10 +148,21 @@ impl TypingRule {
 
         fn collect_type_refs<'a>(ty: &'a Type, out: &mut std::collections::HashSet<&'a str>) {
             match ty {
-                Type::Meta(name) => { out.insert(name.as_str()); }
-                Type::Arrow(a, b) => { collect_type_refs(a, out); collect_type_refs(b, out); }
-                Type::Array(inner) => { collect_type_refs(inner, out); }
-                Type::Union(items) => { for item in items { collect_type_refs(item, out); } }
+                Type::Meta(name) => {
+                    out.insert(name.as_str());
+                }
+                Type::Arrow(a, b) => {
+                    collect_type_refs(a, out);
+                    collect_type_refs(b, out);
+                }
+                Type::Array(inner) => {
+                    collect_type_refs(inner, out);
+                }
+                Type::Union(items) => {
+                    for item in items {
+                        collect_type_refs(item, out);
+                    }
+                }
                 _ => {}
             }
         }
@@ -166,7 +176,6 @@ impl TypingRule {
             }
             if let Some(judgment) = &premise.judgment {
                 match judgment {
-
                     TypingJudgment::Ascription((term, t)) => {
                         collect_type_refs(t, &mut bindings);
                         bindings.insert(term.as_str());
@@ -190,7 +199,9 @@ impl TypingRule {
         }
         match &self.conclusion.kind {
             ConclusionKind::Type(ty) => collect_type_refs(ty, &mut bindings),
-            ConclusionKind::ContextLookup(_, var) => { bindings.insert(var.as_str()); }
+            ConclusionKind::ContextLookup(_, var) => {
+                bindings.insert(var.as_str());
+            }
         }
 
         bindings
@@ -343,7 +354,6 @@ impl RuleParser {
 
     /// Parse a type setting: Γ or Γ[x:τ₁][y:τ₂]
     pub fn parse_setting(s: &str) -> Result<TypeSetting, String> {
-        println!("Parsing setting: '{}'", s);
         let s = s.trim();
         if s.starts_with('[') && s.ends_with(']') && s.len() >= 2 {
             let inner = s[1..s.len() - 1].trim();

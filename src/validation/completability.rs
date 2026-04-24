@@ -1,3 +1,9 @@
+//! Feed-replay checks used as empirical witnesses for prefix soundness.
+//!
+//! These helpers do not prove the replay theorem. They instantiate it on bounded
+//! token sequences: if a prefix is accepted, replaying the observed token stream
+//! through `feed` should preserve acceptance and tokenization.
+
 use crate::logic::grammar::Grammar;
 use crate::logic::synth::Synthesizer;
 use crate::logic::typing::Context;
@@ -13,7 +19,7 @@ pub struct PrefixSoundnessResult {
 
 pub type SoundnessResult = PrefixSoundnessResult;
 
-fn completion_ctx(opt_ctx: Option<Context>) -> Context {
+fn validation_ctx(opt_ctx: Option<Context>) -> Context {
     opt_ctx.unwrap_or_default()
 }
 
@@ -28,6 +34,15 @@ fn replay_tokens(grammar: &Grammar, input: &str) -> Vec<String> {
     }
 }
 
+/// Extract the token sequence by running the full tokenizer on the input.
+///
+/// This is NOT about feed acceptance. feed is already called before this.
+/// After feed accepts a prefix, we ask:
+/// - what does `synth.input()` (the reconstructed input) tokenize to?
+/// - does it match the original token stream from the beginning?
+///
+/// If this diverges, it means feed updated the internal state in a way that
+/// would cause future tokenization to differ from the original replay stream.
 fn token_fingerprint(grammar: &Grammar, input: &str) -> Result<Vec<String>, String> {
     let mut grammar = grammar.clone();
     grammar
@@ -41,29 +56,30 @@ fn token_fingerprint(grammar: &Grammar, input: &str) -> Result<Vec<String>, Stri
         .map_err(|err| err.to_string())
 }
 
-fn invalid_continuation_candidates(tokens: &[String], expected_next: &str) -> Vec<String> {
-    let mut candidates = tokens
-        .iter()
-        .filter(|token| token.as_str() != expected_next)
-        .cloned()
-        .collect::<Vec<_>>();
-    candidates.extend(
-        [")", "(", "let", "in", "else", ";", ":", "=>", "@"]
-            .into_iter()
-            .filter(|token| *token != expected_next)
-            .map(str::to_string),
-    );
+// Property: probe tokens come from a finite grammar/input token universe rather
+// than ad hoc hand-written continuations.
+fn rejected_token_probes(grammar: &Grammar, tokens: &[String], expected_next: &str) -> Vec<String> {
+    let mut candidates = grammar.specials.clone();
+    candidates.extend(tokens.iter().cloned());
     candidates.sort();
     candidates.dedup();
     candidates
+        .into_iter()
+        .filter(|token| token != expected_next)
+        .collect()
 }
 
+/// Empirical replay check.
+///
+/// Property: replaying the tokenization of `input` through incremental `feed`
+/// reproduces the same token sequence and rejects at least one invalid next step
+/// after each accepted prefix.
 pub fn check_feed_soundness(
     grammar: &Grammar,
     input: &str,
     opt_ctx: Option<Context>,
 ) -> Result<(), String> {
-    let ctx = completion_ctx(opt_ctx);
+    let ctx = validation_ctx(opt_ctx);
     let tokens = replay_tokens(grammar, input);
     let mut synth = Synthesizer::new(grammar.clone(), "");
 
@@ -84,7 +100,7 @@ pub fn check_feed_soundness(
         }
 
         let mut saw_rejected_alternative = false;
-        for alternative in invalid_continuation_candidates(&tokens, token) {
+        for alternative in rejected_token_probes(grammar, &tokens, token) {
             let mut probe = Synthesizer::new(grammar.clone(), synth.input());
             probe.set_ctx(ctx.clone());
             if probe.feed(&alternative).is_err() {
@@ -104,12 +120,22 @@ pub fn check_feed_soundness(
     Ok(())
 }
 
-pub fn sound_complete(
+/// Empirical check: can we incrementally replay an accepted input through feed
+/// while maintaining consistent tokenization?
+///
+/// This feeds tokens one-by-one and checks two things:
+/// 1. feed accepts each expected token (the real replay test)
+/// 2. after each feed, tokenizing the reconstructed input matches the original
+///
+/// Property: incremental feed does not cause tokenization to drift from the
+/// original token stream. This is a consistency check on internal state after
+/// feed, not a proof that feed is correct.
+pub fn check_incremental_feed_replay(
     grammar: &Grammar,
     input: &str,
     opt_ctx: Option<Context>,
 ) -> PrefixSoundnessResult {
-    let ctx = completion_ctx(opt_ctx);
+    let ctx = validation_ctx(opt_ctx);
     let tokens = replay_tokens(grammar, input);
     let mut synth = Synthesizer::new(grammar.clone(), "");
 
@@ -168,7 +194,7 @@ pub fn sound_complete(
 
 pub fn is_completable(grammar: &Grammar, input: &str, budget: usize) -> bool {
     let _ = budget;
-    sound_complete(grammar, input, None).is_sound
+    check_incremental_feed_replay(grammar, input, None).is_sound
 }
 
 #[cfg(test)]
@@ -191,7 +217,7 @@ mod tests {
             .extend("foo".into(), crate::logic::typing::Type::Raw("bool".into()))
             .unwrap();
 
-        let result = sound_complete(&grammar, "foo", Some(ctx));
+        let result = check_incremental_feed_replay(&grammar, "foo", Some(ctx));
 
         assert!(result.is_sound);
         assert_eq!(result.accepted_input, "foo");
@@ -216,7 +242,7 @@ mod tests {
         "#;
         let grammar = Grammar::load(spec).unwrap();
 
-        let result = sound_complete(&grammar, "let x : int in x", Some(Context::new()));
+        let result = check_incremental_feed_replay(&grammar, "let x : int in x", Some(Context::new()));
 
         assert!(
             result.is_sound,
@@ -229,7 +255,7 @@ mod tests {
     fn sound_complete_reports_failing_prefix_when_feed_rejects_next_token() {
         let grammar = Grammar::load("Start ::= 'x'").unwrap();
 
-        let result = sound_complete(&grammar, "x y", Some(Context::new()));
+        let result = check_incremental_feed_replay(&grammar, "x y", Some(Context::new()));
 
         assert!(!result.is_sound);
         assert_eq!(result.failing_prefix.as_deref(), Some("x"));

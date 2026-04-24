@@ -1,21 +1,14 @@
-//! Fast Parseability Test Suite
+//! Fast empirical check for prefix acceptance.
 //!
-//! This module provides fast validation tests that check if expressions
-//! and all their prefixes can be partially parsed. Unlike the completable
-//! tests which do full BFS completion search, these tests only verify
-//! that the parser accepts the input - much faster for large test suites.
+//! A `valid` case approximates the statement: every token-boundary prefix of the
+//! input is accepted by the parser under the given context.
 //!
-//! ## Test Categories
+//! An `invalid` case approximates the dual statement: the full input does not
+//! admit a complete accepted root. Invalid-pass results are treated as soundness
+//! failures.
 //!
-//! - **Valid expressions**: Complete expressions that should parse fully,
-//!   and all their prefixes should parse partially
-//! - **Invalid expressions**: Syntax or semantic errors that should fail to parse
-//!   (xfail: includes unbound variables, type mismatches, etc.)
-//!
-//! ## Performance
-//!
-//! These tests run in O(n²) time for an input of length n (checking all prefixes),
-//! but each prefix check is just a single parse - no BFS exploration.
+//! This layer is intentionally cheap. It does not search completions; it asks
+//! only whether the current prefix is accepted.
 
 pub mod arithmetic;
 pub mod fun;
@@ -106,10 +99,11 @@ impl ParseTestCase {
     }
 }
 
-/// Check if all prefixes of an input can be partially parsed
+/// Empirical prefix-acceptance check.
 ///
-/// Parallelized using Rayon by checking each prefix independently and then
-/// re-assembling results in order to preserve the original failure semantics.
+/// Property: every selected prefix boundary is accepted by a fresh parse under
+/// the same context. Boundaries follow tokenization when possible so the check
+/// matches the segmented semantics rather than raw character slicing.
 pub fn check_all_prefixes_parseable(
     grammar: &mut Grammar,
     input: &str,
@@ -176,7 +170,9 @@ pub fn check_all_prefixes_parseable(
     }
 }
 
-/// Check if input fails to produce a complete well-typed parse (for xfail tests)
+/// Empirical negative check for soundness-oriented xfail cases.
+///
+/// Property: the full input must not yield a complete accepted root.
 pub fn check_parse_fails(grammar: &Grammar, input: &str, ctx: &Context) -> ParseResult {
     let start = Instant::now();
     let mut synth = Synthesizer::new(grammar.clone(), input);

@@ -1,17 +1,17 @@
+pub mod extend;
+pub mod fill;
 pub mod load;
+pub mod production;
 pub mod save;
+pub mod symbol;
 pub mod tokenizer;
 pub mod typing;
 pub mod utils;
-pub mod symbol;
-pub mod production;
-pub mod extend;
-pub mod fill;
 
 use crate::logic::binding::{self, BindingMap};
-pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
-pub use symbol::Symbol;
 pub use production::Production;
+pub use symbol::Symbol;
+pub use tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
 
 #[cfg(test)]
 mod tests;
@@ -22,8 +22,8 @@ pub type NtId = usize;
 // nt_idx, alt_idx
 pub type ProdId = (NtId, AltId);
 
-use std::collections::HashMap;
 use crate::logic::typing::TypingRule;
+use std::collections::{HashMap, HashSet};
 
 /// A complete grammar consisting of context-free productions and
 /// inference-style typing rules.
@@ -33,6 +33,7 @@ pub struct Grammar {
     pub productions: HashMap<String, Vec<Production>>,
     pub nonterminals: Vec<String>,
     pub nonterminal_rules: HashMap<String, String>,
+    pub bridge_nonterminals: HashSet<String>,
     pub rules: HashMap<String, TypingRule>,
 
     // tokenization helpers
@@ -84,6 +85,7 @@ impl Grammar {
             productions: HashMap::default(),
             nonterminals: Vec::default(),
             nonterminal_rules: HashMap::default(),
+            bridge_nonterminals: HashSet::default(),
             rules: HashMap::default(),
             specials: Vec::default(),
             delimiters: DEFAULT_DELIMITERS.to_vec(),
@@ -139,6 +141,37 @@ impl Grammar {
             .and_then(|nt| self.nonterminal_rules.get(nt))
     }
 
+    pub fn is_transparent_nt(&self, nt: &str) -> bool {
+        self.productions.get(nt).is_some_and(|productions| {
+            !productions.is_empty()
+                && productions.iter().all(|production| {
+                    let nonterminal_children = production
+                        .rhs
+                        .iter()
+                        .filter(|symbol| matches!(symbol, Symbol::Nonterminal { .. }))
+                        .count();
+                    let bound_terminals = production.rhs.iter().any(|symbol| {
+                        matches!(
+                            symbol,
+                            Symbol::Terminal {
+                                binding: Some(_),
+                                ..
+                            }
+                        )
+                    });
+                    nonterminal_children == 1 && !bound_terminals
+                })
+        })
+    }
+
+    pub fn mark_bridge_nt<S: Into<String>>(&mut self, nt: S) {
+        self.bridge_nonterminals.insert(nt.into());
+    }
+
+    pub fn is_bridge_nt(&self, nt: &str) -> bool {
+        self.bridge_nonterminals.contains(nt)
+    }
+
     /// Add a production rule to the grammar.
     /// kinda complete but whatever
     pub fn add_production(&mut self, nt: String, prod: Production) {
@@ -147,7 +180,6 @@ impl Grammar {
         }
         self.productions.entry(nt.clone()).or_default().push(prod);
     }
-
 
     /// Set the start nonterminal.
     pub fn set_start<S: Into<String>>(&mut self, start: S) {
@@ -158,12 +190,12 @@ impl Grammar {
     pub fn start(&self) -> Option<&String> {
         self.start.as_ref()
     }
-    
+
     // Rebuild the binding map from the current productions and typing rules
     pub fn build_bindings(&mut self) {
         self.bindings = Some(binding::build_binding_map(self));
     }
-        /// Build and cache the tokenizer from current special_tokens and delimiters.
+    /// Build and cache the tokenizer from current special_tokens and delimiters.
     pub fn build_tokenizer(&mut self) {
         if self.tokenizer.is_none() {
             self.tokenizer = Some(Tokenizer::new(
@@ -215,11 +247,8 @@ impl Grammar {
             Symbol::Terminal { .. } => false,
             Symbol::Nonterminal { name: nt, .. } => {
                 let nt = self.productions.get(nt);
-                nt.map(|prod| {
-                    prod.iter()
-                        .all(|s| s.rhs.iter().all(|sym| self.nu(sym)))
-                })
-                .unwrap_or(false)
+                nt.map(|prod| prod.iter().all(|s| s.rhs.iter().all(|sym| self.nu(sym))))
+                    .unwrap_or(false)
             }
         }
     }
@@ -230,14 +259,10 @@ impl Grammar {
             self.build_tokenizer();
         }
 
-        self.tokenizer
-            .as_ref()
-            .unwrap()
-            .tokenize(input)
+        self.tokenizer.as_ref().unwrap().tokenize(input)
     }
 
     pub fn extend_input(&mut self, input: &str, token: &str) -> String {
         extend::extend_input(self, input, token)
     }
-
 }

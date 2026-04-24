@@ -4,10 +4,6 @@ use crate::logic::typing::{Obligations, TypingRuntime};
 
 #[cfg(test)]
 impl<T: TypingRuntime> TypedParser<T> {
-    pub(crate) fn reset_tables_for_test(&mut self) {
-        self.tables = Default::default();
-    }
-
     pub(crate) fn enqueue_process_for_test(&mut self, item: Item) {
         self.enqueue_process(item);
     }
@@ -30,14 +26,5 @@ impl<T: TypingRuntime> TypedParser<T> {
         completion: super::parser::Completion,
     ) -> Result<(), PrefixError> {
         self.complete(completion)
-    }
-
-    pub(crate) fn consume_for_test(
-        &mut self,
-        item: &Item,
-        regex: &crate::regex::Regex,
-        symbol: &crate::logic::grammar::Symbol,
-    ) -> Result<Option<Item>, PrefixError> {
-        self.consume(item, regex, symbol)
     }
 }

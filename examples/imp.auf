@@ -19,8 +19,10 @@ Boolean(bool_lit) ::= 'true' | 'false'
 
 Variable(var) ::= Identifier[x]
 
+Group ::= '(' Expression ')'
+
 // Atomic expressions
-AtomicExpr ::= Variable | Integer | Boolean | '(' Expression ')'
+AtomicExpr ::= Variable | Integer | Boolean | Group
 
 
 // We build up precedence by having expression reference the next level
@@ -87,7 +89,6 @@ x ∈ Γ
 ------------------------------------------------- (comp_op)
 'Bool'
 
-
 // ---------- Statements (produce void type ∅) ----------
 
 // Declaration: extend context, check value type
@@ -114,4 +115,3 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
 -------------------------------- (while)
 ?T
-

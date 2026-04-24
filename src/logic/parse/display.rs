@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::logic::grammar::Segment;
 use crate::logic::parse::arena::TypeId;
 use crate::logic::typing::TypingRuntime;
@@ -5,8 +7,8 @@ use crate::logic::typing::TypingRuntime;
 use super::{ChildRef, NodeId, TypedParser};
 use crate::logic::parse::arena::{ParseArena, Span};
 
-use crate::logic::parse::arena::Lexeme;
 use crate::logic::parse::State;
+use crate::logic::parse::arena::Lexeme;
 
 pub fn render_node_text<T: TypingRuntime>(
     parser: &TypedParser<T>,

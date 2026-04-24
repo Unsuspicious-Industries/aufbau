@@ -569,10 +569,10 @@ mod tests {
                 println!("Domain (should be A): {:?}", domain);
                 println!("Codomain (should be B->C): {:?}", codomain);
 
-                // For curried application to work, domain must be simple A
-                // TODO: assert the correct property here once Context::equal is available.
-                // See src/notes.md §10 for context.
-                //assert!(equal(**domain, Type::Atom("A".into()), Context::new()));
+                // For curried application to work, the domain must be the first
+                // argument type and the codomain must remain an arrow chain.
+                assert!(matches!(domain.as_ref(), Type::Meta(name) if name == "A"));
+                assert!(matches!(codomain.as_ref(), Type::Arrow(_, _)));
             }
             _ => panic!("Expected arrow type"),
         }

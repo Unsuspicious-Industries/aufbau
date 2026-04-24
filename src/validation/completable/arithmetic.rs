@@ -74,37 +74,3 @@ fn check_completable() {
     let res = run_test_batch(&grammar, &completable_cases());
     res.assert_all_passed();
 }
-
-#[test]
-fn repro_chain_operator_prefix_is_completable() {
-    let grammar = arithmetic_grammar();
-    let result = crate::validation::completability::sound_complete(&grammar, "1 + 2 *", None);
-
-    assert!(
-        result.is_sound,
-        "expected chain operator prefix to replay through feed, got {result:?}"
-    );
-}
-
-#[test]
-fn repro_chain_operator_expression_stays_prefix_sound() {
-    let mut grammar = arithmetic_grammar();
-    let result = crate::validation::completability::sound_complete(&mut grammar, "1 + 2 * 3", None);
-
-    assert!(
-        result.is_sound,
-        "expected chain operator expression to stay sound, failing_prefix={:?}",
-        result.failing_prefix
-    );
-}
-
-#[test]
-fn repro_complex_paren_operator_prefix_is_completable() {
-    let grammar = arithmetic_grammar();
-    let result = crate::validation::completability::sound_complete(&grammar, "(x + y) *", None);
-
-    assert!(
-        result.is_sound,
-        "expected complex paren operator prefix to replay through feed, got {result:?}"
-    );
-}

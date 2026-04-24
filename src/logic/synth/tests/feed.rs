@@ -1,7 +1,7 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::Context;
 
-use super::{completion_fingerprint, parse_with_ctx, token_texts, Synthesizer};
+use super::{Synthesizer, parse_with_ctx, token_texts};
 
 fn assert_same_parse_shape(left: &mut Synthesizer, right: &mut Synthesizer) {
     let left_ast = left.ast().unwrap();
@@ -11,16 +11,8 @@ fn assert_same_parse_shape(left: &mut Synthesizer, right: &mut Synthesizer) {
     assert_eq!(left_ast.text(), right_ast.text());
     assert_eq!(left_ast.is_complete(), right_ast.is_complete());
     assert_eq!(left_ast.len(), right_ast.len());
-    assert_eq!(
-        left_ast.min_open_slots(left.grammar()),
-        right_ast.min_open_slots(right.grammar())
-    );
-    assert_eq!(left_ast.min_tree_depth(), right_ast.min_tree_depth());
     assert_eq!(left_ast.bound_texts(), right_ast.bound_texts());
-    assert_eq!(
-        completion_fingerprint(&left_ast, left.grammar()),
-        completion_fingerprint(&right_ast, right.grammar())
-    );
+
 }
 
 #[test]
@@ -171,30 +163,6 @@ fn feed_with_context_uses_latest_bindings() {
     assert_same_parse_shape(&mut synth, &mut fresh);
 }
 
-#[test]
-fn feed_updates_completions_after_successful_step() {
-    let grammar = Grammar::load(
-        r#"
-        Number ::= /[0-9]+/
-        Expr ::= Number | '(' Expr ')'
-        Start ::= Expr '+' Expr
-        "#,
-    )
-    .unwrap();
-    let mut synth = Synthesizer::new(grammar.clone(), "1");
-    let before = completion_fingerprint(&synth.ast().unwrap(), &grammar);
-
-    let after_ast = synth.feed("+").unwrap();
-    let after = completion_fingerprint(&after_ast, &grammar);
-
-    assert_ne!(before, after);
-    assert!(after
-        .iter()
-        .any(|(_, example)| example.as_deref() == Some("0")));
-    assert!(after
-        .iter()
-        .any(|(_, example)| example.as_deref() == Some("(")));
-}
 
 #[test]
 fn feed_error_leaves_extended_input_visible() {

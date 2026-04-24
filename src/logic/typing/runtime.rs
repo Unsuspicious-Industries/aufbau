@@ -1,17 +1,20 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::rc::Rc;
-
-use rayon::iter;
 
 use crate::debug_trace;
 use crate::logic::Segment;
+use crate::logic::error::TransitionError;
 use crate::logic::grammar::Grammar;
-use crate::logic::parse::arena::{CtxId, Lexeme, NodeStatus, ProdId, TypeId, ANY_TYPE};
-use crate::logic::error::{TransitionError, TransitionResult};
-use crate::logic::typing::{ContextTransition, Obligation, Obligations, TypingRuntime, Unifier, UnifyResult};
-use crate::logic::typing::rule::{ConclusionKind, Premise, PremiseStatus, RuleResult, TypeOperation, TypingJudgment};
-use crate::logic::typing::{Context, Type, TypingRule, equal};
+use crate::logic::parse::arena::{ANY_TYPE, CtxId, Lexeme, NodeStatus, ProdId, TypeId};
+use crate::logic::typing::rule::{
+    ConclusionKind, Premise, PremiseStatus, RuleResult, TypeOperation, TypingJudgment,
+};
+use crate::logic::typing::{Context, Type, TypingRule, subtype};
+use crate::logic::typing::{
+    ContextTransition, Obligation, Obligations, TypingRuntime, Unifier, UnifyResult,
+};
 
 #[derive(Clone, Debug)]
 pub struct RuleRuntime {
@@ -24,6 +27,23 @@ pub struct RuleRuntime {
 }
 
 impl RuleRuntime {
+    fn binding_values(
+        &self,
+        obligations: &Obligations,
+    ) -> std::collections::HashMap<String, String> {
+        obligations
+            .iter()
+            .filter_map(|ob| {
+                let value = ob.value?;
+                if value.complete && !value.open {
+                    value.value(&self.s).map(|text| (ob.name.clone(), text))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn new(grammar: Grammar) -> Self {
         let runtime = Self {
             grammar,
@@ -38,7 +58,6 @@ impl RuleRuntime {
         runtime.intern_context(Context::new());
         runtime
     }
-
 
     pub fn segs(&self) -> &[Segment] {
         &self.s
@@ -73,13 +92,9 @@ impl RuleRuntime {
 
     pub fn context(&self, id: Option<CtxId>) -> Option<Context> {
         id.and_then(|id| {
-            self.contexts
-                .borrow()
-                .get(id)
-                .cloned()
-                .inspect(|c| {
-                    debug_trace!("fusion_typing", "ctx[{}] = {:?}", id, c);
-                })
+            self.contexts.borrow().get(id).cloned().inspect(|c| {
+                debug_trace!("fusion_typing", "ctx[{}] = {:?}", id, c);
+            })
         })
     }
 
@@ -110,7 +125,10 @@ impl RuleRuntime {
     }
 
     fn ob_type(&self, obligations: &Obligations, name: &str) -> Option<TypeId> {
-        obligations.iter().find(|o| o.name == name).and_then(|o| o.actual)
+        obligations
+            .iter()
+            .find(|o| o.name == name)
+            .and_then(|o| o.actual)
     }
 
     fn ob_get(&self, obligations: &Obligations, name: &str) -> Option<Obligation> {
@@ -138,17 +156,23 @@ impl RuleRuntime {
         ctx: &Context,
     ) -> Option<Type> {
         match ty {
-            Type::Meta(name) => unifier.resolve_meta(name)
+            // Invariant: metas are local placeholders, not implicit references
+            // to obligation names. Obligation-projected types must be modeled
+            // explicitly, not smuggled through Meta lookup.
+            Type::Meta(name) => unifier
+                .resolve_meta(name)
                 .cloned()
-                .or_else(|| self.ob_type_resolved(obligations, name))
                 .or(Some(Type::Meta(name.clone()))),
             Type::Arrow(left, right) => Some(Type::Arrow(
                 Box::new(self.resolve_type(left, unifier, obligations, ctx)?),
                 Box::new(self.resolve_type(right, unifier, obligations, ctx)?),
             )),
-            Type::Array(inner) => Some(Type::Array(Box::new(
-                self.resolve_type(inner, unifier, obligations, ctx)?,
-            ))),
+            Type::Array(inner) => Some(Type::Array(Box::new(self.resolve_type(
+                inner,
+                unifier,
+                obligations,
+                ctx,
+            )?))),
             Type::Union(items) => Some(Type::Union(
                 items
                     .iter()
@@ -163,12 +187,46 @@ impl RuleRuntime {
         }
     }
 
-    fn lookup_context<'a>(
-        &self,
-        ctx: &'a Context,
-        lexeme: &Lexeme
-    ) -> Option<&'a Type> {
-        #[cfg(test)] {
+    // Property: each meta name is collected at most once.
+    fn collect_metas(ty: &Type, out: &mut HashSet<String>) {
+        match ty {
+            Type::Meta(name) => {
+                out.insert(name.clone());
+            }
+            Type::Arrow(left, right) => {
+                Self::collect_metas(left, out);
+                Self::collect_metas(right, out);
+            }
+            Type::Array(inner) | Type::Not(inner) => Self::collect_metas(inner, out),
+            Type::Union(items) => {
+                for item in items {
+                    Self::collect_metas(item, out);
+                }
+            }
+            Type::Partial(inner, _) => Self::collect_metas(inner, out),
+            _ => {}
+        }
+    }
+
+    // Invariant: metas in `ty` are seeded from exact obligation witnesses
+    // before `ty` is used in a semantic operation.
+    fn seed_type_metas(&self, ty: &Type, unifier: &mut Unifier, obligations: &Obligations) {
+        let mut metas = HashSet::new();
+        Self::collect_metas(ty, &mut metas);
+        unifier.seed(metas, |name| self.ob_type_resolved(obligations, name));
+    }
+
+    fn lookup_context<'a>(&self, ctx: &'a Context, lexeme: &Lexeme) -> Option<&'a Type> {
+        let text = lexeme.value(&self.s)?;
+        if text.is_empty() {
+            #[cfg(test)]
+            {
+                debug_trace!("fusion_typing", "ctx_lookup empty lexeme");
+            }
+            return None;
+        }
+        #[cfg(test)]
+        {
             debug_trace!(
                 "fusion_typing",
                 "ctx_lookup ctx={:?} gstring={:?}, lexeme='{:?}'",
@@ -178,38 +236,38 @@ impl RuleRuntime {
             );
         }
         // Exact lookup: the lexeme text is a known binding in the context.
-        if let Some(found) = ctx.lookup(&lexeme.value(&self.s)?) {
-            #[cfg(test)] {
+        if let Some(found) = ctx.lookup(&text) {
+            #[cfg(test)]
+            {
                 debug_trace!(
                     "fusion_typing",
                     "ctx_lookup exact lexeme='{}' found={:?}",
-                    lexeme.value(&self.s)?,
+                    text,
                     found
                 );
             }
             return Some(found);
         }
-        if lexeme.open && let Some(found) = ctx.lookup_starts_with(&lexeme.value(&self.s)?) {
-            #[cfg(test)] {
+        if lexeme.open
+            && let Some(found) = ctx.lookup_starts_with(&text)
+        {
+            #[cfg(test)]
+            {
                 debug_trace!(
                     "fusion_typing",
                     "ctx_lookup prefix lexeme='{}' found={:?}",
-                    lexeme.value(&self.s)?,
+                    text,
                     found
                 );
             }
             return Some(found);
         }
-        #[cfg(test)] {
-            debug_trace!(
-                "fusion_typing",
-                "ctx_lookup fail lexeme='{}'",
-                lexeme.value(&self.s)?
-            );
+        #[cfg(test)]
+        {
+            debug_trace!("fusion_typing", "ctx_lookup fail lexeme='{}'", text);
         }
         None
     }
-
 
     // ── Premise checking ─────────────────────────────────────────────────────
 
@@ -229,12 +287,13 @@ impl RuleRuntime {
 
         if let Some(setting) = &premise.setting {
             for (name, ext_ty) in &setting.extensions {
-                let Some(value) = Self::ob_resolve(obligations, name).and_then(|lex| lex.value(&self.s)) else {
+                let Some(value) =
+                    Self::ob_resolve(obligations, name).and_then(|lex| lex.value(&self.s))
+                else {
                     debug_trace!("fusion_typing", "premise_partial no_binding name={}", name);
                     return PremiseStatus::Unknown;
                 };
-                let Some(resolved) =
-                    self.resolve_type(ext_ty, unifier, obligations, &premise_ctx)
+                let Some(resolved) = self.resolve_type(ext_ty, unifier, obligations, &premise_ctx)
                 else {
                     debug_trace!("fusion_typing", "premise_fail unresolved name={}", name);
                     // Unsure about this one
@@ -245,7 +304,8 @@ impl RuleRuntime {
                     .map(|next| premise_ctx = next)
                     .is_err()
                 {
-                    #[cfg(test)] {
+                    #[cfg(test)]
+                    {
                         debug_trace!(
                             "fusion_typing",
                             "premise_fail extend name={} value={} ext_ty={:?}",
@@ -267,18 +327,16 @@ impl RuleRuntime {
         match judgment {
             TypingJudgment::Membership(var, _) => {
                 let Some(lexeme) = Self::ob_resolve(obligations, var) else {
-                    #[cfg(test)] {
-                        debug_trace!(
-                            "fusion_typing",
-                            "premise_fail no_lexeme var={}",
-                            var
-                        );
+                    #[cfg(test)]
+                    {
+                        debug_trace!("fusion_typing", "premise_fail no_lexeme var={}", var);
                     }
                     return PremiseStatus::Contradiction;
                 };
-                let ok = self.lookup_context(&premise_ctx, lexeme).is_some();
-                if ok && !setting_extends {
-                    #[cfg(test)] {
+                let found = self.lookup_context(&premise_ctx, lexeme).is_some();
+                if found && !setting_extends {
+                    #[cfg(test)]
+                    {
                         debug_trace!(
                             "fusion_typing",
                             "premise_ok membership var={} value={:?}",
@@ -290,48 +348,38 @@ impl RuleRuntime {
                 } else {
                     *ctx = base_ctx;
                 }
-                match ok {
-                    true => PremiseStatus::Satisfied,
-                    false => PremiseStatus::Contradiction,
+                match (found, lexeme.open) {
+                    (true, _) => PremiseStatus::Satisfied,
+                    (false, true) => PremiseStatus::Unknown,
+                    (false, false) => PremiseStatus::Contradiction,
                 }
             }
             TypingJudgment::Ascription((term, ty)) => {
+                // Property: expected types are instantiated from exact witnesses
+                // before any ascription check. Unresolved metas are not treated
+                // as semantic evidence during unification.
                 // getting an ptional type id from the obligation
                 let ob = match self.ob_get(obligations, term) {
                     Some(ob) => ob,
                     None => {
-                        debug_trace!(
-                            "fusion_typing",
-                            "premise_fail no_obligation term={}",
-                            term
-                        );
+                        debug_trace!("fusion_typing", "premise_fail no_obligation term={}", term);
                         // no obligaiton at al is a probleù
                         return PremiseStatus::Contradiction;
                     }
                 };
                 // if no lexeme matched, unknown
                 if let None = ob.value {
-                    debug_trace!(
-                        "fusion_typing",
-                        "premise_partial no_value term={}",
-                        term
-                    );
+                    debug_trace!("fusion_typing", "premise_partial no_value term={}", term);
                     return PremiseStatus::Unknown;
                 }
                 // is the value attached o the obligaiton still open
                 let open: bool = match ob.value {
-                    Some(ref v)  => {
-                        v.open
-                    }
+                    Some(ref v) => v.open,
                     _ => false,
                 };
                 let Some(actual_id) = ob.actual else {
-                    debug_trace!(
-                        "fusion_typing",
-                        "premise_fail no_actual term={}",
-                        term
-                    );
-                    // weird case though
+                    debug_trace!("fusion_typing", "premise_fail no_actual term={}", term);
+                    // An open child can still become informative after more input.
                     if open {
                         return PremiseStatus::Unknown;
                     } else {
@@ -341,8 +389,8 @@ impl RuleRuntime {
                 let Some(actual) = self.type_of(actual_id) else {
                     return PremiseStatus::Contradiction;
                 };
-                let Some(expected) =
-                    self.resolve_type(ty, unifier, obligations, &premise_ctx)
+                self.seed_type_metas(ty, unifier, obligations);
+                let Some(expected) = self.resolve_type(ty, unifier, obligations, &premise_ctx)
                 else {
                     return PremiseStatus::Unknown;
                 };
@@ -362,7 +410,7 @@ impl RuleRuntime {
                         } else {
                             premise_ctx
                         };
-                        PremiseStatus::Satisfied    
+                        PremiseStatus::Satisfied
                     }
                     UnifyResult::Indeterminate => {
                         debug_trace!(
@@ -375,6 +423,32 @@ impl RuleRuntime {
                         PremiseStatus::Unknown
                     }
                     UnifyResult::Fail(reason) => {
+                        if subtype(&actual, &expected) {
+                            debug_trace!(
+                                "fusion_typing",
+                                "premise_ok subtype term={} expected={:?} actual={:?}",
+                                term,
+                                expected,
+                                actual
+                            );
+                            *ctx = if setting_extends {
+                                base_ctx
+                            } else {
+                                premise_ctx
+                            };
+                            return PremiseStatus::Satisfied;
+                        }
+                        if open {
+                            debug_trace!(
+                                "fusion_typing",
+                                "premise_open_mismatch term={} expected={:?} actual={:?} reason={:?}",
+                                term,
+                                expected,
+                                actual,
+                                reason
+                            );
+                            return PremiseStatus::Unknown;
+                        }
                         debug_trace!(
                             "fusion_typing",
                             "premise_fail unify term={} expected={:?} actual={:?} reason={:?}",
@@ -387,8 +461,6 @@ impl RuleRuntime {
                     }
                 }
             }
-            // TODO: fix
-            // this is unwell handled by who cares
             TypingJudgment::Operation { left, op, right } => {
                 let (Some(l), Some(r)) = (
                     self.resolve_type(left, unifier, obligations, &premise_ctx),
@@ -396,52 +468,63 @@ impl RuleRuntime {
                 ) else {
                     return PremiseStatus::Unknown;
                 };
-                let r = unifier.unify(&l, &r);
-                match r {
-                    UnifyResult::Ok => {
+
+                let status = match op {
+                    TypeOperation::Equality => match unifier.unify(&l, &r) {
+                        UnifyResult::Ok => PremiseStatus::Satisfied,
+                        UnifyResult::Indeterminate => PremiseStatus::Unknown,
+                        UnifyResult::Fail(_) => PremiseStatus::Contradiction,
+                    },
+                    TypeOperation::Inclusion => {
+                        if subtype(&l, &r) {
+                            PremiseStatus::Satisfied
+                        } else if matches!(l, Type::Any) || matches!(r, Type::Any) {
+                            PremiseStatus::Unknown
+                        } else {
+                            PremiseStatus::Contradiction
+                        }
+                    }
+                };
+
+                match status {
+                    PremiseStatus::Satisfied => {
                         // extending downwards context
                         *ctx = if setting_extends {
                             base_ctx
                         } else {
                             premise_ctx
                         };
-                        PremiseStatus::Satisfied    
+                        PremiseStatus::Satisfied
                     }
-                    UnifyResult::Indeterminate => {
-                        PremiseStatus::Unknown
-                    }
-                    UnifyResult::Fail(reason) => {
-                        PremiseStatus::Contradiction
-                    }
+                    PremiseStatus::Unknown => PremiseStatus::Unknown,
+                    PremiseStatus::Contradiction => PremiseStatus::Contradiction,
                 }
             }
         }
     }
 
-   fn apply_rule(
-        &self,
-        rule: &TypingRule,
-        obligations: &Obligations,
-        ctx: Context,
-    ) -> RuleResult {
+    fn apply_rule(&self, rule: &TypingRule, obligations: &Obligations, ctx: Context) -> RuleResult {
         let mut unifier = Unifier::new();
+        unifier.set_binding_values(self.binding_values(obligations));
         let mut mctx = ctx.clone();
         // Short-circuit on Contradiction; track if any premise was Unknown
-        let all_satisfied = match rule.premises
+        let all_satisfied = match rule
+            .premises
             .iter()
             .try_fold(true, |all_satisfied, premise| {
                 match self.apply_premise(premise, obligations, &mut mctx, &mut unifier) {
                     PremiseStatus::Contradiction => Err(()),
-                    PremiseStatus::Unknown       => Ok(false),
-                    PremiseStatus::Satisfied     => Ok(all_satisfied),
+                    PremiseStatus::Unknown => Ok(false),
+                    PremiseStatus::Satisfied => Ok(all_satisfied),
                 }
-            })
-        {
+            }) {
             Err(()) => {
                 debug_trace!(
                     "fusion_typing",
                     "apply_rule contradiction rule={} obligations={:?} ctx={:?}",
-                    rule.name, obligations, ctx
+                    rule.name,
+                    obligations,
+                    ctx
                 );
                 return RuleResult::Contradiction;
             }
@@ -451,6 +534,9 @@ impl RuleRuntime {
         // Resolve the conclusion type
         let ty = match &rule.conclusion.kind {
             ConclusionKind::Type(ty) => {
+                // Property: conclusion types are instantiated from exact
+                // witnesses before they are resolved or exported.
+                self.seed_type_metas(ty, &mut unifier, obligations);
                 self.resolve_type(ty, &mut unifier, obligations, &mctx)
             }
             ConclusionKind::ContextLookup(_, var) => {
@@ -462,29 +548,49 @@ impl RuleRuntime {
         let ty = match ty {
             Some(ty) => ty,
             None => {
+                if !all_satisfied {
+                    debug_trace!(
+                        "fusion_typing",
+                        "apply_rule partial unresolved conclusion rule={} obligations={:?} ctx={:?}",
+                        rule.name,
+                        obligations,
+                        ctx
+                    );
+                    return RuleResult::Partial(Type::Any);
+                }
                 debug_trace!(
                     "fusion_typing",
                     "apply_rule unresolved conclusion rule={} obligations={:?} ctx={:?}",
-                    rule.name, obligations, ctx
+                    rule.name,
+                    obligations,
+                    ctx
                 );
                 return RuleResult::Contradiction;
             }
         };
 
-        // Premises had unknowns 
+        // Premises had unknowns
         if !all_satisfied {
             return RuleResult::Partial(ty);
         }
 
-        // All premises satisfied — resolve context extensions and return success
+        // All premises are satisfied. Resolve right-bound conclusion exports such
+        // as `Γ → Γ[x:τ] ⊢ ?R`; the parser applies these only when the enclosing
+        // node is closed and then resumed by a right sibling.
         let transition = ContextTransition {
             transforms: match &rule.conclusion.context.output {
                 Some(output_ctx) => output_ctx
                     .extensions
                     .iter()
                     .filter_map(|(v, t)| {
+                        let resolved_name = unifier
+                            .binding_values
+                            .get(v)
+                            .cloned()
+                            .unwrap_or_else(|| v.clone());
+                        self.seed_type_metas(t, &mut unifier, obligations);
                         self.resolve_type(t, &mut unifier, obligations, &mctx)
-                            .map(|resolved| (v.clone(), resolved))
+                            .map(|resolved| (resolved_name, resolved))
                     })
                     .collect(),
                 None => Vec::new(),
@@ -498,7 +604,6 @@ impl RuleRuntime {
             .ok()
             .or_else(|| Some(ctx.shadow(value.to_string(), resolved)))
     }
-
 }
 
 // ── TypingRuntime implementation ─────────────────────────────────────────────
@@ -519,27 +624,35 @@ impl TypingRuntime for RuleRuntime {
             return Ok(ctx);
         };
 
-        // if no binding, nothing to do i guesse
+        // Child-bound contexts are selected by the grammar binding on the child
+        // being entered. Without a bound child, there is no local refinement.
         let Some(binding) = binding else {
             return Ok(ctx);
         };
 
-        #[cfg(test)] {
+        #[cfg(test)]
+        {
             debug_trace!(
                 "fusion_typing",
                 "descend rule={} binding={} ctx={} obs={}",
-                rule.name, binding, ctx, obligations.len()
+                rule.name,
+                binding,
+                ctx,
+                obligations.len()
             );
             for ob in obligations {
                 debug_trace!(
                     "fusion_typing",
                     "  desc_ob name={} value={:?} actual={:?}",
-                    ob.name, ob.value, ob.actual.and_then(|id| self.type_of(id))
+                    ob.name,
+                    ob.value,
+                    ob.actual.and_then(|id| self.type_of(id))
                 );
             }
         }
 
-        // evaluating typing rule
+        // Apply premise-local context extensions only to the addressed child,
+        // e.g. `Γ[x:τ] ⊢ body : ?R` when `binding == "body"`.
         for premise in &rule.premises {
             let Some(setting) = &premise.setting else {
                 continue;
@@ -554,8 +667,9 @@ impl TypingRuntime for RuleRuntime {
             let mut current_ctx = self.context(Some(ctx)).unwrap_or_default();
             let mut unifier = Unifier::new();
             for (name, ext_ty) in &setting.extensions {
-                let Some(value) = Self::ob_resolve(obligations, name)
-                    .and_then(|lex| lex.value(&self.s)) else {
+                let Some(value) =
+                    Self::ob_resolve(obligations, name).and_then(|lex| lex.value(&self.s))
+                else {
                     debug_trace!(
                         "fusion_typing",
                         "descend partial: no value for {} in rule {}",
@@ -564,6 +678,7 @@ impl TypingRuntime for RuleRuntime {
                     );
                     return Ok(ctx);
                 };
+                self.seed_type_metas(ext_ty, &mut unifier, obligations);
                 let Some(resolved) =
                     self.resolve_type(ext_ty, &mut unifier, obligations, &current_ctx)
                 else {
@@ -590,13 +705,14 @@ impl TypingRuntime for RuleRuntime {
     ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
         let rule = match self
             .production_rule_name(prod)
-            .and_then(|name| self.grammar.rules().get(name.as_str())) {
-                Some(r) => r,
-                None => {
-                    // no rule, just return the same context and any type
-                    return Ok((ANY_TYPE, None));
-                }
-            };
+            .and_then(|name| self.grammar.rules().get(name.as_str()))
+        {
+            Some(r) => r,
+            None => {
+                // no rule, just return the same context and any type
+                return Ok((ANY_TYPE, None));
+            }
+        };
 
         #[cfg(test)]
         {
@@ -618,7 +734,9 @@ impl TypingRuntime for RuleRuntime {
                 );
             }
         }
-        let context = self.context(Some(ctx)).ok_or_else(|| TransitionError::Rejected)?;
+        let context = self
+            .context(Some(ctx))
+            .ok_or_else(|| TransitionError::Rejected)?;
 
         match self.apply_rule(rule, obligations, context) {
             RuleResult::Success((ty, transition)) => {
@@ -667,10 +785,13 @@ impl TypingRuntime for RuleRuntime {
                 Err(TransitionError::Rejected)
             }
         }
-
     }
 
-    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError> {
+    fn apply_transform(
+        &self,
+        ctx: CtxId,
+        transform: ContextTransition,
+    ) -> Result<CtxId, TransitionError> {
         let mut current_ctx = self.context(Some(ctx)).unwrap_or_default();
         for (var, ty) in transform.transforms {
             if let Some(next) = self.extend_context(&current_ctx, &var, ty) {

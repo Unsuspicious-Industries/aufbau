@@ -1,10 +1,10 @@
+use crate::DebugLevel;
 use crate::logic::error::TransitionError;
 use crate::logic::grammar::Grammar;
-use crate::logic::parse::arena::{CtxId, ProdId, TypeId};
 use crate::logic::parse::NodeStatus;
+use crate::logic::parse::arena::{CtxId, ProdId, TypeId};
 use crate::logic::typing::TypingRuntime;
 use crate::set_debug_level;
-use crate::DebugLevel;
 
 use super::*;
 
@@ -16,6 +16,7 @@ mod frontier;
 mod parse;
 mod prune;
 mod repro;
+mod status;
 
 #[test]
 fn debug_smoke() {

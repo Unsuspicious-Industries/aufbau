@@ -71,23 +71,39 @@ impl Lexeme {
     }
 }
 
-/// Whether a node is a fully accepted parse or only a typed prefix.
+/// Semantic status of a completed summary.
 ///
-/// This is a semantic status, not just a structural one:
-/// - `Complete` means the production is fully matched and typing accepted it
-///   without relying on prefix-only reasoning.
-/// - `Partial` means either the syntax is still open, or typing accepted it
-///   only as a prefix approximation.
+/// These statuses classify accepted prefixes, not just spans:
+/// - `Closed`: exact on the current input; no descendant depends on EOF-only
+///   prefix reasoning. Closed nodes may export context transforms.
+/// - `Extensible`: fully recognized on the current input, but some descendant
+///   remains extendable at the right frontier. This is an accepted prefix, not
+///   an exact parse.
+/// - `Partial`: only prefix-accepted; some required descendant is still
+///   syntactically incomplete at EOF.
+///
+/// Invariants:
+/// - `Closed` children are all exact.
+/// - `Extensible` children are all recognized, and at least one is open.
+/// - `Partial` nodes are not fully recognized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NodeStatus {
-    Closed, // complete closed
-    Partial, // partial
-    Extensible, // complete but open to extension at end-of-input
+    Closed,
+    Partial,
+    Extensible,
 }
 impl NodeStatus {
+    /// Recognized on the current prefix.
     pub fn complete(&self) -> bool {
         matches!(self, NodeStatus::Closed) || matches!(self, NodeStatus::Extensible)
     }
+
+    /// Exact on the current input.
+    pub fn exact(&self) -> bool {
+        matches!(self, NodeStatus::Closed)
+    }
+
+    /// Still open to extension or syntactically unfinished.
     pub fn open(&self) -> bool {
         matches!(self, NodeStatus::Partial) || matches!(self, NodeStatus::Extensible)
     }
@@ -107,8 +123,8 @@ pub enum ChildRef {
     /// `complete` — the regex is fully satisfied, so the Earley item advances.
     /// `open` — at end-of-input the lexeme could still grow (Extensible/Prefix).
     ///
-    /// A node whose syntax is all-complete but has an open child is `Partial`,
-    /// because the same text might resolve differently with more input.
+    /// A fully recognized node with an open child is `Extensible`: accepted as a
+    /// prefix, but not exact on the current input.
     Terminal(Lexeme),
 }
 

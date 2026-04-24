@@ -33,6 +33,9 @@ Variable(var) ::= Identifier[x]
 // Lambda: (x: Int) => x + 1
 Lambda(lambda) ::= '(' Identifier[param] ':' Type[τ] ')' '=>' Expression[body]
 
+// Parenthesized expression
+Paren ::= '(' Expression ')'
+
 // Let binding
 Let(let) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';' Expression[body]
 
@@ -42,7 +45,7 @@ AtomicExpression ::= Variable
                    | Float
                    | Boolean
                    | Lambda
-                   | '(' Expression ')'
+                   | Paren
 
 // Postfix application: allow repeated application without extra parentheses
 PostfixTail ::= '(' Expression ')' PostfixTail | ε
@@ -54,8 +57,9 @@ IntBinary(bin_int) ::= Expression[left] IntOp[op] Expression[right]
 // Binary float operation
 FloatBinary(bin_float) ::= Expression[left] FloatOp[op] Expression[right]
 
-// Application is now any postfix expression (possibly chained)
-Application(app) ::= PostfixExpression
+// Application: each production exposes the bindings required by (app)
+Application(app) ::= AtomicExpression[func] '(' Expression[arg] ')'
+                   | Application[func] '(' Expression[arg] ')'
 
 // Top-level expression
 Expression ::= IntBinary

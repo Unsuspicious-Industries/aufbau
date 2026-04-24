@@ -1,25 +1,13 @@
-use crate::debug_debug;
 use crate::debug_trace;
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::{CtxId, TypedParser};
 use crate::logic::structure::ast::FusionAST;
 use crate::logic::typing::Context;
-use crate::regex::Regex;
 
 use crate::logic::typing::runtime::RuleRuntime;
 
-
 #[cfg(test)]
 mod tests;
-
-
-
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct SynthStats {
-    pub full_parses: usize,
-    pub incremental_advances: usize,
-}
 
 pub struct Synthesizer {
     grammar: Grammar,
@@ -29,9 +17,6 @@ pub struct Synthesizer {
     input: String,
     ctx: Context,
     tree: Option<FusionAST>,
-
-    #[cfg(test)]
-    stats: SynthStats,
 }
 
 impl Synthesizer {
@@ -48,8 +33,6 @@ impl Synthesizer {
             ctx: Context::new(),
             input,
             tree: None,
-            #[cfg(test)]
-            stats: SynthStats::default(),
         }
     }
 
@@ -136,11 +119,6 @@ impl Synthesizer {
             Ok(ast) => Ok(ast),
             Err(err) => Err(format!("try_feed failed: {}", err)),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn stats(&self) -> SynthStats {
-        self.stats
     }
 }
 

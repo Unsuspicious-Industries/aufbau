@@ -6,15 +6,8 @@ use super::Synthesizer;
 
 mod feed;
 
-pub(super) fn completion_fingerprint(
-    ast: &FusionAST,
-    grammar: &Grammar,
-) -> Vec<(String, Option<String>)> {
-    ast.completions(grammar)
-        .into_iter()
-        .map(|token| (token.to_pattern(), token.example()))
-        .collect()
-}
+
+
 
 pub(super) fn token_texts(grammar: &Grammar, input: &str) -> Vec<String> {
     let mut grammar = grammar.clone();

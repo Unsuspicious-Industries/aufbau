@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::logic::grammar::Grammar;
+use crate::logic::parse::Item;
 use crate::logic::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::logic::parse::parser::Completion;
-use crate::logic::parse::Item;
 use crate::logic::typing::{ContextTransition, Obligations};
 
 fn push_test_node(
@@ -77,9 +77,8 @@ fn enqueue_process_allows_different_syntactic_positions() {
     assert_eq!(parser.tables.agenda.len(), 2);
 }
 
-
 #[test]
-fn complete_inserts_into_seen_complete_on_first_call() {
+fn complete_records_result_span_on_first_call() {
     let grammar = Grammar::load("A ::= 'x'\nStart ::= A").unwrap();
     let mut parser = TypedParser::new(grammar, StubTyping);
     parser.set_input("x").unwrap();
@@ -96,17 +95,14 @@ fn complete_inserts_into_seen_complete_on_first_call() {
         })
         .unwrap();
 
-    // Main loop dedup is span-based: (nt, start, end).
-    // Type-aware propagation happens in lift_frontier, not here.
-    assert!(parser.tables.seen_complete.contains(&(a_nt, 0, 1)));
-    assert_eq!(parser.tables.seen_complete.len(), 1);
+    let spans = parser.tables.results.get(&(a_nt, 0)).unwrap();
+    assert_eq!(spans, &vec![1]);
 }
 
 #[test]
-fn complete_deduplicates_same_span() {
-    // Main loop: two nodes at the same span are dedup'd — only the first
-    // triggers waiter resumption. This is classic Earley behavior.
-    // Type-distinct propagation is handled by lift_frontier separately.
+fn complete_keeps_result_span_unique_but_allows_distinct_nodes() {
+    // Property: result spans are memoized once, but every completed node may
+    // still wake waiters because resumption depends on child type/effect.
     let grammar = Grammar::load("A ::= 'x'\nStart ::= A").unwrap();
     let mut parser = TypedParser::new(grammar, StubTyping);
     parser.set_input("x").unwrap();
@@ -132,12 +128,12 @@ fn complete_deduplicates_same_span() {
         })
         .unwrap();
 
-    // Same span → one entry in seen_complete
-    assert_eq!(parser.tables.seen_complete.len(), 1);
+    let spans = parser.tables.results.get(&(a_nt, 0)).unwrap();
+    assert_eq!(spans, &vec![1]);
 }
 
 #[test]
-fn completed_nodes_records_all_nodes_regardless_of_seen_complete() {
+fn completed_nodes_records_all_semantic_nodes_at_same_span() {
     let grammar = Grammar::load("A ::= 'x'\nStart ::= A").unwrap();
     let mut parser = TypedParser::new(grammar, StubTyping);
     parser.set_input("x").unwrap();
@@ -171,9 +167,9 @@ fn completed_nodes_records_all_nodes_regardless_of_seen_complete() {
 }
 
 #[test]
-fn complete_wakes_waiter_only_on_first_call() {
-    // Main loop uses span-based dedup: only the first completion at a span
-    // wakes waiters. Type-distinct propagation is handled by lift_frontier.
+fn complete_wakes_waiter_for_each_distinct_completed_node() {
+    // Property: semantically distinct completed nodes at the same span may all
+    // wake waiters because resumption depends on child summaries, not span only.
     let grammar = Grammar::load("A ::= 'x'\nStart ::= A 'y'").unwrap();
     let mut parser = TypedParser::new(grammar, StubTyping);
     parser.set_input("x y").unwrap();
@@ -214,9 +210,9 @@ fn complete_wakes_waiter_only_on_first_call() {
     let items_after_second = parser.tables.agenda.len();
 
     assert!(items_after_first > 0);
-    assert_eq!(
-        items_after_second, 0,
-        "same span should not re-wake in main loop"
+    assert!(
+        items_after_second > 0,
+        "same span may re-wake when node differs"
     );
 }
 

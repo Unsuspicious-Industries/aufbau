@@ -1,8 +1,8 @@
 //! Formal obligation objects and their structural evolution.
 
 use crate::logic::grammar::Grammar;
-use crate::logic::parse::arena::{ArenaNode, Binding, Lexeme, NodeStatus, ProdId, TypeId};
 use crate::logic::parse::NtId;
+use crate::logic::parse::arena::{ArenaNode, Binding, Lexeme, ProdId, TypeId};
 use crate::logic::path::{GrammarPath, TreePath};
 use std::collections::HashSet;
 
@@ -243,8 +243,6 @@ impl Obligations {
         }
 
         let mut constrained = HashSet::new();
-        let mut unconstrained = false;
-
         for obligation in &self.items {
             for path in &obligation.paths {
                 if let Some(first) = path.steps().first() {

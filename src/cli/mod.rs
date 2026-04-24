@@ -1,6 +1,4 @@
 pub mod check;
-pub mod examine;
-pub mod typecheck;
 pub mod validate;
 
 use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
@@ -32,18 +30,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Run parseable/feed validation.
-    Check(self::check::CheckCmd),
-
     /// Type-check a program (or partial program) read from stdin.
-    Typecheck(self::typecheck::TypecheckCmd),
-
+    Check(self::check::CheckCmd),
 
     /// Run validation test suites with progress and report
     Validate(self::validate::ValidateCmd),
-
-    /// Quick helper to examine feed acceptance for an input or test-case
-    Examine(self::examine::ExamineCmd),
 }
 
 pub fn run() {
@@ -75,8 +66,6 @@ pub fn run() {
 
     match &cli.command {
         Commands::Check(args) => self::check::run(args),
-        Commands::Typecheck(args) => self::typecheck::run(args),
         Commands::Validate(args) => self::validate::run(args),
-        Commands::Examine(args) => self::examine::run(args),
     }
 }

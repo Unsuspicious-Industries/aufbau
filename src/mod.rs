@@ -1,5 +1,5 @@
-pub mod logic;
 pub mod ffi;
+pub mod logic;
 pub mod regex;
 pub mod validation;
 
@@ -13,4 +13,3 @@ pub mod testing;
 pub use logic::debug::*;
 
 pub mod complexity;
-

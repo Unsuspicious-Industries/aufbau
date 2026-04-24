@@ -1,159 +1,139 @@
+//! `check`: parses and type-check a program (or partial program) from stdin.
+
+
 use clap::Args;
+use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
+
+use aufbau::logic::grammar::Grammar;        
+use aufbau::logic::structure::FusionNode;
+use aufbau::logic::synth::Synthesizer;
+use aufbau::logic::typing::{Context, SharedType, Type};
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckCmd {
-    /// Number of worker threads for Rust validation.
-    #[arg(long = "jobs", short = 'j', value_name = "N")]
-    pub jobs: Option<usize>,
+    /// Path to the grammar / typing-rules specification file (.auf)
+    #[arg(short = 's', long = "spec", value_name = "FILE")]
+    pub spec: PathBuf,
 
-    /// Override per-case completable timeout in seconds.
-    #[arg(long = "completable-timeout-secs", value_name = "N")]
-    pub completable_timeout_secs: Option<u64>,
+    /// Print the full AST tree for every root, not just the top-level type
+    #[arg(long = "ast", action = clap::ArgAction::SetTrue)]
+    pub ast: bool,
 
-    /// Timeout for the parseable validation command.
-    #[arg(
-        long = "parseable-timeout-secs",
-        value_name = "N",
-        default_value_t = 3600
-    )]
-    pub parseable_timeout_secs: u64,
-
-    /// Timeout for each completable validation command.
-    #[arg(
-        long = "completable-command-timeout-secs",
-        value_name = "N",
-        default_value_t = 5400
-    )]
-    pub completable_command_timeout_secs: u64,
-
-    /// Skip parseable validation.
-    #[arg(long = "skip-parseable", action = clap::ArgAction::SetTrue)]
-    pub skip_parseable: bool,
-
-    /// Skip completable validation.
-    #[arg(long = "skip-completable", action = clap::ArgAction::SetTrue)]
-    pub skip_completable: bool,
-
-    /// Optional parseable suite filter.
-    #[arg(long = "parseable-filter", value_name = "SUBSTR")]
-    pub parseable_filter: Option<String>,
-
-    /// Completable suite filters. Defaults to arithmetic, stlc, imp, fun, weird.
-    #[arg(long = "completable-filter", value_name = "SUBSTR")]
-    pub completable_filters: Vec<String>,
-}
-
-fn current_exe() -> PathBuf {
-    std::env::current_exe().unwrap_or_else(|e| {
-        eprintln!("error: failed to locate current executable: {}", e);
-        std::process::exit(2);
-    })
-}
-
-fn run_step(label: &str, timeout_secs: u64, args: &[String]) {
-    eprintln!("==> {}", label);
-    let mut child = Command::new(current_exe())
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .unwrap_or_else(|e| {
-            eprintln!("error: failed to spawn '{}': {}", label, e);
-            std::process::exit(2);
-        });
-
-    let deadline = Instant::now() + Duration::from_secs(timeout_secs.max(1));
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                if !status.success() {
-                    std::process::exit(status.code().unwrap_or(1));
-                }
-                return;
-            }
-            Ok(None) => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    eprintln!(
-                        "error: '{}' timed out after {}s",
-                        label,
-                        timeout_secs.max(1)
-                    );
-                    std::process::exit(1);
-                }
-                thread::sleep(Duration::from_millis(200));
-            }
-            Err(e) => {
-                eprintln!("error: failed while waiting for '{}': {}", label, e);
-                std::process::exit(2);
-            }
-        }
-    }
-}
-
-fn push_jobs(args: &mut Vec<String>, jobs: Option<usize>) {
-    if let Some(jobs) = jobs {
-        args.push("--jobs".to_string());
-        args.push(jobs.to_string());
-    }
+    /// Show all ambiguous parse candidates, even when a unique complete
+    /// root exists (by default only the best / complete root is shown)
+    #[arg(long = "all", action = clap::ArgAction::SetTrue)]
+    pub all: bool,
 }
 
 pub fn run(args: &CheckCmd) {
-    if !args.skip_parseable {
-        let mut step_args = vec![
-            "validate".to_string(),
-            "-m".to_string(),
-            "parseable".to_string(),
-        ];
-        if let Some(filter) = &args.parseable_filter {
-            step_args.push("-f".to_string());
-            step_args.push(filter.clone());
+    let spec_src = match std::fs::read_to_string(&args.spec) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read spec '{}': {}", args.spec.display(), e);
+            std::process::exit(2);
         }
-        push_jobs(&mut step_args, args.jobs);
-        run_step(
-            "parseable validation",
-            args.parseable_timeout_secs,
-            &step_args,
-        );
+    };
+    let grammar = match Grammar::load(&spec_src) {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("error: failed to load grammar: {}", e);
+            std::process::exit(2);
+        }
+    };
+
+    let mut input = String::new();
+    if let Err(e) = io::stdin().read_to_string(&mut input) {
+        eprintln!("error: failed to read stdin: {}", e);
+        std::process::exit(2);
+    }
+    let input = input.trim_end_matches('\n');
+
+    let mut synth = Synthesizer::new(grammar, input);
+    let typed = match synth.parse_with(&Context::new()) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    if typed.is_empty() {
+        eprintln!("error: no parse found for input");
+        std::process::exit(1);
     }
 
-    if !args.skip_completable {
-        let filters = if args.completable_filters.is_empty() {
-            vec![
-                "arithmetic::".to_string(),
-                "stlc::".to_string(),
-                "imp::".to_string(),
-                "fun::".to_string(),
-                "weird::".to_string(),
-            ]
+    let runtime = synth.runtime().clone();
+    let complete_roots: Vec<_> = typed.roots().filter(|r| r.is_complete()).collect();
+    let partial_roots: Vec<_> = typed.roots().filter(|r| !r.is_complete()).collect();
+
+    let is_partial = complete_roots.is_empty();
+
+    let display_roots: Vec<FusionNode> = if args.all {
+        typed.roots().collect()
+    } else if !complete_roots.is_empty() {
+        let well_typed: Vec<FusionNode> = complete_roots
+            .iter()
+            .filter(|r| {
+                let ty: SharedType = r.ty(&runtime);
+                let ty_inner: &Type = &ty;
+                !matches!(ty_inner, Type::Any | Type::Meta(_))
+            })
+            .cloned()
+            .collect();
+        if !well_typed.is_empty() {
+            well_typed
         } else {
-            args.completable_filters.clone()
-        };
+            complete_roots.clone()
+        }
+    } else {
+        partial_roots
+    };
 
-        for filter in filters {
-            let mut step_args = vec![
-                "validate".to_string(),
-                "-m".to_string(),
-                "completable".to_string(),
-                "-f".to_string(),
-                filter.clone(),
-            ];
-            push_jobs(&mut step_args, args.jobs);
-            if let Some(timeout_secs) = args.completable_timeout_secs {
-                step_args.push("--completable-timeout-secs".to_string());
-                step_args.push(timeout_secs.to_string());
-            }
-            run_step(
-                &format!("completable validation ({})", filter),
-                args.completable_command_timeout_secs,
-                &step_args,
-            );
+    let mut seen_types: Vec<String> = Vec::new();
+    let mut unique_roots = Vec::new();
+    for root in &display_roots {
+        let ty: SharedType = root.ty(&runtime);
+        let ty_s = format!("{}", ty);
+        if args.all || !seen_types.contains(&ty_s) {
+            seen_types.push(ty_s);
+            unique_roots.push(*root);
         }
     }
+
+    if is_partial {
+        println!("partial  \"{}\"", input);
+        println!();
+        if unique_roots.len() == 1 {
+            let root = unique_roots[0];
+            let ty = root.ty(&runtime);
+            println!("type : {}", ty);
+        } else {
+            println!("{} candidate type(s):", unique_roots.len());
+            for (i, root) in unique_roots.iter().enumerate() {
+                println!("  [{}] : {}", i + 1, root.ty(&runtime));
+            }
+        }
+    } else if unique_roots.len() == 1 {
+        let root = unique_roots[0];
+        println!("{} : {}", input, root.ty(&runtime));
+        if args.ast {
+            println!();
+            print!("{}", root);
+        }
+    } else {
+        println!("\"{}\"", input);
+        println!();
+        println!("{} type(s) (ambiguous parse):", unique_roots.len());
+        for (i, root) in unique_roots.iter().enumerate() {
+            println!("  [{}] : {}", i + 1, root.ty(&runtime));
+            if args.ast {
+                println!();
+                print!("{}", root);
+                println!();
+            }
+        }
+    }
+
+    std::process::exit(0);
 }

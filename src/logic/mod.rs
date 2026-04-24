@@ -1,7 +1,6 @@
-pub mod grammar;
 pub mod error;
+pub mod grammar;
 pub mod path;
-
 
 pub mod debug;
 pub mod exp;
@@ -18,8 +17,6 @@ use crate::logic::parse::arena::{CtxId, NodeStatus, ProdId, TypeId};
 use crate::logic::typing::{ContextTransition, Obligations};
 
 pub use grammar::{Segment, Tokenizer};
-
-
 
 /// Parser-facing semantic interface.
 pub trait TypingRuntime {
@@ -39,6 +36,10 @@ pub trait TypingRuntime {
         status: NodeStatus,
     ) -> Result<(TypeId, Option<ContextTransition>), TransitionError>;
 
-    fn set_segs(&mut self, s: &[Segment]) {}
-    fn apply_transform(&self, ctx: CtxId, transform: ContextTransition) -> Result<CtxId, TransitionError>;
+    fn set_segs(&mut self, _s: &[Segment]) {}
+    fn apply_transform(
+        &self,
+        ctx: CtxId,
+        transform: ContextTransition,
+    ) -> Result<CtxId, TransitionError>;
 }

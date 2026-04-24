@@ -1,13 +1,12 @@
 [package]
 name = "aufbau"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 authors = ["pkd <pkd@unsuspicious.org>"]
-description = "Type-aware constrained decoding for LLMs using context-dependent grammars with typing rules"
+description = "Generalized prefix parsing for a class of context-dependent languages"
 license = "MIT"
 repository = "https://github.com/Unsuspicious-Industries/aufbau"
 homepage = "https://unsuspicious.org/blog/proposition-7"
-documentation = "https://docs.rs/aufbau"
 readme = "README.md"
 keywords = ["llm", "constrained-decoding", "type-systems", "grammar", "parsing"]
 categories = ["parsing", "text-processing", "development-tools"]

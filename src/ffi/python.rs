@@ -45,19 +45,6 @@ impl PySynthesizer {
             .map_err(PyRuntimeError::new_err)
     }
 
-    fn tokens(&mut self) -> Vec<String> {
-        match self.synth.allowed_tokens_with(&self.ctx) {
-            Ok(tokens) => tokens.iter().map(|t| t.to_pattern()).collect(),
-            Err(_) => Vec::new(),
-        }
-    }
-
-    fn token_examples(&mut self) -> Vec<String> {
-        match self.synth.allowed_tokens_with(&self.ctx) {
-            Ok(tokens) => tokens.iter().filter_map(|t| t.example()).collect(),
-            Err(_) => Vec::new(),
-        }
-    }
     // state altering
     fn feed(&mut self, token: &str) -> PyResult<String> {
         self.synth
@@ -74,7 +61,6 @@ impl PySynthesizer {
     }
 
     // context utils
-
     fn add_to_ctx(&mut self, name: &str, ty: &str) -> PyResult<()> {
         let ty = Type::parse_raw(ty)
             .map_err(|e| PyValueError::new_err(format!("invalid type '{}': {}", ty, e)))?;
@@ -86,10 +72,11 @@ impl PySynthesizer {
         self.ctx = Context::new();
     }
 
-    // getting an AST string representaton
+    // Return a string representation of the current AST, if parsing succeeds.
     fn ast_str(&mut self) -> Option<String> {
         self.synth.ast().ok().map(|a| a.to_string())
     }
+
 
     fn is_complete(&mut self) -> bool {
         match self.synth.parse_with(&self.ctx) {
@@ -256,14 +243,14 @@ mod tests {
 
     #[test]
     fn python_synth_tokens_and_feed() {
-        let mut s = PySynthesizer::new(SPEC.to_string(), "", Some(8)).unwrap();
+        let mut s = PySynthesizer::new(SPEC.to_string(), "").unwrap();
         s.feed("x").unwrap();
         assert_eq!(s.input(), "x");
     }
 
     #[test]
     fn python_synth_set_input_and_complete() {
-        let mut s = PySynthesizer::new(SPEC.to_string(), "", Some(8)).unwrap();
+        let mut s = PySynthesizer::new(SPEC.to_string(), "").unwrap();
         s.set_input("x y").unwrap();
         assert!(s.is_complete());
     }
@@ -276,7 +263,7 @@ mod tests {
             super::aufbau(py, &module).unwrap();
 
             let synth_class = module.getattr("Synthesizer").unwrap();
-            let instance = synth_class.call1((SPEC, "", None::<usize>)).unwrap();
+            let instance = synth_class.call1((SPEC, "")).unwrap();
 
             let input = instance.call_method0("input").unwrap();
             assert_eq!(input.extract::<String>().unwrap(), "");

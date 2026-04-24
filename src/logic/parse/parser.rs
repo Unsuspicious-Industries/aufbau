@@ -8,6 +8,7 @@ use crate::logic::structure::ast::{FusionAST, FusionForest};
 use crate::logic::typing::{ContextTransition, Obligations, TypingRuntime};
 
 use crate::logic::parse::arena::{
+    ANY_TYPE, // identifier for the ANY type, default kind
     AltRange,
     ArenaNode,
     Binding,
@@ -22,7 +23,6 @@ use crate::logic::parse::arena::{
     ProdId,
     Span,
     TypeId,
-    ANY_TYPE, // identifier for the ANY type, default kind
 };
 
 use super::TypedParser;
@@ -65,8 +65,6 @@ pub struct Tables {
 
     // Dedup with: prod, dot, start, pos, ctx
     pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId)>,
-    // Dedup with: nt, start, end
-    pub seen_complete: HashSet<(NtId, usize, usize)>,
     pub results: HashMap<(NtId, usize), Vec<usize>>,
     pub completed_nodes: HashMap<(NtId, usize, usize), Vec<NodeId>>,
     pub waiters: HashMap<(NtId, usize), Vec<Waiter>>,
@@ -112,12 +110,10 @@ where
         parent_obs: &Obligations,
     ) {
         for &prod in prods {
-            let mut obligations = parent_obs.for_seed(prod.1);
-            obligations.extend(Obligations::create(
-                &self.grammar,
-                prod,
-                obligations.root().clone(),
-            ));
+            let parent_obligations = parent_obs.for_seed(prod.1);
+            let mut obligations =
+                Obligations::create(&self.grammar, prod, parent_obligations.root().clone());
+            obligations.extend(parent_obligations);
             self.enqueue_process(Item {
                 prod,
                 dot: 0,
@@ -179,9 +175,14 @@ where
         let at_end = item.pos + 1 >= self.segs().len();
         let (complete, open) = match status {
             PrefixStatus::NoMatch => return Ok(None),
-            PrefixStatus::Prefix(_) => (false, at_end), // only open if at end of input
+            PrefixStatus::Prefix(_) => {
+                if !at_end {
+                    return Ok(None);
+                }
+                (false, true)
+            }
             PrefixStatus::Complete => (true, false),
-            PrefixStatus::Extensible(_) => (true, true),
+            PrefixStatus::Extensible(_) => (true, at_end),
         };
         let span = Span {
             start: segment.index as u32,
@@ -250,7 +251,78 @@ where
             .typing
             .finalize(item.prod, item.ctx, &item.obligations, status)
         {
-            Ok((ty, ctr)) => {
+            Ok((mut ty, ctr)) => {
+                let nt_name = self.grammar.nt(item.prod.0).unwrap_or("");
+                let has_rule = self.grammar.rule_for_prod(item.prod).is_some();
+                // Invariant: inheritance is production-local. A structurally
+                // transparent production has exactly one nonterminal child and
+                // no bound terminals. Such a production contributes no local
+                // semantic evidence beyond its child.
+                let transparent_prod = self.grammar.prod(item.prod).is_some_and(|prod| {
+                    let nonterminal_children = prod
+                        .rhs
+                        .iter()
+                        .filter(|sym| {
+                            matches!(sym, crate::logic::grammar::Symbol::Nonterminal { .. })
+                        })
+                        .count();
+                    let bound_terminals = prod.rhs.iter().any(|sym| {
+                        matches!(
+                            sym,
+                            crate::logic::grammar::Symbol::Terminal {
+                                binding: Some(_),
+                                ..
+                            }
+                        )
+                    });
+                    nonterminal_children == 1 && !bound_terminals
+                });
+                let bridge = self.grammar.is_bridge_nt(nt_name);
+                let child_inheriting = transparent_prod && (bridge || !has_rule);
+                let inherited_child = if child_inheriting {
+                    let mut node_children = item.children.iter().filter_map(|child| match child {
+                        ChildRef::Node(child_id) => self.arena.node(*child_id).map(|n| n.clone()),
+                        ChildRef::Terminal(_) => None,
+                    });
+                    let first = node_children.next();
+                    if node_children.next().is_none() {
+                        first
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                if status == NodeStatus::Partial && item.start == item.pos {
+                    ty = ANY_TYPE;
+                } else if let Some(child) = &inherited_child {
+                    ty = child.ty;
+                }
+
+                let ctr = if status == NodeStatus::Closed {
+                    if child_inheriting {
+                        let mut composed_transforms = Vec::new();
+                        for child in &item.children {
+                            if let ChildRef::Node(child_id) = child
+                                && let Some(child) = self.arena.node(*child_id)
+                                && let Some(child_ctr) = &child.ctr
+                            {
+                                composed_transforms.extend(child_ctr.transforms.clone());
+                            }
+                        }
+                        if let Some(local_ctr) = ctr {
+                            composed_transforms.extend(local_ctr.transforms);
+                        }
+                        (!composed_transforms.is_empty()).then_some(ContextTransition {
+                            transforms: composed_transforms,
+                        })
+                    } else {
+                        ctr.filter(|ctr| !ctr.transforms.is_empty())
+                    }
+                } else {
+                    None
+                };
                 let bindings: Vec<Binding> = item
                     .obligations
                     .iter()
@@ -273,6 +345,14 @@ where
                     prod: item.prod,
                     children: item.children.clone(),
                 }];
+                #[cfg(test)]
+                debug_trace!(
+                    "fusion_parser",
+                    "push node nt={} status={:?} ty_id={}",
+                    nt_name,
+                    status,
+                    ty
+                );
                 Ok(Some(self.arena.push_node(node, packed)))
             }
             Err(TransitionError::Rejected) => {
@@ -334,30 +414,27 @@ where
             .or_default()
             .push(completion.node);
 
-        if self
+        // Invariant: every semantically distinct completed node must be allowed
+        // to wake waiters. Span-only completion dedup is too coarse because
+        // resumption depends on child type/effect/bindings.
+        let ends = self
             .tables
-            .seen_complete
-            .insert((completion.nt, completion.start, completion.end))
-        {
-            let ends = self
-                .tables
-                .results
-                .entry((completion.nt, completion.start))
-                .or_default();
-            if !ends.contains(&completion.end) {
-                ends.push(completion.end);
-            }
+            .results
+            .entry((completion.nt, completion.start))
+            .or_default();
+        if !ends.contains(&completion.end) {
+            ends.push(completion.end);
+        }
 
-            if let Some(waiters) = self
-                .tables
-                .waiters
-                .get(&(completion.nt, completion.start))
-                .cloned()
-            {
-                for waiter in waiters {
-                    if let Ok(resumed) = self.resume(&waiter.item, completion.node) {
-                        self.enqueue_process(resumed);
-                    }
+        if let Some(waiters) = self
+            .tables
+            .waiters
+            .get(&(completion.nt, completion.start))
+            .cloned()
+        {
+            for waiter in waiters {
+                if let Ok(resumed) = self.resume(&waiter.item, completion.node) {
+                    self.enqueue_process(resumed);
                 }
             }
         }

@@ -1,4 +1,3 @@
-
 use crate::debug_trace;
 use crate::regex::Regex;
 use std::hash::{Hash, Hasher};
@@ -13,7 +12,7 @@ pub enum Symbol {
     Terminal {
         regex: Regex,
         binding: Option<String>,
-    }
+    },
 }
 // ANCHOR_END: Symbol
 
@@ -100,7 +99,6 @@ impl Symbol {
         }
         self
     }
-
 
     pub fn binding(&self) -> Option<&String> {
         match self {

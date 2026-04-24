@@ -1,8 +1,8 @@
 //! Parser-level state objects for prefix parsing and continuation.
 
 use crate::logic::grammar::Symbol;
-use crate::logic::parse::arena::{NodeId, Span};
 use crate::logic::parse::Item;
+use crate::logic::parse::arena::{NodeId, Span};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Next {
