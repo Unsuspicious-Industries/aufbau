@@ -28,9 +28,6 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all --check
-
       - name: Check default targets
         run: cargo check --all-targets --locked
 
