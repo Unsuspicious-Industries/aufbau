@@ -460,91 +460,31 @@ fn union_invalid_cases() -> Vec<ParseTestCase> {
 
 fn context_export_valid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::valid(
-            "closed decl exports rightward",
-            "let x : A = v ; x",
-        ),
-        ParseTestCase::valid(
-            "decl and var sequence",
-            "let y : A = v ; y",
-        ),
-        ParseTestCase::valid(
-            "decl with matching var",
-            "let a : A = v ; a",
-        ),
-        ParseTestCase::valid(
-            "simple one letter b",
-            "let b : A = v ; b",
-        ),
-        ParseTestCase::valid(
-            "simple one letter c",
-            "let c : A = v ; c",
-        ),
-        ParseTestCase::valid(
-            "simple one letter f",
-            "let f : A = v ; f",
-        ),
-        ParseTestCase::valid(
-            "simple one letter z",
-            "let z : A = v ; z",
-        ),
-        ParseTestCase::valid(
-            "two letter binding",
-            "let ab : A = v ; ab",
-        ),
+        ParseTestCase::valid("closed decl exports rightward", "let x : A = v ; x"),
+        ParseTestCase::valid("decl and var sequence", "let y : A = v ; y"),
+        ParseTestCase::valid("decl with matching var", "let a : A = v ; a"),
+        ParseTestCase::valid("simple one letter b", "let b : A = v ; b"),
+        ParseTestCase::valid("simple one letter c", "let c : A = v ; c"),
+        ParseTestCase::valid("simple one letter f", "let f : A = v ; f"),
+        ParseTestCase::valid("simple one letter z", "let z : A = v ; z"),
+        ParseTestCase::valid("two letter binding", "let ab : A = v ; ab"),
     ]
 }
 
 fn context_export_invalid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::invalid(
-            "right sibling needs exported name",
-            "let x : A = v ; y",
-        ),
-        ParseTestCase::invalid(
-            "wrong variable name",
-            "let x : A = v ; z",
-        ),
-        ParseTestCase::invalid(
-            "completely different var",
-            "let a : A = v ; b",
-        ),
-        ParseTestCase::invalid(
-            "no variable after decl",
-            "let x : A = v ;",
-        ),
-        ParseTestCase::invalid(
-            "mismatch x v",
-            "let x : A = v ; v",
-        ),
-        ParseTestCase::invalid(
-            "mismatch a b",
-            "let a : A = v ; c",
-        ),
-        ParseTestCase::invalid(
-            "mismatch c f",
-            "let c : A = v ; f",
-        ),
-        ParseTestCase::invalid(
-            "missing semicolon",
-            "let x : A = v x",
-        ),
-        ParseTestCase::invalid(
-            "extra identifiers",
-            "let x : A = v ; x y",
-        ),
-        ParseTestCase::invalid(
-            "partial declaration",
-            "let x : A = v",
-        ),
-        ParseTestCase::invalid(
-            "mismatched pair one two",
-            "let z : A = v ; a",
-        ),
-        ParseTestCase::invalid(
-            "different two letter",
-            "let ab : A = v ; ba",
-        ),
+        ParseTestCase::invalid("right sibling needs exported name", "let x : A = v ; y"),
+        ParseTestCase::invalid("wrong variable name", "let x : A = v ; z"),
+        ParseTestCase::invalid("completely different var", "let a : A = v ; b"),
+        ParseTestCase::invalid("no variable after decl", "let x : A = v ;"),
+        ParseTestCase::invalid("mismatch x v", "let x : A = v ; v"),
+        ParseTestCase::invalid("mismatch a b", "let a : A = v ; c"),
+        ParseTestCase::invalid("mismatch c f", "let c : A = v ; f"),
+        ParseTestCase::invalid("missing semicolon", "let x : A = v x"),
+        ParseTestCase::invalid("extra identifiers", "let x : A = v ; x y"),
+        ParseTestCase::invalid("partial declaration", "let x : A = v"),
+        ParseTestCase::invalid("mismatched pair one two", "let z : A = v ; a"),
+        ParseTestCase::invalid("different two letter", "let ab : A = v ; ba"),
     ]
 }
 
@@ -561,22 +501,10 @@ fn child_context_valid_cases() -> Vec<ParseTestCase> {
 
 fn child_context_invalid_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::invalid(
-            "parameter must not leak to tail",
-            "fun x : A x x",
-        ),
-        ParseTestCase::invalid(
-            "param visible in tail position",
-            "fun p : A p p",
-        ),
-        ParseTestCase::invalid(
-            "using bound variable outside body",
-            "fun z : A q z",
-        ),
-        ParseTestCase::invalid(
-            "undefined tail variable",
-            "fun m : A m undefined",
-        ),
+        ParseTestCase::invalid("parameter must not leak to tail", "fun x : A x x"),
+        ParseTestCase::invalid("param visible in tail position", "fun p : A p p"),
+        ParseTestCase::invalid("using bound variable outside body", "fun z : A q z"),
+        ParseTestCase::invalid("undefined tail variable", "fun m : A m undefined"),
     ]
 }
 

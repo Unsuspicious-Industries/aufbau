@@ -21,8 +21,8 @@ impl TypingRuntime for StubTyping {
         _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
-        Ok((0, Some(ContextTransition::identity())))
+    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
+        Ok((0, Some(ContextTransition::identity()), true))
     }
     fn apply_transform(
         &self,
@@ -53,7 +53,7 @@ impl TypingRuntime for RejectingTyping {
         _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
+    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
         Err(TransitionError::Rejected)
     }
     fn apply_transform(

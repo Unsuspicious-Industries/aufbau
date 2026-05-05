@@ -67,6 +67,7 @@ pub struct Tables {
     pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId)>,
     pub results: HashMap<(NtId, usize), Vec<usize>>,
     pub completed_nodes: HashMap<(NtId, usize, usize), Vec<NodeId>>,
+    // (NT, start)
     pub waiters: HashMap<(NtId, usize), Vec<Waiter>>,
     pub frontier: Vec<Item>,
 }
@@ -251,7 +252,7 @@ where
             .typing
             .finalize(item.prod, item.ctx, &item.obligations, status)
         {
-            Ok((mut ty, ctr)) => {
+            Ok((mut ty, ctr, semantic_complete)) => {
                 let nt_name = self.grammar.nt(item.prod.0).unwrap_or("");
                 let has_rule = self.grammar.rule_for_prod(item.prod).is_some();
                 // Invariant: inheritance is production-local. A structurally
@@ -336,6 +337,7 @@ where
                         end: item.pos as u32,
                     },
                     status,
+                    semantic_complete,
                     ty,
                     ctr: ctr,
                     bindings,

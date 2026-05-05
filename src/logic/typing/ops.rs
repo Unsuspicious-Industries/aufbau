@@ -167,6 +167,20 @@ impl Unifier {
                 let inner = self.apply(inner.as_ref())?;
                 Ok(Type::Array(Box::new(inner)))
             }
+            Type::Object(fields) => fields
+                .into_iter()
+                .map(|(name, ty)| self.apply(&ty).map(|ty| (name, ty)))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Type::Object),
+            Type::ObjectExtend(name, field_ty, rest) => {
+                let field_ty = self.apply(field_ty.as_ref())?;
+                let rest = self.apply(rest.as_ref())?;
+                Ok(normalize_object_type(Type::ObjectExtend(
+                    name,
+                    Box::new(field_ty),
+                    Box::new(rest),
+                )))
+            }
             Type::Union(parts) => {
                 let mut resolved = Vec::with_capacity(parts.len());
                 for p in parts {
@@ -196,6 +210,10 @@ impl Unifier {
             Type::Meta(name) => !self.substitution.contains_key(name),
             Type::Arrow(a, b) => self.has_unresolved_meta(a) || self.has_unresolved_meta(b),
             Type::Array(inner) => self.has_unresolved_meta(inner),
+            Type::Object(fields) => fields.iter().any(|(_, ty)| self.has_unresolved_meta(ty)),
+            Type::ObjectExtend(_, field_ty, rest) => {
+                self.has_unresolved_meta(field_ty) || self.has_unresolved_meta(rest)
+            }
             Type::Union(parts) => parts.iter().any(|p| self.has_unresolved_meta(p)),
             Type::Not(a) => self.has_unresolved_meta(a),
             _ => false,
@@ -217,13 +235,14 @@ impl Unifier {
     /// - Fail: types are definitively incompatible
     pub fn unify(&mut self, t1: &Type, t2: &Type) -> UnifyResult {
         // Resolve context calls first, then apply current substitution (walk)
-        let t1 = self.walk(&self.resolve_ctx_call(t1, true));
-        let t2 = self.walk(&self.resolve_ctx_call(t2, true));
+        let t1 = normalize_object_type(self.walk(&self.resolve_ctx_call(t1, true)));
+        let t2 = normalize_object_type(self.walk(&self.resolve_ctx_call(t2, true)));
 
         match (&t1, &t2) {
-            // Invariant: same-name metas are not globally identical by default.
-            // Scope-sensitive meta solving must be modeled explicitly elsewhere.
-            //(Type::Meta(a), Type::Meta(b)) if a == b => UnifyResult::Ok,
+            // Identity: unifying a meta with itself is a no-op. This matters for
+            // recursive helper rules whose synthesized continuation types flow
+            // through another premise in the same local unifier.
+            (Type::Meta(a), Type::Meta(b)) if a == b => UnifyResult::Ok,
 
             // Identical types
             (Type::Raw(a), Type::Raw(b)) => {
@@ -265,6 +284,10 @@ impl Unifier {
                 self.unify(&a, &b)
             }
 
+            (Type::Object(a), Type::Object(b)) => self.unify_object_fields(a, b),
+
+            (Type::ObjectExtend(..), _) | (_, Type::ObjectExtend(..)) => UnifyResult::Indeterminate,
+
             // Negation types: unify inner
             (Type::Not(a), Type::Not(b)) => {
                 let a = a.clone();
@@ -275,8 +298,8 @@ impl Unifier {
             // Any = Any: ok
             (Type::Any, Type::Any) => UnifyResult::Ok,
 
-            // Any vs concrete: indeterminate (Any is top, not a concrete type)
-            (Type::Any, _) | (_, Type::Any) => UnifyResult::Ok,
+            // Any vs concrete: indeterminate (Any is top, not concrete evidence).
+            (Type::Any, _) | (_, Type::Any) => UnifyResult::Indeterminate,
 
             // Union types: unify point-wise (same arity/ordering for now)
             (Type::Union(a), Type::Union(b)) => {
@@ -347,6 +370,34 @@ impl Unifier {
         }
     }
 
+    fn unify_object_fields(&mut self, a: &[(String, Type)], b: &[(String, Type)]) -> UnifyResult {
+        if a.len() != b.len() {
+            return UnifyResult::Fail(format!(
+                "Object field count mismatch: {} vs {}",
+                a.len(),
+                b.len()
+            ));
+        }
+
+        let mut saw_indeterminate = false;
+        for (name, left) in a {
+            let Some((_, right)) = b.iter().find(|(candidate, _)| candidate == name) else {
+                return UnifyResult::Fail(format!("Missing object field {}", name));
+            };
+            match self.unify(left, right) {
+                UnifyResult::Ok => {}
+                UnifyResult::Indeterminate => saw_indeterminate = true,
+                fail => return fail,
+            }
+        }
+
+        if saw_indeterminate {
+            UnifyResult::Indeterminate
+        } else {
+            UnifyResult::Ok
+        }
+    }
+
     fn resolve_ctx_call(&self, ty: &Type, allow_context: bool) -> Type {
         match ty {
             Type::ContextCall(ctx_name, var) => {
@@ -380,6 +431,22 @@ impl Unifier {
             Type::Array(inner) => {
                 Type::Array(Box::new(self.resolve_ctx_call(inner, allow_context)))
             }
+            Type::Object(fields) => Type::Object(
+                fields
+                    .iter()
+                    .map(|(name, ty)| {
+                        (
+                            self.resolve_object_field_name(name),
+                            self.resolve_ctx_call(ty, allow_context),
+                        )
+                    })
+                    .collect(),
+            ),
+            Type::ObjectExtend(name, field_ty, rest) => normalize_object_type(Type::ObjectExtend(
+                self.resolve_object_field_name(name),
+                Box::new(self.resolve_ctx_call(field_ty, allow_context)),
+                Box::new(self.resolve_ctx_call(rest, allow_context)),
+            )),
             Type::Union(parts) => Type::Union(
                 parts
                     .iter()
@@ -395,6 +462,47 @@ impl Unifier {
             }
             _ => ty.clone(),
         }
+    }
+
+    fn resolve_object_field_name(&self, name: &str) -> String {
+        self.binding_values
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string())
+    }
+}
+
+fn normalize_object_type(ty: Type) -> Type {
+    match ty {
+        Type::Arrow(left, right) => Type::Arrow(
+            Box::new(normalize_object_type(*left)),
+            Box::new(normalize_object_type(*right)),
+        ),
+        Type::Array(inner) => Type::Array(Box::new(normalize_object_type(*inner))),
+        Type::Object(fields) => Type::Object(
+            fields
+                .into_iter()
+                .map(|(name, ty)| (name, normalize_object_type(ty)))
+                .collect(),
+        ),
+        Type::ObjectExtend(name, field_ty, rest) => {
+            let field_ty = normalize_object_type(*field_ty);
+            let rest = normalize_object_type(*rest);
+            if let Type::Object(mut fields) = rest {
+                let mut all = vec![(name, field_ty)];
+                all.append(&mut fields);
+                Type::Object(all)
+            } else {
+                Type::ObjectExtend(name, Box::new(field_ty), Box::new(rest))
+            }
+        }
+        Type::Union(parts) => Type::Union(parts.into_iter().map(normalize_object_type).collect()),
+        Type::Not(inner) => Type::Not(Box::new(normalize_object_type(*inner))),
+        Type::Partial(inner, input) => {
+            Type::Partial(Box::new(normalize_object_type(*inner)), input)
+        }
+        Type::PathOf(inner, path) => Type::PathOf(Box::new(normalize_object_type(*inner)), path),
+        other => other,
     }
 }
 
@@ -413,6 +521,16 @@ pub fn equal(t1: &Type, t2: &Type) -> Option<bool> {
         // Arrow types require structural equality
         (Type::Arrow(l1, r1), Type::Arrow(l2, r2)) => Some(equal(l1, l2)? && equal(r1, r2)?),
         (Type::Array(a), Type::Array(b)) => equal(a, b),
+        (Type::Object(a), Type::Object(b)) => equal_object_fields(a, b),
+        (Type::ObjectExtend(..), _) | (_, Type::ObjectExtend(..)) => {
+            let n1 = normalize_object_type(t1.clone());
+            let n2 = normalize_object_type(t2.clone());
+            if matches!(n1, Type::ObjectExtend(..)) || matches!(n2, Type::ObjectExtend(..)) {
+                None
+            } else {
+                equal(&n1, &n2)
+            }
+        }
         (Type::Union(a), Type::Union(b)) => {
             if a.len() != b.len() {
                 Some(false)
@@ -452,6 +570,23 @@ pub fn equal(t1: &Type, t2: &Type) -> Option<bool> {
     }
 }
 
+fn equal_object_fields(a: &[(String, Type)], b: &[(String, Type)]) -> Option<bool> {
+    if a.len() != b.len() {
+        return Some(false);
+    }
+
+    for (name, left) in a {
+        let Some((_, right)) = b.iter().find(|(candidate, _)| candidate == name) else {
+            return Some(false);
+        };
+        if !equal(left, right)? {
+            return Some(false);
+        }
+    }
+
+    Some(true)
+}
+
 // =============================================================================
 // Subtyping: τ₁ ⊆ τ₂
 // =============================================================================
@@ -486,6 +621,21 @@ pub fn subtype(t1: &Type, t2: &Type) -> bool {
         // Arrow: contravariant in domain, covariant in codomain
         (Type::Arrow(d1, c1), Type::Arrow(d2, c2)) => subtype(d2, d1) && subtype(c1, c2),
         (Type::Array(a), Type::Array(b)) => subtype(a, b),
+        (Type::Object(source), Type::Object(target)) => target.iter().all(|(name, target_ty)| {
+            source
+                .iter()
+                .find(|(candidate, _)| candidate == name)
+                .is_some_and(|(_, source_ty)| subtype(source_ty, target_ty))
+        }),
+        (Type::ObjectExtend(..), _) | (_, Type::ObjectExtend(..)) => {
+            let n1 = normalize_object_type(t1.clone());
+            let n2 = normalize_object_type(t2.clone());
+            if matches!(n1, Type::ObjectExtend(..)) || matches!(n2, Type::ObjectExtend(..)) {
+                false
+            } else {
+                subtype(&n1, &n2)
+            }
+        }
         // Union on left: every member must be subtype of target
         (Type::Union(parts), other) => parts.iter().all(|p| subtype(p, other)),
         // Union on right: source must be subtype of at least one member
@@ -506,6 +656,10 @@ fn occurs_meta(name: &str, ty: &Type) -> bool {
         Type::Meta(n) => n == name,
         Type::Arrow(l, r) => occurs_meta(name, l) || occurs_meta(name, r),
         Type::Array(inner) => occurs_meta(name, inner),
+        Type::Object(fields) => fields.iter().any(|(_, ty)| occurs_meta(name, ty)),
+        Type::ObjectExtend(_, field_ty, rest) => {
+            occurs_meta(name, field_ty) || occurs_meta(name, rest)
+        }
         Type::Not(t) => occurs_meta(name, t),
         _ => false,
     }
@@ -542,6 +696,21 @@ mod tests {
         let rhs = parse("'Int' | 'Bool'");
         assert!(unifier.unify(&lhs, &rhs).is_ok());
         assert!(matches!(unifier.resolve_meta("A"), Some(Type::Raw(name)) if name == "Int"));
+    }
+
+    #[test]
+    fn unifying_same_meta_is_identity() {
+        let mut unifier = Unifier::new();
+        assert!(unifier.unify(&parse("?A"), &parse("?A")).is_ok());
+        assert_eq!(unifier.resolve_meta("A"), None);
+    }
+
+    #[test]
+    fn unify_objects_ignores_field_order() {
+        let mut unifier = Unifier::new();
+        let lhs = Type::parse_raw("{ id: number, name: string }").unwrap();
+        let rhs = Type::parse_raw("{ name: string, id: number }").unwrap();
+        assert!(unifier.unify(&lhs, &rhs).is_ok());
     }
 
     #[test]

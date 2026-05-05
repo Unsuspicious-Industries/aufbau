@@ -70,6 +70,7 @@ fn descend_resolves_type_binding_before_context_extension() {
         nt: type_nt,
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
+        semantic_complete: true,
         ty: ANY_TYPE,
         ctr: None,
         bindings: vec![],
@@ -107,6 +108,7 @@ fn finalize_resolves_output_context_types_before_export() {
         nt: type_nt,
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
+        semantic_complete: true,
         ty: ANY_TYPE,
         ctr: None,
         bindings: vec![],
@@ -114,7 +116,7 @@ fn finalize_resolves_output_context_types_before_export() {
     };
     obs.resolve_nonterminal(2, 0, &type_node);
 
-    let (_, ctr): (usize, Option<ContextTransition>) =
+    let (_, ctr, _semantic_complete): (usize, Option<ContextTransition>, bool) =
         runtime.finalize(prod, 0, &obs, NodeStatus::Closed).unwrap();
     let ctr = ctr.expect("decl should export context transform");
     assert_eq!(
@@ -153,6 +155,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
         nt: type_nt,
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
+        semantic_complete: true,
         ty: ANY_TYPE,
         ctr: None,
         bindings: vec![],
@@ -165,6 +168,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
         nt: bool_nt,
         span: Span { start: 4, end: 5 },
         status: NodeStatus::Closed,
+        semantic_complete: true,
         ty: bool_ty,
         ctr: None,
         bindings: vec![],

@@ -6,9 +6,6 @@ use super::Synthesizer;
 
 mod feed;
 
-
-
-
 pub(super) fn token_texts(grammar: &Grammar, input: &str) -> Vec<String> {
     let mut grammar = grammar.clone();
     grammar

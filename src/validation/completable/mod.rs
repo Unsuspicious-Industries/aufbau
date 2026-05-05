@@ -5,6 +5,7 @@ pub mod arithmetic;
 pub mod fun;
 pub mod stlc;
 pub mod toy;
+pub mod typescript;
 pub mod weird;
 
 pub mod imp;
@@ -12,7 +13,7 @@ pub mod imp;
 use crate::logic::grammar::Grammar;
 use crate::logic::typing::Context;
 
-use crate::validation::completability::{PrefixSoundnessResult, check_incremental_feed_replay};
+use crate::validation::completability::check_incremental_feed_replay;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use serde_json::json;
@@ -57,6 +58,7 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
     let mut out = Vec::new();
     out.extend(arithmetic::suites());
     out.extend(stlc::suites());
+    out.extend(typescript::suites());
     out.extend(toy::suites());
     out.extend(fun::suites());
     out.extend(imp::suites());

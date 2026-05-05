@@ -146,6 +146,23 @@ impl RuleRuntime {
             .and_then(|v| Type::parse_raw(&v).ok())
     }
 
+    fn resolve_object_field_name(&self, name: &str, obligations: &Obligations) -> String {
+        Self::ob_resolve(obligations, name)
+            .and_then(|lexeme| lexeme.value(&self.s))
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| name.to_string())
+    }
+
+    fn normalize_object_extend(name: String, field_ty: Type, rest: Type) -> Type {
+        if let Type::Object(mut fields) = rest {
+            let mut all = vec![(name, field_ty)];
+            all.append(&mut fields);
+            Type::Object(all)
+        } else {
+            Type::ObjectExtend(name, Box::new(field_ty), Box::new(rest))
+        }
+    }
+
     // ── Type resolution ──────────────────────────────────────────────────────
 
     fn resolve_type(
@@ -173,6 +190,23 @@ impl RuleRuntime {
                 obligations,
                 ctx,
             )?))),
+            Type::Object(fields) => Some(Type::Object(
+                fields
+                    .iter()
+                    .map(|(name, ty)| {
+                        Some((
+                            self.resolve_object_field_name(name, obligations),
+                            self.resolve_type(ty, unifier, obligations, ctx)?,
+                        ))
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            )),
+            Type::ObjectExtend(name, field_ty, rest) => {
+                let name = self.resolve_object_field_name(name, obligations);
+                let field_ty = self.resolve_type(field_ty, unifier, obligations, ctx)?;
+                let rest = self.resolve_type(rest, unifier, obligations, ctx)?;
+                Some(Self::normalize_object_extend(name, field_ty, rest))
+            }
             Type::Union(items) => Some(Type::Union(
                 items
                     .iter()
@@ -198,6 +232,15 @@ impl RuleRuntime {
                 Self::collect_metas(right, out);
             }
             Type::Array(inner) | Type::Not(inner) => Self::collect_metas(inner, out),
+            Type::Object(fields) => {
+                for (_, ty) in fields {
+                    Self::collect_metas(ty, out);
+                }
+            }
+            Type::ObjectExtend(_, field_ty, rest) => {
+                Self::collect_metas(field_ty, out);
+                Self::collect_metas(rest, out);
+            }
             Type::Union(items) => {
                 for item in items {
                     Self::collect_metas(item, out);
@@ -329,11 +372,17 @@ impl RuleRuntime {
                 let Some(lexeme) = Self::ob_resolve(obligations, var) else {
                     #[cfg(test)]
                     {
-                        debug_trace!("fusion_typing", "premise_fail no_lexeme var={}", var);
+                        debug_trace!("fusion_typing", "premise_partial no_lexeme var={}", var);
                     }
-                    return PremiseStatus::Contradiction;
+                    return PremiseStatus::Unknown;
                 };
-                let found = self.lookup_context(&premise_ctx, lexeme).is_some();
+
+                let text = lexeme.value(&self.s).unwrap_or_default();
+                let exact = !text.is_empty() && premise_ctx.lookup(&text).is_some();
+                let prefix = lexeme.open
+                    && !text.is_empty()
+                    && premise_ctx.lookup_starts_with(&text).is_some();
+                let found = exact || prefix;
                 if found && !setting_extends {
                     #[cfg(test)]
                     {
@@ -348,10 +397,12 @@ impl RuleRuntime {
                 } else {
                     *ctx = base_ctx;
                 }
-                match (found, lexeme.open) {
-                    (true, _) => PremiseStatus::Satisfied,
-                    (false, true) => PremiseStatus::Unknown,
-                    (false, false) => PremiseStatus::Contradiction,
+
+                match (found, lexeme.open, text.is_empty()) {
+                    (true, _, _) => PremiseStatus::Satisfied,
+                    (false, _, true) => PremiseStatus::Unknown,
+                    (false, true, false) => PremiseStatus::Contradiction,
+                    (false, false, false) => PremiseStatus::Contradiction,
                 }
             }
             TypingJudgment::Ascription((term, ty)) => {
@@ -702,7 +753,7 @@ impl TypingRuntime for RuleRuntime {
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
+    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
         let rule = match self
             .production_rule_name(prod)
             .and_then(|name| self.grammar.rules().get(name.as_str()))
@@ -710,7 +761,7 @@ impl TypingRuntime for RuleRuntime {
             Some(r) => r,
             None => {
                 // no rule, just return the same context and any type
-                return Ok((ANY_TYPE, None));
+                return Ok((ANY_TYPE, None, true));
             }
         };
 
@@ -748,7 +799,7 @@ impl TypingRuntime for RuleRuntime {
                         ty,
                         transition
                     );
-                    Ok((self.intern_type(ty), transition))
+                    Ok((self.intern_type(ty), transition, true))
                 } else {
                     debug_trace!(
                         "fusion_typing",
@@ -758,7 +809,7 @@ impl TypingRuntime for RuleRuntime {
                         transition
                     );
                     // context transitions are not allowed coming from partial nodes
-                    Ok((self.intern_type(ty), None))
+                    Ok((self.intern_type(ty), None, true))
                 }
             }
             RuleResult::Partial(ty) => {
@@ -768,8 +819,10 @@ impl TypingRuntime for RuleRuntime {
                     rule.name,
                     ty
                 );
-                if status == NodeStatus::Partial {
-                    Ok((self.intern_type(ty), None))
+                if rule.name.starts_with("__br_") {
+                    Ok((self.intern_type(ty), None, true))
+                } else if status.open() {
+                    Ok((self.intern_type(ty), None, false))
                 } else {
                     // complete but unknowns is very bad stuff
                     Err(TransitionError::Rejected)

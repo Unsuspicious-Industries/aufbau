@@ -1,11 +1,10 @@
 //! `check`: parses and type-check a program (or partial program) from stdin.
 
-
 use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use aufbau::logic::grammar::Grammar;        
+use aufbau::logic::grammar::Grammar;
 use aufbau::logic::structure::FusionNode;
 use aufbau::logic::synth::Synthesizer;
 use aufbau::logic::typing::{Context, SharedType, Type};

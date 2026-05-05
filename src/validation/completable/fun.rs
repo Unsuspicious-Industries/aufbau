@@ -230,7 +230,6 @@ fn check_completable_float_arithmetic() {
     res.assert_all_passed();
 }
 
-
 #[test]
 fn check_completable_lambda() {
     let grammar = fun_grammar();

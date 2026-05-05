@@ -1,13 +1,12 @@
 //! Arena-backed typed structural views over parser output.
 
 use crate::debug_trace;
-use crate::logic::grammar::{Grammar, Segment, Symbol};
+use crate::logic::grammar::{Grammar, Segment};
 use crate::logic::parse::arena::Lexeme;
 use crate::logic::typing::{SharedType, Type, intern_type};
-use crate::regex::Regex;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
-use crate::logic::parse::arena::{ChildRef, NodeId, NodeStatus, ParseArena, Span};
+use crate::logic::parse::arena::{ChildRef, NodeId, ParseArena, Span};
 use crate::logic::typing::runtime::RuleRuntime;
 
 // ============================================================================
@@ -25,7 +24,6 @@ pub struct FusionAST {
 pub struct FusionForest<'a> {
     _grammar: &'a Grammar,
     arena: &'a ParseArena,
-    segments: &'a [Segment],
     roots: &'a [NodeId],
     input: &'a str,
 }
@@ -96,11 +94,7 @@ impl FusionAST {
         let roots: Vec<_> = self
             .roots
             .into_iter()
-            .filter(|&id| {
-                self.arena
-                    .node(id)
-                    .is_some_and(|node| node.status.complete())
-            })
+            .filter(|&id| self.arena.node(id).is_some_and(|node| node.is_complete()))
             .collect();
         if roots.is_empty() {
             Err("No complete trees".into())
@@ -147,7 +141,6 @@ impl FusionAST {
         })
     }
 
-
     pub fn segments(&self) -> &[Segment] {
         &self.segments
     }
@@ -166,8 +159,6 @@ impl FusionAST {
         self.view().node_count()
     }
 
- 
-
     pub fn bound_texts(&self) -> Vec<String> {
         self.view().bound_texts(&self.segments)
     }
@@ -176,7 +167,6 @@ impl FusionAST {
         FusionForest {
             _grammar: &self.grammar,
             arena: &self.arena,
-            segments: &self.segments,
             roots: &self.roots,
             input: &self.input,
         }
@@ -187,14 +177,13 @@ impl<'a> FusionForest<'a> {
     pub(crate) fn new(
         grammar: &'a Grammar,
         arena: &'a ParseArena,
-        segments: &'a [Segment],
+        _segments: &'a [Segment],
         roots: &'a [NodeId],
         input: &'a str,
     ) -> Self {
         Self {
             _grammar: grammar,
             arena,
-            segments,
             roots,
             input,
         }
@@ -239,10 +228,7 @@ impl<'a> FusionForest<'a> {
         }
         out.into_iter().collect()
     }
-
-    
 }
-
 
 // ============================================================================
 // FusionNode — borrowed view into a FusionAST
@@ -325,10 +311,6 @@ impl<'a> FusionNode<'a> {
         children.into_iter()
     }
 }
-
-
-
-
 
 // ============================================================================
 // FusionChild — either a node or a terminal
@@ -454,10 +436,6 @@ fn render_span(span: Span, segments: &[Segment]) -> String {
         .join(" ")
 }
 
-fn push_first_set(tokens: &mut Vec<(usize, Regex)>, next: Vec<Regex>, priority: usize) {
-    tokens.extend(next.into_iter().map(|token| (priority, token)));
-}
-
 fn collect_bound_texts_rec(
     arena: &ParseArena,
     node_id: NodeId,
@@ -501,9 +479,7 @@ fn collect_bound_texts_rec(
 }
 
 fn node_has_complete_alt(arena: &ParseArena, node_id: NodeId) -> bool {
-    arena
-        .node(node_id)
-        .is_some_and(|node| node.status.complete())
+    arena.node(node_id).is_some_and(|node| node.is_complete())
         && arena.alts_for(node_id).is_some_and(|alts| {
             alts.iter().any(|alt| {
                 alt.children.iter().all(|child| match child {
@@ -519,7 +495,9 @@ fn node_has_complete_alt(arena: &ParseArena, node_id: NodeId) -> bool {
 }
 
 fn node_has_exact_alt(arena: &ParseArena, node_id: NodeId) -> bool {
-    arena.node(node_id).is_some_and(|node| node.status.exact())
+    arena
+        .node(node_id)
+        .is_some_and(|node| node.status.exact() && node.semantic_complete)
         && arena.alts_for(node_id).is_some_and(|alts| {
             alts.iter().any(|alt| {
                 alt.children.iter().all(|child| match child {
@@ -532,59 +510,4 @@ fn node_has_exact_alt(arena: &ParseArena, node_id: NodeId) -> bool {
                 })
             })
         })
-}
-
-fn first_set(symbol: &Symbol, grammar: &Grammar) -> Vec<Regex> {
-    fn first_set_rec(
-        symbol: &Symbol,
-        grammar: &Grammar,
-        visited: &mut std::collections::HashSet<String>,
-    ) -> Vec<Regex> {
-        match symbol {
-            Symbol::Terminal { regex, .. } => vec![regex.clone()],
-            Symbol::Nonterminal { name: nt_name, .. } => {
-                if visited.contains(nt_name) {
-                    return vec![];
-                }
-                visited.insert(nt_name.clone());
-                let res = if let Some(productions) = grammar.productions.get(nt_name) {
-                    productions
-                        .iter()
-                        .flat_map(|prod| {
-                            prod.rhs.first().map(|s| first_set_rec(s, grammar, visited))
-                        })
-                        .flatten()
-                        .collect()
-                } else {
-                    vec![]
-                };
-                visited.remove(nt_name);
-                res
-            }
-        }
-    }
-    let mut out = first_set_rec(symbol, grammar, &mut std::collections::HashSet::new());
-    // Deterministic + completion-friendly ordering: prefer tokens whose examples
-    // start with alphanumerics (e.g. numbers/identifiers) over punctuation like '('.
-    out.sort_by(|a, b| {
-        let ea = a.example().unwrap_or_default();
-        let eb = b.example().unwrap_or_default();
-        let ka = (
-            ea.chars()
-                .next()
-                .is_some_and(|c| !c.is_ascii_alphanumeric()),
-            ea.len(),
-            a.to_pattern(),
-        );
-        let kb = (
-            eb.chars()
-                .next()
-                .is_some_and(|c| !c.is_ascii_alphanumeric()),
-            eb.len(),
-            b.to_pattern(),
-        );
-        ka.cmp(&kb)
-    });
-    out.dedup_by(|a, b| a.to_pattern() == b.to_pattern());
-    out
 }

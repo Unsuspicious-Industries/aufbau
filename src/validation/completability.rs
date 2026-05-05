@@ -242,7 +242,8 @@ mod tests {
         "#;
         let grammar = Grammar::load(spec).unwrap();
 
-        let result = check_incremental_feed_replay(&grammar, "let x : int in x", Some(Context::new()));
+        let result =
+            check_incremental_feed_replay(&grammar, "let x : int in x", Some(Context::new()));
 
         assert!(
             result.is_sound,

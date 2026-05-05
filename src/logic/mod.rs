@@ -34,7 +34,7 @@ pub trait TypingRuntime {
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError>;
+    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError>;
 
     fn set_segs(&mut self, _s: &[Segment]) {}
     fn apply_transform(

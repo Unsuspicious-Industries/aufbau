@@ -8,6 +8,8 @@ pub enum Type {
     Raw(String),
     Arrow(Box<Type>, Box<Type>),
     Array(Box<Type>),
+    Object(Vec<(String, Type)>),
+    ObjectExtend(String, Box<Type>, Box<Type>),
     Union(Vec<Type>),
     Not(Box<Type>),
     ContextCall(String, String),

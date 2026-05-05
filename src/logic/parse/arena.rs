@@ -148,6 +148,7 @@ pub struct ArenaNode {
     pub nt: NtId,
     pub span: Span,
     pub status: NodeStatus,
+    pub semantic_complete: bool,
     pub ty: TypeId,
     pub ctr: Option<ContextTransition>,
     pub bindings: Vec<Binding>,
@@ -156,7 +157,7 @@ pub struct ArenaNode {
 
 impl ArenaNode {
     pub fn is_complete(&self) -> bool {
-        self.status.complete()
+        self.status.complete() && self.semantic_complete
     }
 }
 

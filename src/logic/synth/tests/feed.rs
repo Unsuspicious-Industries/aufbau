@@ -12,7 +12,6 @@ fn assert_same_parse_shape(left: &mut Synthesizer, right: &mut Synthesizer) {
     assert_eq!(left_ast.is_complete(), right_ast.is_complete());
     assert_eq!(left_ast.len(), right_ast.len());
     assert_eq!(left_ast.bound_texts(), right_ast.bound_texts());
-
 }
 
 #[test]
@@ -162,7 +161,6 @@ fn feed_with_context_uses_latest_bindings() {
     assert!(fed.is_complete());
     assert_same_parse_shape(&mut synth, &mut fresh);
 }
-
 
 #[test]
 fn feed_error_leaves_extended_input_visible() {

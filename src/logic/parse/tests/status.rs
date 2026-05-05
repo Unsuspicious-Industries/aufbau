@@ -25,12 +25,13 @@ impl TypingRuntime for CtxTrackingTyping {
         ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>), TransitionError> {
+    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
         Ok((
             ctx,
             Some(ContextTransition {
                 transforms: vec![("__ctx__".to_string(), Type::Any)],
             }),
+            true,
         ))
     }
 

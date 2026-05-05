@@ -77,7 +77,6 @@ impl PySynthesizer {
         self.synth.ast().ok().map(|a| a.to_string())
     }
 
-
     fn is_complete(&mut self) -> bool {
         match self.synth.parse_with(&self.ctx) {
             Ok(ast) => ast.is_complete(),

@@ -57,6 +57,69 @@ fn unifier_rejects_direct_occurs_bind() {
 }
 
 #[test]
+fn unifier_keeps_any_vs_concrete_indeterminate() {
+    let mut u = Unifier::new();
+    assert!(
+        u.unify(&Type::Any, &Type::parse_raw("number").unwrap())
+            .is_indeterminate()
+    );
+}
+
+#[test]
+fn untyped_closed_child_does_not_satisfy_concrete_ascription() {
+    let grammar = crate::logic::grammar::Grammar::load(
+        r#"
+        Untyped ::= 'u'
+        Use(use) ::= Untyped[value]
+        Start ::= Use
+
+        Γ ⊢ value : 'number'
+        -------------------- (use)
+        'number'
+        "#,
+    )
+    .unwrap();
+    let mut synth = Synthesizer::new(grammar, "u");
+    assert!(synth.parse_with(&Context::new()).is_err());
+}
+
+#[test]
+fn context_membership_rejects_open_prefix_with_no_possible_binding() {
+    let grammar = crate::logic::grammar::Grammar::load(
+        r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Start ::= Variable
+
+        x ∈ Γ
+        ----------- (var)
+        Γ(x)
+        "#,
+    )
+    .unwrap();
+    let mut synth = Synthesizer::new(grammar, "z");
+    assert!(synth.parse_with(&ctx_of(&[("foo", "number")])).is_err());
+}
+
+#[test]
+fn context_membership_accepts_open_prefix_with_possible_binding() {
+    let grammar = crate::logic::grammar::Grammar::load(
+        r#"
+        Identifier ::= /[a-z]+/
+        Variable(var) ::= Identifier[x]
+        Start ::= Variable
+
+        x ∈ Γ
+        ----------- (var)
+        Γ(x)
+        "#,
+    )
+    .unwrap();
+    let mut synth = Synthesizer::new(grammar, "fo");
+    assert!(synth.parse_with(&ctx_of(&[("foo", "number")])).is_ok());
+}
+
+#[test]
 fn ruleless_multichild_root_has_any_type() {
     let grammar = crate::logic::grammar::Grammar::load(
         r#"

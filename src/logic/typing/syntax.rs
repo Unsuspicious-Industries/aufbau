@@ -7,7 +7,8 @@ use std::fmt;
 // The type language supports:
 //   - Atoms: alphanumeric identifiers (treated as type variables)
 //   - Raw types: quoted literals like 'int', 'string' (concrete base types)
-//   - Arrows: -> or → (function types, right-associative)
+//   - Arrows: ->, =>, or → (function types, right-associative)
+//   - Arrays and structural objects: T[], { x: T }
 //   - Negation: ¬ or ! (complement types)
 //   - Any: ⊤ (top type, accepts everything)
 //   - None: ∅ (bottom type, rejects everything)
@@ -17,7 +18,7 @@ use std::fmt;
 
 const NONE_KW: &str = "∅";
 const ANY_KW: &str = "⊤";
-const ARROW_TOKENS: &[&str; 2] = &["->", "→"];
+const ARROW_TOKENS: &[&str; 3] = &["->", "=>", "→"];
 const NEGATION_TOKENS: &[&str; 2] = &["¬", "!"];
 
 impl fmt::Display for Type {
@@ -27,6 +28,16 @@ impl fmt::Display for Type {
             Type::Raw(s) => write!(f, "'{}'", s),
             Type::Arrow(l, r) => write!(f, "{} → {}", l, r),
             Type::Array(inner) => write!(f, "{}[]", inner),
+            Type::Object(fields) => {
+                let rendered: Vec<String> = fields
+                    .iter()
+                    .map(|(name, ty)| format!("{}: {}", name, ty))
+                    .collect();
+                write!(f, "{{{}}}", rendered.join(", "))
+            }
+            Type::ObjectExtend(name, ty, rest) => {
+                write!(f, "{{{}: {}, ...{}}}", name, ty, rest)
+            }
             Type::Union(items) => {
                 let rendered: Vec<String> = items.iter().map(|t| format!("{}", t)).collect();
                 write!(f, "{}", rendered.join(" | "))
@@ -330,14 +341,23 @@ impl Type {
         // Arrow types are RIGHT-associative: A -> B -> C  ==  A -> (B -> C)
         // So we split on the FIRST arrow outside parens
         if let Some((pos, tok_len)) = find_first_outside_parens(s, &ARROW_TOKENS[..]) {
+            let right = Self::parse_impl(&s[pos + tok_len..], raw_mode)?;
+            if let Some(params) = parse_parenthesized_type_list(&s[..pos], raw_mode)? {
+                return Ok(arrow_from_params(params, right));
+            }
+
             return Ok(Type::Arrow(
                 Box::new(Self::parse_impl(&s[..pos], raw_mode)?),
-                Box::new(Self::parse_impl(&s[pos + tok_len..], raw_mode)?),
+                Box::new(right),
             ));
         }
 
         if let Some(inner) = strip_array_suffix(s) {
             return Ok(Type::Array(Box::new(Self::parse_impl(inner, raw_mode)?)));
+        }
+
+        if let Some(object) = parse_object_type(s, raw_mode)? {
+            return Ok(object);
         }
 
         if let Some(&tok) = NEGATION_TOKENS.iter().find(|t| s.starts_with(**t)) {
@@ -424,8 +444,8 @@ fn find_first_outside_parens(s: &str, tokens: &[&str]) -> Option<(usize, usize)>
     let mut depth = 0;
     for (i, c) in s.char_indices() {
         match c {
-            '(' => depth += 1,
-            ')' if depth > 0 => depth -= 1,
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' if depth > 0 => depth -= 1,
             _ if depth == 0 => {
                 for tok in tokens {
                     if s[i..].starts_with(tok) {
@@ -453,8 +473,8 @@ fn split_top_level_union(s: &str) -> Option<Vec<&str>> {
 
     for (i, c) in s.char_indices() {
         match c {
-            '(' => depth += 1,
-            ')' if depth > 0 => depth -= 1,
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' if depth > 0 => depth -= 1,
             '|' if depth == 0 => {
                 found = true;
                 starts.push(i + 1);
@@ -482,11 +502,18 @@ fn split_top_level_union(s: &str) -> Option<Vec<&str>> {
 
 fn strip_array_suffix(s: &str) -> Option<&str> {
     let trimmed = s.trim_end();
-    if !trimmed.ends_with("[]") {
+    let inner = if trimmed.ends_with("[]") {
+        trimmed[..trimmed.len() - 2].trim_end()
+    } else if trimmed.ends_with(']') {
+        let before_close = trimmed[..trimmed.len() - 1].trim_end();
+        if !before_close.ends_with('[') {
+            return None;
+        }
+        before_close[..before_close.len() - 1].trim_end()
+    } else {
         return None;
-    }
+    };
 
-    let inner = trimmed[..trimmed.len() - 2].trim_end();
     if inner.is_empty() {
         return None;
     }
@@ -494,8 +521,8 @@ fn strip_array_suffix(s: &str) -> Option<&str> {
     let mut depth = 0isize;
     for c in inner.chars() {
         match c {
-            '(' => depth += 1,
-            ')' => depth -= 1,
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' => depth -= 1,
             _ => {}
         }
         if depth < 0 {
@@ -508,6 +535,150 @@ fn strip_array_suffix(s: &str) -> Option<&str> {
     }
 
     Some(inner)
+}
+
+fn parse_object_type(s: &str, raw_mode: bool) -> Result<Option<Type>, String> {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') || !outer_delims_wrap(trimmed, '{', '}')
+    {
+        return Ok(None);
+    }
+
+    let inner = trimmed[1..trimmed.len() - 1].trim();
+    if inner.is_empty() {
+        return Ok(Some(Type::Object(Vec::new())));
+    }
+
+    let mut fields = Vec::new();
+    let mut rest = None;
+    for part in split_top_level_commas(inner) {
+        let part = part.trim();
+        if part.is_empty() {
+            return Err(format!("Empty object type field in {}", s));
+        }
+        if let Some(rest_ty) = part.strip_prefix("...") {
+            if rest.is_some() {
+                return Err(format!("Object type has multiple spreads: {}", s));
+            }
+            rest = Some(Type::parse_impl(rest_ty.trim(), raw_mode)?);
+            continue;
+        }
+        if rest.is_some() {
+            return Err(format!("Object type field appears after spread: {}", s));
+        }
+
+        let Some(colon) = find_top_level_char(part, ':') else {
+            return Err(format!("Object type field is missing ':': {}", part));
+        };
+        let name = parse_object_field_name(part[..colon].trim())?;
+        let ty = Type::parse_impl(part[colon + 1..].trim(), raw_mode)?;
+        fields.push((name, ty));
+    }
+
+    if let Some(rest) = rest {
+        let ty = fields.into_iter().rev().fold(rest, |acc, (name, field_ty)| {
+            Type::ObjectExtend(name, Box::new(field_ty), Box::new(acc))
+        });
+        Ok(Some(ty))
+    } else {
+        Ok(Some(Type::Object(fields)))
+    }
+}
+
+fn outer_delims_wrap(s: &str, open: char, close: char) -> bool {
+    let mut depth = 0isize;
+    for (i, c) in s.char_indices() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth -= 1;
+            if depth == 0 {
+                return i == s.len() - close.len_utf8();
+            }
+        }
+    }
+    false
+}
+
+fn find_top_level_char(s: &str, target: char) -> Option<usize> {
+    let mut depth = 0isize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' if depth > 0 => depth -= 1,
+            _ if c == target && depth == 0 => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn parse_object_field_name(s: &str) -> Result<String, String> {
+    if s.is_empty() {
+        return Err("Object type field name is empty".into());
+    }
+    if s.len() >= 2
+        && ((s.starts_with('\'') && s.ends_with('\''))
+            || (s.starts_with('"') && s.ends_with('"')))
+    {
+        return Ok(s[1..s.len() - 1].to_string());
+    }
+    Ok(s.to_string())
+}
+
+fn parse_parenthesized_type_list(s: &str, raw_mode: bool) -> Result<Option<Vec<Type>>, String> {
+    let trimmed = s.trim();
+    if !trimmed.starts_with('(') || !trimmed.ends_with(')') {
+        return Ok(None);
+    }
+
+    let inner = &trimmed[1..trimmed.len() - 1];
+    if inner.trim().is_empty() {
+        return Ok(Some(vec![Type::Raw("void".to_string())]));
+    }
+
+    let parts = split_top_level_commas(inner);
+    if parts.len() <= 1 {
+        return Ok(None);
+    }
+
+    parts
+        .into_iter()
+        .map(|part| Type::parse_impl(part.trim(), raw_mode))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Some)
+}
+
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let mut depth = 0isize;
+    let mut starts = vec![0usize];
+
+    for (i, c) in s.char_indices() {
+        match c {
+            '(' | '{' | '[' => depth += 1,
+            ')' | '}' | ']' if depth > 0 => depth -= 1,
+            ',' if depth == 0 => starts.push(i + 1),
+            _ => {}
+        }
+    }
+
+    let mut parts = Vec::with_capacity(starts.len());
+    for idx in 0..starts.len() {
+        let start = starts[idx];
+        let end = if idx + 1 < starts.len() {
+            starts[idx + 1] - 1
+        } else {
+            s.len()
+        };
+        parts.push(&s[start..end]);
+    }
+    parts
+}
+
+fn arrow_from_params(params: Vec<Type>, ret: Type) -> Type {
+    params.into_iter().rev().fold(ret, |acc, param| {
+        Type::Arrow(Box::new(param), Box::new(acc))
+    })
 }
 
 fn flatten_unions(members: Vec<Type>) -> Vec<Type> {
@@ -602,5 +773,54 @@ mod tests {
             }
             other => panic!("Expected top-level union, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn multi_arg_function_type_parses_as_curried_arrows() {
+        let t = Type::parse_raw("(number, string) => boolean").unwrap();
+        assert_eq!(
+            t,
+            Type::Arrow(
+                Box::new(Type::Raw("number".into())),
+                Box::new(Type::Arrow(
+                    Box::new(Type::Raw("string".into())),
+                    Box::new(Type::Raw("boolean".into())),
+                )),
+            )
+        );
+    }
+
+    #[test]
+    fn zero_arg_function_type_uses_void_domain() {
+        let t = Type::parse_raw("() => number").unwrap();
+        assert_eq!(
+            t,
+            Type::Arrow(
+                Box::new(Type::Raw("void".into())),
+                Box::new(Type::Raw("number".into())),
+            )
+        );
+    }
+
+    #[test]
+    fn object_type_parses_fields_and_spread() {
+        let t = Type::parse("{ key: ?T, ...?Rest }").unwrap();
+        assert_eq!(
+            t,
+            Type::ObjectExtend(
+                "key".into(),
+                Box::new(Type::Meta("T".into())),
+                Box::new(Type::Meta("Rest".into())),
+            )
+        );
+
+        let concrete = Type::parse_raw("{ id: number, name: string }").unwrap();
+        assert_eq!(
+            concrete,
+            Type::Object(vec![
+                ("id".into(), Type::Raw("number".into())),
+                ("name".into(), Type::Raw("string".into())),
+            ])
+        );
     }
 }

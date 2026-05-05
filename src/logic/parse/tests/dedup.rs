@@ -21,6 +21,7 @@ fn push_test_node(
                 end: end as u32,
             },
             status: NodeStatus::Closed,
+            semantic_complete: true,
             ty: 0,
             ctr: Some(ContextTransition::identity()),
             bindings: vec![],

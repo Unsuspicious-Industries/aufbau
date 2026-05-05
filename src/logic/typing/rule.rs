@@ -158,6 +158,17 @@ impl TypingRule {
                 Type::Array(inner) => {
                     collect_type_refs(inner, out);
                 }
+                Type::Object(fields) => {
+                    for (name, ty) in fields {
+                        out.insert(name.as_str());
+                        collect_type_refs(ty, out);
+                    }
+                }
+                Type::ObjectExtend(name, field_ty, rest) => {
+                    out.insert(name.as_str());
+                    collect_type_refs(field_ty, out);
+                    collect_type_refs(rest, out);
+                }
                 Type::Union(items) => {
                     for item in items {
                         collect_type_refs(item, out);

@@ -71,6 +71,7 @@ fn resolve_nonterminal_obligations_captures_child_type() {
         nt: pair,
         span: Span { start: 0, end: 1 },
         status: NodeStatus::Closed,
+        semantic_complete: true,
         ty: 7,
         ctr: Some(ContextTransition::identity()),
         bindings: Vec::new(),
