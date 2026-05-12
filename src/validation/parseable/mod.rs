@@ -17,7 +17,6 @@ pub mod stlc;
 pub mod toy;
 pub mod typescript;
 pub mod weird;
-// pub mod clike;
 
 use crate::logic::grammar::Grammar;
 use crate::logic::synth::Synthesizer;
@@ -283,7 +282,6 @@ pub fn run_parse_batch(
 
     for case in cases {
         let start = Instant::now();
-        // actuall running
         let result = run_parse_test(grammar, case);
         let elapsed = start.elapsed();
 

@@ -23,3 +23,5 @@ pub mod completability;
 pub mod completable;
 
 pub mod parseable;
+
+pub mod properties;

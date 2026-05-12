@@ -212,21 +212,24 @@ x ∈ Γ
 ---------------------------- (const_decl)
 Γ → Γ[name:τ] ⊢ 'void'
 
-// Function declarations expose the function name to right siblings.
-Γ ⊢ body : ret
+// Function0: body sees name: 'void' => ret so the function can call itself.
+Γ[name:'void' => ret] ⊢ body : ret
 ------------------------------- (function0)
 Γ → Γ[name:'void' => ret] ⊢ 'void'
 
+// Function: body sees name: ?FunctionType so the function can call itself.
 Γ ⊢ params : ?FunctionType
+Γ[name:?FunctionType] ⊢ body : ret
 ------------------------------- (function)
 Γ → Γ[name:?FunctionType] ⊢ 'void'
 
+// Function params: each param extends context; tail chains; body sees everything.
 Γ[param:τ] ⊢ body : ret
--------------------------------- (function_param_last)
+------------------------------- (function_param_last)
 τ => ret
 
 Γ[param:τ] ⊢ tail : ?FunctionTailType
--------------------------------- (function_param_cons)
+------------------------------- (function_param_cons)
 τ => ?FunctionTailType
 
 // Expression statements are type-checked for validity and produce void.

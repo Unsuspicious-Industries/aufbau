@@ -241,15 +241,14 @@ pub fn run_test_batch(grammar: &Grammar, cases: &[TypedCompletionTestCase]) -> B
         .ok()
         .map(|value| value != "0")
         .unwrap_or(true);
-    println!(
-        "Launching batch with {} worker threads ({} cases,  AUFBAU_VALIDATION_JOBS={:?}, fail_fast={})",
-        workers,
-        cases.len(),
-        std::env::var("AUFBAU_VALIDATION_JOBS")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .filter(|n| *n > 0),
-        fail_fast,
+    eprintln!(
+        "{}",
+        serde_json::json!({
+            "event": "BATCH_CONFIG",
+            "workers": workers,
+            "cases": cases.len(),
+            "fail_fast": fail_fast,
+        })
     );
     let mut outcomes: Vec<CaseOutcome> = if fail_fast {
         let mut out = Vec::new();
