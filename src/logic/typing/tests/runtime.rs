@@ -3,7 +3,8 @@ use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{ANY_TYPE, AltRange, ArenaNode, Lexeme, NodeStatus, Span};
 use crate::logic::path::TreePath;
 use crate::logic::typing::runtime::RuleRuntime;
-use crate::logic::typing::{ContextTransition, Obligations, Type, TypingRuntime};
+use crate::logic::typing::{Obligations, SemanticRuntime, Type};
+use std::collections::HashMap;
 
 fn segs(parts: &[&str]) -> Vec<Segment> {
     parts
@@ -71,9 +72,9 @@ fn descend_resolves_type_binding_before_context_extension() {
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
         semantic_complete: true,
-        ty: ANY_TYPE,
-        ctr: None,
-        bindings: vec![],
+        evidence: ANY_TYPE,
+        effect: None,
+        binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
     obs.resolve_nonterminal(2, 0, &type_node);
@@ -109,16 +110,18 @@ fn finalize_resolves_output_context_types_before_export() {
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
         semantic_complete: true,
-        ty: ANY_TYPE,
-        ctr: None,
-        bindings: vec![],
+        evidence: ANY_TYPE,
+        effect: None,
+        binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
     obs.resolve_nonterminal(2, 0, &type_node);
 
-    let (_, ctr, _semantic_complete): (usize, Option<ContextTransition>, bool) =
-        runtime.finalize(prod, 0, &obs, NodeStatus::Closed).unwrap();
-    let ctr = ctr.expect("decl should export context transform");
+    let summary = runtime.finalize(prod, 0, &obs, NodeStatus::Closed).unwrap();
+    let ctr = summary
+        .effect
+        .and_then(|effect| runtime.effect(effect))
+        .expect("decl should export context transform");
     assert_eq!(
         ctr.transforms,
         vec![("x".to_string(), Type::parse_raw("A").unwrap())]
@@ -156,9 +159,9 @@ fn finalize_rejects_closed_ascription_mismatch() {
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Closed,
         semantic_complete: true,
-        ty: ANY_TYPE,
-        ctr: None,
-        bindings: vec![],
+        evidence: ANY_TYPE,
+        effect: None,
+        binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
     obs.resolve_nonterminal(2, 0, &type_node);
@@ -169,9 +172,9 @@ fn finalize_rejects_closed_ascription_mismatch() {
         span: Span { start: 4, end: 5 },
         status: NodeStatus::Closed,
         semantic_complete: true,
-        ty: bool_ty,
-        ctr: None,
-        bindings: vec![],
+        evidence: bool_ty,
+        effect: None,
+        binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
     obs.resolve_nonterminal(4, 0, &bool_node);

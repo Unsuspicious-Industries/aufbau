@@ -1,9 +1,9 @@
 use crate::DebugLevel;
+use crate::logic::SemanticRuntime;
 use crate::logic::error::TransitionError;
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::NodeStatus;
-use crate::logic::parse::arena::{CtxId, ProdId, TypeId};
-use crate::logic::typing::TypingRuntime;
+use crate::logic::parse::arena::{CtxId, EffectId, EvidenceId, ProdId};
 use crate::set_debug_level;
 
 use super::*;

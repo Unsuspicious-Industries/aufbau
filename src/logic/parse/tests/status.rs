@@ -3,12 +3,13 @@ use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{ChildRef, Lexeme};
 use crate::logic::structure::ast::FusionAST;
 use crate::logic::synth::Synthesizer;
-use crate::logic::typing::{Context, ContextTransition, Obligations, Type};
+use crate::logic::typing::Context;
+use crate::logic::{Obligations, SemanticSummary};
 
 #[derive(Clone, Debug, Default)]
 struct CtxTrackingTyping;
 
-impl TypingRuntime for CtxTrackingTyping {
+impl SemanticRuntime for CtxTrackingTyping {
     fn descend(
         &self,
         _prod: ProdId,
@@ -25,22 +26,17 @@ impl TypingRuntime for CtxTrackingTyping {
         ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
-        Ok((
-            ctx,
-            Some(ContextTransition {
-                transforms: vec![("__ctx__".to_string(), Type::Any)],
-            }),
-            true,
-        ))
+    ) -> Result<SemanticSummary, TransitionError> {
+        Ok(SemanticSummary::new(ctx, Some(1), true))
     }
 
-    fn apply_transform(
-        &self,
-        ctx: CtxId,
-        transform: ContextTransition,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx + transform.transforms.len())
+    fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError> {
+        Ok(ctx + effect)
+    }
+
+    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
+        let total = effects.into_iter().sum();
+        Ok((total > 0).then_some(total))
     }
 }
 
@@ -109,7 +105,7 @@ fn assert_non_closed_nodes_do_not_export_context(ast: &FusionAST) {
         let node = arena.node(id).expect("arena node should exist");
         if node.status != NodeStatus::Closed {
             assert!(
-                node.ctr.is_none(),
+                node.effect.is_none(),
                 "non-closed node {id} exported a context transition"
             );
         }
@@ -120,7 +116,7 @@ fn assert_root_with(
     grammar: Grammar,
     input: &str,
     expected_status: NodeStatus,
-    expected_ty: TypeId,
+    expected_evidence: EvidenceId,
 ) {
     let mut parser = TypedParser::new(grammar, CtxTrackingTyping);
     let ast = parser.parse(input, 0).unwrap();
@@ -128,14 +124,14 @@ fn assert_root_with(
     let root_summaries: Vec<_> = ast
         .root_ids()
         .iter()
-        .filter_map(|&id| arena.node(id).map(|node| (node.status, node.ty)))
+        .filter_map(|&id| arena.node(id).map(|node| (node.status, node.evidence)))
         .collect();
 
     assert!(
         root_summaries
             .iter()
-            .any(|&(status, ty)| status == expected_status && ty == expected_ty),
-        "expected root ({expected_status:?}, ty={expected_ty}), got {root_summaries:?}"
+            .any(|&(status, evidence)| status == expected_status && evidence == expected_evidence),
+        "expected root ({expected_status:?}, evidence={expected_evidence}), got {root_summaries:?}"
     );
     assert_non_closed_nodes_do_not_export_context(&ast);
 }

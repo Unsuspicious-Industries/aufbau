@@ -2,7 +2,7 @@ use super::Type;
 use std::fmt;
 
 // ============================================================================
-// Type Syntax Constants (hardcoded)
+// Core type syntax constants
 // ============================================================================
 // The type language supports:
 //   - Atoms: alphanumeric identifiers (treated as type variables)

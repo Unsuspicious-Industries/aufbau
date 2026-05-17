@@ -1,0 +1,303 @@
+%% ============================================================
+%%  §2.4  Typing Domain Implementation
+%%  Status: basis — proofs from Lemma 4 onwards are stubs
+%% ============================================================
+
+\section{Current Typing Domain Implementation and Examples}
+\label{sec:typing-domain}
+
+This section instantiates a constraint domain of Definition~\ref{def:constraint-domain} with a type-directed semantic algebra.
+The key property of this instantiation is that the ideal evaluator of Definition~\ref{def:constraint-domain} is \emph{computable} given our set of rules.
+These rules are evaluated by $\mathit{eval}_\text{impl}$ over an abstract syntax tree $t$. 
+% ----------------------------------------------------------
+\subsection*{Closed Types and Type Evidence}
+% ----------------------------------------------------------
+
+A \emph{closed type} is a fully resolved type:
+\[
+  \tau \;::=\; t \;\mid\; \tau_1 \to \tau_2 \;\mid\; \tau_1 \vee \tau_2
+             \;\mid\; \neg\tau \;\mid\; \top \;\mid\; \bot.
+\]
+Closed-type equality and inclusion are assumed decidable, with
+$\bot \subseteq \tau \subseteq \top$ for all $\tau$.
+A \emph{typing context} is a finite partial map
+$\Gamma : \mathit{Name} \rightharpoonup \mathit{Type}$.
+\medskip 
+Type information flows through the parser in three stages:
+\[
+  \text{type expression}
+  \;\xrightarrow{\;\mathrm{elab}\;}
+  \text{type evidence}
+  \;\xrightarrow{\;\mathrm{close}\;}
+  \text{closed type}.
+\]
+\emph{Type evidence} is the semantic state of a type-bearing evidence node:
+\[
+  E \;::=\;
+    \mathsf{Exact}(\tau)   \;\mid\;
+    \mathsf{Partial}(P)  
+\]
+where $P \neq \emptyset$ is a finite set of closed-type completions.
+\emph{Type expressions} $\hat\tau$ in typing rules are elaborated to evidence:
+\begin{align*}
+  \tau      &\;\mapsto\; \mathsf{Exact}(\tau), \\
+  \Gamma(x) &\;\mapsto\; \text{the evidence stored for } x \text{ in } \Gamma, \\
+  \texttt{typeof}(v)  &\;\mapsto\; \text{ the resolved type for node bound to } v\\
+  b         &\;\mapsto\; \text{the evidence stored for binding } b, \\
+  {?A}      &\;\mapsto\; \text{a pattern matching on unified binding evidence}
+\end{align*}
+
+\paragraph{Meta resolution} Meta-variables are rule-local and do not escape the rule application. Repeated occurrences of $?A$ within a rule are compiled into equality constraints between the corresponding nodes in the evidence graph. They serve both as pattern matching expressions, and unification shorthands for $\texttt{typeof}$ calls. For example $b : ?A \to ?B$ means that the resolved type for binding $b$ must be an arrow type. Adding a later constraint $a : ?B$ would create be compiled to $\texttt{typeof}(b)[1] = \texttt{typeof(a)}$ where $\tau[1]$ is the second component of the arrow type. 
+
+\paragraph{Binding resolution} Resolving bindings uses the binding position \ref{binding} defined above. Every constraint on a binding $b$ is made into an edge linking to the node referred to by $b$. The status of that edge is read off $\beta(\nu,b)$ (Definition~\ref{def:beta-resolution}): a $\mathsf{Resolved}$ entry exposes the child summary directly, while a $\mathsf{Pending}$ entry leaves the edge incident to a frontier vertex and the host graph open in the sense of Definition~\ref{def:open-closed}. 
+
+
+% ----------------------------------------------------------
+\subsection*{Primitive Premises}
+% ----------------------------------------------------------
+
+The constraint instances of Definition~\ref{def:evidence-graph} are drawn from
+the following decidable premise language:
+\begin{align*}
+  &x \in \Gamma
+    &&\text{name $x$ is present in the context,} \\
+  &\hat\tau_1 = \hat\tau_2
+    &&\text{type equality,} \\
+  &\hat\tau_1 \subseteq \hat\tau_2
+    &&\text{type inclusion,} \\
+  &\Gamma \vdash b : \hat\tau
+    &&\text{child $b$ has type $\hat\tau$,} \\
+  &\Gamma[x:\hat\tau] \vdash b : \hat\sigma
+    &&\text{child $b$ is checked under an extended context.} 
+\end{align*}
+Each premise is evaluated by a computable implementation of $\mathit{eval}$
+(Definition~\ref{def:constraint-domain}). We write this implementation
+$\mathit{eval}_{\mathrm{impl}}$; Theorem~\ref{thm:typing-realizable} establishes
+that it coincides with the ideal evaluator on every reachable state.
+% ----------------------------------------------------------
+\subsection*{Typing Rules}
+% ----------------------------------------------------------
+
+
+
+A typing rule $\gamma \in \Theta$ is a tuple $(\mathit{name},\; M,\; \mathit{Bind},\; \Phi,\; \hat\tau_c)$ where $\mathit{name} \in N$ is the attached non-terminal, $M$ is a finite set of rule-local meta-variables, $\mathit{Bind}$ is the set of bindings used, $\Phi = \varphi_1, \ldots, \varphi_n$ is the ordered premise list, and $\hat\tau_c$ is the conclusion type expression. Rules are written in natural-deduction style:
+\[
+  \frac{\varphi_1 \quad \cdots \quad \varphi_n}{\hat\tau_c}
+  \;(\mathit{name}).
+\]
+Premises are evaluated left to right: a meta-variable solved by an earlier premise may appear in later premises and in the conclusion. The conclusion $\hat\tau_c$ is itself a type expression in the elaboration sense above. Three cases matter for the proofs below:
+\begin{itemize}
+  \item a \emph{literal} closed type (e.g.\ $\hat\tau_c = \mathsf{Int}$), which elaborates directly to $\mathsf{Exact}(\tau_c)$;
+  \item a \emph{context lookup} $\Gamma(x)$, which forwards the closed type bound to $x$ in $\Gamma$;
+  \item a \emph{binding reference}  Which is what introduces $\mathsf{Partial}$ evidence on the parent summary and drives the recursion in Lemma~\ref{lem:typeof-realizable}.
+\end{itemize}
+
+The ideal evaluator of Definition~\ref{def:constraint-domain} operates on graphs; the typing-domain implementation evaluates a rule pointwise from its premises:
+\[
+  \mathit{eval}_{\mathrm{impl}}(\gamma) =
+  \begin{cases}
+    \mathsf{Satisfied} & \forall \phi \in \Phi,\; \mathit{eval}_{\mathrm{impl}}(\phi) = \mathsf{Satisfied}, \\
+    \mathsf{Live}      & (\forall \phi \in \Phi,\; \mathit{eval}_{\mathrm{impl}}(\phi) \in \{\mathsf{Satisfied},\mathsf{Live}\}) \\
+                       & \quad\;\land\; (\exists \phi \in \Phi,\; \mathit{eval}_{\mathrm{impl}}(\phi) = \mathsf{Live}), \\
+    \mathsf{Lost}      & \exists \phi \in \Phi,\; \mathit{eval}_{\mathrm{impl}}(\phi) = \mathsf{Lost}.
+  \end{cases}
+\]
+
+\paragraph{Graph-level lifting.}
+The verdict at one rule lifts to the verdict at a whole sub-evidence-graph by combining the rule's verdict with the verdicts at the node's children. Order verdicts by $\mathsf{Satisfied} < \mathsf{Live} < \mathsf{Lost}$ and write $\sqcup$ for the join (the maximum). For an internal AST node $\nu = \langle n, p^n_a, \chi \rangle$,
+\[
+  \mathit{eval}_{\mathrm{impl}}(\nu) \;=\;
+  \widehat{\mathcal T}(n) \;\sqcup\; \bigsqcup_{c \in \chi} \mathit{eval}_{\mathrm{impl}}(c),
+  \qquad
+  \widehat{\mathcal T}(n) =
+  \begin{cases}
+    \mathit{eval}_{\mathrm{impl}}(\mathcal T(n)) & \mathcal T(n) \text{ defined}, \\
+    \mathsf{Satisfied} & \text{otherwise},
+  \end{cases}
+\]
+with the convention $\bigsqcup_{c \in \emptyset} = \mathsf{Satisfied}$ for childless nodes. For a terminal leaf,
+\[
+  \mathit{eval}_{\mathrm{impl}}(\mathsf{Term}(x,\xi,r)) =
+  \begin{cases}
+    \mathsf{Satisfied} & \xi = \mathsf{Exact}, \\
+    \mathsf{Live}      & \xi \in \{\mathsf{Prefix}, \mathsf{Extensible}\}.
+  \end{cases}
+\]
+We write $\mathit{eval}_{\mathrm{impl}}(\mathcal G(s))$ for the verdict at the root of the AST in $\sigma(s)$. The join is associative and absorbs $\mathsf{Lost}$, so a single $\mathsf{Lost}$ leaf forces the whole subtree to $\mathsf{Lost}$, while $\mathsf{Live}$ propagates to every ancestor that is otherwise $\mathsf{Satisfied}$.
+
+% ----------------------------------------------------------
+\subsection*{Realizability}
+% ----------------------------------------------------------
+
+
+
+A premise on which $\mathit{eval}_{\mathrm{impl}}$ does not return $\mathsf{Lost}$ should be witnessed by an explicit input extension: a string $r$ such that the premise is $\mathsf{Satisfied}$ at $\sigma(s \cdot r)$. The argument has the same skeleton everywhere. Type evidence is monotone, so the search space of completions only shrinks (Lemma~\ref{lem:evidence-monotone}). For premises that mention a binding $b$, the parser must drive every $\mathsf{Pending}$ binding to $\mathsf{Resolved}$ and recursively expose its type as $\mathsf{Exact}$; this is the inductive content of $\mathtt{typeof}$ realizability (Lemma~\ref{lem:typeof-realizable}). Every other primitive premise is a corollary of these two facts, and the rule-level realizability of a full $\gamma \in \Theta$ (Lemma~\ref{lem:rule-realizable}) follows by composing them across the premise list.
+
+\begin{lemma}[Type evidence is monotone]
+\label{lem:evidence-monotone}
+Let $e$ be an evidence node and let $\mathrm{comp}(e, s)$ denote the set of
+closed types that the type evidence of $e$ at state $\sigma(s)$ can resolve to.
+For any extension $s \cdot r$,
+\[
+  \mathrm{comp}(e,\; s \cdot r) \;\subseteq\; \mathrm{comp}(e,\; s).
+\]
+\end{lemma}
+
+\begin{proof}
+By case analysis on the evidence form.
+\begin{itemize}
+  \item $\mathsf{Exact}(\tau)$: $\mathrm{comp} = \{\tau\}$, unchanged by any
+    extension since exact evidence carries no open frontier.
+  \item $\mathsf{Partial}(P)$: $P$ is the finite set of closed types reachable
+    as completions of the current type prefix. Input extension applies the
+    regex derivative to the ongoing type segment, and derivatives can only
+    remove completions~\cite{owens2009regex}, so
+    $\mathrm{comp}(e, s \cdot r) \subseteq P$.
+\end{itemize}
+\end{proof}
+
+\begin{remark}
+\label{rem:lost-monotonicity}
+By contrapositive, monotonicity yields stability of $\mathsf{Lost}$
+verdicts: once no completion can satisfy a premise, no further input can
+reverse this. The realizability lemmas below establish the dual property
+for the non-$\mathsf{Lost}$ verdicts.
+\end{remark}
+
+\begin{lemma}[Type evidence is realizable]
+\label{lem:evidence-realizable}
+For any evidence node $e$ and any $\tau \in \mathrm{comp}(e, s)$, there exists
+$r \in \Sigma^\ast$ such that the parser at state $\sigma(s\cdot r)$ records
+$e$ as $\mathsf{Exact}(\tau)$.
+\end{lemma}
+
+\begin{proof}
+Trivial for $\mathsf{Exact}$ ($r = \varepsilon$). For $\mathsf{Partial}(P)$
+with $\tau \in P$, regex-derivative completeness~\cite{owens2009regex}
+guarantees a string $r$ that drives the residual recognizer to acceptance
+with denotation $\tau$. 
+\end{proof}
+
+\begin{lemma}[$\mathtt{typeof}$ is realizable]
+\label{lem:typeof-realizable}
+Let $\nu$ summarize a parent item and fix $b \in \mathcal B(n)$ with $i_b = \mathsf{pos}_{n,a}(b)$. Write $\mathtt{typeof}_\nu(b)$ for the conclusion of the typing rule attached to the child bound to $b$: when $\beta(\nu,b) = \mathsf{Resolved}(\nu_c)$, $\mathtt{typeof}_\nu(b) = \nu_c.\tau$, where $\nu_c.\tau$ is the elaboration of $\hat\tau_{c}$ for $\mathcal T(n_c) = (\mathit{name}_c, M_c, \mathit{Bind}_c, \Phi_c, \hat\tau_{c})$ at $\nu_c$ (Typing Rules subsection above); when $\beta(\nu,b) = \mathsf{Pending}(\cdot)$, $\mathtt{typeof}_\nu(b)$ is undefined. If $\mathit{eval}_{\mathrm{impl}}$ does not return $\mathsf{Lost}$ on the premise $\mathtt{typeof}_\nu(b) = \hat\tau$ at $\sigma(s)$, there exists $r \in \Sigma^\ast$ such that the premise is $\mathsf{Satisfied}$ at $\sigma(s\cdot r)$.
+\end{lemma}
+
+
+
+\begin{proof}
+We induct on the size of the AST sub-tree rooted at the binding target $c_{i_b}$ of $\nu$ (finite by Definition~\ref{def:evidence-summary}).
+
+\paragraph{Case $\beta(\nu,b) = \mathsf{Pending}(i_b)$.} The dot has not yet reached position $i_b$, so no child evidence is available. By productivity (Assumption~\ref{ass:spg-productivity}) every reachable alternative has a terminal yield, so a continuation $r_0$ advances the dot past position $i_b$ and creates the child summary $\nu_{c_{i_b}}$. After $r_0$, $\beta(\nu,b) = \mathsf{Resolved}(\nu_{c_{i_b}})$ (Definition~\ref{def:beta-resolution}), and the induction hypothesis applied at $\nu_{c_{i_b}}$ gives $r_1$ closing the premise. Take $r = r_0 \cdot r_1$.
+
+\paragraph{Case $\beta(\nu,b) = \mathsf{Resolved}(\nu_c)$.} Let $n_c$ be the non-terminal of $\nu_c$, $\gamma_c = \mathcal T(n_c) = (\mathit{name}_c, M_c, \mathit{Bind}_c, \Phi_c, \hat\tau_c)$ the typing rule attached to $n_c$, and $\hat\tau_c$ its conclusion (Typing Rules subsection above). The type evidence $\nu_c.\tau = \mathtt{typeof}_\nu(b)$ is the elaboration of $\hat\tau_c$ under the bindings $\mathit{Bind}_c$ at $\nu_c$. We dispatch on the syntactic form of $\hat\tau_c$:
+\begin{itemize}
+  \item \emph{Literal closed type} ($\hat\tau_c = \tau_0$, e.g.\ $\mathsf{Int}$): elaboration gives $\nu_c.\tau = \mathsf{Exact}(\tau_0)$ directly. The comparison $\tau_0 = \hat\tau$ on the right-hand side is closed-type decidable, and Lemma~\ref{lem:evidence-realizable} closes any open frontier of $\hat\tau$. This is the base of the recursion.
+  \item \emph{Context lookup} ($\hat\tau_c = \Gamma(x)$): $\Gamma$ at $\nu_c$ is fixed at $\nu_c$'s dot, so $\nu_c.\tau$ is the closed type bound to $x$ in $\Gamma$. Apply Lemma~\ref{lem:evidence-realizable} to expose the name evidence of $x$, and the literal sub-case finishes the verdict.
+  \item \emph{Binding reference} ($\hat\tau_c = b'$ for some $b' \in \mathit{Bind}_c$): the conclusion of $\gamma_c$ asks for the type of another child of $\nu_c$. Apply the induction hypothesis at $(\nu_c, b')$ -- the AST sub-tree rooted at $\nu_c$'s $b'$-target is strictly smaller than the one rooted at $c_{i_b}$. The continuation drives $\nu_c.\tau$ to $\mathsf{Exact}(\tau_0)$, reducing to the literal sub-case.
+  \item \emph{Type constructor over the above} (e.g.\ $\hat\tau_c = \hat\tau_1 \to \hat\tau_2$, where each $\hat\tau_i$ is one of the previous forms): recurse independently on each $\hat\tau_i$ and assemble the closed constructor on the resulting $\mathsf{Exact}$ pieces. Closure under arrow, union, negation, $\top$, $\bot$ is decidable on closed types by the assumption above Definition~\ref{def:constraint-domain}.
+\end{itemize}
+\end{proof}
+
+\paragraph{Other primitive premises.} The four remaining primitive premises are immediate corollaries of Lemma~\ref{lem:typeof-realizable} and monotonicity. 
+\begin{itemize}
+  \item \emph{Context membership} ($x \in \Gamma$): $\Gamma$ is fixed at the dot, since it depends only on the right-bound transforms of already-closed left siblings. Apply Lemma~\ref{lem:evidence-realizable} to expose the name evidence of $x$ as $\mathsf{Exact}(\mathit{name})$ for any $\mathit{name} \in \mathrm{dom}(\Gamma)$ in the completion set.
+  \item \emph{Type relations} ($\hat\tau_1 = \hat\tau_2$ and $\hat\tau_1 \subseteq \hat\tau_2$): each side elaborates to a type-evidence node; apply Lemma~\ref{lem:typeof-realizable} when the side is a binding reference and Lemma~\ref{lem:evidence-realizable} otherwise, then compose continuations.
+  \item \emph{Child type ascription} ($\Gamma \vdash b : \hat\tau$): this is exactly the premise $\mathtt{typeof}_\nu(b) = \hat\tau$ of Lemma~\ref{lem:typeof-realizable}.
+  \item \emph{Child-bound context ascription} ($\Gamma[x:\hat\tau] \vdash b : \hat\sigma$): the context update is independent of input extension, so the premise reduces to ascription under $\Gamma[x:\hat\tau]$. Apply Lemma~\ref{lem:typeof-realizable}.
+\end{itemize}
+
+\begin{lemma}[Rule realizability]
+\label{lem:rule-realizable}
+    On parser state $\sigma(s)$ if $\mathit{eval}_\text{impl}(\Phi) = \mathsf{Live}$, there exists a continuation $r$ such that at $\sigma(sr)$, $\mathit{eval}_\text{impl}(\Phi) = \mathsf{Satisfied}.$
+\end{lemma}
+\begin{proof}
+The premise list $\Phi$ of $\gamma$ induces a finite sub-hypergraph $\mathcal G_\gamma \subseteq \mathcal G(s)$ (Definition~\ref{def:evidence-graph}): each $\phi \in \Phi$ contributes constraint edges, each binding $b \in \mathit{Bind}$ contributes the binding-reference vertex $\beta(\nu,b)$ (Definition~\ref{def:beta-resolution}). We induct on the lexicographic measure $\mu(\mathcal G_\gamma) = (\,|F(\mathcal G_\gamma)|,\,|\Phi_{\mathsf{Live}}|\,)$ where $F$ is the set of frontier vertices (Definition~\ref{def:open-closed}) and $\Phi_{\mathsf{Live}}$ counts premises with verdict $\mathsf{Live}$. Both are finite by Definition~\ref{def:evidence-graph}, so $\mu$ is well-founded.
+
+\paragraph{Base case ($\mu = (0,0)$).} Every binding-reference is $\mathsf{Resolved}$, every typed evidence vertex is $\mathsf{Exact}$, every premise is $\mathsf{Satisfied}$. Take $r = \varepsilon$.
+
+\paragraph{Inductive step.} Pick a frontier vertex $v$ of $\mathcal G_\gamma$. By the trichotomy of Definition~\ref{def:open-closed}, $v$ is either (i) a $\mathsf{Term}$ leaf with status in $\{\mathsf{Prefix},\mathsf{Extensible}\}$, dispatched to Lemma~\ref{lem:evidence-realizable}; (ii) a binding-reference $\beta(\nu,b) = \mathsf{Pending}(i_b)$, where productivity (Assumption~\ref{ass:spg-productivity}) supplies a continuation that advances the dot past position $i_b$ and so flips the verdict to $\mathsf{Resolved}(\nu_{c_{i_b}})$; or (iii) an internal summary $\nu$ with $\rho(\nu)\in\{\mathsf{Prefix},\mathsf{Extensible}\}$, which by Definition~\ref{def:evidence-summary} unfolds to a strictly smaller sub-graph $\mathcal G_{\nu}$ on which the induction hypothesis applies. In each case the continuation $r_v$ either drops $v$ from $F$ or, by the realizability of $\mathtt{typeof}$ (Lemma~\ref{lem:typeof-realizable}) or of a primitive type-evidence node (Lemma~\ref{lem:evidence-realizable}), turns one premise from $\mathsf{Live}$ into $\mathsf{Satisfied}$. By Remark~\ref{rem:lost-monotonicity}, a $\mathsf{Lost}$ judgement on types can never be recovered to $\mathsf{Live}$, so either way $\mu$ strictly decreases. Composing the $r_v$ in dot order yields the required $r$. 
+\end{proof}
+
+% ----------------------------------------------------------
+\subsection*{Context Transforms}
+% ----------------------------------------------------------
+
+A typing rule may export a \emph{right-bound context transform}
+$\nabla : \Gamma \mapsto \Gamma[x:\hat\tau]$ in its conclusion, written
+\[
+  \frac{\phi_1 \quad \cdots \quad \phi_n}
+       {\Gamma \to \Gamma[x:\hat\tau] \vdash \hat\sigma}
+  \;(\mathit{name}).
+\]
+Exact nodes may pass $\nabla$ to their right siblings via right-bound
+context flow (\S\ref{sec:context-flow}). Prefix nodes never export $\nabla$
+since their right boundary is not yet fixed. Transforms compose left to right:
+$\nabla_3 = \nabla_2 \circ \nabla_1$.
+
+\begin{theorem}[Typing implementation computes the ideal evaluator]
+\label{thm:typing-realizable}
+For every reachable state $\sigma(s)$,
+\[
+  \mathsf{eval}_{\mathrm{impl}}(\mathcal{G}(s))
+  \;=\;
+  \mathsf{eval}(\mathcal{G}(s)).
+\]
+where $\mathsf{eval}(\mathcal{G}(s))$ is the ideal evaluator defined in \ref{sec:semantic-domains}.
+\end{theorem}
+
+\begin{proof}
+We induct on the AST $t$ of $\sigma(s)$ and prove the stronger statement that $\mathit{eval}_{\mathrm{impl}}(\nu) = \mathit{eval}(\mathcal G_\nu(s))$ for every node $\nu$ of $t$, where $\mathcal G_\nu(s)$ is the sub-evidence-graph rooted at $\nu$. The theorem is the case where $\nu$ is the root of $t$.
+
+\paragraph{Terminal leaf.} A leaf $\mathsf{Term}(x,\xi,r)$ contributes one vertex and no constraint edges. By Definition~\ref{def:open-closed} the singleton sub-graph is Closed iff its only vertex is non-frontier, i.e.\ $\xi = \mathsf{Exact}$. By Lemma~\ref{lem:evidence-realizable} every Prefix or Extensible leaf has a witness, so $\mathit{eval}(\mathcal G_\nu(s)) = \mathsf{Live}$ for $\xi \in \{\mathsf{Prefix},\mathsf{Extensible}\}$. This matches the terminal clause of $\mathit{eval}_{\mathrm{impl}}$.
+
+\paragraph{Internal node.} Let $\nu = \langle n, p^n_a, \chi \rangle$, write $V_n = \widehat{\mathcal T}(n)$, and write $V_c = \mathit{eval}_{\mathrm{impl}}(c)$ for $c \in \chi$. By the induction hypothesis, every $V_c$ matches $\mathit{eval}(\mathcal G_c(s))$. The sub-graph $\mathcal G_\nu(s)$ decomposes as the union of the children's sub-graphs and the constraint edges contributed by $\mathcal T(n)$'s premises (Definition~\ref{def:evidence-graph}). We dispatch on the join $V_n \sqcup \bigsqcup_c V_c$:
+\begin{itemize}
+  \item \emph{Join is $\mathsf{Lost}$}: either $V_n = \mathsf{Lost}$ (a rule premise is contradicted at $\nu$) or some $V_c = \mathsf{Lost}$ (some child sub-graph contains a contradiction). In either case $\mathcal G_\nu(s)$ contains a contradiction in the constraint domain, and by the Lost clause of Definition~\ref{def:constraint-domain} we have $\mathit{eval}(\mathcal G_\nu(s)) = \mathsf{Lost}$.
+  \item \emph{Join is $\mathsf{Satisfied}$}: $V_n = \mathsf{Satisfied}$ and every $V_c = \mathsf{Satisfied}$. By induction every child sub-graph is Closed and free of contradiction, and by definition of $\mathit{eval}_{\mathrm{impl}}(\mathcal T(n))$ the rule premises hold. Hence $\mathcal G_\nu(s) \in \mathsf{Closed}$ and $\mathit{eval}(\mathcal G_\nu(s)) = \mathsf{Satisfied}$.
+  \item \emph{Join is $\mathsf{Live}$}: at least one of $V_n, V_c$ is $\mathsf{Live}$ and none is $\mathsf{Lost}$. By the syntactic-state propagation rules of \S\ref{sec:gram-def}, only the rightmost descendant chain may be non-Exact, so at most one child $c^\ast$ has $V_{c^\ast} = \mathsf{Live}$. The induction hypothesis at $c^\ast$ supplies a continuation $r_c$ closing $\mathcal G_{c^\ast}(s)$ into Satisfied. After $r_c$ the rule verdict at $\nu$ is non-$\mathsf{Lost}$ by Remark~\ref{rem:lost-monotonicity}, so Lemma~\ref{lem:rule-realizable} gives a further continuation $r_n$ closing the rule premises. The composite $r = r_c \cdot r_n$ is a witness for $\mathcal G_\nu(s)$, so $\mathit{eval}(\mathcal G_\nu(s)) = \mathsf{Live}$.
+\end{itemize}
+The verdicts agree at $\nu$, completing the induction.
+\end{proof}
+
+
+\subsection{Simply Typed Lambda Calculus Example}
+
+As a reference point, we implement the simply-typed lambda calculus (STLC) using our type system and grammar definition format.
+
+\paragraph{Syntax} The STLC syntax can be expressed in BNF-like notation with rule annotations and bindings:
+$$
+\begin{aligned}
+\text{Identifier} &\to \mathcal{R}(\texttt{[A-Za-z\_][A-Za-z0-9]$^\star$}) \\
+\text{Variable} &\to \text{Identifier}[x] && (\text{\textsc{var}}) \\
+\text{Type} &\to \text{Identifier} \mid \text{'('}\,\text{Type}\,\text{')'} \mid \text{Type}\;\text{'$\to$'}\;\text{Type} \\
+\text{Lambda} &\to \text{'$\lambda$'}\;\text{Identifier}[a]\;\text{':'}\;\text{Type}[\tau]\;\text{'.'}\;\text{Expression}[e] && (\text{\textsc{lambda}}) \\
+\text{Application} &\to \text{Expression}[l]\;\text{Expression}[r] && (\text{\textsc{app}}) \\
+\text{Expression} &\to \text{Variable} \mid \text{Lambda} \mid \text{Application} \mid \text{'('}\,\text{Expression}\,\text{')'}
+\end{aligned}
+$$
+
+\paragraph{Lambda rule.}
+
+\[
+\frac{\Gamma[a{:}\tau] \vdash e : B}{\tau \to B} \; (\text{\textsc{lambda}})
+\]
+Here $\mathcal{M} = \{B\}$, $\mathcal{B} = \{a, \tau, e\}$, the single premise extends the context with the annotated binder, and the conclusion is the arrow type.
+
+\paragraph{Application rule.}
+\[
+\frac{\Gamma \vdash l : A \to B \quad \Gamma \vdash r : A}{B} \; (\text{\textsc{app}})
+\]
+$A$ is unified between the two premises: whatever function type $l$ resolves to determines the required type of $r$.
+
+\paragraph{Variable rule.}
+\[
+\frac{x \in \Gamma}{\Gamma(x)} \; (\text{\textsc{var}})
+\]
+Here $\mathcal{M} = \emptyset$, $\mathcal{B} = \{x\}$, the premise is a typing judgment for a variable, and the conclusion is its type.
+
+\subsubsection{Partial examples}
+
+\paragraph{Valid} If we feed the prefix $\lambda x:\mathrm{Int}$, the parser produces a prefix node for the lambda production. The type child is on the right frontier, so the lambda premise is unknown but not contradictory. The parser accepts an extension of the type, for example $\to \mathrm{Bool}$, and it also accepts a $.$ token that closes the annotation and starts the body.
+
+\paragraph{Invalid} If we feed the prefix $\lambda f:\mathrm{Int}\to\mathrm{Bool}.\; f\;(\lambda y:\mathrm{Int}.\;y\;($, the final parenthesis leaves the term syntactically open, but the semantic contradiction is already stable. The variable $f$ has type $\mathrm{Int}\to\mathrm{Bool}$, so its argument must have type $\mathrm{Int}$. The argument has already committed to the lambda alternative, so any successful completion of that subtree would have arrow shape $\mathrm{Int}\to B$ for some body type $B$. No future token can turn a lambda into an integer argument, so the parser rejects the prefix without waiting for the closing parenthesis.

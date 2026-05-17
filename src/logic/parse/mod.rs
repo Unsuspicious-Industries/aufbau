@@ -13,7 +13,8 @@ mod tests;
 
 pub use crate::logic::error::PrefixError;
 pub use arena::{
-    AltId, Binding, ChildRef, CtxId, NodeId, NodeStatus, NtId, ParseArena, ProdId, Span, TypeId,
+    AltId, BindingMap, BindingStatus, ChildRef, CtxId, EffectId, EvidenceId, NodeId, NodeStatus,
+    NtId, ParseArena, ProdId, Span, TypeId,
 };
 pub use parser::{Item, Tables, Task};
 pub use state::{Next, State};
@@ -29,6 +30,9 @@ pub struct TypedParser<T> {
     pub(crate) input: String,
     pub(crate) segments: Vec<Segment>,
 }
+
+/// Domain-neutral name for the parser. `TypedParser` is kept for existing code.
+pub type SemanticParser<T> = TypedParser<T>;
 
 impl<T> TypedParser<T> {
     pub fn grammar(&mut self) -> &mut Grammar {

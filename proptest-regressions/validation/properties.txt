@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a13c2186ee2ff5a18cbac88bf1c5ff59445aaeb25e2c539e44859181e4d914bd # shrinks to (input, ctx) = ("f x0", Context { bindings: {"f": Arrow(Raw("T0"), Raw("T1")), "x0": Raw("T0")}, unresolved_bindings: {} })

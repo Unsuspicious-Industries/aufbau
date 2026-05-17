@@ -1,27 +1,39 @@
 //! Formal obligation objects and their structural evolution.
+//!
+//! Obligations are intentionally domain-neutral: they route child evidence and
+//! lexemes according to binding positions, but do not interpret the evidence.
 
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::NtId;
-use crate::logic::parse::arena::{ArenaNode, Binding, Lexeme, ProdId, TypeId};
+use crate::logic::parse::arena::{
+    ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId,
+};
 use crate::logic::path::{GrammarPath, TreePath};
 use std::collections::HashSet;
 
-/// Deferred semantic requirement induced by a typing rule.
+/// Deferred semantic requirement induced by a semantic rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Obligation {
     pub name: String,
     pub paths: Vec<GrammarPath>,
     pub value: Option<Lexeme>,
-    pub actual: Option<TypeId>,
+    pub evidence: Option<EvidenceId>,
 }
 
 impl Obligation {
-    pub fn to_binding(&self) -> Binding {
-        Binding {
-            name: self.name.clone(),
-            value: self.value.clone(),
-            ty: self.actual,
-        }
+    /// Convert obligation into the β(ν,b) map entry.
+    pub fn to_binding_status(&self, position: usize) -> (String, BindingStatus) {
+        let status = if let Some(value) = &self.value {
+            BindingStatus::Resolved {
+                span: value.matched,
+                complete: value.complete,
+                open: value.open,
+                evidence: self.evidence.unwrap_or(0),
+            }
+        } else {
+            BindingStatus::Pending { position }
+        };
+        (self.name.clone(), status)
     }
 
     fn has_matched(&self) -> bool {
@@ -54,7 +66,7 @@ impl Obligation {
             name: self.name.clone(),
             paths,
             value: self.value.clone(),
-            actual: self.actual,
+            evidence: self.evidence,
         })
     }
 
@@ -70,7 +82,7 @@ impl Obligation {
             name: self.name.clone(),
             paths,
             value: self.value.clone(),
-            actual: self.actual,
+            evidence: self.evidence,
         })
     }
 
@@ -81,16 +93,19 @@ impl Obligation {
                 node.status.complete(),
                 node.status.open(),
             ));
-            self.actual = Some(node.ty);
+            self.evidence = Some(node.evidence);
             return;
         }
 
-        for binding in &node.bindings {
-            if binding.name == self.name {
-                self.value = binding.value.clone();
-                self.actual = binding.ty;
-                break;
-            }
+        if let Some(BindingStatus::Resolved {
+            span,
+            complete,
+            open,
+            evidence,
+        }) = node.binding_map.get(&self.name)
+        {
+            self.value = Some(Lexeme::new(*span, *complete, *open));
+            self.evidence = Some(*evidence);
         }
     }
 }
@@ -143,7 +158,7 @@ impl Obligations {
                     name: name.to_string(),
                     paths: filtered,
                     value: None,
-                    actual: None,
+                    evidence: None,
                 })
             })
             .collect();

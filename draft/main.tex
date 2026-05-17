@@ -1,0 +1,99 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage[hypertexnames=false]{hyperref}
+\usepackage{booktabs}
+\usepackage{xspace}
+\usepackage{enumitem}
+\usepackage{stmaryrd}
+\usepackage{xcolor}
+
+\newcommand{\cmt}[1]{\textcolor{red}{\texttt{#1}}}
+\long\def\sugadd#1{{\color{blue}#1}}
+\long\def\sugdel#1{{\color{red}#1}}
+
+\newcommand{\aufbau}{\textsc{Aufbau}\xspace}
+\newcommand{\spg}{\textsc{SPG}\xspace}
+
+\title{\aufbau: Semantic Prefix Grammars, Effects, and Parser Soundness}
+\author{Paul Kronlund-Drouault}
+\date{Working Draft}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{assumption}[definition]{Assumption}
+\newtheorem{property}[definition]{Property}
+\newtheorem{example}[definition]{Example}
+\theoremstyle{plain}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{theorem}[definition]{Theorem}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newcommand{\keywords}[1]{\par\smallskip\noindent\textbf{Keywords: }#1}
+
+
+\begin{document}
+
+\maketitle
+
+
+\begin{abstract}
+	Semantic prefix grammars (\spg) are a declarative framework for prefix parsing with context-dependent semantic constraints. An SPG pairs context-free productions with binding annotations and semantic premises over a decidable, abstract domain which is syntactically realizable in the attached grammar. A prefix is accepted exactly when the combined syntactic and semantic state remains extendable to at least one complete semantically valid expression. This draft isolates the formal constraint model, the generic prefix parser with evidence summaries and right-bound effects, and the current typing-domain instance. The central soundness target is that every accepted prefix has a valid completion.
+\keywords{Static analysis, prefix parsing, semantic constraints, type checking, program synthesis}
+\end{abstract}
+\section{Introduction}
+\label{sec:introduction}
+\paragraph{Problem.}
+Prefix-oriented construction of formal artifacts needs structural guarantees: a partial term may already have left the target language, violated a type rule, or invalidated a proof script. Many important constraints are semantic in the ordinary programming-language sense: identifiers must be in scope, declarations modify future contexts, branches must agree on types, and expression forms may be valid only under language-specific side conditions. These constraints are context-dependent even when the surface syntax is context-free.
+
+Grammar-only prefix parsing addresses regular and context-free structure. This is necessary but not sufficient for programming languages and proof-oriented languages. The semantic layer must be evaluated online, over partial forests, without rejecting prefixes that still admit a satisfying completion.
+\paragraph{Main idea.}
+
+We propose a declarative framework for prefix parsing with semantic constraints. A specification contains ordinary productions with binding annotations, plus inference-style semantic rules. The parser maintains a partial forest and a finite semantic state. A continuation is accepted when syntactic parsing and semantic evaluation can derive a closed work in the language by completing it.
+
+We reuse the standard view of attribute grammars~\cite{knuth1968semantics} and constraint/logic grammars~\cite{pereira1980definite,shieber1986unification}: a context-free derivation is accepted only when attached semantic information admits a satisfying valuation. We name our class \emph{semantic prefix grammars} and add the condition that the constraint domain must be decidable and its partial evaluator must be realizable over prefixes (semantic completability corresponds to syntactic completability). The current instantiation supports typed languages with finite contexts, rule-local unification, binding evidence, and context transforms.
+Keeping the same model, richer fragments of languages such as TypeScript or Python can be obtained by extending the premise language and context structures while preserving the same parser architecture.
+
+\paragraph{Contributions.}
+
+This paper makes the following contributions:
+\begin{enumerate}
+	\item A formal model of \emph{prefix closure} parsing for our grammar class along with proof targets for generalized realizable semantic constraints.
+	\item A generic prefix parsing algorithm based on Earley-style saturation~\cite{earley1970efficient}, enriched with semantic obligations, evidence summaries, right-bound effects, and an end-of-input closure phase.
+	\item A current typing-domain instance with finite contexts, local unification, child ascription, and context transforms.
+\end{enumerate}
+
+\paragraph{Target} This framework is meant to support mechanized correctness guarantees: the proof obligations are deliberately structured for eventual formalization in a proof assistant, and the framework extends to richer type systems and proof-oriented domains on the same parser architecture.
+
+% Formal core: keep these inputs in this order.
+\input{sections/01-abstract-spg-definition.tex}
+\input{sections/02-generic-parser-algorithm.tex}
+\input{sections/03-typing-domain-implementation.tex}
+
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Language coverage.}
+The current semantic algebra supports finite typing contexts, is quite limited, and could only be extended to a small subset of real world general purpose programming languages.  Realistic TypeScript or Python fragments would require additional premise forms (for instance row polymorphism, structural subtyping, and effect tracking) and broader context domains (module-level scopes, mutable cells, refinement information). We expect these extensions to fit the same parser architecture, but each new premise form has to be checked for realizability before it can be admitted into the framework. This might be hard due to second order logic requirement we cannot implement yet.
+
+\paragraph{Performance.}
+While overhead is manageable for the grammars used as running examples, large grammars with many typing rules, deep nesting, or expensive obligation resolution can slow parsing. Cost grows with the number of live items kept on the agenda, with the size of the obligation store on each item, and with the cost of evaluating individual premises. Industrial-scale grammars would benefit from caching and chart sharing strategies that are not yet modeled here.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented semantic prefix grammars, a language-parametric framework for context-dependent semantic checks over prefix parse forests. The core idea is to keep syntax ordinary and make semantics explicit: bound productions expose evidence, semantic premises evaluate conservatively over partial input, and exact nodes alone may export right-bound effects. This gives a principled path from CFG-only prefix parsing toward realistic programming-language and proof-oriented fragments. Key directions for future work are richer semantic algebras, proof-domain instances, and mechanized proofs of the semantic invariants.
+
+\section*{Acknowledgments}
+
+We thank Niels M\"undler at ETH Z\"urich's SRI Lab for feedback on the implementation, help with references, and theoretical advice.
+This work was supported by Unsuspicious Industries, an independent nonprofit research collective.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

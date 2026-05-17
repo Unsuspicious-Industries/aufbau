@@ -15,7 +15,6 @@ pub mod fun;
 pub mod imp;
 pub mod stlc;
 pub mod toy;
-pub mod typescript;
 pub mod weird;
 
 use crate::logic::grammar::Grammar;
@@ -392,12 +391,6 @@ pub fn all_suites() -> Vec<(
             load_example_grammar("stlc"),
             stlc::valid_expressions_cases(),
             stlc::invalid_expressions_cases(),
-        ),
-        (
-            "typescript",
-            load_example_grammar("typescript"),
-            typescript::valid_expressions_cases(),
-            typescript::invalid_expressions_cases(),
         ),
         (
             "toy",

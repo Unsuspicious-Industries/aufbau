@@ -56,7 +56,7 @@ echo
 
 # 5. Chart growth data (CSV for paper)
 bold "5. Chart growth data"
-run cargo run --example chart_data --release
+run cargo run --release -- chart
 ok "data written to data/chart_growth.csv"
 echo
 

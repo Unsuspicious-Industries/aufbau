@@ -1,0 +1,63 @@
+Identifier ::= /[a-z][a-z0-9_]*/
+TypeName ::= 'Int' | 'Bool' 
+BaseType ::= TypeName | '(' Type ')'
+UnionType ::= BaseType '|' Type
+Type ::= BaseType | UnionType
+Integer(int_lit) ::= /[0-9]+/
+Boolean(bool_lit) ::= 'true' | 'false'
+Variable(var) ::= Identifier[x]
+Group ::= '(' Expression ')'
+AtomicExpr ::= Variable | Integer | Boolean | Group
+ArithOp(arith_op) ::= Expression[lhs] ArithOperator[op] Expression[rhs]
+ArithOperator ::= '+' | '-' | '*' | '/' 
+CompOp(comp_op) ::= AtomicExpr[lhs] CompOperator[op] AtomicExpr[rhs]
+CompOperator ::= '==' | '!=' | '<' | '<=' | '>' | '>='
+Expression ::= ArithOp | CompOp | AtomicExpr
+Declaration(decl) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';'
+Assignment(assign) ::= Identifier[name] '=' Expression[value] ';'
+IfStmt(if) ::= 'if' '(' Expression[cond] ')' Block[then_block]
+IfElseStmt(if_else) ::= 'if' '(' Expression[cond] ')' Block[then_block] 'else' Block[else_block]
+WhileStmt(while) ::= 'while' '(' Expression[cond] ')' Block[body]
+Block(block) ::= '{' StatementList[stmts] '}'
+Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
+StatementList ::= Statement StatementList | Statement
+// Start symbol
+Program(program) ::= Block[main]
+
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+----------- (int_lit)
+'Int'
+
+----------- (bool_lit)
+'Bool'
+
+Γ  ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
+------------------------------------------------- (arith_op)
+'Int'
+
+Γ  ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
+------------------------------------------------- (comp_op)
+'Bool'
+
+Γ  ⊢ value : τ
+----------------------- (decl)
+Γ → Γ[name:τ] ⊢ ∅
+
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------ (assign)
+∅
+
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T
+--------------------------------------- (if)
+?T
+
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
+------------------------------------------------------------ (if_else)
+?T
+
+Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
+-------------------------------- (while)
+?T

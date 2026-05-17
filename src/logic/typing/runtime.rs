@@ -7,14 +7,13 @@ use crate::debug_trace;
 use crate::logic::Segment;
 use crate::logic::error::TransitionError;
 use crate::logic::grammar::Grammar;
-use crate::logic::parse::arena::{ANY_TYPE, CtxId, Lexeme, NodeStatus, ProdId, TypeId};
+use crate::logic::parse::arena::{ANY_TYPE, CtxId, EffectId, Lexeme, NodeStatus, ProdId, TypeId};
+use crate::logic::semantic::{SemanticRuntime, SemanticSummary};
 use crate::logic::typing::rule::{
     ConclusionKind, Premise, PremiseStatus, RuleResult, TypeOperation, TypingJudgment,
 };
 use crate::logic::typing::{Context, Type, TypingRule, subtype};
-use crate::logic::typing::{
-    ContextTransition, Obligation, Obligations, TypingRuntime, Unifier, UnifyResult,
-};
+use crate::logic::typing::{ContextTransition, Obligation, Obligations, Unifier, UnifyResult};
 
 #[derive(Clone, Debug)]
 pub struct RuleRuntime {
@@ -23,6 +22,8 @@ pub struct RuleRuntime {
     type_ids: Rc<RefCell<HashMap<Type, TypeId>>>,
     contexts: Rc<RefCell<Vec<Context>>>,
     context_ids: Rc<RefCell<HashMap<Context, CtxId>>>,
+    effects: Rc<RefCell<Vec<ContextTransition>>>,
+    effect_ids: Rc<RefCell<HashMap<ContextTransition, EffectId>>>,
     s: Vec<Segment>,
 }
 
@@ -51,6 +52,8 @@ impl RuleRuntime {
             type_ids: Rc::new(RefCell::new(HashMap::new())),
             contexts: Rc::new(RefCell::new(Vec::new())),
             context_ids: Rc::new(RefCell::new(HashMap::new())),
+            effects: Rc::new(RefCell::new(Vec::new())),
+            effect_ids: Rc::new(RefCell::new(HashMap::new())),
             s: Vec::new(),
         };
         let any_id = runtime.intern_type(Type::Any);
@@ -90,6 +93,25 @@ impl RuleRuntime {
         id
     }
 
+    pub fn intern_effect(&self, effect: ContextTransition) -> Option<EffectId> {
+        if effect.transforms.is_empty() {
+            return None;
+        }
+        if let Some(&id) = self.effect_ids.borrow().get(&effect) {
+            return Some(id);
+        }
+        let mut effects = self.effects.borrow_mut();
+        let id = effects.len();
+        effects.push(effect.clone());
+        drop(effects);
+        self.effect_ids.borrow_mut().insert(effect, id);
+        Some(id)
+    }
+
+    pub fn effect(&self, id: EffectId) -> Option<ContextTransition> {
+        self.effects.borrow().get(id).cloned()
+    }
+
     pub fn context(&self, id: Option<CtxId>) -> Option<Context> {
         id.and_then(|id| {
             self.contexts.borrow().get(id).cloned().inspect(|c| {
@@ -104,6 +126,10 @@ impl RuleRuntime {
 
     pub fn interned_context_count(&self) -> usize {
         self.contexts.borrow().len()
+    }
+
+    pub fn interned_effect_count(&self) -> usize {
+        self.effects.borrow().len()
     }
 
     pub fn grammar(&self) -> &Grammar {
@@ -128,7 +154,7 @@ impl RuleRuntime {
         obligations
             .iter()
             .find(|o| o.name == name)
-            .and_then(|o| o.actual)
+            .and_then(|o| o.evidence)
     }
 
     fn ob_get(&self, obligations: &Obligations, name: &str) -> Option<Obligation> {
@@ -320,6 +346,7 @@ impl RuleRuntime {
         obligations: &Obligations,
         ctx: &mut Context,
         unifier: &mut Unifier,
+        allow_missing_obligation: bool,
     ) -> PremiseStatus {
         let base_ctx = ctx.clone();
         let mut premise_ctx = ctx.clone();
@@ -413,8 +440,15 @@ impl RuleRuntime {
                 let ob = match self.ob_get(obligations, term) {
                     Some(ob) => ob,
                     None => {
+                        if allow_missing_obligation {
+                            debug_trace!(
+                                "fusion_typing",
+                                "premise_partial no_obligation term={}",
+                                term
+                            );
+                            return PremiseStatus::Unknown;
+                        }
                         debug_trace!("fusion_typing", "premise_fail no_obligation term={}", term);
-                        // no obligaiton at al is a probleù
                         return PremiseStatus::Contradiction;
                     }
                 };
@@ -428,7 +462,7 @@ impl RuleRuntime {
                     Some(ref v) => v.open,
                     _ => false,
                 };
-                let Some(actual_id) = ob.actual else {
+                let Some(actual_id) = ob.evidence else {
                     debug_trace!("fusion_typing", "premise_fail no_actual term={}", term);
                     // An open child can still become informative after more input.
                     if open {
@@ -554,16 +588,29 @@ impl RuleRuntime {
         }
     }
 
-    fn apply_rule(&self, rule: &TypingRule, obligations: &Obligations, ctx: Context) -> RuleResult {
+    fn apply_rule(
+        &self,
+        rule: &TypingRule,
+        obligations: &Obligations,
+        ctx: Context,
+        status: NodeStatus,
+    ) -> RuleResult {
         let mut unifier = Unifier::new();
         unifier.set_binding_values(self.binding_values(obligations));
         let mut mctx = ctx.clone();
+        let allow_missing_obligation = status.open();
         // Short-circuit on Contradiction; track if any premise was Unknown
         let all_satisfied = match rule
             .premises
             .iter()
             .try_fold(true, |all_satisfied, premise| {
-                match self.apply_premise(premise, obligations, &mut mctx, &mut unifier) {
+                match self.apply_premise(
+                    premise,
+                    obligations,
+                    &mut mctx,
+                    &mut unifier,
+                    allow_missing_obligation,
+                ) {
                     PremiseStatus::Contradiction => Err(()),
                     PremiseStatus::Unknown => Ok(false),
                     PremiseStatus::Satisfied => Ok(all_satisfied),
@@ -657,9 +704,9 @@ impl RuleRuntime {
     }
 }
 
-// ── TypingRuntime implementation ─────────────────────────────────────────────
+// ── SemanticRuntime implementation ───────────────────────────────────────────
 
-impl TypingRuntime for RuleRuntime {
+impl SemanticRuntime for RuleRuntime {
     fn descend(
         &self,
         prod: ProdId,
@@ -697,7 +744,7 @@ impl TypingRuntime for RuleRuntime {
                     "  desc_ob name={} value={:?} actual={:?}",
                     ob.name,
                     ob.value,
-                    ob.actual.and_then(|id| self.type_of(id))
+                    ob.evidence.and_then(|id| self.type_of(id))
                 );
             }
         }
@@ -753,7 +800,7 @@ impl TypingRuntime for RuleRuntime {
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
+    ) -> Result<SemanticSummary, TransitionError> {
         let rule = match self
             .production_rule_name(prod)
             .and_then(|name| self.grammar.rules().get(name.as_str()))
@@ -761,7 +808,7 @@ impl TypingRuntime for RuleRuntime {
             Some(r) => r,
             None => {
                 // no rule, just return the same context and any type
-                return Ok((ANY_TYPE, None, true));
+                return Ok(SemanticSummary::new(ANY_TYPE, None, true));
             }
         };
 
@@ -781,7 +828,7 @@ impl TypingRuntime for RuleRuntime {
                     ob.name,
                     ob.value.as_ref().map(|v| v.value(&self.s)),
                     ob.value.as_ref().map(|v| v.open),
-                    ob.actual.and_then(|id| self.type_of(id))
+                    ob.evidence.and_then(|id| self.type_of(id))
                 );
             }
         }
@@ -789,7 +836,7 @@ impl TypingRuntime for RuleRuntime {
             .context(Some(ctx))
             .ok_or_else(|| TransitionError::Rejected)?;
 
-        match self.apply_rule(rule, obligations, context) {
+        match self.apply_rule(rule, obligations, context, status) {
             RuleResult::Success((ty, transition)) => {
                 if status == NodeStatus::Closed {
                     debug_trace!(
@@ -799,7 +846,11 @@ impl TypingRuntime for RuleRuntime {
                         ty,
                         transition
                     );
-                    Ok((self.intern_type(ty), transition, true))
+                    Ok(SemanticSummary::new(
+                        self.intern_type(ty),
+                        transition.and_then(|transition| self.intern_effect(transition)),
+                        true,
+                    ))
                 } else {
                     debug_trace!(
                         "fusion_typing",
@@ -809,7 +860,7 @@ impl TypingRuntime for RuleRuntime {
                         transition
                     );
                     // context transitions are not allowed coming from partial nodes
-                    Ok((self.intern_type(ty), None, true))
+                    Ok(SemanticSummary::new(self.intern_type(ty), None, true))
                 }
             }
             RuleResult::Partial(ty) => {
@@ -820,9 +871,9 @@ impl TypingRuntime for RuleRuntime {
                     ty
                 );
                 if rule.name.starts_with("__br_") {
-                    Ok((self.intern_type(ty), None, true))
+                    Ok(SemanticSummary::new(self.intern_type(ty), None, true))
                 } else if status.open() {
-                    Ok((self.intern_type(ty), None, false))
+                    Ok(SemanticSummary::new(self.intern_type(ty), None, false))
                 } else {
                     // complete but unknowns is very bad stuff
                     Err(TransitionError::Rejected)
@@ -840,11 +891,10 @@ impl TypingRuntime for RuleRuntime {
         }
     }
 
-    fn apply_transform(
-        &self,
-        ctx: CtxId,
-        transform: ContextTransition,
-    ) -> Result<CtxId, TransitionError> {
+    fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError> {
+        let Some(transform) = self.effect(effect) else {
+            return Err(TransitionError::Rejected);
+        };
         let mut current_ctx = self.context(Some(ctx)).unwrap_or_default();
         for (var, ty) in transform.transforms {
             if let Some(next) = self.extend_context(&current_ctx, &var, ty) {
@@ -855,6 +905,17 @@ impl TypingRuntime for RuleRuntime {
             }
         }
         Ok(self.intern_context(current_ctx))
+    }
+
+    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
+        let mut composed = ContextTransition::identity();
+        for effect in effects {
+            let Some(transition) = self.effect(effect) else {
+                return Err(TransitionError::Rejected);
+            };
+            composed = composed.compose(&transition);
+        }
+        Ok(self.intern_effect(composed))
     }
 
     fn set_segs(&mut self, input: &[Segment]) {

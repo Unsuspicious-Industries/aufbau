@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
+use crate::logic::SemanticRuntime;
 use crate::logic::grammar::Segment;
-use crate::logic::parse::arena::TypeId;
-use crate::logic::typing::TypingRuntime;
+use crate::logic::parse::arena::EvidenceId;
 
 use super::{ChildRef, NodeId, TypedParser};
 use crate::logic::parse::arena::{ParseArena, Span};
@@ -10,7 +10,7 @@ use crate::logic::parse::arena::{ParseArena, Span};
 use crate::logic::parse::State;
 use crate::logic::parse::arena::Lexeme;
 
-pub fn render_node_text<T: TypingRuntime>(
+pub fn render_node_text<T: SemanticRuntime>(
     parser: &TypedParser<T>,
     node_id: NodeId,
     segments: &[Segment],
@@ -44,7 +44,7 @@ pub fn render_node_text<T: TypingRuntime>(
         .join(" ")
 }
 
-pub fn pretty_node<T: TypingRuntime>(
+pub fn pretty_node<T: SemanticRuntime>(
     parser: &TypedParser<T>,
     node_id: NodeId,
     segments: &[Segment],
@@ -66,16 +66,16 @@ fn render_pretty(
     };
     let pad = "  ".repeat(indent);
     out.push_str(&format!(
-        "{}node {:?} nt={:?} span=({},{}) status={:?} ty={}\n",
+        "{}node {:?} nt={:?} span=({},{}) status={:?} evidence={}\n",
         pad,
         node_id,
         node.nt,
         node.span.start,
         node.span.end,
         node.status,
-        render_type_label(Some(node.ty))
+        render_evidence_label(Some(node.evidence))
     ));
-    out.push_str(&format!("{}bindings={:?}\n", pad, node.bindings));
+    out.push_str(&format!("{}binding_map={:?}\n", pad, node.binding_map));
     if let Some(alts) = arena.alts_for(node_id) {
         for (idx, alt) in alts.iter().enumerate() {
             out.push_str(&format!("{}alt {} prod={:?}\n", pad, idx, alt.prod));
@@ -102,9 +102,9 @@ fn render_pretty(
     }
 }
 
-fn render_type_label(type_id: Option<TypeId>) -> String {
-    match type_id {
-        Some(id) => format!("TypeId({})", id),
+fn render_evidence_label(evidence_id: Option<EvidenceId>) -> String {
+    match evidence_id {
+        Some(id) => format!("EvidenceId({})", id),
         None => "None".to_string(),
     }
 }
@@ -116,7 +116,7 @@ fn render_span(span: Span, segments: &[Segment]) -> String {
         .join(" ")
 }
 
-pub fn pretty_prefix_state<T: TypingRuntime>(
+pub fn pretty_prefix_state<T: SemanticRuntime>(
     parser: &TypedParser<T>,
     state: &State,
     segments: &[Segment],

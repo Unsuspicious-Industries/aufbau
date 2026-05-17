@@ -1,14 +1,15 @@
 //! Tests for deduplication invariants in the agenda parser.
 
 use super::*;
+use crate::logic::Obligations;
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::Item;
 use crate::logic::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::logic::parse::parser::Completion;
-use crate::logic::typing::{ContextTransition, Obligations};
+use std::collections::HashMap;
 
 fn push_test_node(
-    parser: &mut TypedParser<impl crate::logic::typing::TypingRuntime>,
+    parser: &mut TypedParser<impl crate::logic::SemanticRuntime>,
     nt: usize,
     start: usize,
     end: usize,
@@ -22,9 +23,9 @@ fn push_test_node(
             },
             status: NodeStatus::Closed,
             semantic_complete: true,
-            ty: 0,
-            ctr: Some(ContextTransition::identity()),
-            bindings: vec![],
+            evidence: 0,
+            effect: None,
+            binding_map: HashMap::new(),
             alts: AltRange { start: 0, len: 0 },
         },
         vec![],

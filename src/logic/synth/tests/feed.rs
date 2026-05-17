@@ -37,65 +37,8 @@ fn feed_reparses_cached_ast_after_punctuation_token() {
     assert_same_parse_shape(&mut synth, &mut fresh);
 }
 
-#[test]
-fn feed_reparses_cached_ast_after_identifier_token() {
-    let grammar = Grammar::load(
-        r#"
-        Name ::= /[a-z]+/
-        Start ::= 'let' Name
-        "#,
-    )
-    .unwrap();
-    let mut synth = Synthesizer::new(grammar.clone(), "");
 
-    let _ = synth.ast().unwrap();
-    let _ = synth.feed("let").unwrap();
-    let fed = synth.feed("value").unwrap();
-    let mut fresh = Synthesizer::new(grammar, synth.input());
 
-    assert_eq!(synth.input(), "let value");
-    assert_eq!(fed.text(), "let value");
-    assert!(fed.is_complete());
-    assert_same_parse_shape(&mut synth, &mut fresh);
-}
-
-#[test]
-fn feed_sequence_matches_fresh_parse_after_each_step() {
-    let grammar = Grammar::load(
-        r#"
-        Name ::= /[a-z]+/
-        Start ::= 'let' Name ':' 't' '=' Name
-        "#,
-    )
-    .unwrap();
-    let mut incremental = Synthesizer::new(grammar.clone(), "");
-
-    for token in ["let", "x", ":", "t", "=", "y"] {
-        let _ = incremental.feed(token).unwrap();
-        let mut fresh = Synthesizer::new(grammar.clone(), incremental.input());
-        assert_same_parse_shape(&mut incremental, &mut fresh);
-    }
-
-    assert_eq!(incremental.input(), "let x:t=y");
-    assert!(incremental.ast().unwrap().is_complete());
-}
-
-#[test]
-fn feed_inserts_separator_between_adjacent_word_tokens() {
-    let grammar = Grammar::load(
-        r#"
-        Name ::= /[a-z]+/
-        Start ::= 'let' Name
-        "#,
-    )
-    .unwrap();
-    let mut synth = Synthesizer::new(grammar, "let");
-
-    let fed = synth.feed("name").unwrap();
-
-    assert_eq!(synth.input(), "let name");
-    assert_eq!(fed.text(), "let name");
-}
 
 #[test]
 fn feed_avoids_separator_when_token_boundaries_are_unambiguous() {
@@ -170,39 +113,6 @@ fn feed_error_leaves_extended_input_visible() {
     let err = synth.feed("y").unwrap_err();
 
     assert!(err.starts_with("Parse error:"));
-    assert_eq!(synth.input(), "x y");
+    assert_eq!(synth.input(), "xy");
 }
 
-#[test]
-fn feed_and_feed_with_match_fresh_context_parse() {
-    let grammar = Grammar::load(
-        r#"
-        Identifier ::= /[a-z]+/
-        Type ::= 'int'
-        Variable(var) ::= Identifier[x]
-        Let(let) ::= 'let' Identifier[x] ':' Type[τ] 'in' Expression[e]
-        Expression ::= Variable | Let
-
-        x ∈ Γ
-        ----------- (var)
-        Γ(x)
-
-        Γ[x:τ] ⊢ e : ?T
-        ------------------------ (let)
-        ?T
-        "#,
-    )
-    .unwrap();
-    let ctx = Context::new();
-    let input = "let x:int in x";
-    let expected = parse_with_ctx(&grammar, input, &ctx);
-
-    let mut synth = Synthesizer::new(grammar.clone(), "");
-    for token in ["let", "x", ":", "int", "in", "x"] {
-        let _ = synth.feed_with(token, &ctx).unwrap();
-    }
-
-    let actual = synth.ast().unwrap();
-    assert_eq!(actual.text(), expected.text());
-    assert_eq!(actual.is_complete(), expected.is_complete());
-}

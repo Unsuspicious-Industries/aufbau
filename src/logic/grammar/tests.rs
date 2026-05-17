@@ -154,24 +154,7 @@ fn repetition_helpers_preserve_inner_binding_paths() {
     assert_eq!(steps(&paths[0]), vec![(0, 0)]);
 }
 
-#[test]
-fn extend_input_preserves_float_operator_spacing() {
-    let mut grammar = Grammar::load(include_str!("../../../examples/fun.auf")).expect("load fun");
-    assert_eq!(grammar.extend_input("1.0 +.", "0.0"), "1.0 +. 0.0");
-}
 
-#[test]
-fn extend_input_preserves_call_argument_spacing() {
-    let mut grammar =
-        Grammar::load(include_str!("../../../examples/typescript.auf")).expect("load typescript");
-    assert_eq!(
-        grammar.extend_input(
-            "function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] ,",
-            "true"
-        ),
-        "function mix ( a : number , b : number [ ] , c : boolean ) : void { return ; } mix ( 1 , [ 2 , 3 ] , true"
-    );
-}
 
 #[test]
 fn fill_injects_synthetic_type_rules_for_unary_nonterminal_wrappers() {

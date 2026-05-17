@@ -1,0 +1,61 @@
+Identifier ::= /[a-z][a-z0-9]*/
+TypeName ::= /[A-Z][a-z0-9]*/
+
+BaseType ::= TypeName | '(' Type ')'
+FunctionType ::= BaseType '->' Type
+Type ::= BaseType | FunctionType
+
+Integer(int) ::= /[0-9]+/
+Boolean(bool) ::= 'true' | 'false'
+Float(float) ::= /[0-9]+\.[0-9]+/
+
+IntOp ::= '+' | '-' | '*' | '/'
+FloatOp ::= '+.' | '-.' | '*.' | '/.'
+
+Variable(var) ::= Identifier[x]
+Lambda(lambda) ::= '(' Identifier[param] ':' Type[τ] ')' '=>' Expression[body]
+Paren ::= '(' Expression ')'
+Let(let) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';' Expression[body]
+AtomicExpression ::= Variable | Integer | Float | Boolean | Lambda | Paren
+
+PostfixTail ::= '(' Expression ')' PostfixTail | ε
+PostfixExpression ::= AtomicExpression PostfixTail
+IntBinary(bin_int) ::= Expression[left] IntOp[op] Expression[right]
+FloatBinary(bin_float) ::= Expression[left] FloatOp[op] Expression[right]
+Application(app) ::= AtomicExpression[func] '(' Expression[arg] ')'
+                   | Application[func] '(' Expression[arg] ')'
+// Top-level expression and start symbol
+Expression ::= IntBinary | FloatBinary | Application | Let | AtomicExpression
+
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+----------- (int)
+'Int'
+
+----------- (float)
+'Float'
+
+----------- (bool)
+'Bool'
+
+Γ[param:τ] ⊢ body : ?R
+----------------------- (lambda)
+τ -> ?R
+
+Γ ⊢ value : τ, Γ[name:τ] ⊢ body : ?R
+------------------------------------- (let)
+?R
+
+Γ ⊢ left : 'Int', Γ ⊢ right : 'Int'
+---------------------------------- (bin_int)
+'Int'
+
+Γ ⊢ left : 'Float', Γ ⊢ right : 'Float'
+-------------------------------------- (bin_float)
+'Float'
+
+Γ ⊢ func : ?A -> ?R, Γ ⊢ arg : ?A
+---------------------------------- (app)
+?R

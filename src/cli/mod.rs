@@ -1,3 +1,4 @@
+pub mod chart;
 pub mod check;
 pub mod validate;
 
@@ -35,6 +36,9 @@ pub enum Commands {
 
     /// Run validation test suites with progress and report
     Validate(self::validate::ValidateCmd),
+
+    /// Collect chart-growth data and write a CSV for paper plots
+    Chart(self::chart::ChartCmd),
 }
 
 pub fn run() {
@@ -67,5 +71,6 @@ pub fn run() {
     match &cli.command {
         Commands::Check(args) => self::check::run(args),
         Commands::Validate(args) => self::validate::run(args),
+        Commands::Chart(args) => self::chart::run(args),
     }
 }

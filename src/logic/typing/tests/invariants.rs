@@ -142,7 +142,7 @@ fn ruleless_multichild_root_has_any_type() {
     assert!(ast.root_ids().iter().any(|&id| {
         arena
             .node(id)
-            .and_then(|node| synth.runtime().type_of(node.ty))
+            .and_then(|node| synth.runtime().type_of(node.evidence))
             == Some(Type::Any)
     }));
 }
@@ -175,7 +175,7 @@ fn transparent_unary_ruleless_root_inherits_child_type() {
                     id,
                     grammar.nt(node.nt).map(|s| s.to_string()),
                     node.status,
-                    synth.runtime().type_of(node.ty),
+                    synth.runtime().type_of(node.evidence),
                     node.span.start,
                     node.span.end,
                 )
@@ -186,7 +186,7 @@ fn transparent_unary_ruleless_root_inherits_child_type() {
         ast.root_ids().iter().any(|&id| {
             arena
                 .node(id)
-                .and_then(|node| synth.runtime().type_of(node.ty))
+                .and_then(|node| synth.runtime().type_of(node.evidence))
                 == Some(Type::parse("'X'").unwrap())
         }),
         "root types: {:?}",
@@ -215,7 +215,7 @@ fn mixed_nonterminal_unary_alt_inherits_child_type() {
     assert!(ast.root_ids().iter().any(|&id| {
         arena
             .node(id)
-            .and_then(|node| synth.runtime().type_of(node.ty))
+            .and_then(|node| synth.runtime().type_of(node.evidence))
             == Some(Type::parse("'X'").unwrap())
     }));
 }
@@ -241,7 +241,7 @@ fn transparent_delimited_wrapper_inherits_child_type() {
     assert!(ast.root_ids().iter().any(|&id| {
         arena
             .node(id)
-            .and_then(|node| synth.runtime().type_of(node.ty))
+            .and_then(|node| synth.runtime().type_of(node.evidence))
             == Some(Type::parse("'X'").unwrap())
     }));
 }
@@ -259,7 +259,7 @@ fn unresolved_meta_is_not_exported_as_final_chain_type() {
     assert!(ast.root_ids().iter().any(|&id| {
         arena
             .node(id)
-            .and_then(|node| synth.runtime().type_of(node.ty))
+            .and_then(|node| synth.runtime().type_of(node.evidence))
             == Some(Type::parse_raw("C").unwrap())
     }));
 }
@@ -319,7 +319,7 @@ proptest! {
         let arena = ast.arena();
         let ok = ast.root_ids().iter().any(|&id| {
             arena.node(id)
-                .and_then(|node| synth.runtime().type_of(node.ty))
+                .and_then(|node| synth.runtime().type_of(node.evidence))
                 == Some(Type::parse("'X'").unwrap())
         });
         prop_assert!(ok);
@@ -345,7 +345,7 @@ proptest! {
         let arena = ast.arena();
         let ok = ast.root_ids().iter().any(|&id| {
             arena.node(id)
-                .and_then(|node| synth.runtime().type_of(node.ty))
+                .and_then(|node| synth.runtime().type_of(node.evidence))
                 == Some(Type::Any)
         });
         prop_assert!(ok);
@@ -364,7 +364,7 @@ proptest! {
         let arena = ast.arena();
         let final_ok = ast.root_ids().iter().any(|&id| {
             arena.node(id)
-                .and_then(|node| synth.runtime().type_of(node.ty))
+                .and_then(|node| synth.runtime().type_of(node.evidence))
                 == Some(expected.clone())
         });
         prop_assert!(final_ok);

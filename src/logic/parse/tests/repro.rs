@@ -446,7 +446,7 @@ fn trace_transparent_unary_propagation() {
             id,
             synth.grammar().nt(node.nt).unwrap_or("<?>"),
             node.status,
-            synth.runtime().type_of(node.ty)
+            synth.runtime().type_of(node.evidence)
         );
     }
     for &id in ast.root_ids() {
@@ -456,7 +456,7 @@ fn trace_transparent_unary_propagation() {
             id,
             synth.grammar().nt(node.nt).unwrap_or("<?>"),
             node.status,
-            synth.runtime().type_of(node.ty)
+            synth.runtime().type_of(node.evidence)
         );
     }
 }

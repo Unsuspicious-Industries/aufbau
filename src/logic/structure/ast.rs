@@ -127,7 +127,7 @@ impl FusionAST {
             .filter(|&&id| {
                 self.arena.node(id).is_some_and(|n| {
                     runtime
-                        .type_of(n.ty)
+                        .type_of(n.evidence)
                         .is_some_and(|t| !matches!(t, Type::Any))
                 })
             })
@@ -249,7 +249,7 @@ impl<'a> FusionNode<'a> {
         let Some(node) = self.ast.arena.node(self.node_id) else {
             return intern_type(Type::Any);
         };
-        let ty = runtime.type_of(node.ty).unwrap_or(Type::Any);
+        let ty = runtime.type_of(node.evidence).unwrap_or(Type::Any);
         intern_type(ty)
     }
 
@@ -359,7 +359,7 @@ impl FusionNode<'_> {
             .node(self.node_id)
             .map(|n| {
                 let nt = format!("nt{}", n.nt);
-                let ty = format!(":TypeId({})", n.ty);
+                let ty = format!(":EvidenceId({})", n.evidence);
                 (nt, ty)
             })
             .unwrap_or(("?".into(), String::new()));
@@ -446,8 +446,15 @@ fn collect_bound_texts_rec(
         return;
     };
 
-    for binding in &node.bindings {
-        if let Some(l) = &binding.value {
+    for (_name, status) in &node.binding_map {
+        if let crate::logic::parse::arena::BindingStatus::Resolved {
+            span,
+            complete: _,
+            open: _,
+            evidence: _,
+        } = status
+        {
+            let l = Lexeme::new(*span, true, false);
             if let Some(value) = l.value(s) {
                 out.insert(value.to_string());
             }

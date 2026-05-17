@@ -5,15 +5,16 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::logic::error::{PrefixError, TransitionError};
 use crate::logic::structure::ast::{FusionAST, FusionForest};
-use crate::logic::typing::{ContextTransition, Obligations, TypingRuntime};
+use crate::logic::{Obligations, SemanticRuntime};
 
 use crate::logic::parse::arena::{
     ANY_TYPE, // identifier for the ANY type, default kind
     AltRange,
     ArenaNode,
-    Binding,
+    BindingMap,
     ChildRef,
     CtxId,
+    EvidenceId,
     Lexeme,
     NodeId,
     NodeStatus,
@@ -22,7 +23,6 @@ use crate::logic::parse::arena::{
     ParseArena,
     ProdId,
     Span,
-    TypeId,
 };
 
 use super::TypedParser;
@@ -90,7 +90,7 @@ pub struct Tables {
 
 impl<T> TypedParser<T>
 where
-    T: TypingRuntime,
+    T: SemanticRuntime,
 {
     pub(super) fn enqueue_process(&mut self, item: Item) {
         let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
@@ -252,7 +252,8 @@ where
             .typing
             .finalize(item.prod, item.ctx, &item.obligations, status)
         {
-            Ok((mut ty, ctr, semantic_complete)) => {
+            Ok(summary) => {
+                let mut evidence = summary.evidence;
                 let nt_name = self.grammar.nt(item.prod.0).unwrap_or("");
                 let has_rule = self.grammar.rule_for_prod(item.prod).is_some();
                 // Invariant: inheritance is production-local. A structurally
@@ -296,39 +297,42 @@ where
                 };
 
                 if status == NodeStatus::Partial && item.start == item.pos {
-                    ty = ANY_TYPE;
+                    evidence = ANY_TYPE;
                 } else if let Some(child) = &inherited_child {
-                    ty = child.ty;
+                    evidence = child.evidence;
                 }
 
-                let ctr = if status == NodeStatus::Closed {
+                let effect = if status == NodeStatus::Closed {
                     if child_inheriting {
-                        let mut composed_transforms = Vec::new();
+                        let mut effects = Vec::new();
                         for child in &item.children {
                             if let ChildRef::Node(child_id) = child
                                 && let Some(child) = self.arena.node(*child_id)
-                                && let Some(child_ctr) = &child.ctr
+                                && let Some(effect) = child.effect
                             {
-                                composed_transforms.extend(child_ctr.transforms.clone());
+                                effects.push(effect);
                             }
                         }
-                        if let Some(local_ctr) = ctr {
-                            composed_transforms.extend(local_ctr.transforms);
+                        if let Some(local_effect) = summary.effect {
+                            effects.push(local_effect);
                         }
-                        (!composed_transforms.is_empty()).then_some(ContextTransition {
-                            transforms: composed_transforms,
-                        })
+                        self.typing.compose_effects(effects).map_err(|e| {
+                            PrefixError::rejected(
+                                item.pos,
+                                format!("semantic effect composition failed: {:?}", e),
+                            )
+                        })?
                     } else {
-                        ctr.filter(|ctr| !ctr.transforms.is_empty())
+                        summary.effect
                     }
                 } else {
                     None
                 };
-                let bindings: Vec<Binding> = item
+                let binding_map: BindingMap = item
                     .obligations
                     .iter()
-                    .filter(|o| o.value.is_some() || o.actual.is_some())
-                    .map(|o| o.to_binding())
+                    .enumerate()
+                    .map(|(i, o)| o.to_binding_status(i))
                     .collect();
                 let node = ArenaNode {
                     nt: item.prod.0,
@@ -337,10 +341,10 @@ where
                         end: item.pos as u32,
                     },
                     status,
-                    semantic_complete,
-                    ty,
-                    ctr: ctr,
-                    bindings,
+                    semantic_complete: summary.complete,
+                    evidence,
+                    effect,
+                    binding_map,
                     alts: AltRange { start: 0, len: 0 },
                 };
                 let packed = vec![PackedAlt {
@@ -350,10 +354,10 @@ where
                 #[cfg(test)]
                 debug_trace!(
                     "fusion_parser",
-                    "push node nt={} status={:?} ty_id={}",
+                    "push node nt={} status={:?} evidence={}",
                     nt_name,
                     status,
-                    ty
+                    evidence
                 );
                 Ok(Some(self.arena.push_node(node, packed)))
             }
@@ -388,12 +392,12 @@ where
         resumed.dot += 1;
         resumed.pos = node.span.end as usize;
         resumed.children.push(ChildRef::Node(node_id));
-        // apply the context transforms
-        if let Some(ctr) = node.ctr.clone() {
-            resumed.ctx = self.typing.apply_transform(resumed.ctx, ctr).map_err(|e| {
+        // Apply right-bound semantic effects exported by exact left siblings.
+        if let Some(effect) = node.effect {
+            resumed.ctx = self.typing.apply_effect(resumed.ctx, effect).map_err(|e| {
                 PrefixError::rejected(
                     resumed.pos,
-                    format!("context transition failed during resume: {:?}", e),
+                    format!("semantic effect failed during resume: {:?}", e),
                 )
             })?;
         }
@@ -542,8 +546,8 @@ where
         // prod, dot, start, pos, ctx
         let mut seen_items: HashSet<(ProdId, usize, usize, usize, CtxId)> = HashSet::new();
         // node-level dedup prevents re-propagating the same node as a completion, which could
-        // nt, start, end, type
-        let mut seen_nodes: HashSet<(NtId, u32, u32, TypeId)> = HashSet::new();
+        // nt, start, end, evidence
+        let mut seen_nodes: HashSet<(NtId, u32, u32, EvidenceId)> = HashSet::new();
         let mut queue: VecDeque<Item> = self.tables.frontier.drain(..).collect();
 
         while let Some(item) = queue.pop_front() {
@@ -579,15 +583,15 @@ where
                 continue;
             };
 
-            if !seen_nodes.insert((node.nt, node.span.start, node.span.end, node.ty)) {
+            if !seen_nodes.insert((node.nt, node.span.start, node.span.end, node.evidence)) {
                 #[cfg(test)]
                 debug_trace!(
                     "fusion_parser",
-                    "frontier skip-node nt={} span={}..{} ty={}",
+                    "frontier skip-node nt={} span={}..{} evidence={}",
                     self.grammar.nt(node.nt).unwrap_or("<?>"),
                     node.span.start,
                     node.span.end,
-                    node.ty
+                    node.evidence
                 );
                 continue;
             }
@@ -595,11 +599,11 @@ where
             #[cfg(test)]
             debug_trace!(
                 "fusion_parser",
-                "frontier accept-node nt={} span={}..{} ty={} node={}",
+                "frontier accept-node nt={} span={}..{} evidence={} node={}",
                 self.grammar.nt(node.nt).unwrap_or("<?>"),
                 node.span.start,
                 node.span.end,
-                node.ty,
+                node.evidence,
                 node_id
             );
 

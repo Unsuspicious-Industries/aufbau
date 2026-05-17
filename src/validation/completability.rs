@@ -34,6 +34,25 @@ fn replay_tokens(grammar: &Grammar, input: &str) -> Vec<String> {
     }
 }
 
+// Returns feed deltas: each entry is the original-input slice from the
+// previous token's end to the current token's end, preserving separators.
+// The caller is responsible for spacing; feed just concatenates.
+fn replay_feed_deltas(grammar: &Grammar, input: &str) -> Vec<String> {
+    let mut grammar = grammar.clone();
+    match grammar.tokenize(input) {
+        Ok(segments) => {
+            let mut deltas = Vec::new();
+            let mut prev_end = 0;
+            for segment in segments {
+                deltas.push(input[prev_end..segment.end].to_string());
+                prev_end = segment.end;
+            }
+            deltas
+        }
+        Err(_) => input.chars().map(|ch| ch.to_string()).collect(),
+    }
+}
+
 /// Extract the token sequence by running the full tokenizer on the input.
 ///
 /// This is NOT about feed acceptance. feed is already called before this.
@@ -81,11 +100,12 @@ pub fn check_feed_soundness(
 ) -> Result<(), String> {
     let ctx = validation_ctx(opt_ctx);
     let tokens = replay_tokens(grammar, input);
+    let deltas = replay_feed_deltas(grammar, input);
     let mut synth = Synthesizer::new(grammar.clone(), "");
 
-    for (idx, token) in tokens.iter().enumerate() {
+    for (idx, (token, delta)) in tokens.iter().zip(deltas.iter()).enumerate() {
         let prefix = synth.input().to_string();
-        synth.feed_with(token, &ctx).map_err(|err| {
+        synth.feed_with(delta, &ctx).map_err(|err| {
             format!("feed rejected expected token {token:?} after {prefix:?}: {err}")
         })?;
 
@@ -137,11 +157,12 @@ pub fn check_incremental_feed_replay(
 ) -> PrefixSoundnessResult {
     let ctx = validation_ctx(opt_ctx);
     let tokens = replay_tokens(grammar, input);
+    let deltas = replay_feed_deltas(grammar, input);
     let mut synth = Synthesizer::new(grammar.clone(), "");
 
-    for (idx, token) in tokens.iter().enumerate() {
+    for (idx, (_token, delta)) in tokens.iter().zip(deltas.iter()).enumerate() {
         let prefix = synth.input().to_string();
-        let result = synth.feed_with(token, &ctx);
+        let result = synth.feed_with(delta, &ctx);
 
         match result {
             Ok(_) => {

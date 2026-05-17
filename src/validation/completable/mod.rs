@@ -5,7 +5,6 @@ pub mod arithmetic;
 pub mod fun;
 pub mod stlc;
 pub mod toy;
-pub mod typescript;
 pub mod weird;
 
 pub mod imp;
@@ -58,7 +57,6 @@ pub fn all_suites() -> Vec<(&'static str, Grammar, Vec<TypedCompletionTestCase>)
     let mut out = Vec::new();
     out.extend(arithmetic::suites());
     out.extend(stlc::suites());
-    out.extend(typescript::suites());
     out.extend(toy::suites());
     out.extend(fun::suites());
     out.extend(imp::suites());

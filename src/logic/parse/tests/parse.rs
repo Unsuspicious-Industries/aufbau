@@ -199,12 +199,12 @@ fn rejecting_typing_allows_other_branch() {
 }
 
 // ---------------------------------------------------------------------------
-// Every node has a concrete type (invariant)
+// Every node has concrete semantic evidence (invariant)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn every_root_node_has_a_type() {
-    // StubTyping sets inferred = Some(prod.0) (NT index), so all nodes are typed.
+fn every_root_node_has_evidence() {
+    // StubTyping assigns the default semantic evidence to all accepted nodes.
     let grammar = Grammar::load("A ::= 'x'\nStart ::= A 'y'").unwrap();
     let mut parser = TypedParser::new(grammar, StubTyping);
     let ast = parser.parse("x y", 0).unwrap();
@@ -213,9 +213,7 @@ fn every_root_node_has_a_type() {
     let arena = ast.arena();
     for &root_id in ast.root_ids() {
         let node = arena.node(root_id).expect("root node must exist in arena");
-        // TypeId is a concrete usize; StubTyping always sets Some(nt_idx).
-        // The finalize invariant ensures every arena node has a concrete type.
-        let _ = node.ty; // accessing ty implicitly asserts it's present
+        let _ = node.evidence;
     }
 }
 

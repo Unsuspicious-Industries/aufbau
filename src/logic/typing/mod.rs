@@ -1,7 +1,6 @@
 // Type system core definitions and re-exports
 
 pub mod context;
-pub mod obligation;
 pub mod ops;
 mod pool;
 pub mod rule;
@@ -11,9 +10,8 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use crate::logic::TypingRuntime;
+pub use crate::logic::{Obligation, Obligations, SemanticRuntime, SemanticSummary};
 pub use context::{Context, ContextTransition, TreeStatus};
-pub use obligation::{Obligation, Obligations};
 pub use ops::{Unifier, UnifyResult, equal, subtype};
 pub use pool::{SharedType, intern_type};
 pub use types::Type;

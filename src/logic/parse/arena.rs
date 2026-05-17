@@ -16,7 +16,6 @@ pub const MAX_REPETITION_ITERATIONS: usize = 1000;
 
 use std::cell::RefCell;
 
-use crate::logic::typing::ContextTransition;
 use crate::{debug_trace, logic::Segment};
 
 pub use crate::logic::grammar::{AltId, NtId, ProdId};
@@ -24,10 +23,13 @@ pub use crate::logic::grammar::{AltId, NtId, ProdId};
 pub type NodeId = usize;
 pub type CtxId = usize;
 
-pub type TypeId = usize;
+pub type EvidenceId = usize;
+pub type EffectId = usize;
+pub type TypeId = EvidenceId;
 
 /// The interned ID for `Type::Any` — always the first type registered.
-pub const ANY_TYPE: TypeId = 0;
+pub const DEFAULT_EVIDENCE: EvidenceId = 0;
+pub const ANY_TYPE: TypeId = DEFAULT_EVIDENCE;
 
 /// A byte span `[start, end)`.
 ///
@@ -134,30 +136,47 @@ pub struct PackedAlt {
     pub children: Vec<ChildRef>,
 }
 
-/// Resolved binding stored on arena nodes for downstream use (display, search).
+/// Status of binding resolution at this node, materializing β(ν,b) (Def. 5).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Binding {
-    pub name: String,
-    pub value: Option<Lexeme>,
-    pub ty: Option<TypeId>,
+pub enum BindingStatus {
+    /// Child evidence is available (binding position ≤ dot).
+    Resolved {
+        span: Span,
+        complete: bool,
+        open: bool,
+        evidence: EvidenceId,
+    },
+    /// Dot has not yet reached the binding's position.
+    Pending {
+        position: usize,
+    },
 }
 
-/// Shared typed parse node.
+/// Map from binding name → resolution status: the concrete β(ν,b) map.
+pub type BindingMap = std::collections::HashMap<String, BindingStatus>;
+
+/// Shared parse node with opaque semantic evidence.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArenaNode {
     pub nt: NtId,
     pub span: Span,
     pub status: NodeStatus,
     pub semantic_complete: bool,
-    pub ty: TypeId,
-    pub ctr: Option<ContextTransition>,
-    pub bindings: Vec<Binding>,
+    pub evidence: EvidenceId,
+    pub effect: Option<EffectId>,
+    /// Explicit β(ν,b) map: binding name → resolved/pending status.
+    pub binding_map: BindingMap,
     pub alts: AltRange,
 }
 
 impl ArenaNode {
     pub fn is_complete(&self) -> bool {
         self.status.complete() && self.semantic_complete
+    }
+
+    /// Compatibility helper for the current typing domain.
+    pub fn type_id(&self) -> TypeId {
+        self.evidence
     }
 }
 

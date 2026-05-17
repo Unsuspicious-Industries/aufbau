@@ -1,7 +1,8 @@
 use crate::logic::grammar::Grammar;
 use crate::logic::parse::arena::{AltRange, ArenaNode, NodeStatus, Span};
 use crate::logic::path::TreePath;
-use crate::logic::typing::{ContextTransition, Obligations};
+use crate::logic::typing::Obligations;
+use std::collections::HashMap;
 
 fn grammar_with_rule_obligations() -> Grammar {
     Grammar::load(
@@ -72,16 +73,16 @@ fn resolve_nonterminal_obligations_captures_child_type() {
         span: Span { start: 0, end: 1 },
         status: NodeStatus::Closed,
         semantic_complete: true,
-        ty: 7,
-        ctr: Some(ContextTransition::identity()),
-        bindings: Vec::new(),
+        evidence: 7,
+        effect: None,
+        binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
 
     obligations.resolve_nonterminal(0, 0, &node);
 
     let matched = obligations.iter().find(|ob| ob.name == "x").unwrap();
-    assert_eq!(matched.actual, Some(7));
+    assert_eq!(matched.evidence, Some(7));
     assert!(matched.value.is_some());
 }
 

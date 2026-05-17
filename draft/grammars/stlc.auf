@@ -1,0 +1,32 @@
+// Identifier (supports Unicode)
+Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
+TypeName ::= /[A-Za-z0-9_τ₁₂₃₄₅₆₇₈₉₀]+/
+// Variables with var typing rule
+Variable(var) ::= Identifier[x]
+// Base types (parentheses are literals, hence quoted)
+BaseType ::= TypeName | '(' Type ')'
+// Function types (right-associative)
+AtomicType ::= BaseType | '(' Type ')'
+FunctionType ::= AtomicType '->' Type
+Type ::= AtomicType | FunctionType
+// Lambda abstraction (dot is a literal)
+Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
+// Atomic expressions
+AtomicExpression ::= Variable | '(' Expression ')' | Lambda
+// Applications (left-associative)
+Application(app) ::= Expression[l] AtomicExpression[r]
+// Expressions (start symbol)
+Expression ::= AtomicExpression |  Application
+
+// Typing Rules
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+Γ[a:τ] ⊢ e : ?B
+--------------------------- (lambda)
+τ → ?B
+
+Γ ⊢ l : ?A → ?B, Γ ⊢ r : ?A
+--------------------------------- (app)
+?B

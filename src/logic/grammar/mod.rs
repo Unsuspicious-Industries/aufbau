@@ -1,4 +1,4 @@
-pub mod extend;
+
 pub mod fill;
 pub mod load;
 pub mod production;
@@ -25,8 +25,10 @@ pub type ProdId = (NtId, AltId);
 use crate::logic::typing::TypingRule;
 use std::collections::{HashMap, HashSet};
 
-/// A complete grammar consisting of context-free productions and
-/// inference-style typing rules.
+/// A complete grammar consisting of context-free productions and semantic rules.
+///
+/// The rule language parsed from `.auf` is currently the typing premise
+/// language; the parser/runtime boundary itself is domain-neutral.
 #[derive(Debug, Clone)]
 pub struct Grammar {
     pub name: String,
@@ -262,7 +264,4 @@ impl Grammar {
         self.tokenizer.as_ref().unwrap().tokenize(input)
     }
 
-    pub fn extend_input(&mut self, input: &str, token: &str) -> String {
-        extend::extend_input(self, input, token)
     }
-}

@@ -1,9 +1,9 @@
 use super::{Item, TypedParser};
 use crate::logic::error::PrefixError;
-use crate::logic::typing::{Obligations, TypingRuntime};
+use crate::logic::{Obligations, SemanticRuntime};
 
 #[cfg(test)]
-impl<T: TypingRuntime> TypedParser<T> {
+impl<T: SemanticRuntime> TypedParser<T> {
     pub(crate) fn enqueue_process_for_test(&mut self, item: Item) {
         self.enqueue_process(item);
     }

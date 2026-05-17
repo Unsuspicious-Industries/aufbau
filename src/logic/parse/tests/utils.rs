@@ -1,10 +1,10 @@
 use super::*;
-use crate::logic::typing::{ContextTransition, Obligations};
+use crate::logic::{Obligations, SemanticSummary};
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StubTyping;
 
-impl TypingRuntime for StubTyping {
+impl SemanticRuntime for StubTyping {
     fn descend(
         &self,
         _prod: ProdId,
@@ -21,22 +21,22 @@ impl TypingRuntime for StubTyping {
         _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
-        Ok((0, Some(ContextTransition::identity()), true))
+    ) -> Result<SemanticSummary, TransitionError> {
+        Ok(SemanticSummary::new(0, None, true))
     }
-    fn apply_transform(
-        &self,
-        ctx: CtxId,
-        _transform: ContextTransition,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx) // no-op for testing
+    fn apply_effect(&self, ctx: CtxId, _effect: EffectId) -> Result<CtxId, TransitionError> {
+        Ok(ctx)
+    }
+
+    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
+        Ok(effects.into_iter().next())
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RejectingTyping;
 
-impl TypingRuntime for RejectingTyping {
+impl SemanticRuntime for RejectingTyping {
     fn descend(
         &self,
         _prod: ProdId,
@@ -53,14 +53,14 @@ impl TypingRuntime for RejectingTyping {
         _ctx: CtxId,
         _obligations: &Obligations,
         _status: NodeStatus,
-    ) -> Result<(TypeId, Option<ContextTransition>, bool), TransitionError> {
+    ) -> Result<SemanticSummary, TransitionError> {
         Err(TransitionError::Rejected)
     }
-    fn apply_transform(
-        &self,
-        ctx: CtxId,
-        _transform: ContextTransition,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx) // no-op for testing
+    fn apply_effect(&self, ctx: CtxId, _effect: EffectId) -> Result<CtxId, TransitionError> {
+        Ok(ctx)
+    }
+
+    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
+        Ok(effects.into_iter().next())
     }
 }

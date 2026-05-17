@@ -102,8 +102,7 @@ impl Synthesizer {
     // feed mutates the synthesizer
     pub fn feed(&mut self, token: &str) -> Result<FusionAST, String> {
         debug_trace!("synth", "feed: input='{}' token='{}'", self.input, token);
-        let extended =
-            crate::logic::grammar::extend::extend_input(&mut self.grammar, &self.input, token);
+        let extended = format!("{}{}",self.input, token);
         // realoding might be improved but not time
         self.set_input(extended);
         self.ast()
@@ -112,8 +111,7 @@ impl Synthesizer {
     // doesnt mutate
     pub fn try_feed(&mut self, token: &str) -> Result<FusionAST, String> {
         debug_trace!("synth", "try: input='{}' token='{}'", self.input, token);
-        let extended =
-            crate::logic::grammar::extend::extend_input(&mut self.grammar, &self.input, token);
+        let extended = format!("{}{}",self.input, token);
         let mut p = self.parser.fork();
         match p.parse(&extended, ctx_id(&self.ctx, &self.runtime)) {
             Ok(ast) => Ok(ast),

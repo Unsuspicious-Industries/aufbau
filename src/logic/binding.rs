@@ -14,7 +14,7 @@ pub use crate::logic::path::{GrammarPath, PathStep};
 
 const MAX_RECURSION_DEPTH: usize = 16;
 
-/// Mapping from typing rule name -> (binding name -> grammar paths).
+/// Mapping from semantic rule name -> (binding name -> grammar paths).
 #[derive(Debug, Clone, Default)]
 pub struct BindingMap {
     // map:     rule    ->    {   binding :   [path]  }
@@ -56,7 +56,7 @@ impl BindingMap {
 }
 
 /// Build the binding map for an entire grammar by enumerating grammar paths for
-/// every typing-rule-bearing production.
+/// every semantic-rule-bearing production.
 ///
 /// This currently enumerates acyclic paths only; recursive bindings will be
 /// generalised into regular path expressions in future iterations.
@@ -129,7 +129,7 @@ fn collect_paths(
 
                 if let Some(child_productions) = grammar.productions.get(name) {
                     for (child_alt, child_prod) in child_productions.iter().enumerate() {
-                        // If the child nonterminal carries its own typing rule, it's a boundary.
+                        // If the child nonterminal carries its own semantic rule, it's a boundary.
                         // We should not look for bindings for the current `rule_name` inside it.
                         if grammar.nonterminal_rule(name).is_some() {
                             continue;
