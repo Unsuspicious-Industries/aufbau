@@ -29,5 +29,7 @@ pub trait ConstraintLoader {
 
     fn save(g: &SPG<Self::Domain>) -> String;
 
-    fn postprocess(_g: &mut SPG<Self::Domain>) {}
+    fn postprocess(_g: &mut SPG<Self::Domain>) -> Result<(), String> {
+        Ok(())
+    }
 }

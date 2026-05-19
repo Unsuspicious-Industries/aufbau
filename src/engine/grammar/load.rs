@@ -95,7 +95,7 @@ impl<D: ConstraintDomain> SPG<D> {
             grammar.add_rule(name, rule);
         }
 
-        <D::Loader as ConstraintLoader>::postprocess(&mut grammar);
+        <D::Loader as ConstraintLoader>::postprocess(&mut grammar)?;
         grammar.build_bindings();
         grammar.build_tokenizer();
 

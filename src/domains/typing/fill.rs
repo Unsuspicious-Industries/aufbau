@@ -9,7 +9,7 @@ use crate::engine::grammar::{Production, Symbol, SPG};
 
 /// Post-load processing: fills bridge rules for transparent nonterminals
 /// and compiles all rules through `CompilationPass`.
-pub fn fill_and_compile(grammar: &mut SPG<TypingDomain>) {
+pub fn fill_and_compile(grammar: &mut SPG<TypingDomain>) -> Result<(), String> {
     let nonterminals: Vec<String> = grammar.nonterminals.clone();
 
     for nt in nonterminals {
@@ -28,9 +28,13 @@ pub fn fill_and_compile(grammar: &mut SPG<TypingDomain>) {
             continue;
         }
 
-        let Some(binding) = bridge_binding(grammar, &nt) else {
-            continue;
-        };
+        let binding = bridge_binding(grammar, &nt).ok_or_else(|| {
+            format!(
+                "nonterminal '{}' is a transparent wrapper with no explicit rule \
+                 but child bindings are inconsistent across alternatives",
+                nt
+            )
+        })?;
 
         if let Some(productions) = grammar.productions.get_mut(&nt) {
             for production in productions {
@@ -66,9 +70,12 @@ pub fn fill_and_compile(grammar: &mut SPG<TypingDomain>) {
         };
 
         grammar.add_rule(rule_name.clone(), rule);
-        let _ = grammar.set_nt_rule(nt.clone(), rule_name);
-        grammar.mark_bridge_nt(nt);
+        grammar
+            .set_nt_rule(nt.clone(), rule_name)
+            .map_err(|e| e.to_string())?;
     }
+
+    Ok(())
 }
 
 fn transparent_child_index(production: &Production) -> Option<usize> {

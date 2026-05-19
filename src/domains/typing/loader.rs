@@ -63,8 +63,8 @@ impl ConstraintLoader for TypingRuleLoader {
         out
     }
 
-    fn postprocess(g: &mut SPG<Self::Domain>) {
-        crate::domains::typing::fill::fill_and_compile(g);
+    fn postprocess(g: &mut SPG<Self::Domain>) -> Result<(), String> {
+        crate::domains::typing::fill::fill_and_compile(g)
     }
 }
 

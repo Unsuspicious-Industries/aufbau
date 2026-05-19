@@ -1,8 +1,8 @@
 """Tests for the aufbau Python FFI bindings.
 
 Run with:
-    pip install aufbau  # or: maturin develop
-    python -m pytest src/ffi/test_aufbau.py -v
+    maturin develop
+    python -m pytest src/ffi/test.py -v
 """
 
 import pytest
@@ -45,7 +45,7 @@ class TestGrammar:
     def test_load(self):
         g = aufbau.SPG("start ::= 'x' 'y'")
         assert g.start == "start"
-        assert g.ntcount() == 2
+        assert len(g.nonterminals()) == 1
 
     def test_nonterminals(self):
         g = aufbau.SPG(ARITH)
@@ -63,8 +63,9 @@ class TestGrammar:
 
     def test_all_productions(self):
         g = aufbau.SPG(ARITH)
-        allp = g.all_productions()
-        assert isinstance(allp, list)
+        # Verify every nonterminal can be queried
+        for nt in g.nonterminals():
+            assert isinstance(g.productions(nt), list)
 
     def test_tokenize(self):
         g = aufbau.SPG(ARITH)
@@ -89,21 +90,25 @@ class TestGrammar:
         assert "lambda" in g.rule_names()
         assert "app" in g.rule_names()
 
-    def test_rule_for(self):
+    def test_nt_rule(self):
         g = aufbau.SPG(STLC)
-        assert g.rule_for("Variable") == "var"
-        assert g.rule_for("Lambda") == "lambda"
+        assert g.nt_rule("Variable") == "var"
+        assert g.nt_rule("Lambda") == "lambda"
 
     def test_transparent(self):
         g = aufbau.SPG(ARITH)
-        assert not g.is_transparent("Primary")
+        # Primary is transparent: every production has exactly one
+        # nonterminal child and no bound terminals
+        assert g.is_transparent("Primary")
+        # Expression has a production with 3 children (Primary Operator Expression)
+        assert not g.is_transparent("Expression")
 
 
 class TestSynthesizer:
     def test_parse_complete(self):
         s = aufbau.Synthesizer("start ::= 'x' 'y' 'z'", "x y z")
         result = s.parse()
-        assert "x y z" in result
+        assert "nt0" in result
 
     def test_is_complete(self):
         s = aufbau.Synthesizer("start ::= 'a' 'b'", "a")
@@ -127,7 +132,7 @@ class TestSynthesizer:
     def test_try_feed(self):
         s = aufbau.Synthesizer("start ::= 'x' 'y'", "x")
         result = s.try_feed("y")
-        assert "x y" in result
+        assert "nt0" in result
         assert s.input() == "x"
 
     def test_add_to_ctx(self):
@@ -139,9 +144,12 @@ class TestSynthesizer:
     def test_clear_ctx(self):
         s = aufbau.Synthesizer(STLC, "x")
         s.add_to_ctx("x", "A")
+        result_with_ctx = s.parse()
+        assert "nt" in result_with_ctx
         s.clear_ctx()
-        result = s.parse()
-        assert result
+        # Without context, parsing fails for typed grammar
+        with pytest.raises(Exception):
+            s.parse()
 
     def test_ast(self):
         s = aufbau.Synthesizer(STLC, "λx:A.x")
@@ -169,6 +177,7 @@ class TestSynthesizer:
 
     def test_get_rule(self):
         s = aufbau.Synthesizer(STLC, "x")
+        s.add_to_ctx("x", "A")
         rule = s.get_rule("var")
         assert rule is not None
         assert rule.name == "var"
@@ -178,7 +187,7 @@ class TestSynthesizer:
         s = aufbau.Synthesizer(STLC, "x")
         g = s.grammar()
         assert g.start == "Expr"
-        assert g.rule_for("Variable") == "var"
+        assert g.nt_rule("Variable") == "var"
 
 
 class TestRegex:

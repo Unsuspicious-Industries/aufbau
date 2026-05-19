@@ -256,7 +256,7 @@ where
             Ok(summary) => {
                 let mut evidence = summary.evidence;
                 let nt_name = self.grammar.nt(item.prod.0).unwrap_or("");
-                let has_rule = self.grammar.nt(item.prod.0).and_then(|n| self.grammar.nt_rule(n)).is_some();
+                let has_user_rule = self.grammar.nt(item.prod.0).and_then(|n| self.grammar.nt_rule(n)).is_some_and(|name| !name.starts_with("__br_"));
                 // Invariant: inheritance is production-local. A structurally
                 // transparent production has exactly one nonterminal child and
                 // no bound terminals. Such a production contributes no local
@@ -280,8 +280,7 @@ where
                     });
                     nonterminal_children == 1 && !bound_terminals
                 });
-                let bridge = self.grammar.is_bridge_nt(nt_name);
-                let child_inheriting = transparent_prod && (bridge || !has_rule);
+                let child_inheriting = transparent_prod && !has_user_rule;
                 let inherited_child = if child_inheriting {
                     let mut node_children = item.children.iter().filter_map(|child| match child {
                         ChildRef::Node(child_id) => self.arena.node(*child_id).map(|n| n.clone()),

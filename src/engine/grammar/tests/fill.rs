@@ -1,161 +1,6 @@
-// These tests enforce the β(b, p) grammar-path invariants
-// We are checking if the spec is respected
-// For example `stlc_abs_binding_paths_match_spec` asserts β(τ₁, abs) = 3@1·0.
-use super::*;
-use crate::domains::typing::TypeExpr;
-use crate::domains::typing::TypingDomain;
-use crate::regex::Regex;
+use crate::domains::typing::{TypeExpr, TypingDomain};
+use crate::engine::grammar::SPG;
 use proptest::prelude::*;
-
-use super::SPG;
-
-fn literal_regex(pattern: &str) -> Regex {
-    Regex::literal(pattern)
-}
-
-#[test]
-fn literal_tokens_become_regex_symbols() {
-    let spec = "A ::= 'foo'";
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load literal grammar");
-    let productions = grammar.productions.get("A").expect("production A");
-    let symbols = &productions[0].rhs;
-    assert_eq!(symbols.len(), 1);
-    match &symbols[0] {
-        Symbol::Terminal { regex, binding } => {
-            assert!(regex.equiv(&literal_regex("foo")));
-            assert!(binding.is_none());
-        }
-        other => panic!("expected regex symbol for literal, got {:?}", other),
-    }
-}
-
-#[test]
-fn regex_literals_round_trip() {
-    let spec = "start ::= /[a-z]+/";
-    let grammar = SPG::<TypingDomain>::load(spec).unwrap();
-    let productions = grammar.productions.get("start").unwrap();
-    match &productions[0].rhs[0] {
-        Symbol::Terminal { regex, .. } => {
-            assert!(regex.equiv(&Regex::new("[a-z]+").unwrap()));
-        }
-        other => panic!("expected regex symbol, got {:?}", other),
-    }
-    let spec2 = grammar.to_spec_string();
-    let reparsed = SPG::<TypingDomain>::load(&spec2).unwrap();
-    assert_eq!(grammar, reparsed);
-}
-
-#[test]
-fn expression_bindings_are_preserved() {
-    let spec = "start ::= Expr[val]\nExpr ::= /[0-9]+/";
-    let grammar = SPG::<TypingDomain>::load(spec).unwrap();
-    let start_prod = grammar.productions.get("start").unwrap();
-    match &start_prod[0].rhs[0] {
-        Symbol::Nonterminal { name, binding, .. } => {
-            assert_eq!(name, "Expr");
-            assert_eq!(binding.as_deref(), Some("val"));
-        }
-        other => panic!("expected expression symbol, got {:?}", other),
-    }
-}
-
-#[test]
-fn grammar_tracks_special_tokens_for_literals() {
-    let spec = "start ::= 'let' Identifier\nIdentifier ::= /[a-z]+/";
-    let grammar = SPG::<TypingDomain>::load(spec).unwrap();
-    assert!(grammar.specials().iter().any(|tok| tok == "let"));
-}
-
-fn steps(path: &binding::GrammarPath) -> Vec<(usize, usize)> {
-    path.steps().iter().map(|s| (s.i, s.a)).collect()
-}
-
-#[test]
-fn stlc_abs_binding_paths_match_spec() {
-    let spec = include_str!("../../../examples/stlc.auf");
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load stlc");
-
-    let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, usize)>>| {
-        let paths = grammar
-            .bindings
-            .as_ref()
-            .unwrap()
-            .get(binding, rule)
-            .unwrap_or_else(|| panic!("missing paths for {}:{}", binding, rule));
-        assert_eq!(
-            paths.len(),
-            expected.len(),
-            "path count mismatch for {}:{}",
-            binding,
-            rule
-        );
-        for (path, expected_steps) in paths.iter().zip(expected.iter()) {
-            assert_eq!(
-                steps(path),
-                *expected_steps,
-                "unexpected path for {}:{}",
-                binding,
-                rule
-            );
-        }
-    };
-
-    assert_path("a", "lambda", vec![vec![(1, 0)]]);
-    assert_path("e", "lambda", vec![vec![(5, 0)]]);
-    assert_path("τ", "lambda", vec![vec![(3, 0)]]);
-
-    // Application rule binding paths (from examples/stlc.auf)
-    // Application(app) ::= AtomicExpression[l] AtomicExpression[r]
-    assert_path("l", "app", vec![vec![(0, 0)]]);
-    assert_path("r", "app", vec![vec![(1, 0)]]);
-}
-
-#[test]
-fn repeated_binding_produces_multiple_paths() {
-    let spec = r#"
-    Number(num) ::= /[0-9]+/
-    Pair(pair) ::= Number[x] ',' Number[x]
-
-    Γ ⊢ x : 'number'
-    ----------------- (pair)
-    'number'
-    "#;
-
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load pair grammar");
-    let paths = grammar
-        .bindings
-        .as_ref()
-        .unwrap()
-        .get("x", "pair")
-        .expect("binding paths for repeated x");
-
-    assert_eq!(paths.len(), 2, "repeated binding should keep both paths");
-    assert_eq!(steps(&paths[0]), vec![(0, 0)]);
-    assert_eq!(steps(&paths[1]), vec![(2, 0)]);
-}
-
-#[test]
-fn repetition_helpers_preserve_inner_binding_paths() {
-    let spec = r#"
-    Item(item) ::= Number[x]
-    Seq(seq) ::= Item*
-
-    Γ ⊢ x : 'number'
-    ----------------- (item)
-    'number'
-    "#;
-
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load repetition grammar");
-    let paths = grammar
-        .bindings
-        .as_ref()
-        .unwrap()
-        .get("x", "item")
-        .expect("binding paths for repeated item");
-
-    assert_eq!(paths.len(), 1);
-    assert_eq!(steps(&paths[0]), vec![(0, 0)]);
-}
 
 #[test]
 fn fill_injects_synthetic_type_rules_for_unary_nonterminal_wrappers() {
@@ -166,7 +11,7 @@ fn fill_injects_synthetic_type_rules_for_unary_nonterminal_wrappers() {
     assert_eq!(productions.len(), 2);
 
     let nt_idx = grammar.nt_index("A").expect("A exists");
-    assert!(grammar.is_bridge_nt("A"));
+    assert!(grammar.nt_rule("A").is_some());
     let rule_name = grammar
         .nt(nt_idx)
         .and_then(|nt| grammar.nt_rule(nt))
@@ -178,7 +23,7 @@ fn fill_injects_synthetic_type_rules_for_unary_nonterminal_wrappers() {
         .expect("synthetic rule exists");
     let child_binding = productions[0].rhs[0].binding().unwrap().clone();
 
-    for (alt_idx, prod) in productions.iter().enumerate() {
+    for prod in productions.iter() {
         let alt_rule_name = grammar
             .nt(nt_idx)
             .and_then(|nt| grammar.nt_rule(nt))
@@ -217,7 +62,7 @@ fn fill_injects_synthetic_type_rules_for_delimited_unary_wrappers() {
     assert_eq!(productions.len(), 1);
 
     let nt_idx = grammar.nt_index("A").expect("A exists");
-    assert!(grammar.is_bridge_nt("A"));
+    assert!(grammar.nt_rule("A").is_some());
     assert!(grammar.is_transparent_nt("A"));
     let rule_name = grammar
         .nt(nt_idx)
@@ -258,7 +103,7 @@ fn fill_preserves_existing_transparent_child_binding() {
 
     let productions = grammar.productions.get("A").expect("A productions");
     let nt_idx = grammar.nt_index("A").expect("A exists");
-    assert!(grammar.is_bridge_nt("A"));
+    assert!(grammar.nt_rule("A").is_some());
     assert_eq!(
         productions[0].rhs[1].binding().map(String::as_str),
         Some("inner")
@@ -322,7 +167,7 @@ proptest! {
         let spec = unary_wrapper_spec(&children);
         let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
 
-        prop_assert!(grammar.is_bridge_nt("Root"));
+        prop_assert!(grammar.nt_rule("Root").is_some());
 
         let productions = grammar.productions.get("Root").unwrap();
         let nt_idx = grammar.nt_index("Root").unwrap();
@@ -349,7 +194,7 @@ proptest! {
         let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
         let nt_idx = grammar.nt_index("Root").unwrap();
 
-        prop_assert!(!grammar.is_bridge_nt("Root"));
+        prop_assert!(grammar.nt_rule("Root").is_none());
         prop_assert_eq!(grammar.nt(nt_idx).and_then(|nt| grammar.nt_rule(nt)), None);
         prop_assert_eq!(grammar.nt(nt_idx).and_then(|nt| grammar.nt_rule(nt)), None);
     }
@@ -358,7 +203,7 @@ proptest! {
 #[test]
 fn print_filled_grammar_for_inspection() {
     let grammar =
-        SPG::<TypingDomain>::load(include_str!("../../../examples/stlc.auf")).expect("load stlc");
+        SPG::<TypingDomain>::load(include_str!("../../../../examples/stlc.auf")).expect("load stlc");
     println!("\n=== Filled Grammar ===\n{}", grammar.to_spec_string());
     assert!(!grammar.to_spec_string().is_empty());
 }

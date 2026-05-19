@@ -24,7 +24,6 @@ pub struct PyGrammar {
 
 #[pymethods]
 impl PyGrammar {
-    /// Load a grammar from .auf source text.
     #[new]
     fn new(source: &str) -> PyResult<Self> {
         let g = SPG::<TypingDomain>::load(source)
@@ -32,24 +31,15 @@ impl PyGrammar {
         Ok(Self { inner: g })
     }
 
-    /// Grammar name (derived from source or empty).
-    #[getter]
-    fn name(&self) -> &str {
-        &self.inner.name
-    }
-
-    /// Start symbol, if set.
     #[getter]
     fn start(&self) -> Option<&str> {
         self.inner.start.as_deref()
     }
 
-    #[getter]
-    fn nts(&self) -> PyResult<Vec<String>>{
-        self.inner.nonterminals
+    fn nonterminals(&self) -> Vec<String> {
+        self.inner.nonterminals.clone()
     }
 
-    /// Productions for a given nonterminal.
     fn productions(&self, nt: &str) -> PyResult<Vec<PyProduction>> {
         let prods = self
             .inner
@@ -64,23 +54,20 @@ impl PyGrammar {
         self.inner.nt_rule(nt).map(|s| s.as_str())
     }
 
-    /// All rule names in the grammar.
     fn rule_names(&self) -> Vec<String> {
         self.inner.rules.keys().cloned().collect()
     }
 
-    /// Tokenize an input string.
+    fn specials(&self) -> Vec<String> {
+        self.inner.specials().map(|v| v.clone()).unwrap_or_default()
+    }
+
     fn tokenize(&self, input: &str) -> PyResult<Vec<PySegment>> {
         let mut g = self.inner.clone();
         let segs = g
             .tokenize(input)
             .map_err(|e| PyValueError::new_err(format!("tokenize error: {e}")))?;
         Ok(segs.into_iter().map(PySegment::from_inner).collect())
-    }
-
-    /// Whether a nonterminal is marked as a bridge.
-    fn is_bridge(&self, nt: &str) -> bool {
-        self.inner.is_bridge_nt(nt)
     }
 
     /// Whether a nonterminal is transparent.
@@ -472,7 +459,9 @@ impl PyAst {
 
     /// Resolve an evidence ID to a type string.
     fn type_of(&self, evidence: usize) -> Option<String> {
-        self.runtime.evidence_of(evidence).map(|ty| format!("{}", ty))
+        self.runtime
+            .evidence_of(evidence)
+            .map(|ty| format!("{}", ty))
     }
 
     fn __repr__(&self) -> String {
@@ -917,7 +906,7 @@ mod tests {
     fn grammar_load_and_inspect() {
         let g = PyGrammar::new(TYPED_SPEC).unwrap();
         assert_eq!(g.start(), Some("Expr"));
-        assert_eq!(g.ntcount(), 3);
+        assert_eq!(g.nonterminals().len(), 3);
         assert!(!g.nonterminals().is_empty());
         // "var" rule should be present
         assert!(g.rule_names().contains(&"var".to_string()));
