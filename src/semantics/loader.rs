@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 
+use crate::engine::grammar::SPG;
 use crate::semantics::domain::ConstraintDomain;
 
 /// `𝒯 : N ⇀ Θ` (rule-body half) — `sec:gram-def`.
@@ -23,7 +24,10 @@ pub trait ConstraintLoader {
     type Domain: ConstraintDomain;
 
     fn load(
-        &self,
         blocks: &[&str],
     ) -> Result<HashMap<String, <Self::Domain as ConstraintDomain>::Rule>, String>;
+
+    fn save(g: &SPG<Self::Domain>) -> String;
+
+    fn postprocess(_g: &mut SPG<Self::Domain>) {}
 }

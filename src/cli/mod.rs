@@ -2,7 +2,7 @@ pub mod chart;
 pub mod check;
 pub mod validate;
 
-use aufbau::logic::debug::{DebugLevel, add_module_filter, set_debug_input, set_debug_level};
+use aufbau::engine::debug::{DebugLevel, add_module_filter, set_debug_level};
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
@@ -20,10 +20,6 @@ pub struct Cli {
     /// Filter debug output to modules (comma-separated: parser,grammar,bind,check)
     #[arg(long = "modules", value_name = "LIST", global = true)]
     pub modules: Option<String>,
-
-    /// Include input text in span messages
-    #[arg(long = "with-input", action = ArgAction::SetTrue, global = true)]
-    pub with_input: bool,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -62,10 +58,6 @@ pub fn run() {
         for m in mods.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
             add_module_filter(m);
         }
-    }
-
-    if cli.with_input {
-        set_debug_input(None);
     }
 
     match &cli.command {

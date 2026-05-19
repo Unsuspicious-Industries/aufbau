@@ -220,6 +220,9 @@
         },
         {
           "include": "#regex"
+        },
+        {
+          "include": "#epsilon-constant"
         }
       ]
     },
@@ -310,6 +313,9 @@
           "include": "#empty-type"
         },
         {
+          "include": "#epsilon-constant"
+        },
+        {
           "include": "#raw-type"
         },
         {
@@ -334,6 +340,9 @@
           "include": "#tuple-type"
         },
         {
+          "include": "#hole-type-variable"
+        },
+        {
           "include": "#type-variable"
         }
       ]
@@ -351,6 +360,29 @@
         {
           "name": "constant.language.empty.p7-spec",
           "match": "∅"
+        }
+      ]
+    },
+    "epsilon-constant": {
+      "patterns": [
+        {
+          "name": "constant.language.epsilon.p7-spec",
+          "match": "\\bε\\b"
+        }
+      ]
+    },
+    "hole-type-variable": {
+      "patterns": [
+        {
+          "match": "(\\?)([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.type-hole.p7-spec"
+            },
+            "2": {
+              "name": "variable.other.type.hole.p7-spec"
+            }
+          }
         }
       ]
     },
@@ -455,10 +487,6 @@
         {
           "name": "variable.other.type.subscript.p7-spec",
           "match": "\\b[a-zA-Z][a-zA-Z0-9]*[₁₂₃₄₅₆₇₈₉₀]+\\b"
-        },
-        {
-          "name": "variable.other.type.generic.p7-spec",
-          "match": "\\b[a-z][a-zA-Z0-9_']*\\b"
         },
         {
           "name": "entity.name.type.custom.p7-spec",

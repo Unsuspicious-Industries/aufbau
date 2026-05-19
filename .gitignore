@@ -11,6 +11,7 @@ verification/_build/
 # Temporary files
 tmp
 proptest
+proptest-regressions/
 
 # Validation reports
 src/validation/reports/
@@ -28,6 +29,7 @@ flamegraph.svg
 .opencode
 .code-workspace
 .ruff_cache
+**/.ipynb_checkpoints
 
 # Python
 __pycache__/

@@ -1,0 +1,99 @@
+// ============================================================
+// Tractatus grammar, v3 — bipolarity, and where the type
+// system stops being able to help
+// ============================================================
+// Tractatus 4.46–4.4661: a tautology is *sinnlos* (senseless),
+// a contradiction likewise. Neither pictures a possible state
+// of affairs. Wittgenstein wants to *reject* them as not
+// genuine propositions.
+//
+// Question: can our grammar enforce bipolarity?
+// Answer: NO — and the reason is illuminating.
+//
+// Bipolarity (∃v. ⟦p⟧=⊤ ∧ ∃v'. ⟦p⟧=⊥) is a SEMANTIC property.
+// It depends on the truth-functional interpretation of N over
+// all valuations of elementary propositions. A type system
+// operating on syntax (even with context Γ) can locally check
+// well-formedness, but cannot decide tautology / contradiction
+// without solving SAT.
+//
+// What we CAN do: split Prop into two kinds.
+//   - 'Prop'    : syntactically well-formed under Γ
+//   - 'Prop✓'   : additionally bipolar (a genuine Satz)
+//
+// We use a *premise that the typechecker cannot discharge*
+// to make the distinction visible. In a real Aufbau pipeline
+// this would be a semantic side-condition delegated to an
+// external SAT/UNSAT oracle — call it `bipolar(p)`.
+//
+// This mirrors exactly Carnap's move in Logical Syntax:
+// L-determinacy is decidable for the finitary fragment, so
+// you can in principle filter out L-true and L-false sentences.
+// But the *grammar itself* doesn't do it; a separate procedure
+// does. Wittgenstein wanted the filter built in; Carnap was
+// honest that it has to be external.
+// ============================================================
+
+Identifier ::= /[A-Za-z_][A-Za-z0-9_]*/
+
+Name(name) ::= Identifier[x]
+
+Monadic(monadic) ::= '⟨' Name[subj] Name[pred] '⟩'
+Dyadic(dyadic)   ::= '⟨' Name[a] Name[r] Name[b] '⟩'
+ElementaryProp ::= Monadic | Dyadic
+
+NUnary(n_unary)     ::= 'N' '(' Proposition[p] ')'
+NBinary(n_binary)   ::= 'N' '(' Proposition[p] ',' Proposition[q] ')'
+NTernary(n_ternary) ::= 'N' '(' Proposition[p] ',' Proposition[q] ',' Proposition[r] ')'
+Compound ::= NUnary | NBinary | NTernary
+
+Proposition ::= ElementaryProp | Compound
+
+// A "Satz" — a genuine bipolar proposition — wraps a Proposition
+// with an explicit assertion marker. This forces the typechecker
+// to invoke the (satz) rule, whose premise includes a check
+// that must be discharged externally.
+Satz(satz) ::= '⊢' Proposition[p]
+
+// ----- Typing rules -----
+
+x ∈ Γ
+----------- (name)
+Γ(x)
+
+// Elementary propositions: as before. They are AUTOMATICALLY
+// bipolar (elementary propositions are logically independent
+// by 5.134, so each has both a true and a false valuation).
+typeof(subj) = 'Indiv', typeof(pred) = 'Prop1'
+---------------------------------------------- (monadic)
+'Prop'
+
+typeof(a) = 'Indiv', typeof(r) = 'Prop2', typeof(b) = 'Indiv'
+------------------------------------------------------------- (dyadic)
+'Prop'
+
+// N-formation. The result is *syntactically* Prop. Whether it
+// is bipolar (a Satz) is a separate matter, handled below.
+typeof(p) = 'Prop'
+---------------------------- (n_unary)
+'Prop'
+
+typeof(p) = 'Prop', typeof(q) = 'Prop'
+-------------------------------------- (n_binary)
+'Prop'
+
+typeof(p) = 'Prop', typeof(q) = 'Prop', typeof(r) = 'Prop'
+---------------------------------------------------------- (n_ternary)
+'Prop'
+
+// (satz) — the bipolarity gate.
+//
+// The premise `Bipolar(p)` is a *semantic* judgment that the
+// Aufbau type-checker cannot itself decide. It must be
+// discharged by an external procedure (SAT/UNSAT over the
+// elementary propositions of p).
+//
+// If Bipolar(p) fails, p is sinnlos: it is a Prop but not a Satz.
+typeof(p) = 'Prop', Bipolar(p)
+------------------------------ (satz)
+'Satz'

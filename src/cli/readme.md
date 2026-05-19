@@ -5,17 +5,6 @@ Exit codes: `0` success, `1` logical failure, `2` usage/IO error.
 
 ---
 
-## `check`
-
-Run parseable validation and completable validation.
-
-```sh
-aufbau check -j 8 --completable-timeout-secs 30
-```
-
-Use `--skip-parseable` or `--skip-completable` to narrow the run.
-
----
 
 ## `check`
 

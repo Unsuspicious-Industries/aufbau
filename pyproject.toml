@@ -8,6 +8,9 @@ dynamic = ["version"]
 description = "Python bindings for the aufbau typed feed engine"
 requires-python = ">=3.9"
 
+[project.optional-dependencies]
+dev = ["ipykernel", "notebook"]
+
 [project.urls]
 Homepage = "https://github.com/Unsuspicious-Industries/aufbau"
 Repository = "https://github.com/Unsuspicious-Industries/aufbau"

@@ -1,7 +1,7 @@
 // Custom engine for automata
 // drawings from asciiflow.com
 
-use crate::regex::{Regex, dfa::DFA};
+use crate::regex::{dfa::DFA, Regex};
 
 // Core types
 type StateId = usize;

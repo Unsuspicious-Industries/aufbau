@@ -7,7 +7,7 @@
 use super::*;
 
 #[cfg(test)]
-fn stlc_grammar() -> Grammar {
+fn stlc_grammar() -> SPG<TypingDomain> {
     load_example_grammar("stlc")
 }
 

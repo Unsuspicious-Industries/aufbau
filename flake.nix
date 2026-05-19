@@ -38,6 +38,7 @@
           cargo-deny
 
           valgrind
+          jupyter
 
           # Documentation / utils
           mdbook
@@ -107,6 +108,14 @@
             export LIBRARY_PATH="${pkgs.openssl.out}/lib:$LIBRARY_PATH"
             export PYO3_PYTHON="${pkgs.python3}/bin/python3"
 
+            # Virtual environment for maturin develop
+            VENV=".venv"
+            if [ ! -d "$VENV" ]; then
+              echo "Creating Python virtual environment at $VENV ..."
+              "${pkgs.python3}/bin/python3" -m venv "$VENV"
+            fi
+            export VIRTUAL_ENV="$PWD/$VENV"
+            export PATH="$VENV/bin:$PATH"
           '';
         };
 

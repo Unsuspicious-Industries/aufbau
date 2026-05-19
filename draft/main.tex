@@ -5,12 +5,13 @@
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{mathtools}
-\usepackage[hypertexnames=false]{hyperref}
+\usepackage[hypertexnames=false,colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
 \usepackage{booktabs}
 \usepackage{xspace}
 \usepackage{enumitem}
 \usepackage{stmaryrd}
 \usepackage{xcolor}
+\usepackage{xparse}
 
 \newcommand{\cmt}[1]{\textcolor{red}{\texttt{#1}}}
 \long\def\sugadd#1{{\color{blue}#1}}
@@ -70,6 +71,7 @@ This paper makes the following contributions:
 \paragraph{Target} This framework is meant to support mechanized correctness guarantees: the proof obligations are deliberately structured for eventual formalization in a proof assistant, and the framework extends to richer type systems and proof-oriented domains on the same parser architecture.
 
 % Formal core: keep these inputs in this order.
+\input{code-refs}
 \input{sections/01-abstract-spg-definition.tex}
 \input{sections/02-generic-parser-algorithm.tex}
 \input{sections/03-typing-domain-implementation.tex}
@@ -95,5 +97,9 @@ This work was supported by Unsuspicious Industries, an independent nonprofit res
 
 \bibliographystyle{plain}
 \bibliography{references}
+
+\begin{codereferences}
+\input{code-refs-gen}
+\end{codereferences}
 
 \end{document}

@@ -36,12 +36,10 @@ run cargo test --release --lib validation::properties -- --nocapture 2>&1 \
 ok "property tests done"
 echo
 
-# 3. Full validation suites (parseable + completable)
-# Typescript grammar tests have known pre-existing failures; this step
-# is informational and non-blocking.
+# 3. Full validation suites (parseable)
 bold "3. Validation suites  (informational)"
 set +e
-cargo test --release --lib validation::parseable validation::completable \
+cargo test --release --lib validation::parseable \
   -- --nocapture 2>&1 \
   | grep --line-buffered -E "test result|FAILED" ; :
 set -e

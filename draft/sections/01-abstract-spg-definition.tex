@@ -194,6 +194,7 @@ So far the syntactic state exposes only the AST $t$. We attach to every internal
 
 \begin{definition}[Evidence summary]
 \label{def:evidence-summary}
+\code{def:evidence-summary}
 The summary of an internal AST node $\langle n,\,p^n_a,\,\chi\rangle$ at segment span $[i,j)$ is the tuple
 \[
   \nu \;=\; \langle n,\;[i,j),\;\rho,\tau, \nabla, \;\beta \rangle ,
@@ -282,20 +283,23 @@ parser state reached at \(s\cdot r\).
 
 \begin{definition}[Constraint domain]
 \label{def:constraint-domain}
-A \emph{constraint domain} is a triple
+\code{def:constraint-domain}
+A \emph{constraint domain} is a quintuple
 \[
-  D = ( \mathsf{Rules},\, \mathsf{Closed},\, \mathit{eval})
+  D = ( \mathsf{Rules},\, \mathsf{Closed},\, \mathsf{Ctx},\, \mathit{eval},\, \oplus)
 \]
 where:
 \begin{itemize}
-  \item \( \mathsf{Rules}\) is a decidable language of relational rules over evidence nodes and domain constants;
+  \item \(\mathsf{Rules}\) is a decidable language of relational rules over evidence nodes and domain constants;
   \item \(\mathsf{Closed}\) is the class of closed evidence graphs admitted by the domain;
+  \item \(\mathsf{Ctx}\) is the set of semantic contexts threaded through the syntactic state, with a distinguished empty context \(\Gamma_0 \in \mathsf{Ctx}\) used to seed parsing and generation;
   \item \(\mathit{eval}\) is the ideal evaluator,
   \[
     \mathit{eval}(\mathcal G(s))
     \in
-    \{\mathsf{Satisfied},\,\mathsf{Live},\,\mathsf{Lost}\}.
+    \{\mathsf{Satisfied},\,\mathsf{Live},\,\mathsf{Lost}\};
   \]
+  \item \(\oplus : \mathsf{Ctx} \times \nabla \to \mathsf{Ctx}\) applies a right-bound effect $\nabla$ exported by an exact left sibling to the context of its right sibling. Effects compose left-to-right in the sense of \S\ref{sec:context-flow}.
 \end{itemize}
 It is defined by the following cases:
 \[
@@ -319,6 +323,7 @@ otherwise, meaning the denotation is empty.
 
 \begin{lemma}[Safe pruning]
 \label{lem:safe-pruning}
+\code{lem:safe-pruning}
 If the parser discards an input prefix \(s\) only when
 \[
   \mathit{eval}(\mathcal G(s)) = \mathsf{Lost},

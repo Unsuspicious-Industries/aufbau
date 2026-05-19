@@ -144,6 +144,17 @@ The parser uses the following operations. Mathematically, mutating operations ar
 \]
 We assume all semantic operations are denotational filters: defined outputs denote exactly the satisfying refinements, and semantic rejection happens only on empty denotation.
 
+\begin{definition}[Operational evaluator]
+\label{def:eval-impl}
+\code{def:eval-impl}
+The \emph{operational evaluator} $\mathit{eval}_{\mathrm{impl}}$ is the per-node verdict produced by $\mathsf{finalize}$ in the inference rules below. For a node summary $\nu=\langle n,[i,j),\rho,\tau,\nabla,\beta\rangle$ produced from production $p$ under context $\Gamma$ and obligations $\Omega$,
+\[
+  \mathit{eval}_{\mathrm{impl}}(\nu)\;=\;\mathsf{finalize}(p,\Gamma,\Omega,\rho).\mathsf{verdict}
+  \;\in\;\{\mathsf{Satisfied},\mathsf{Live},\mathsf{Lost}\}.
+\]
+Lifted to a graph, $\mathit{eval}_{\mathrm{impl}}(\mathcal G(s))$ is the verdict at the root node of $\sigma(s)$. By construction $\mathit{eval}_{\mathrm{impl}}$ inherits $\Gamma$ from downward $\mathsf{descend}$ and right-bound $\mathsf{apply}$ flow (\S\ref{sec:context-flow}), so the verdict at $\nu$ depends only on the local rule and the obligations/context already routed to that node. Theorem~\ref{thm:typing-realizable} establishes that for the typing domain $\mathit{eval}_{\mathrm{impl}} = \mathit{eval}$.
+\end{definition}
+
 \subsubsection{Push Transitions}
 
 All parser table updates are written as

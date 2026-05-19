@@ -22,6 +22,11 @@ Lambda(lambda) ::= 'λ' Variable[x] ':' Type[τ₁] '.' Term[e]
 Application(app) ::= Term[f] Term[a]
 Term ::= Variable | Lambda | Application | '(' Term ')'
 
+// Type holes (existential type variables)
+Γ ⊢ l : ?A → ?B, Γ ⊢ r : ?A
+--------------------------------- (app)
+?B
+
 // Complex type expressions examples
 ComplexType ::= '(' Γ(input) ∨ Default ')' → Γ(output)
 AdvancedType ::= ¬(*int ∨ *string) ∧ (Serializable → Γ(T))

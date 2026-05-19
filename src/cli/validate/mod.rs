@@ -7,14 +7,10 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use serde_json::json;
 
-pub mod completable;
-
 pub mod parseable;
 
 #[derive(clap::ValueEnum, Clone, Debug)]
 pub enum ValidationModule {
-    /// Run feed-acceptance validation tests
-    Completable,
     /// Run parseable validation tests (fast prefix parsing)
     Parseable,
 }
@@ -39,16 +35,9 @@ pub struct ValidateCmd {
     /// If omitted, Rayon will use its default thread pool size.
     #[arg(long = "jobs", short = 'j', value_name = "N")]
     pub jobs: Option<usize>,
-
-    /// Override per-case feed-suite timeout in seconds.
-    #[arg(long = "completable-timeout-secs", value_name = "N")]
-    pub completable_timeout_secs: Option<u64>,
 }
 
 pub fn run(args: &ValidateCmd) {
-    // Rayon allows the global thread pool to be configured once per process.
-    // Configure it here, before any module runs, so `validate` can execute both
-    // completable and parseable suites without warning on the second module.
     if let Some(n) = args.jobs
         && n > 0
         && let Err(e) = rayon::ThreadPoolBuilder::new()
@@ -60,10 +49,8 @@ pub fn run(args: &ValidateCmd) {
     }
 
     match &args.module {
-        Some(ValidationModule::Completable) => completable::run(args),
         Some(ValidationModule::Parseable) => parseable::run(args),
         None => {
-            completable::run(args);
             parseable::run(args);
         }
     }

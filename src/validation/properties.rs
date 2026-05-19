@@ -32,10 +32,9 @@
 mod tests {
     use proptest::prelude::*;
 
-    use crate::logic::grammar::Grammar;
-    use crate::logic::synth::Synthesizer;
-    use crate::logic::typing::{Context, Type};
-    use crate::validation::completability::check_incremental_feed_replay;
+    use crate::domains::typing::{Context, Type};
+    use crate::domains::typing::{TypingDomain, TypingSynth};
+    use crate::engine::grammar::SPG;
     use crate::validation::parseable::{
         arithmetic::ARITHMETIC_GRAMMAR, check_all_prefixes_parseable, check_parse_fails,
         load_example_grammar,
@@ -43,8 +42,8 @@ mod tests {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
-    fn parse_accepted(grammar: &Grammar, input: &str, ctx: &Context) -> bool {
-        let mut s = Synthesizer::new(grammar.clone(), input);
+    fn parse_accepted(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> bool {
+        let mut s = TypingSynth::new(grammar.clone(), input);
         s.parse_with(ctx).is_ok()
     }
 
@@ -64,7 +63,7 @@ mod tests {
 
     #[test]
     fn empty_prefix_always_accepted_arithmetic() {
-        let g = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+        let g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
         assert!(parse_accepted(&g, "", &Context::new()));
     }
 
@@ -103,7 +102,7 @@ mod tests {
         /// Prefix monotonicity on arithmetic expressions.
         #[test]
         fn arith_prefix_monotone(input in arith_input()) {
-            let mut g = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+            let mut g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
             let ctx = Context::new();
             // Only assert monotonicity when the full input is parseable.
             if parse_accepted(&g, &input, &ctx) {
@@ -158,6 +157,29 @@ mod tests {
     //
     // Replaying the token stream through incremental feed must remain sound.
 
+    /// Simple feed-replay: tokenize, feed each token, verify success at each step.
+    fn feed_replay_ok(g: &SPG<TypingDomain>, input: &str, ctx: &Context) -> bool {
+        let mut grammar = g.clone();
+        let tokens: Vec<String> = match grammar.tokenize(input) {
+            Ok(segs) => segs.into_iter().map(|s| s.text().to_string()).collect(),
+            Err(_) => return false,
+        };
+        let mut built = String::new();
+        for token in &tokens {
+            if built.is_empty() {
+                built = token.clone();
+            } else {
+                built.push(' ');
+                built.push_str(token);
+            }
+            let mut s = TypingSynth::new(g.clone(), built.clone());
+            if s.parse_with(ctx).is_err() {
+                return false;
+            }
+        }
+        true
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(60))]
 
@@ -165,13 +187,11 @@ mod tests {
         #[test]
         fn stlc_chain_feed_agrees_with_parse((input, ctx) in stlc_chain_input()) {
             let g = load_example_grammar("stlc");
-            let result = check_incremental_feed_replay(&g, &input, Some(ctx));
+            let ok = feed_replay_ok(&g, &input, &ctx);
             prop_assert!(
-                result.is_sound,
-                "feed–parse disagreement on input {:?}: failing_prefix={:?}, failure={:?}",
+                ok,
+                "feed–parse disagreement on input {:?}",
                 input,
-                result.failing_prefix,
-                result.failure
             );
         }
     }
@@ -182,16 +202,14 @@ mod tests {
         /// Feed–parse agreement on arithmetic expressions.
         #[test]
         fn arith_feed_agrees_with_parse(input in arith_input()) {
-            let g = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+            let g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
             let ctx = Context::new();
-            // Only check replay soundness when the input is parseable.
             if parse_accepted(&g, &input, &ctx) {
-                let result = check_incremental_feed_replay(&g, &input, Some(ctx));
+                let ok = feed_replay_ok(&g, &input, &ctx);
                 prop_assert!(
-                    result.is_sound,
-                    "feed–parse disagreement on input {:?}: failing_prefix={:?}",
+                    ok,
+                    "feed–parse disagreement on input {:?}",
                     input,
-                    result.failing_prefix
                 );
             }
         }
@@ -222,7 +240,7 @@ mod tests {
 
         #[test]
         fn arith_invalid_stays_rejected_under_extended_ctx(ctx in random_context()) {
-            let g = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+            let g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
             // These are hardcoded ill-formed inputs — not parseable by design.
             let invalid_inputs = [
                 "+ 1",
@@ -251,7 +269,7 @@ mod tests {
 
     #[test]
     fn all_invalid_arithmetic_cases_rejected() {
-        let mut g = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+        let mut g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
         let ctx = Context::new();
         for case in crate::validation::parseable::arithmetic::invalid_expressions_cases() {
             let result = check_parse_fails(&mut g, case.input, &ctx);

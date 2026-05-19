@@ -4,10 +4,10 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use aufbau::logic::grammar::Grammar;
-use aufbau::logic::structure::FusionNode;
-use aufbau::logic::synth::Synthesizer;
-use aufbau::logic::typing::{Context, SharedType, Type};
+use aufbau::domains::typing::{Context, Type};
+use aufbau::domains::typing::{TypingDomain, TypingSynth};
+use aufbau::engine::grammar::SPG;
+use aufbau::engine::structure::FusionNode;
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckCmd {
@@ -33,7 +33,7 @@ pub fn run(args: &CheckCmd) {
             std::process::exit(2);
         }
     };
-    let grammar = match Grammar::load(&spec_src) {
+    let grammar = match SPG::<TypingDomain>::load(&spec_src) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("error: failed to load grammar: {}", e);
@@ -48,7 +48,7 @@ pub fn run(args: &CheckCmd) {
     }
     let input = input.trim_end_matches('\n');
 
-    let mut synth = Synthesizer::new(grammar, input);
+    let mut synth = TypingSynth::new(grammar, input);
     let typed = match synth.parse_with(&Context::new()) {
         Ok(t) => t,
         Err(e) => {
@@ -68,15 +68,14 @@ pub fn run(args: &CheckCmd) {
 
     let is_partial = complete_roots.is_empty();
 
-    let display_roots: Vec<FusionNode> = if args.all {
+    let display_roots: Vec<FusionNode<TypingDomain>> = if args.all {
         typed.roots().collect()
     } else if !complete_roots.is_empty() {
-        let well_typed: Vec<FusionNode> = complete_roots
+        let well_typed: Vec<FusionNode<TypingDomain>> = complete_roots
             .iter()
             .filter(|r| {
-                let ty: SharedType = r.ty(&runtime);
-                let ty_inner: &Type = &ty;
-                !matches!(ty_inner, Type::Any | Type::Meta(_))
+                let ty = runtime.evidence_of(r.evidence());
+                ty.map_or(false, |t| !matches!(t, Type::Any))
             })
             .cloned()
             .collect();
@@ -92,11 +91,14 @@ pub fn run(args: &CheckCmd) {
     let mut seen_types: Vec<String> = Vec::new();
     let mut unique_roots = Vec::new();
     for root in &display_roots {
-        let ty: SharedType = root.ty(&runtime);
-        let ty_s = format!("{}", ty);
+        let ty = runtime.evidence_of(root.evidence());
+        let ty_s = match ty {
+            Some(t) => format!("{}", t),
+            None => String::new(),
+        };
         if args.all || !seen_types.contains(&ty_s) {
             seen_types.push(ty_s);
-            unique_roots.push(*root);
+            unique_roots.push(root.clone());
         }
     }
 
@@ -104,18 +106,33 @@ pub fn run(args: &CheckCmd) {
         println!("partial  \"{}\"", input);
         println!();
         if unique_roots.len() == 1 {
-            let root = unique_roots[0];
-            let ty = root.ty(&runtime);
-            println!("type : {}", ty);
+            let root = unique_roots[0].clone();
+            let ty = runtime.evidence_of(root.evidence());
+            println!(
+                "type : {}",
+                ty.map(|t| format!("{}", t)).unwrap_or_default()
+            );
         } else {
             println!("{} candidate type(s):", unique_roots.len());
             for (i, root) in unique_roots.iter().enumerate() {
-                println!("  [{}] : {}", i + 1, root.ty(&runtime));
+                let ty = runtime.evidence_of(root.evidence());
+                println!(
+                    "  [{}] : {}",
+                    i + 1,
+                    ty.map(|t| format!("{}", t)).unwrap_or_default()
+                );
             }
         }
     } else if unique_roots.len() == 1 {
-        let root = unique_roots[0];
-        println!("{} : {}", input, root.ty(&runtime));
+        let root = unique_roots[0].clone();
+        println!(
+            "{} : {}",
+            input,
+            runtime
+                .evidence_of(root.evidence())
+                .map(|t| format!("{}", t))
+                .unwrap_or_default()
+        );
         if args.ast {
             println!();
             print!("{}", root);
@@ -125,7 +142,12 @@ pub fn run(args: &CheckCmd) {
         println!();
         println!("{} type(s) (ambiguous parse):", unique_roots.len());
         for (i, root) in unique_roots.iter().enumerate() {
-            println!("  [{}] : {}", i + 1, root.ty(&runtime));
+            let ty = runtime.evidence_of(root.evidence());
+            println!(
+                "  [{}] : {}",
+                i + 1,
+                ty.map(|t| format!("{}", t)).unwrap_or_default()
+            );
             if args.ast {
                 println!();
                 print!("{}", root);

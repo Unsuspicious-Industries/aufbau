@@ -3,9 +3,8 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use aufbau::logic::grammar::Grammar;
-use aufbau::logic::synth::Synthesizer;
-use aufbau::logic::typing::Context;
+use aufbau::domains::typing::{Context, TypingDomain, TypingSynth};
+use aufbau::engine::grammar::SPG;
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 
 pub mod inputs;
@@ -47,22 +46,22 @@ fn percentile_stats(mut v: Vec<u64>) -> Stats {
     }
 }
 
-fn measure(grammar: &Grammar, input: &str, ctx: &Context, reps: usize) -> (usize, Stats) {
+fn measure(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context, reps: usize) -> (usize, Stats) {
     let times: Vec<u64> = (0..reps)
         .map(|_| {
             let t = Instant::now();
-            let mut s = Synthesizer::new(grammar.clone(), input);
+            let mut s = TypingSynth::new(grammar.clone(), input);
             let _ = s.parse_with(ctx).unwrap();
             t.elapsed().as_micros() as u64
         })
         .collect();
 
-    let mut s = Synthesizer::new(grammar.clone(), input);
+    let mut s = TypingSynth::new(grammar.clone(), input);
     let nodes = s.parse_with(ctx).unwrap().node_count();
     (nodes, percentile_stats(times))
 }
 
-fn token_count(grammar: &Grammar, input: &str) -> usize {
+fn token_count(grammar: &SPG<TypingDomain>, input: &str) -> usize {
     let mut g = grammar.clone();
     match g.tokenize(input) {
         Ok(segs) => segs.len(),
@@ -112,7 +111,7 @@ pub fn run(cmd: &ChartCmd) {
 
     // STLC application chains
     eprint!("stlc application chains ");
-    let stlc = Grammar::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let stlc = SPG::<TypingDomain>::load(include_str!("../../../examples/stlc.auf")).unwrap();
     for n in 1..=max_n {
         let (input, ctx) = inputs::stlc_chain(n);
         let toks = token_count(&stlc, &input);
@@ -124,7 +123,7 @@ pub fn run(cmd: &ChartCmd) {
 
     // IMP declaration blocks
     eprint!("imp declaration blocks  ");
-    let imp = Grammar::load(include_str!("../../../examples/imp.auf")).unwrap();
+    let imp = SPG::<TypingDomain>::load(include_str!("../../../examples/imp.auf")).unwrap();
     for n in 1..=max_n {
         let input = inputs::imp_block(n);
         let toks = token_count(&imp, &input);
@@ -136,7 +135,7 @@ pub fn run(cmd: &ChartCmd) {
 
     // Arithmetic flat sum
     eprint!("arith flat sum          ");
-    let arith = Grammar::load(ARITHMETIC_GRAMMAR).unwrap();
+    let arith = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
     for n in 1..=(max_n + 2) {
         let input = inputs::arith_flat(n);
         let toks = token_count(&arith, &input);

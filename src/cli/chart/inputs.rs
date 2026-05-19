@@ -1,7 +1,7 @@
 //! Canonical input generators shared by the chart CLI subcommand and
 //! the Criterion benchmarks.
 
-use aufbau::logic::typing::{Context, Type};
+use aufbau::domains::typing::{Context, Type};
 
 /// `f x0 x1 … x{n-1}` with a well-typed context for n-argument application.
 pub fn stlc_chain(n: usize) -> (String, Context) {

@@ -1,29 +1,18 @@
 //! Generic domain runtime — bridges `ConstraintDomain` to `SemanticRuntime`.
-//!
-//! `DomainRuntime<D>` owns an `SPG<D::Rule>` plus three interners for
-//! `D::Evidence`, `D::Context`, and `D::Effect`. It implements the
-//! parser-facing `SemanticRuntime` by:
-//! 1. Looking up the concrete rule via `SPG::rule_for_prod`.
-//! 2. Delegating to `D::descend` / `D::finalize` / `D::apply_effect` /
-//!    `D::compose_effects` with concrete types.
-//! 3. Interning the returned concrete values into opaque IDs.
-//! 4. Translating `Verdict::Lost` → `Err(TransitionError::Rejected)`.
-//!
-//! The parser sees only opaque `CtxId`, `EvidenceId`, `EffectId` integers;
-//! all domain-specific types are hidden inside this struct.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::rc::Rc;
 
-use crate::logic::error::TransitionError;
-use crate::logic::grammar::Grammar;
-use crate::logic::parse::arena::{
-    ANY_TYPE, CtxId, EffectId, EvidenceId, NodeStatus, ProdId,
-};
-use crate::logic::semantic::{Obligations, SemanticRuntime, SemanticSummary};
-use crate::logic::Segment;
+use crate::engine::error::TransitionError;
+use crate::engine::grammar::SPG;
+use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, NodeStatus, ProdId, TOP};
+use crate::engine::Segment;
 use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::evidence::EvidenceStore;
+use crate::semantics::obligation::Obligations;
+use crate::semantics::{SemanticRuntime, SemanticSummary};
 
 // ── Generic interner ─────────────────────────────────────────────────────────
 
@@ -64,39 +53,48 @@ impl<T: Hash + Eq + Clone> Interner<T> {
 // ── DomainRuntime ─────────────────────────────────────────────────────────────
 
 /// Generic bridge: `ConstraintDomain` → `SemanticRuntime`.
-///
-/// Holds the domain, the loaded grammar, and interners for the three
-/// domain-specific opaque types. Segments are threaded per-call (§4.6).
 pub struct DomainRuntime<D: ConstraintDomain> {
     domain: D,
-    grammar: Grammar,
-    evidence: Interner<D::Evidence>,
-    contexts: Interner<D::Context>,
-    effects: Interner<D::Effect>,
+    spg: SPG<D>,
+    evidence: Rc<EvidenceStore<D::Evidence>>,
+    contexts: Rc<Interner<D::Context>>,
+    effects: Rc<Interner<D::Effect>>,
     segs: Vec<Segment>,
 }
 
+impl<D: ConstraintDomain + Clone> Clone for DomainRuntime<D> {
+    fn clone(&self) -> Self {
+        Self {
+            domain: self.domain.clone(),
+            spg: self.spg.clone(),
+            evidence: Rc::clone(&self.evidence),
+            contexts: Rc::clone(&self.contexts),
+            effects: Rc::clone(&self.effects),
+            segs: self.segs.clone(),
+        }
+    }
+}
+
 impl<D: ConstraintDomain> DomainRuntime<D> {
-    pub fn new(domain: D, grammar: Grammar) -> Self {
+    pub fn new(domain: D, spg: SPG<D>) -> Self {
+        let top = domain.top_evidence();
+        let bot = domain.bottom_evidence();
+        let evidence = Rc::new(EvidenceStore::new(top, bot));
         let rt = Self {
             domain,
-            grammar,
-            evidence: Interner::new(),
-            contexts: Interner::new(),
-            effects: Interner::new(),
+            spg,
+            evidence,
+            contexts: Rc::new(Interner::new()),
+            effects: Rc::new(Interner::new()),
             segs: Vec::new(),
         };
-        // Intern the sentinels at known IDs (must match arena constants).
-        let any = rt.domain.any_evidence();
-        let any_id = rt.evidence.intern(any);
-        debug_assert_eq!(any_id, ANY_TYPE);
         let empty_ctx = rt.domain.empty_context();
         let _ = rt.contexts.intern(empty_ctx);
         rt
     }
 
-    pub fn grammar(&self) -> &Grammar {
-        &self.grammar
+    pub fn grammar(&self) -> &SPG<D> {
+        &self.spg
     }
 
     pub fn intern_context(&self, ctx: D::Context) -> CtxId {
@@ -123,17 +121,9 @@ impl<D: ConstraintDomain> DomainRuntime<D> {
         self.effects.get(id)
     }
 
-    pub fn interned_evidence_count(&self) -> usize { self.evidence.len() }
-    pub fn interned_context_count(&self) -> usize  { self.contexts.len() }
-    pub fn interned_effect_count(&self) -> usize   { self.effects.len() }
-
     fn rule_for_prod(&self, prod: ProdId) -> Option<&D::Rule> {
-        let rule_name = self.grammar.rule_for_prod(prod)?;
-        self.grammar.rules().get(rule_name.as_str()).and_then(|_| {
-            // TODO (Phase 3): grammar will be SPG<D::Rule>; for now
-            // this returns None until the grammar is genericized.
-            None
-        })
+        let rule_name = self.spg.nt(prod.0).and_then(|nt| self.spg.nt_rule(nt))?;
+        self.spg.rules.get(rule_name.as_str())
     }
 }
 
@@ -151,7 +141,14 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
             return Ok(ctx);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let next = self.domain.descend(rule, binding, &ctx_val, obligations, &self.segs);
+        let next = self.domain.descend(
+            rule,
+            binding,
+            &ctx_val,
+            obligations,
+            &self.segs,
+            &self.evidence,
+        );
         Ok(self.intern_context(next))
     }
 
@@ -162,25 +159,33 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
         obligations: &Obligations,
         status: NodeStatus,
     ) -> Result<SemanticSummary, TransitionError> {
-        let any_summary = SemanticSummary::new(ANY_TYPE, None, true);
+        let any_summary = SemanticSummary::new(TOP, None, true);
         let Some(rule) = self.rule_for_prod(prod) else {
             return Ok(any_summary);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let (verdict, evidence, effect) =
-            self.domain.finalize(rule, &ctx_val, obligations, &self.segs, status);
+        let (verdict, evidence, effect) = self.domain.finalize(
+            rule,
+            &ctx_val,
+            obligations,
+            &self.segs,
+            status,
+            &self.evidence,
+        );
         match verdict {
             Verdict::Lost => Err(TransitionError::Rejected),
-            Verdict::Live => Ok(SemanticSummary::new(
-                self.intern_evidence(evidence),
-                None,
-                false,
-            )),
-            Verdict::Satisfied => Ok(SemanticSummary::new(
-                self.intern_evidence(evidence),
-                effect.map(|e| self.intern_effect(e)),
-                true,
-            )),
+            Verdict::Live => {
+                let id = self.evidence.intern(evidence);
+                Ok(SemanticSummary::new(id, None, false))
+            }
+            Verdict::Satisfied => {
+                let id = self.evidence.intern(evidence);
+                Ok(SemanticSummary::new(
+                    id,
+                    effect.map(|e| self.intern_effect(e)),
+                    true,
+                ))
+            }
         }
     }
 
@@ -202,6 +207,9 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
             .collect();
         let vals = vals?;
         let refs: Vec<&D::Effect> = vals.iter().collect();
-        Ok(self.domain.compose_effects(&refs).map(|e| self.intern_effect(e)))
+        Ok(self
+            .domain
+            .compose_effects(&refs)
+            .map(|e| self.intern_effect(e)))
     }
 }

@@ -83,6 +83,26 @@ impl Regex {
         ops::is_empty(self)
     }
 
+    /// If this regex is a pure concatenation of Chars, return the literal string.
+    pub fn literal_value(&self) -> Option<String> {
+        fn collect(regex: &Regex, out: &mut String) -> bool {
+            match regex {
+                Regex::Char(c) => {
+                    out.push(*c);
+                    true
+                }
+                Regex::Concat(a, b) => collect(a, out) && collect(b, out),
+                _ => false,
+            }
+        }
+        let mut s = String::new();
+        if collect(self, &mut s) {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
     pub fn is_nullable(&self) -> bool {
         ops::is_nullable(self)
     }

@@ -234,8 +234,8 @@ const CHILD_CONTEXT_LOCALITY: &str = r#"
     τ
 "#;
 
-fn load_inline_grammar(content: &str) -> Grammar {
-    Grammar::load(content).expect("failed to load inline grammar")
+fn load_inline_grammar(content: &str) -> SPG<TypingDomain> {
+    SPG::<TypingDomain>::load(content).expect("failed to load inline grammar")
 }
 
 // === Per-grammar case lists ===
@@ -512,7 +512,7 @@ fn child_context_invalid_cases() -> Vec<ParseTestCase> {
 /// each grammar independently.
 pub fn suites() -> Vec<(
     &'static str,
-    Grammar,
+    SPG<TypingDomain>,
     Vec<ParseTestCase>,
     Vec<ParseTestCase>,
 )> {

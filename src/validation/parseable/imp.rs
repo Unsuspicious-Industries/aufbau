@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(test)]
-fn imp_grammar() -> Grammar {
+fn imp_grammar() -> SPG<TypingDomain> {
     load_example_grammar("imp")
 }
 

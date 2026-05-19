@@ -10,8 +10,8 @@ pub const ARITHMETIC_GRAMMAR: &str = r#"
     Expression ::= Primary | Primary Operator Expression
 "#;
 
-pub fn arithmetic_grammar() -> Grammar {
-    Grammar::load(ARITHMETIC_GRAMMAR).expect("failed to load arithmetic grammar")
+pub fn arithmetic_grammar() -> SPG<TypingDomain> {
+    SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).expect("failed to load arithmetic grammar")
 }
 
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {

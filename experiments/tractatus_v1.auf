@@ -1,0 +1,48 @@
+// ============================================================
+// Tractatus grammar, v1 — elementary propositions only
+// ============================================================
+// Encodes the core Tractarian idea: a configuration of names
+// is a proposition iff the logical forms of the names are
+// jointly admissible. Names carry their form via Γ.
+//
+// Conventions:
+//   - Names are introduced into Γ with a "form literal"
+//     (Indiv, Prop1, Prop2, ...) that classifies the object.
+//   - Admissibility is encoded by typing rules: each n-ary
+//     elementary form has its own production + rule.
+// ============================================================
+
+// Lexical form
+Identifier ::= /[A-Za-z_][A-Za-z0-9_]*/
+
+// A "name" is a bare identifier — a sign for a Tractarian object.
+Name(name) ::= Identifier[x]
+
+// An elementary proposition is a configuration of names,
+// written ⟨ n1 n2 ... nk ⟩. We give explicit productions for
+// monadic and dyadic configurations; this corresponds to
+// declaring which arities the language admits.
+
+Monadic(monadic) ::= '⟨' Name[subj] Name[pred] '⟩'
+Dyadic(dyadic)   ::= '⟨' Name[a] Name[r] Name[b] '⟩'
+
+ElementaryProp ::= Monadic | Dyadic
+
+// ----- Typing rules -----
+
+// (name) — look up the name's logical form in Γ.
+x ∈ Γ
+----------- (name)
+Γ(x)
+
+// (monadic) — ⟨ subj pred ⟩ is a Prop iff subj : Indiv and pred : Prop1.
+// This *is* the admissibility relation ⟨Indiv, Prop1⟩ admissible,
+// encoded as a typing rule.
+typeof(subj) = 'Indiv', typeof(pred) = 'Prop1'
+---------------------------------------------- (monadic)
+'Prop'
+
+// (dyadic) — ⟨ a r b ⟩ is a Prop iff a, b : Indiv and r : Prop2.
+typeof(a) = 'Indiv', typeof(r) = 'Prop2', typeof(b) = 'Indiv'
+------------------------------------------------------------- (dyadic)
+'Prop'

@@ -1,0 +1,64 @@
+// ============================================================
+// Tractatus grammar, v2 — adds N-operator
+// ============================================================
+// Truth-functional composition via Wittgenstein's single
+// operator N (joint negation, 5.5). N(p1, ..., pk) means
+// "none of the pi is true". Recovers all truth-functions:
+//   ¬p          ≡ N(p)
+//   p ∧ q       ≡ N(N(p), N(q))
+//   p ∨ q       ≡ N(N(p, q))
+//
+// Carnapian note: we're stipulating the *formation* rules
+// here. The *meaning* of N (truth-table semantics) lives
+// outside the grammar — it's the interpretation layer that
+// Carnap would call the L-semantics.
+// ============================================================
+
+Identifier ::= /[A-Za-z_][A-Za-z0-9_]*/
+
+Name(name) ::= Identifier[x]
+
+// Elementary propositions
+Monadic(monadic) ::= '⟨' Name[subj] Name[pred] '⟩'
+Dyadic(dyadic)   ::= '⟨' Name[a] Name[r] Name[b] '⟩'
+ElementaryProp ::= Monadic | Dyadic
+
+// N-operator: takes a comma-separated list of propositions.
+// For simplicity we support N(p), N(p,q), and N(p,q,r).
+// (A real implementation would generalize to variadic.)
+NUnary(n_unary)   ::= 'N' '(' Proposition[p] ')'
+NBinary(n_binary) ::= 'N' '(' Proposition[p] ',' Proposition[q] ')'
+NTernary(n_ternary) ::= 'N' '(' Proposition[p] ',' Proposition[q] ',' Proposition[r] ')'
+
+Compound ::= NUnary | NBinary | NTernary
+
+Proposition ::= ElementaryProp | Compound
+
+// ----- Typing rules -----
+
+x ∈ Γ
+----------- (name)
+Γ(x)
+
+typeof(subj) = 'Indiv', typeof(pred) = 'Prop1'
+---------------------------------------------- (monadic)
+'Prop'
+
+typeof(a) = 'Indiv', typeof(r) = 'Prop2', typeof(b) = 'Indiv'
+------------------------------------------------------------- (dyadic)
+'Prop'
+
+// N preserves Prop. Crucially, N's operands must already be Prop
+// — N never repairs sinnlos input, and never accepts a name as
+// an operand. The fundamental thought (4.0312): N is not a name.
+typeof(p) = 'Prop'
+---------------------------- (n_unary)
+'Prop'
+
+typeof(p) = 'Prop', typeof(q) = 'Prop'
+-------------------------------------- (n_binary)
+'Prop'
+
+typeof(p) = 'Prop', typeof(q) = 'Prop', typeof(r) = 'Prop'
+---------------------------------------------------------- (n_ternary)
+'Prop'

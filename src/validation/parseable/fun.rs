@@ -1,7 +1,7 @@
 use super::*;
 
 #[cfg(test)]
-fn fun_grammar() -> Grammar {
+fn fun_grammar() -> SPG<TypingDomain> {
     load_example_grammar("fun")
 }
 
@@ -250,7 +250,7 @@ fn invalid_expressions_fun() {
 fn debug_fun_failures() {
     let mut grammar = fun_grammar();
     crate::set_debug_level(crate::DebugLevel::Trace);
-    let ctx = crate::logic::typing::Context::new();
+    let ctx = crate::domains::typing::Context::new();
     let cases = vec!["((x: Int) => x + 1)(", "(1 + 2) *", "(1.0 +. 2.0) *."];
 
     for s in cases {
@@ -265,7 +265,7 @@ fn debug_fun_failures() {
             Err(e) => println!("Tokenize error: {}", e),
         }
 
-        let mut synth = crate::logic::synth::Synthesizer::new(grammar.clone(), s);
+        let mut synth = crate::domains::typing::TypingSynth::new(grammar.clone(), s);
         match synth.parse_with(&ctx) {
             Ok(ast) => println!("Parsed OK: roots={}", ast.root_ids().len()),
             Err(e) => println!("Parse error: {}", e),

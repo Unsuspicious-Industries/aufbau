@@ -24,5 +24,34 @@
 //! ### eval_impl = eval (`thm:typing-realizable`-analog)
 //! Status: PROVEN — §3 Theorem (Typing implementation computes ideal evaluator).
 
-// TODO (Phase 2): TypingDomain and TypingRuleLoader will be added here.
-// For now this module exists as the structural placeholder.
+pub mod context;
+pub mod domain;
+pub mod fill;
+pub mod loader;
+pub mod ops;
+mod pool;
+pub mod rule;
+pub mod syntax;
+pub mod types;
+
+
+#[cfg(test)]
+mod tests;
+
+pub use context::{Context, ContextTransition, TreeStatus};
+pub use domain::TypingDomain;
+pub use loader::TypingRuleLoader;
+pub use ops::{Unifier, UnifyResult, equal, subtype};
+pub use pool::{SharedType, intern_type};
+pub use types::{Type, TypeExpr};
+
+pub use rule::{
+    CompiledRule, CompilationPass, Conclusion, ConclusionContext, Premise, RuleParser, Term,
+    TypeAscription, TypeSetting, TypingJudgment, TypingRule,
+};
+
+/// Concrete runtime for the typing domain.
+pub type TypingRuntime = crate::semantics::runtime::DomainRuntime<TypingDomain>;
+
+/// Concrete synthesizer for the typing domain.
+pub type TypingSynth = crate::engine::synth::Synthesizer<TypingDomain>;

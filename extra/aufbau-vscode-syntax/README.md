@@ -12,6 +12,8 @@ A Visual Studio Code extension that provides syntax highlighting for Aufbau's EB
   - Pointer and array types (`*τ`, `τ[]`)
   - Context types and lookups (`Γ(x)`)
   - Unicode type variables (`τ`, `σ`, `ρ`)
+  - Hole type variables (`?A`, `?B`, `?R`)
+  - Epsilon (`ε`) empty production
 - **Context Management**: Highlighting for typing contexts and transformations
 - **Comments**: Support for line comments (`//`)
 
