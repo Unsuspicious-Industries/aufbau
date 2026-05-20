@@ -44,6 +44,7 @@ impl<E: Hash + Eq + Clone> EvidenceStore<E> {
         id
     }
 
+    #[must_use]
     pub fn get(&self, id: EvidenceId) -> Option<E> {
         self.values.borrow().get(id).cloned()
     }

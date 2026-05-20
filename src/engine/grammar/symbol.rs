@@ -66,31 +66,32 @@ impl Hash for Symbol {
 }
 
 impl Symbol {
-    pub fn new(value: String) -> Self {
+    pub fn new(value: String) -> Result<Self, String> {
         debug_trace!("grammar", "Creating symbol from value: {}", value);
         if value.len() >= 2
             && ((value.starts_with('\'') && value.ends_with('\''))
                 || (value.starts_with('"') && value.ends_with('"')))
         {
             let literal = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
+            Ok(Symbol::Terminal {
                 regex: Regex::literal(&literal),
                 binding: None,
-            }
+            })
         } else if value.starts_with('/') && value.ends_with('/') && value.len() > 2 {
             let pattern = value[1..value.len() - 1].to_string();
-            Symbol::Terminal {
-                regex: Regex::new(&pattern).expect("invalid regex literal"),
+            Ok(Symbol::Terminal {
+                regex: Regex::new(&pattern)?,
                 binding: None,
-            }
+            })
         } else {
-            Symbol::Nonterminal {
+            Ok(Symbol::Nonterminal {
                 name: value,
                 binding: None,
-            }
+            })
         }
     }
 
+    #[must_use] 
     pub fn attach_binding(mut self, binding: String) -> Self {
         match &mut self {
             Symbol::Nonterminal { binding: slot, .. } | Symbol::Terminal { binding: slot, .. } => {
@@ -100,6 +101,7 @@ impl Symbol {
         self
     }
 
+    #[must_use] 
     pub fn binding(&self) -> Option<&String> {
         match self {
             Symbol::Nonterminal { binding, .. } | Symbol::Terminal { binding, .. } => {
@@ -108,6 +110,7 @@ impl Symbol {
         }
     }
 
+    #[must_use] 
     pub fn has_binding(&self) -> bool {
         self.binding().is_some()
     }

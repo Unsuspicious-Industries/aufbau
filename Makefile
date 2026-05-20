@@ -1,4 +1,6 @@
-.PHONY: all build clean rust help test test-rust test-py dev check-deps check run
+.PHONY: all build clean rust help test test-rust test-py dev check-deps check lc run \
+        verif verif-build verif-check verif-clean clean-verif \
+        verif-ocaml verif-ocaml-test
 
 ARGS ?=
 
@@ -15,7 +17,7 @@ rust:
 	@cargo build --release
 	@echo "✓ Rust build complete"
 
-clean: clean-rust
+clean: clean-rust clean-verif
 	@echo "✓ All build artifacts cleaned"
 
 clean-rust:
@@ -52,7 +54,43 @@ check-deps:
 	@command -v cargo >/dev/null 2>&1 || { echo "✗ cargo not found"; exit 1; }
 	@command -v python >/dev/null 2>&1 || { echo "✗ python not found"; exit 1; }
 	@command -v maturin >/dev/null 2>&1 || { echo "✗ maturin not found"; exit 1; }
+	@command -v rocq >/dev/null 2>&1 || { echo "✗ rocq not found (run inside \`nix develop\`)"; exit 1; }
 	@echo "✓ All dependencies available"
+
+# ---- Rocq verification ----------------------------------------------------
+# These targets delegate to verification/Makefile.  They are expected to be
+# run inside `nix develop`, which provides Rocq 9.1.1 + Stdlib on PATH.
+
+verif: verif-build
+
+verif-build:
+	@echo "Building Rocq verification (verification/)..."
+	@$(MAKE) -C verification build
+	@echo "✓ Rocq build complete (artifacts in verification/.build/)"
+
+verif-check:
+	@echo "Running rocqchk on the verification library..."
+	@$(MAKE) -C verification check
+	@echo "✓ Rocq modules validated"
+
+verif-clean:
+	@$(MAKE) -C verification clean
+
+clean-verif: verif-clean
+	@echo "✓ Rocq artifacts cleaned"
+
+# ---- OCaml extraction & tests ----------------------------------------------
+# These run the Rocq build (which includes extraction.v), then build & test
+# the extracted OCaml via dune.  Must be run inside `nix develop`.
+
+verif-ocaml:
+	@echo "Extracting Rocq -> OCaml..."
+	@$(MAKE) -C verification ocaml-build
+	@echo "✓ OCaml extraction + build complete"
+
+verif-ocaml-test: verif-ocaml
+	@$(MAKE) -C verification ocaml-test
+	@echo "✓ OCaml tests passed"
 
 help:
 	@echo "Aufbau Build System"
@@ -67,7 +105,13 @@ help:
 	@echo "  test-rust    - Run only Rust tests"
 	@echo "  test-py      - Run only Python FFI tests"
 	@echo "  check        - Check all targets compile (including python-ffi)"
-	@echo "  clean        - Remove all build artifacts"
+	@echo "  verif           - Build the Rocq verification library"
+	@echo "  verif-build     - Same as verif"
+	@echo "  verif-check     - Re-validate compiled modules with rocqchk"
+	@echo "  verif-clean     - Remove Rocq build artifacts"
+	@echo "  verif-ocaml     - Extract Rocq -> OCaml and build"
+	@echo "  verif-ocaml-test- Extract, build, and run OCaml tests"
+	@echo "  clean           - Remove all build artifacts (Rust + Rocq)"
 	@echo "  clean-rust   - Remove only Rust artifacts"
 	@echo "  check-deps   - Verify all build tools are installed"
 	@echo "  help         - Show this help message"
@@ -79,4 +123,6 @@ help:
 	@echo "  make run ARGS='--help'  # Run with arguments"
 	@echo "  make dev          # Fast development build"
 	@echo "  make check        # Verify compilation"
+	@echo "  make verif        # Build Rocq verification (needs nix develop)"
+	@echo "  make verif-check  # Re-validate with rocqchk"
 	@echo "  make clean build  # Clean and rebuild"

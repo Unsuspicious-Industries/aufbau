@@ -3,9 +3,9 @@
 use super::*;
 use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
-use crate::engine::parse::Item;
 use crate::engine::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::engine::parse::parser::Completion;
+use crate::engine::parse::Item;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 

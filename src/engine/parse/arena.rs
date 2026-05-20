@@ -42,12 +42,18 @@ pub const ANY_TYPE: TypeId = TOP;
 /// A byte span `[start, end)`.
 ///
 /// >T Span Bounding
-/// A node's span always bounds its children's spans,
-/// and children are strictly ordered left-to-right.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// > A node's span always bounds its children's spans,
+/// > and children are strictly ordered left-to-right.
+#[derive(Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: u32,
     pub end: u32,
+}
+
+impl Clone for Span {
+    fn clone(&self) -> Self {
+        *self
+    }
 }
 
 #[derive(Clone, Hash, Copy, Debug, PartialEq, Eq)]
@@ -58,6 +64,7 @@ pub struct Lexeme {
 }
 
 impl Lexeme {
+    #[must_use]
     pub fn new(span: Span, complete: bool, open: bool) -> Self {
         Self {
             matched: span,
@@ -66,12 +73,13 @@ impl Lexeme {
         }
     }
 
-    pub fn value<'a>(&self, s: &[Segment]) -> Option<String> {
+    #[must_use]
+    pub fn value(&self, s: &[Segment]) -> Option<String> {
         if self.matched.end as usize <= s.len() {
             Some(
                 s[self.matched.start as usize..self.matched.end as usize]
                     .iter()
-                    .map(|s| s.as_str())
+                    .map(super::super::grammar::tokenizer::Segment::as_str)
                     .collect::<Vec<&str>>()
                     .join(" "),
             )
@@ -81,7 +89,10 @@ impl Lexeme {
     }
 }
 
-/// `ρ` from `def:evidence-summary` — semantic status of a completed summary.
+/// `ρ` from `def:evidence-summary`, representing `def:evidence-graph` node
+/// frontier status. Together with `def:open-closed`: Exact nodes are
+/// non-frontier (graph may be closed), Prefix/Extensible carry frontier
+/// vertices (graph is open).
 ///
 /// - `Exact`: exact on the current input; node may export context transforms.
 /// - `Extensible`: fully recognized but some descendant is still extendable at
@@ -99,16 +110,19 @@ pub enum NodeStatus {
 }
 impl NodeStatus {
     /// Recognized on the current prefix.
+    #[must_use]
     pub fn complete(&self) -> bool {
         matches!(self, NodeStatus::Exact | NodeStatus::Extensible)
     }
 
     /// Exact on the current input.
+    #[must_use]
     pub fn exact(&self) -> bool {
         matches!(self, NodeStatus::Exact)
     }
 
     /// Still open to extension or syntactically unfinished.
+    #[must_use]
     pub fn open(&self) -> bool {
         matches!(self, NodeStatus::Prefix | NodeStatus::Extensible)
     }
@@ -150,9 +164,7 @@ pub enum BindingStatus {
         evidence: EvidenceId,
     },
     /// Dot has not yet reached the binding's position.
-    Pending {
-        position: usize,
-    },
+    Pending { position: usize },
 }
 
 /// Map from binding name → resolution status: the concrete β(ν,b) map.
@@ -173,11 +185,13 @@ pub struct ArenaNode {
 }
 
 impl ArenaNode {
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.status.complete() && self.semantic_complete
     }
 
     /// Compatibility helper for the current typing domain.
+    #[must_use]
     pub fn type_id(&self) -> TypeId {
         self.evidence
     }
@@ -189,8 +203,8 @@ impl PartialOrd for ArenaNode {
         if self.nt == other.nt {
             // a node is bigger if it covers more input or if ties, if it has more complete children
             Some(self.span.end.cmp(&other.span.end).then_with(|| {
-                let self_complete = self.is_complete() as usize;
-                let other_complete = other.is_complete() as usize;
+                let self_complete = usize::from(self.is_complete());
+                let other_complete = usize::from(other.is_complete());
                 self_complete.cmp(&other_complete)
             }))
         } else {
@@ -221,6 +235,7 @@ impl ParseArena {
     }
 
     /// Time: O(1) amortized. Space: O(1) additional.
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

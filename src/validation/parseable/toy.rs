@@ -1,10 +1,17 @@
-use super::*;
+use super::ParseTestCase;
+#[cfg(test)]
+use {
+    super::{load_example_grammar, run_parse_batch},
+    crate::domains::typing::TypingDomain,
+    crate::engine::grammar::SPG,
+};
 
 #[cfg(test)]
 fn toy_grammar() -> SPG<TypingDomain> {
     load_example_grammar("toy")
 }
 
+#[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         ParseTestCase::valid("typed value fizz", "beep: Fizz"),
@@ -19,6 +26,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     cases
 }
 
+#[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("invalid token", "@"),

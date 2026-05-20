@@ -36,14 +36,14 @@ pub fn run(args: &CheckCmd) {
     let grammar = match SPG::<TypingDomain>::load(&spec_src) {
         Ok(g) => g,
         Err(e) => {
-            eprintln!("error: failed to load grammar: {}", e);
+            eprintln!("error: failed to load grammar: {e}");
             std::process::exit(2);
         }
     };
 
     let mut input = String::new();
     if let Err(e) = io::stdin().read_to_string(&mut input) {
-        eprintln!("error: failed to read stdin: {}", e);
+        eprintln!("error: failed to read stdin: {e}");
         std::process::exit(2);
     }
     let input = input.trim_end_matches('\n');
@@ -52,7 +52,7 @@ pub fn run(args: &CheckCmd) {
     let typed = match synth.parse_with(&Context::new()) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("error: {}", e);
+            eprintln!("error: {e}");
             std::process::exit(1);
         }
     };
@@ -63,7 +63,7 @@ pub fn run(args: &CheckCmd) {
     }
 
     let runtime = synth.runtime().clone();
-    let complete_roots: Vec<_> = typed.roots().filter(|r| r.is_complete()).collect();
+    let complete_roots: Vec<_> = typed.roots().filter(aufbau::engine::structure::FusionNode::is_complete).collect();
     let partial_roots: Vec<_> = typed.roots().filter(|r| !r.is_complete()).collect();
 
     let is_partial = complete_roots.is_empty();
@@ -75,14 +75,14 @@ pub fn run(args: &CheckCmd) {
             .iter()
             .filter(|r| {
                 let ty = runtime.evidence_of(r.evidence());
-                ty.map_or(false, |t| !matches!(t, Type::Any))
+                ty.is_some_and(|t| !matches!(t, Type::Any))
             })
             .cloned()
             .collect();
-        if !well_typed.is_empty() {
-            well_typed
-        } else {
+        if well_typed.is_empty() {
             complete_roots.clone()
+        } else {
+            well_typed
         }
     } else {
         partial_roots
@@ -93,7 +93,7 @@ pub fn run(args: &CheckCmd) {
     for root in &display_roots {
         let ty = runtime.evidence_of(root.evidence());
         let ty_s = match ty {
-            Some(t) => format!("{}", t),
+            Some(t) => format!("{t}"),
             None => String::new(),
         };
         if args.all || !seen_types.contains(&ty_s) {
@@ -103,14 +103,14 @@ pub fn run(args: &CheckCmd) {
     }
 
     if is_partial {
-        println!("partial  \"{}\"", input);
+        println!("partial  \"{input}\"");
         println!();
         if unique_roots.len() == 1 {
             let root = unique_roots[0].clone();
             let ty = runtime.evidence_of(root.evidence());
             println!(
                 "type : {}",
-                ty.map(|t| format!("{}", t)).unwrap_or_default()
+                ty.map(|t| format!("{t}")).unwrap_or_default()
             );
         } else {
             println!("{} candidate type(s):", unique_roots.len());
@@ -119,7 +119,7 @@ pub fn run(args: &CheckCmd) {
                 println!(
                     "  [{}] : {}",
                     i + 1,
-                    ty.map(|t| format!("{}", t)).unwrap_or_default()
+                    ty.map(|t| format!("{t}")).unwrap_or_default()
                 );
             }
         }
@@ -130,15 +130,15 @@ pub fn run(args: &CheckCmd) {
             input,
             runtime
                 .evidence_of(root.evidence())
-                .map(|t| format!("{}", t))
+                .map(|t| format!("{t}"))
                 .unwrap_or_default()
         );
         if args.ast {
             println!();
-            print!("{}", root);
+            print!("{root}");
         }
     } else {
-        println!("\"{}\"", input);
+        println!("\"{input}\"");
         println!();
         println!("{} type(s) (ambiguous parse):", unique_roots.len());
         for (i, root) in unique_roots.iter().enumerate() {
@@ -146,11 +146,11 @@ pub fn run(args: &CheckCmd) {
             println!(
                 "  [{}] : {}",
                 i + 1,
-                ty.map(|t| format!("{}", t)).unwrap_or_default()
+                ty.map(|t| format!("{t}")).unwrap_or_default()
             );
             if args.ast {
                 println!();
-                print!("{}", root);
+                print!("{root}");
                 println!();
             }
         }

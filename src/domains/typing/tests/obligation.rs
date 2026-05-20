@@ -43,10 +43,12 @@ fn step_obligations_advances_only_matching_paths() {
 
     assert_eq!(stepped.len(), 1);
     assert_eq!(stepped.as_slice()[0].name, "x");
-    assert!(stepped.as_slice()[0]
-        .paths
-        .iter()
-        .all(|path| path.is_empty()));
+    assert!(
+        stepped.as_slice()[0]
+            .paths
+            .iter()
+            .all(|path| path.is_empty())
+    );
 }
 
 #[test]

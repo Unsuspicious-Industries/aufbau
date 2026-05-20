@@ -1,4 +1,5 @@
-use crate::domains::typing::rule::{CompilationPass, TypingRule};
+use crate::domains::typing::compiler::compile_rule;
+use crate::domains::typing::rule::TypingRule;
 use crate::domains::typing::{Context, Type, TypingDomain};
 use crate::engine::grammar::Segment;
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
@@ -22,7 +23,7 @@ struct RuleCase {
 
 impl RuleCase {
     fn new(premises: &str, conclusion: &str, name: &str) -> Self {
-        let domain = TypingDomain::new();
+        let domain = TypingDomain;
         let evidence = EvidenceStore::new(Type::Any, Type::None);
         Self {
             domain,
@@ -79,20 +80,20 @@ fn mkseg(c: &str, s: usize, e: usize) -> Segment {
 #[test]
 fn app_no_metas_after_compilation() {
     let r = parse_rule("Γ ⊢ l : ?A -> ?B, Γ ⊢ r : ?A", "?B", "app");
-    let c = CompilationPass::compile(&r).unwrap();
+    let c = compile_rule(&r).unwrap();
     assert!(c.conclusion.kind.has_metas());
 }
 
 #[test]
 fn lambda_has_typeof() {
     let r = parse_rule("Γ[a:τ] ⊢ e : ?B", "τ → ?B", "lambda");
-    let c = CompilationPass::compile(&r).unwrap();
+    let c = compile_rule(&r).unwrap();
     assert!(c.conclusion.kind.to_string().contains("typeof"));
 }
 
 #[test]
 fn var_has_no_metas() {
-    assert!(!CompilationPass::has_metas(&parse_rule(
+    assert!(!crate::domains::typing::compiler::has_metas(&parse_rule(
         "x ∈ Γ", "Γ(x)", "var"
     )));
 }

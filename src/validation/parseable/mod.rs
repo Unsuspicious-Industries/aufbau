@@ -50,6 +50,7 @@ pub enum ParseResult {
 }
 
 impl ParseResult {
+    #[must_use]
     pub fn is_pass(&self) -> bool {
         matches!(self, ParseResult::Pass { .. })
     }
@@ -70,6 +71,7 @@ pub struct ParseTestCase {
 
 impl ParseTestCase {
     /// Create a new test case expecting success (all prefixes parseable).
+    #[must_use]
     pub fn valid(desc: &'static str, input: &'static str) -> Self {
         Self {
             description: desc,
@@ -80,6 +82,7 @@ impl ParseTestCase {
     }
 
     /// Create a new test case expecting parse failure (syntax error).
+    #[must_use]
     pub fn invalid(desc: &'static str, input: &'static str) -> Self {
         Self {
             description: desc,
@@ -92,17 +95,20 @@ impl ParseTestCase {
     // `type_error` is intentionally removed: use `invalid` for all xfail cases.
 
     /// Add typing context.
+    #[must_use]
     pub fn with_context(mut self, ctx: Vec<(&'static str, &'static str)>) -> Self {
         self.context = ctx;
         self
     }
 }
 
-/// Empirical prefix-acceptance check.
+/// Empirical prefix-acceptance check — `thm:prefix-monotonicity`.
 ///
 /// Property: every selected prefix boundary is accepted by a fresh parse under
-/// the same context. Boundaries follow tokenization when possible so the check
-/// matches the segmented semantics rather than raw character slicing.
+/// the same context. By `lem:prefix-completeness`, if a full input parses,
+/// every prefix must also parse. The dual `check_parse_fails` enforces
+/// `thm:completability-soundness`: invalid inputs must not produce
+/// complete roots.
 pub fn check_all_prefixes_parseable(
     grammar: &mut SPG<TypingDomain>,
     input: &str,
@@ -112,38 +118,32 @@ pub fn check_all_prefixes_parseable(
     // Prefer token-boundary prefixes when tokenization succeeds. This keeps
     // parseability checks representative while avoiding quadratic character-level
     // blowups on long/ambiguous inputs.
-    let prefixes: Vec<(usize, String)> = match grammar.tokenize(input) {
-        Ok(segments) => {
-            let mut cuts = vec![0usize];
-            cuts.extend(segments.iter().map(|s| s.end));
-            if !cuts.contains(&input.len()) {
-                cuts.push(input.len());
-            }
-            cuts.sort_unstable();
-            cuts.dedup();
-            cuts.into_iter()
-                .map(|byte_end| {
-                    let p = input[..byte_end].to_string();
-                    (p.chars().count(), p)
-                })
-                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-                .collect()
+    let prefixes: Vec<(usize, String)> = if let Ok(segments) = grammar.tokenize(input) {
+        let mut cuts = vec![0usize];
+        cuts.extend(segments.iter().map(|s| s.end));
+        if !cuts.contains(&input.len()) {
+            cuts.push(input.len());
         }
-        Err(_) => {
-            let chars: Vec<char> = input.chars().collect();
-            (0..=chars.len())
-                .map(|len| (len, chars[..len].iter().collect::<String>()))
-                .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
-                .collect()
-        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        cuts.into_iter()
+            .map(|byte_end| {
+                let p = input[..byte_end].to_string();
+                (p.chars().count(), p)
+            })
+            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+            .collect()
+    } else {
+        let chars: Vec<char> = input.chars().collect();
+        (0..=chars.len())
+            .map(|len| (len, chars[..len].iter().collect::<String>()))
+            .filter(|(len, prefix)| *len == 0 || !prefix.trim().is_empty())
+            .collect()
     };
 
     let parse_prefix = |prefix: &str| {
         let mut synth = TypingSynth::new(grammar.clone(), prefix);
-        match synth.parse_with(ctx) {
-            Ok(_) => None,
-            Err(e) => Some(e),
-        }
+        synth.parse_with(ctx).err()
     };
 
     let results: Vec<Option<String>> = prefixes
@@ -172,6 +172,7 @@ pub fn check_all_prefixes_parseable(
 /// Empirical negative check for soundness-oriented xfail cases.
 ///
 /// Property: the full input must not yield a complete accepted root.
+#[must_use]
 pub fn check_parse_fails(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> ParseResult {
     let start = Instant::now();
     let mut synth = TypingSynth::new(grammar.clone(), input);
@@ -202,7 +203,7 @@ fn build_context(pairs: &[(&str, &str)]) -> Context {
     let mut ctx = Context::new();
     for (name, ty_str) in pairs {
         let ty = Type::parse_raw(ty_str)
-            .unwrap_or_else(|e| panic!("Failed to parse type '{}' in test context: {}", ty_str, e));
+            .unwrap_or_else(|e| panic!("Failed to parse type '{ty_str}' in test context: {e}"));
         ctx.add(name.to_string(), ty);
     }
     ctx
@@ -230,6 +231,7 @@ pub struct BatchResult {
 
 impl BatchResult {
     /// Format a detailed error message for failed test cases
+    #[must_use]
     pub fn format_failures(&self) -> String {
         if self.failures.is_empty() {
             return String::new();
@@ -250,9 +252,9 @@ impl BatchResult {
                     error,
                     prefix_index,
                 } => {
-                    msg.push_str(&format!("  Failing prefix: '{}'\n", failing_prefix));
-                    msg.push_str(&format!("  Prefix index:   {}\n", prefix_index));
-                    msg.push_str(&format!("  Error:          {}\n", error));
+                    msg.push_str(&format!("  Failing prefix: '{failing_prefix}'\n"));
+                    msg.push_str(&format!("  Prefix index:   {prefix_index}\n"));
+                    msg.push_str(&format!("  Error:          {error}\n"));
                 }
                 ParseResult::Pass { .. } => {
                     msg.push_str("  (unexpected pass - should not be in failures list)\n");
@@ -361,6 +363,7 @@ pub fn run_parse_batch(
 /// Collect all parseable test suites.
 ///
 /// Each entry is `(suite_name, grammar, valid_cases, invalid_cases)`.
+#[must_use]
 pub fn all_suites() -> Vec<(
     &'static str,
     SPG<TypingDomain>,
@@ -413,13 +416,14 @@ pub fn all_suites() -> Vec<(
 // ============================================================================
 
 /// Load a grammar from the examples directory
+#[must_use]
 pub fn load_example_grammar(name: &str) -> SPG<TypingDomain> {
     use std::path::Path;
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
         .join("examples")
-        .join(format!("{}.auf", name));
+        .join(format!("{name}.auf"));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    SPG::<TypingDomain>::load(&content).unwrap_or_else(|e| panic!("Failed to load {}: {}", name, e))
+    SPG::<TypingDomain>::load(&content).unwrap_or_else(|e| panic!("Failed to load {name}: {e}"))
 }

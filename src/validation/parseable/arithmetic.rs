@@ -1,6 +1,10 @@
-use super::*;
+#[cfg(test)]
+use super::run_parse_batch;
+use super::ParseTestCase;
+use crate::domains::typing::TypingDomain;
+use crate::engine::grammar::SPG;
 
-pub const ARITHMETIC_GRAMMAR: &str = r#"
+pub const ARITHMETIC_GRAMMAR: &str = r"
     Number ::= /[0-9]+/
     Identifier ::= /[a-z][a-zA-Z0-9]*/
     Literal ::= Number
@@ -8,12 +12,14 @@ pub const ARITHMETIC_GRAMMAR: &str = r#"
     Operator ::= '+' | '-' | '*' | '/'
     Primary ::= Literal | Variable | '(' Expression ')'
     Expression ::= Primary | Primary Operator Expression
-"#;
+";
 
+#[must_use]
 pub fn arithmetic_grammar() -> SPG<TypingDomain> {
     SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).expect("failed to load arithmetic grammar")
 }
 
+#[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::valid("empty", ""),
@@ -37,6 +43,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     ]
 }
 
+#[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("close paren first", ")"),

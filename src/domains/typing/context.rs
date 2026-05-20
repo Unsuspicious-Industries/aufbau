@@ -10,14 +10,17 @@ pub struct Context {
 }
 
 impl Context {
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[must_use] 
     pub fn lookup(&self, x: &str) -> Option<&Type> {
         self.bindings.get(x)
     }
 
+    #[must_use] 
     pub fn lookup_starts_with(&self, prefix: &str) -> Option<&Type> {
         self.bindings
             .iter()
@@ -28,7 +31,7 @@ impl Context {
     /// Add a binding; fails if `x` is already bound.
     pub fn extend(&self, x: String, ty: Type) -> Result<Self, String> {
         if self.bindings.contains_key(&x) {
-            return Err(format!("Context already contains binding for '{}'", x));
+            return Err(format!("Context already contains binding for '{x}'"));
         }
         let mut new = self.clone();
         new.bindings.insert(x, ty);
@@ -36,6 +39,7 @@ impl Context {
     }
 
     /// Add or replace a binding.
+    #[must_use] 
     pub fn shadow(&self, x: String, ty: Type) -> Self {
         let mut new = self.clone();
         new.bindings.insert(x, ty);
@@ -54,12 +58,14 @@ pub struct ContextTransition {
 }
 
 impl ContextTransition {
+    #[must_use] 
     pub fn identity() -> Self {
         Self {
             transforms: Vec::new(),
         }
     }
 
+    #[must_use] 
     pub fn compose(&self, next: &Self) -> Self {
         let mut new_transforms = self.transforms.clone();
         new_transforms.extend(next.transforms.clone());
@@ -79,10 +85,12 @@ pub enum TreeStatus {
 }
 
 impl TreeStatus {
+    #[must_use] 
     pub fn is_ok(&self) -> bool {
         !matches!(self, TreeStatus::Malformed)
     }
 
+    #[must_use] 
     pub fn ty(&self) -> Option<&Type> {
         match self {
             TreeStatus::Valid(t) | TreeStatus::Partial(t) => Some(t),

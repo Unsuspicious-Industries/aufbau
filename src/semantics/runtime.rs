@@ -44,10 +44,6 @@ impl<T: Hash + Eq + Clone> Interner<T> {
     fn get(&self, id: usize) -> Option<T> {
         self.values.borrow().get(id).cloned()
     }
-
-    fn len(&self) -> usize {
-        self.values.borrow().len()
-    }
 }
 
 // ── DomainRuntime ─────────────────────────────────────────────────────────────
@@ -189,7 +185,7 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
         }
     }
 
-    fn set_segs(&mut self, s: &[Segment]) {
+    fn load_segs(&mut self, s: &[Segment]) {
         self.segs = s.to_vec();
     }
 

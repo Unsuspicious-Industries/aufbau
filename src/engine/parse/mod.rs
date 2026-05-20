@@ -19,8 +19,8 @@ pub use arena::{
 pub use parser::{Item, Tables, Task};
 pub use state::{Next, State};
 
-use crate::semantics::domain::ConstraintDomain;
 use super::grammar::{SPG, Segment};
+use crate::semantics::domain::ConstraintDomain;
 
 #[derive(Debug)]
 pub struct TypedParser<D: ConstraintDomain, T> {

@@ -1,4 +1,4 @@
-//! Formal obligation objects and their structural evolution.
+//! Formal obligation objects and their structural evolution — `def:obligation-store`.
 //!
 //! Obligations are intentionally domain-neutral: they route child evidence and
 //! lexemes according to binding positions, but do not interpret the evidence.
@@ -21,6 +21,7 @@ pub struct Obligation {
 
 impl Obligation {
     /// Convert obligation into the β(ν,b) map entry.
+    #[must_use]
     pub fn to_binding_status(&self, position: usize) -> (String, BindingStatus) {
         let status = if let Some(value) = &self.value {
             BindingStatus::Resolved {
@@ -64,7 +65,7 @@ impl Obligation {
         (!paths.is_empty()).then(|| Self {
             name: self.name.clone(),
             paths,
-            value: self.value.clone(),
+            value: self.value,
             evidence: self.evidence,
         })
     }
@@ -73,14 +74,14 @@ impl Obligation {
         let paths: Vec<GrammarPath> = self
             .paths
             .iter()
-            .filter(|path| path.steps().first().map_or(true, |step| step.a == alt))
+            .filter(|path| path.steps().first().is_none_or(|step| step.a == alt))
             .cloned()
             .collect();
 
         (!paths.is_empty()).then(|| Self {
             name: self.name.clone(),
             paths,
-            value: self.value.clone(),
+            value: self.value,
             evidence: self.evidence,
         })
     }
@@ -127,6 +128,7 @@ impl<'a> IntoIterator for &'a Obligations {
 
 impl Obligations {
     /// Create the obligations induced by a production at `root`.
+    #[must_use]
     pub fn create<D: ConstraintDomain>(grammar: &SPG<D>, prod: ProdId, root: TreePath) -> Self {
         let Some(_) = grammar.prod(prod) else {
             return Self::new(root, Vec::new());
@@ -134,10 +136,26 @@ impl Obligations {
         let Some(rule_name) = grammar.nt(prod.0).and_then(|n| grammar.nt_rule(n)) else {
             return Self::new(root, Vec::new());
         };
+        let Some(_binding_map) = &grammar.bindings else {
+            return Self::new(root, Vec::new());
+        };
+        let Some(_rule) = grammar.rules.get(rule_name.as_str()) else {
+            return Self::new(root, Vec::new());
+        };
+        let Some(nt_name) = grammar.nt(prod.0) else {
+            eprintln!("DEBUG obl_create: nt missing for {}", prod.0);
+            return Self::new(root, Vec::new());
+        };
+        let Some(rule_name) = grammar.nt_rule(nt_name) else {
+            eprintln!("DEBUG obl_create: nt_rule missing for {nt_name}");
+            return Self::new(root, Vec::new());
+        };
         let Some(binding_map) = &grammar.bindings else {
+            eprintln!("DEBUG obl_create: bindings missing for {nt_name} / {rule_name}");
             return Self::new(root, Vec::new());
         };
         let Some(rule) = grammar.rules.get(rule_name.as_str()) else {
+            eprintln!("DEBUG obl_create: rule missing for {nt_name} / {rule_name}");
             return Self::new(root, Vec::new());
         };
 
@@ -148,7 +166,7 @@ impl Obligations {
                 let paths = binding_map.get(name, rule_name)?;
                 let filtered: Vec<GrammarPath> = paths
                     .iter()
-                    .filter(|path| path.steps().first().map_or(true, |step| step.a == alt))
+                    .filter(|path| path.steps().first().is_none_or(|step| step.a == alt))
                     .cloned()
                     .collect();
 
@@ -164,22 +182,27 @@ impl Obligations {
         Self::new(root, items)
     }
 
+    #[must_use]
     pub fn new(root: TreePath, items: Vec<Obligation>) -> Self {
         Self { root, items }
     }
 
+    #[must_use]
     pub fn empty() -> Self {
         Self::default()
     }
 
+    #[must_use]
     pub fn root(&self) -> &TreePath {
         &self.root
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -192,6 +215,7 @@ impl Obligations {
         self.items.iter_mut()
     }
 
+    #[must_use]
     pub fn as_slice(&self) -> &[Obligation] {
         &self.items
     }
@@ -202,6 +226,7 @@ impl Obligations {
     }
 
     /// Advance obligations across one child in the current production.
+    #[must_use]
     pub fn step(&self, dot: usize, alt: usize) -> Self {
         Self::new(
             self.root.clone(),
@@ -213,6 +238,7 @@ impl Obligations {
     }
 
     /// Restrict obligations to a concrete production seed.
+    #[must_use]
     pub fn for_seed(&self, alt: usize) -> Self {
         Self::new(
             self.root.clone(),
@@ -224,6 +250,7 @@ impl Obligations {
     }
 
     /// Re-root obligations at the designated child path.
+    #[must_use]
     pub fn at_child(&self, dot: usize) -> Self {
         let mut root = self.root.clone();
         root.push(dot);
@@ -257,7 +284,8 @@ impl Obligations {
     }
 
     /// Snapshot obligations at (dot, alt) for backtracking.
-    /// Returns (index, saved_value, saved_evidence) for each matching obligation.
+    /// Returns (index, `saved_value`, `saved_evidence`) for each matching obligation.
+    #[must_use]
     pub fn save_at(
         &self,
         dot: usize,
@@ -267,7 +295,7 @@ impl Obligations {
             .iter()
             .enumerate()
             .filter(|(_, ob)| !ob.has_matched() && ob.matches(dot, alt))
-            .map(|(i, ob)| (i, ob.value.clone(), ob.evidence))
+            .map(|(i, ob)| (i, ob.value, ob.evidence))
             .collect()
     }
 
@@ -285,12 +313,13 @@ impl Obligations {
     pub fn resolve_terminal(&mut self, dot: usize, alt: usize, lexeme: &Lexeme) {
         for obligation in &mut self.items {
             if !obligation.has_matched() && obligation.matches(dot, alt) {
-                obligation.value = Some(lexeme.clone());
+                obligation.value = Some(*lexeme);
             }
         }
     }
 
     /// Compute the alternatives permitted by the remaining obligations.
+    #[must_use]
     pub fn prune<D: ConstraintDomain>(&self, nt: NtId, grammar: &SPG<D>) -> Vec<ProdId> {
         let total = grammar
             .productions_at(nt)

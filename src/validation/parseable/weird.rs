@@ -1,33 +1,37 @@
-use super::*;
+#[cfg(test)]
+use super::run_parse_batch;
+use super::ParseTestCase;
+use crate::domains::typing::TypingDomain;
+use crate::engine::grammar::SPG;
 
 // Small subset of pathological grammars adapted for parseability checks.
 
-const INFINITE_RIGHT_RECURSIVE: &str = r#"
+const INFINITE_RIGHT_RECURSIVE: &str = r"
     A ::= 'a' A | 'b'
     start ::= A
-"#;
+";
 
-const EPSILON_HEAVY: &str = r#"
+const EPSILON_HEAVY: &str = r"
     A ::= 'a' B | ε
     B ::= 'b' C | ε
     C ::= 'c' | ε
     start ::= A B C
-"#;
+";
 
-const DEEP_NESTING: &str = r#"
+const DEEP_NESTING: &str = r"
     Atom ::= 'x'
     L1 ::= '(' L2 ')' | Atom
     L2 ::= '(' L3 ')' | L1
     L3 ::= '(' L3 ')' | L2
     start ::= L3
-"#;
+";
 
 // ============================================================================
 // Exotic grammars — exercise more advanced grammar features
 // ============================================================================
 
 /// Diamond ambiguity: two paths to the same nonterminal via Left/Right.
-const DIAMOND: &str = r#"
+const DIAMOND: &str = r"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
     Left(left) ::= '<' Term[inner] '>'
@@ -46,10 +50,10 @@ const DIAMOND: &str = r#"
     Γ ⊢ inner : ?T
     ----------- (right)
     ?T
-"#;
+";
 
 /// Mutual recursion with typed bindings.
-const MUTUAL: &str = r#"
+const MUTUAL: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'Num' | 'Flag'
     Literal(lit) ::= /[0-9]+/
@@ -68,10 +72,10 @@ const MUTUAL: &str = r#"
     Γ ⊢ value : τ, Γ[name:τ] ⊢ rest : ?R
     ----------- (bind)
     ?R
-"#;
+";
 
 /// Epsilon-interleaved around a typed core.
-const EPSILON_WRAPPED: &str = r#"
+const EPSILON_WRAPPED: &str = r"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
     Prefix ::= 'pre' | ε
@@ -87,10 +91,10 @@ const EPSILON_WRAPPED: &str = r#"
     Γ ⊢ c : ?T
     ----------- (wrap)
     ?T
-"#;
+";
 
 /// Regex-heavy: multiple regex patterns feeding into typed rules.
-const REGEX_HEAVY: &str = r#"
+const REGEX_HEAVY: &str = r"
     Lower ::= /[a-z]+/
     Upper ::= /[A-Z]+/
     Digits ::= /[0-9]+/
@@ -115,10 +119,10 @@ const REGEX_HEAVY: &str = r#"
     Γ ⊢ e : ?T
     ----------- (tagged)
     ?T
-"#;
+";
 
 /// Scoped context isolation with [Γ].
-const SCOPED: &str = r#"
+const SCOPED: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'X' | 'Y'
     Variable(var) ::= Identifier[x]
@@ -142,10 +146,10 @@ const SCOPED: &str = r#"
     Γ ⊢ inner : ?T
     ----------- (scoped)
     ?T
-"#;
+";
 
 /// Statement-like: context-transforming conclusions with Γ → Γ[x:τ] ⊢ ∅.
-const STMT: &str = r#"
+const STMT: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'I' | 'B'
     Variable(var) ::= Identifier[x]
@@ -167,10 +171,10 @@ const STMT: &str = r#"
     ----------- (decl)
     Γ → Γ[name:τ] ⊢ ∅
 
-"#;
+";
 
 /// Union-typed choice operator producing union types.
-const UNION_CHOICE: &str = r#"
+const UNION_CHOICE: &str = r"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
@@ -191,12 +195,12 @@ const UNION_CHOICE: &str = r#"
     Γ ⊢ a : ?A, Γ ⊢ b : ?B
     ----------- (choice)
     ?A | ?B
-"#;
+";
 
 /// Right-bound conclusion transform: a closed declaration exports a binding to
 /// the variable on its right. The invalid case catches missing or over-broad
 /// context export.
-const CONTEXT_EXPORT: &str = r#"
+const CONTEXT_EXPORT: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'A'
     Value(val) ::= 'v'
@@ -214,11 +218,11 @@ const CONTEXT_EXPORT: &str = r#"
     Γ ⊢ value : τ
     ----------- (decl)
     Γ → Γ[name:τ] ⊢ ∅
-"#;
+";
 
 /// Child-bound context locality: the parameter is visible to `body`, but not to
 /// `tail`. The invalid case catches accidental leakage to right siblings.
-const CHILD_CONTEXT_LOCALITY: &str = r#"
+const CHILD_CONTEXT_LOCALITY: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'A'
     Variable(var) ::= Identifier[x]
@@ -232,7 +236,7 @@ const CHILD_CONTEXT_LOCALITY: &str = r#"
     Γ[param:τ] ⊢ body : τ, Γ ⊢ tail : τ
     ----------- (abs)
     τ
-"#;
+";
 
 fn load_inline_grammar(content: &str) -> SPG<TypingDomain> {
     SPG::<TypingDomain>::load(content).expect("failed to load inline grammar")
@@ -510,6 +514,7 @@ fn child_context_invalid_cases() -> Vec<ParseTestCase> {
 
 /// Expose suites for each inline grammar so the validate runner can exercise
 /// each grammar independently.
+#[must_use]
 pub fn suites() -> Vec<(
     &'static str,
     SPG<TypingDomain>,

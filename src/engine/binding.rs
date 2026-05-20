@@ -16,6 +16,9 @@ use crate::semantics::domain::ConstraintDomain;
 const MAX_RECURSION_DEPTH: usize = 16;
 
 /// Mapping from semantic rule name -> (binding name -> grammar paths).
+///
+/// `pos(n, a, b)` from `prop:binding-uniqueness` — each binding appears at
+/// exactly one child position per alternative, enforced by binding-regularity.
 #[derive(Debug, Clone, Default)]
 pub struct BindingMap {
     // map:     rule    ->    {   binding :   [path]  }
@@ -23,6 +26,7 @@ pub struct BindingMap {
 }
 
 impl BindingMap {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -39,11 +43,12 @@ impl BindingMap {
     }
 
     /// Retrieve the grammar paths for a (binding, rule) pair if present.
+    #[must_use]
     pub fn get(&self, binding: &str, rule: &str) -> Option<&[GrammarPath]> {
         self.map
             .get(rule)
             .and_then(|bindings| bindings.get(binding))
-            .map(|paths| paths.as_slice())
+            .map(std::vec::Vec::as_slice)
     }
 
     /// Return all bindings known for a given rule name.
@@ -61,6 +66,7 @@ impl BindingMap {
 ///
 /// This currently enumerates acyclic paths only; recursive bindings will be
 /// generalised into regular path expressions in future iterations.
+#[must_use]
 pub fn build_binding_map<D: ConstraintDomain>(grammar: &SPG<D>) -> BindingMap {
     let mut binding_map = BindingMap::new();
 

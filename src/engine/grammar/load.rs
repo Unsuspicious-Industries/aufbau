@@ -48,10 +48,12 @@ pub fn load_ebnf<D: ConstraintDomain>(source: &str) -> Result<(SPG<D>, Vec<Strin
                         i += 1;
                     }
                     let production_str = production_lines.join("\n");
-                    let (lhs_str, rhs_str) =
-                        parse_production(&production_str.replace('\n', " "))?;
+                    let (lhs_str, rhs_str) = parse_production(&production_str.replace('\n', " "))?;
                     let (name, rule_name) = parse_nonterminal(&lhs_str)?;
-                    let ParsedRhs { alternatives, literal_tokens } = parse_rhs(&rhs_str)?;
+                    let ParsedRhs {
+                        alternatives,
+                        literal_tokens,
+                    } = parse_rhs(&rhs_str)?;
 
                     if !nt_order.contains(&name) {
                         nt_order.push(name.clone());
@@ -60,7 +62,7 @@ pub fn load_ebnf<D: ConstraintDomain>(source: &str) -> Result<(SPG<D>, Vec<Strin
                         grammar.add_special(literal);
                     }
                     if let Some(rule_name) = rule_name.clone() {
-                        grammar.set_nt_rule(name.clone(), rule_name)?;
+                        grammar.bind_nt_rule(name.clone(), rule_name)?;
                     }
                     for alt_symbols in alternatives {
                         grammar.add_production(name.clone(), Production { rhs: alt_symbols });
@@ -77,7 +79,7 @@ pub fn load_ebnf<D: ConstraintDomain>(source: &str) -> Result<(SPG<D>, Vec<Strin
     if grammar.start().is_none()
         && let Some(last) = nt_order.last()
     {
-        grammar.set_start(last.clone());
+        grammar.with_start(last.clone());
     }
 
     Ok((grammar, rule_blocks))

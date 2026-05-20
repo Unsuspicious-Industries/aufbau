@@ -1,6 +1,6 @@
 //! Type expressions and closed types — matching §3 of the draft.
 //!
-//! # TypeExpr — constraint-language expressions
+//! # `TypeExpr` — constraint-language expressions
 //!
 //! Appears in typing rule premises and conclusions.  Elaborated to evidence
 //! per the draft's elaboration rules (§3):
@@ -11,7 +11,7 @@
 //!   ?A       ↦  pattern matching on unified binding evidence
 //!
 //! Meta variables (`?A`) are compiled away during rule loading into equality
-//! constraints on `typeof` projections (see `CompilationPass`).
+//! constraints on `typeof` projections (see `compile_rule`).
 //!
 //! # Type — closed evidence types
 //!
@@ -24,7 +24,7 @@ use std::fmt;
 
 /// Type expression appearing in typing rule premises and conclusions.
 ///
-/// After compilation (`CompilationPass`), no `Meta` variants remain.
+/// After compilation (`compile_rule`), no `Meta` variants remain.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TypeExpr {
     /// Literal concrete type: `'Int'`, `'Bool'`, `'number'`.
@@ -101,11 +101,12 @@ pub enum Type {
 
 impl TypeExpr {
     /// Check whether this expression contains any `Meta` variants.
+    #[must_use]
     pub fn has_metas(&self) -> bool {
         match self {
             TypeExpr::Meta(_) => true,
             TypeExpr::Arrow(a, b) => a.has_metas() || b.has_metas(),
-            TypeExpr::Union(parts) => parts.iter().any(|p| p.has_metas()),
+            TypeExpr::Union(parts) => parts.iter().any(TypeExpr::has_metas),
             TypeExpr::Not(inner) => inner.has_metas(),
             TypeExpr::Lit(_)
             | TypeExpr::Any
@@ -116,6 +117,7 @@ impl TypeExpr {
     }
 
     /// Collect all `Meta` names referenced in this expression.
+    #[must_use]
     pub fn metas(&self) -> Vec<&str> {
         let mut out = Vec::new();
         self.collect_metas_into(&mut out);
@@ -144,6 +146,7 @@ impl TypeExpr {
     }
 
     /// Collect all `TypeOf` binding names referenced in this expression.
+    #[must_use]
     pub fn typeof_bindings(&self) -> Vec<&str> {
         let mut out = Vec::new();
         self.collect_typeof_into(&mut out);
@@ -172,6 +175,7 @@ impl TypeExpr {
     }
 
     /// Collect all `ContextExt` variable names referenced in this expression.
+    #[must_use]
     pub fn context_vars(&self) -> Vec<&str> {
         let mut out = Vec::new();
         self.collect_ctx_into(&mut out);
@@ -203,14 +207,17 @@ impl TypeExpr {
 // ── Type helpers ──────────────────────────────────────────────────────────
 
 impl Type {
+    #[must_use]
     pub fn is_concrete(&self) -> bool {
         matches!(self, Type::Raw(_))
     }
 
+    #[must_use]
     pub fn is_any(&self) -> bool {
         matches!(self, Type::Any)
     }
 
+    #[must_use]
     pub fn is_none(&self) -> bool {
         matches!(self, Type::None)
     }
@@ -221,6 +228,7 @@ impl Type {
     }
 
     /// `Type::Arrow` constructor for convenience.
+    #[must_use]
     pub fn arrow(domain: Type, codomain: Type) -> Self {
         Type::Arrow(Box::new(domain), Box::new(codomain))
     }
@@ -231,26 +239,26 @@ impl Type {
 impl fmt::Display for TypeExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TypeExpr::Lit(s) => write!(f, "'{}'", s),
-            TypeExpr::Arrow(a, b) => write!(f, "{} → {}", a, b),
+            TypeExpr::Lit(s) => write!(f, "'{s}'"),
+            TypeExpr::Arrow(a, b) => write!(f, "{a} → {b}"),
             TypeExpr::Union(parts) => {
                 for (i, part) in parts.iter().enumerate() {
                     if i > 0 {
                         write!(f, " | ")?;
                     }
                     match part {
-                        TypeExpr::Arrow(..) | TypeExpr::Not(_) => write!(f, "({})", part)?,
-                        other => write!(f, "{}", other)?,
+                        TypeExpr::Arrow(..) | TypeExpr::Not(_) => write!(f, "({part})")?,
+                        other => write!(f, "{other}")?,
                     }
                 }
                 Ok(())
             }
-            TypeExpr::Not(inner) => write!(f, "¬{}", inner),
+            TypeExpr::Not(inner) => write!(f, "¬{inner}"),
             TypeExpr::Any => write!(f, "⊤"),
             TypeExpr::None => write!(f, "⊥"),
-            TypeExpr::Meta(name) => write!(f, "?{}", name),
-            TypeExpr::ContextExt(var) => write!(f, "Γ({})", var),
-            TypeExpr::TypeOf(binding) => write!(f, "typeof({})", binding),
+            TypeExpr::Meta(name) => write!(f, "?{name}"),
+            TypeExpr::ContextExt(var) => write!(f, "Γ({var})"),
+            TypeExpr::TypeOf(binding) => write!(f, "typeof({binding})"),
         }
     }
 }
@@ -258,24 +266,24 @@ impl fmt::Display for TypeExpr {
 impl fmt::Display for Type {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Type::Raw(s) => write!(f, "'{}'", s),
-            Type::Arrow(a, b) => write!(f, "{} → {}", a, b),
+            Type::Raw(s) => write!(f, "'{s}'"),
+            Type::Arrow(a, b) => write!(f, "{a} → {b}"),
             Type::Union(parts) => {
                 for (i, part) in parts.iter().enumerate() {
                     if i > 0 {
                         write!(f, " | ")?;
                     }
                     match part {
-                        Type::Arrow(..) | Type::Not(_) => write!(f, "({})", part)?,
-                        other => write!(f, "{}", other)?,
+                        Type::Arrow(..) | Type::Not(_) => write!(f, "({part})")?,
+                        other => write!(f, "{other}")?,
                     }
                 }
                 Ok(())
             }
-            Type::Not(inner) => write!(f, "¬{}", inner),
+            Type::Not(inner) => write!(f, "¬{inner}"),
             Type::Any => write!(f, "⊤"),
             Type::None => write!(f, "⊥"),
-            Type::Partial(inner, _input) => write!(f, "{}", inner),
+            Type::Partial(inner, _input) => write!(f, "{inner}"),
         }
     }
 }

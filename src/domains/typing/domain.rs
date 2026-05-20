@@ -6,13 +6,8 @@
 //! - `Context`  = `Context` (ordered `Identifier → Type` map via `BTreeMap`)
 //! - `Effect`   = `ContextTransition` (ordered list of `(name, Type)` extensions)
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
-
 use crate::domains::typing::rule::{
-    CompilationPass, CompiledRule, Premise, PremiseStatus, RuleResult, TypeOperation, TypeSetting,
-    TypingJudgment,
+    Premise, PremiseStatus, RuleResult, TypeOperation, TypeSetting, TypingJudgment,
 };
 use crate::domains::typing::{
     subtype, Context, ContextTransition, Type, TypeExpr, TypingRule, Unifier, UnifyResult,
@@ -27,35 +22,17 @@ use super::loader::TypingRuleLoader;
 
 // ── TypingDomain ──────────────────────────────────────────────────────────────
 
+/// `TypingDomain` — `sec:typing-domain`, the current typing-domain instance.
 #[derive(Clone, Debug)]
-pub struct TypingDomain {
-    /// Cache of compiled rules: rule_name → CompiledRule
-    compiled_rules: Rc<RefCell<HashMap<String, CompiledRule>>>,
-}
+pub struct TypingDomain;
 
 impl Default for TypingDomain {
     fn default() -> Self {
-        Self::new()
+        Self
     }
 }
 
 impl TypingDomain {
-    pub fn new() -> Self {
-        Self {
-            compiled_rules: Rc::new(RefCell::new(HashMap::new())),
-        }
-    }
-
-    /// Get (or compile) the compiled form of a rule.
-    fn compiled(&self, rule: &TypingRule) -> CompiledRule {
-        let mut cache = self.compiled_rules.borrow_mut();
-        if let Some(cached) = cache.get(&rule.name) {
-            return cached.clone();
-        }
-        let compiled = CompilationPass::compile(rule).expect("rule compilation should succeed");
-        cache.insert(rule.name.clone(), compiled.clone());
-        compiled
-    }
 
     // ── Obligation helpers ───────────────────────────────────────────────────
 
@@ -129,19 +106,17 @@ impl TypingDomain {
                 if let Some(found) = ctx.lookup(&text) {
                     return Some(found.clone());
                 }
-                if lexeme.open {
-                    if let Some(found) = ctx.lookup_starts_with(&text) {
+                if lexeme.open
+                    && let Some(found) = ctx.lookup_starts_with(&text) {
                         return Some(found.clone());
                     }
-                }
                 None
             }
             TypeExpr::TypeOf(binding) => {
-                if let Some(ev_id) = Self::ob_type(obligations, binding) {
-                    if ev_id != crate::engine::parse::arena::TOP {
+                if let Some(ev_id) = Self::ob_type(obligations, binding)
+                    && ev_id != crate::engine::parse::arena::TOP {
                         return evidence.get(ev_id);
                     }
-                }
                 Self::ob_resolve(obligations, binding)
                     .and_then(|lex| lex.value(segs))
                     .and_then(|v| Type::parse_raw(&v).ok())
@@ -151,15 +126,20 @@ impl TypingDomain {
 
     // ── Meta binding helpers ───────────────────────────────────────────────
 
-    /// Bind unbound metas in an ascription's expected type by pattern-matching
-    /// against the actual type.  E.g., `l : ?A → ?B` against actual `Int → Bool`
-    /// binds `A := Int`, `B := Bool`.
-    ///
-    /// Draft §3 "Meta compilation pipeline" (sec:meta-compilation) —
-    /// evaluation-time decomposition. Arrow patterns decompose the actual
-    /// type into domain and codomain components, binding fresh metas for each.
+/// Bind unbound metas in an ascription's expected type by pattern-matching
+/// against the actual type.  E.g., `l : ?A → ?B` against actual `Int → Bool`
+/// binds `A := Int`, `B := Bool`.
+///
+/// Draft §3 "Meta compilation pipeline" (`sec:meta-compilation`) —
+/// evaluation-time decomposition. Arrow patterns decompose the actual
+/// type into domain and codomain components, binding fresh metas for each.
+///
+/// This function together with `eval_type` implements the evidence
+/// realizability lemmas: `lem:evidence-realizable` (type evidence
+/// reaches Exact) and `lem:typeof-realizable` (binding evidence
+/// resolves to its rule conclusion).
     fn bind_asc(
-        evidence: &EvidenceStore<Type>,
+        _evidence: &EvidenceStore<Type>,
         ty: &TypeExpr,
         actual: &Type,
         metas: &mut std::collections::HashMap<String, Type>,
@@ -170,8 +150,8 @@ impl TypingDomain {
             }
             TypeExpr::Arrow(domain, codomain) => {
                 if let Type::Arrow(d, c) = actual {
-                    Self::bind_asc(evidence, domain, d, metas);
-                    Self::bind_asc(evidence, codomain, c, metas);
+                    Self::bind_asc(_evidence, domain, d, metas);
+                    Self::bind_asc(_evidence, codomain, c, metas);
                 }
             }
             _ => {}
@@ -191,12 +171,11 @@ impl TypingDomain {
     ) {
         match (left, right) {
             (TypeExpr::Meta(name), other) | (other, TypeExpr::Meta(name)) => {
-                if !metas.contains_key(name) {
-                    if let Some(t) = Self::eval_type(evidence, other, obligations, ctx, segs, metas)
+                if !metas.contains_key(name)
+                    && let Some(t) = Self::eval_type(evidence, other, obligations, ctx, segs, metas)
                     {
                         metas.insert(name.clone(), t);
                     }
-                }
             }
             _ => {}
         }
@@ -300,7 +279,7 @@ impl TypingDomain {
                 if ob.value.is_none() {
                     return PremiseStatus::Unknown;
                 }
-                let open = ob.value.as_ref().map_or(false, |v| v.open);
+                let open = ob.value.as_ref().is_some_and(|v| v.open);
                 let Some(actual_id) = ob.evidence else {
                     return if open {
                         PremiseStatus::Unknown
@@ -578,9 +557,7 @@ impl ConstraintDomain for TypingDomain {
         match Self::eval_rule(evidence, rule, obligations, ctx.clone(), status, segs) {
             RuleResult::Contradiction => (Verdict::Lost, Type::Any, None),
             RuleResult::Partial(ty) => {
-                if rule.name.starts_with("__br_") {
-                    (Verdict::Satisfied, ty, None)
-                } else if status.open() {
+                if status.open() {
                     (Verdict::Live, ty, None)
                 } else {
                     (Verdict::Lost, Type::Any, None)

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use crate::semantics::SemanticRuntime;
 use crate::engine::grammar::Segment;
 use crate::engine::parse::arena::EvidenceId;
+use crate::semantics::SemanticRuntime;
 use crate::semantics::domain::ConstraintDomain;
 
 use super::{ChildRef, NodeId, TypedParser};

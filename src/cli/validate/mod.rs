@@ -21,7 +21,7 @@ pub struct ValidateCmd {
     #[arg(short = 'm', long = "module")]
     pub module: Option<ValidationModule>,
 
-    /// Filter suites by name substring (e.g. "stlc", "fun::lambda")
+    /// Filter suites by name substring (e.g. "stlc", "`fun::lambda`")
     #[arg(short = 'f', long = "filter")]
     pub filter: Option<String>,
 
@@ -45,7 +45,7 @@ pub fn run(args: &ValidateCmd) {
             .stack_size(32 * 1024 * 1024)
             .build_global()
     {
-        eprintln!("Warning: failed to set rayon thread pool: {}", e);
+        eprintln!("Warning: failed to set rayon thread pool: {e}");
     }
 
     match &args.module {
@@ -98,11 +98,11 @@ pub fn run_suites(module_name: &str, suites: Vec<RunnableSuite>, args: &Validate
     let total_suites = suites.len();
     let total_cases: usize = suites.iter().map(|s| s.cases.len()).sum();
 
-    eprintln!("aufbau validation runner - {}", module_name);
-    eprintln!("  suites: {}", total_suites);
-    eprintln!("  cases:  {}", total_cases);
+    eprintln!("aufbau validation runner - {module_name}");
+    eprintln!("  suites: {total_suites}");
+    eprintln!("  cases:  {total_cases}");
     if let Some(ref f) = args.filter {
-        eprintln!("  filter: {}", f);
+        eprintln!("  filter: {f}");
     }
     eprintln!();
 
@@ -282,8 +282,8 @@ fn write_profiles(
     let stem = profile_path.file_stem().unwrap().to_string_lossy();
     let dir = profile_path.parent().unwrap_or(std::path::Path::new("."));
 
-    let perf_path = dir.join(format!("{}-perf.json", stem));
-    let fail_path = dir.join(format!("{}-failures.json", stem));
+    let perf_path = dir.join(format!("{stem}-perf.json"));
+    let fail_path = dir.join(format!("{stem}-failures.json"));
 
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -304,7 +304,7 @@ fn write_profiles(
 
     let failures: Vec<_> = records
         .iter()
-        .filter(|c| !c.get("passed").and_then(|v| v.as_bool()).unwrap_or(false))
+        .filter(|c| !c.get("passed").and_then(serde_json::Value::as_bool).unwrap_or(false))
         .collect();
     let fail_obj = json!({
         "generated_by": format!("aufbau validate {}", module_name),
@@ -340,16 +340,16 @@ fn write_reports(
         .join("reports");
     fs::create_dir_all(&reports_dir).expect("failed to create reports dir");
 
-    let report_path = reports_dir.join(format!("{}-{}.txt", module_name, timestamp));
+    let report_path = reports_dir.join(format!("{module_name}-{timestamp}.txt"));
     let mut f = fs::File::create(&report_path).expect("failed to create report");
     let sep = "=".repeat(79);
     let thin = "-".repeat(79);
 
-    writeln!(f, "{}", sep).ok();
+    writeln!(f, "{sep}").ok();
     writeln!(f, "  {} VALIDATION REPORT", module_name.to_uppercase()).ok();
-    writeln!(f, "  timestamp={}", timestamp).ok();
+    writeln!(f, "  timestamp={timestamp}").ok();
     if let Some(flt) = filter {
-        writeln!(f, "  filter={}", flt).ok();
+        writeln!(f, "  filter={flt}").ok();
     }
     writeln!(
         f,
@@ -361,20 +361,20 @@ fn write_reports(
         total_duration.as_millis()
     )
     .ok();
-    writeln!(f, "{}", sep).ok();
+    writeln!(f, "{sep}").ok();
     writeln!(f).ok();
 
     if failed == 0 {
-        writeln!(f, "RESULT: ALL {} CASES PASSED", total_cases).ok();
+        writeln!(f, "RESULT: ALL {total_cases} CASES PASSED").ok();
     } else {
-        writeln!(f, "RESULT: {} FAILED out of {} cases", failed, total_cases).ok();
+        writeln!(f, "RESULT: {failed} FAILED out of {total_cases} cases").ok();
     }
     writeln!(f).ok();
 
     // Passing
-    writeln!(f, "{}", thin).ok();
-    writeln!(f, "  PASSING ({}/{})", passed, total_cases).ok();
-    writeln!(f, "{}", thin).ok();
+    writeln!(f, "{thin}").ok();
+    writeln!(f, "  PASSING ({passed}/{total_cases})").ok();
+    writeln!(f, "{thin}").ok();
     let mut cur = "";
     for r in results {
         if r.passed {
@@ -396,9 +396,9 @@ fn write_reports(
     writeln!(f).ok();
 
     // Failures
-    writeln!(f, "{}", sep).ok();
-    writeln!(f, "  FAILURES ({}/{})", failed, total_cases).ok();
-    writeln!(f, "{}", sep).ok();
+    writeln!(f, "{sep}").ok();
+    writeln!(f, "  FAILURES ({failed}/{total_cases})").ok();
+    writeln!(f, "{sep}").ok();
     if failed == 0 {
         writeln!(f, "  (none)").ok();
     } else {
@@ -422,7 +422,7 @@ fn write_reports(
                 for line in r.detail.lines() {
                     let trimmed = line.trim();
                     if !trimmed.is_empty() {
-                        writeln!(f, "      {}", trimmed).ok();
+                        writeln!(f, "      {trimmed}").ok();
                     }
                 }
             }
@@ -431,11 +431,11 @@ fn write_reports(
     writeln!(f).ok();
 
     // Per-suite summary
-    writeln!(f, "{}", thin).ok();
+    writeln!(f, "{thin}").ok();
     writeln!(f, "  PER-SUITE SUMMARY").ok();
-    writeln!(f, "{}", thin).ok();
+    writeln!(f, "{thin}").ok();
     let mut suite_names: Vec<&str> = results.iter().map(|r| r.suite.as_str()).collect();
-    suite_names.sort();
+    suite_names.sort_unstable();
     suite_names.dedup();
     for sn in suite_names {
         let sr: Vec<_> = results.iter().filter(|r| r.suite == sn).collect();
@@ -455,9 +455,9 @@ fn write_reports(
         .ok();
     }
     writeln!(f).ok();
-    writeln!(f, "{}", sep).ok();
+    writeln!(f, "{sep}").ok();
     writeln!(f, "  END OF REPORT").ok();
-    writeln!(f, "{}", sep).ok();
+    writeln!(f, "{sep}").ok();
 
     eprintln!("WROTE_REPORT {}", report_path.display());
 }

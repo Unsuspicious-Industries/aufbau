@@ -49,7 +49,8 @@ pub trait HasBindings {
 
 // ── ConstraintDomain ─────────────────────────────────────────────────────────
 
-/// `D = (Rules, Closed, Ctx, eval, ⊕)` — `def:constraint-domain`.
+/// `D = (Rules, Closed, Ctx, eval, ⊕)` — `def:constraint-domain`, the core
+/// abstraction of `sec:semantic-domains`.
 ///
 /// ## Operational decomposition of `eval`
 ///
@@ -82,6 +83,7 @@ pub trait ConstraintDomain: Sized {
     type Loader: ConstraintLoader<Domain = Self> + Default;
 
     /// Returns the default-constructed loader for this domain.
+    #[must_use]
     fn loader() -> Self::Loader {
         Self::Loader::default()
     }
@@ -129,7 +131,9 @@ pub trait ConstraintDomain: Sized {
 
     /// `𝗳𝗶𝗻𝗮𝗹𝗶𝘇𝗲(p, Γ, Ω, ρ)` — `sec:engine-parsing` semantic interface.
     ///
-    /// Operational embodiment of one node-level case of `eval(G(s))`.
+    /// This is `eval_impl` from `def:eval-impl`: the per-node verdict
+    /// produced by finalize, whose return value matches `eval(G(s))`
+    /// by `thm:typing-realizable`.
     /// Returns `(verdict, evidence, ∇)`:
     /// - `Satisfied`: all premises hold; effect may be `Some` only when
     ///   `status` is `Closed`.

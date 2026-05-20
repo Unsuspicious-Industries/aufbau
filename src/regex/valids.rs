@@ -2,13 +2,12 @@
 
 use super::Regex;
 use moka::sync::Cache;
-use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 #[allow(clippy::type_complexity)]
-static CACHE: Lazy<Cache<(Regex, usize), Arc<HashSet<String>>>> =
-    Lazy::new(|| Cache::builder().max_capacity(10_000).build());
+static CACHE: std::sync::LazyLock<Cache<(Regex, usize), Arc<HashSet<String>>>> =
+    std::sync::LazyLock::new(|| Cache::builder().max_capacity(10_000).build());
 
 pub fn clear_cache() {
     CACHE.invalidate_all();
@@ -32,7 +31,7 @@ fn valids_n(r: &Regex, n: usize) -> HashSet<String> {
         Regex::Empty => HashSet::new(),
         Regex::Epsilon => {
             if n == 0 {
-                ["".into()].into()
+                [String::new()].into()
             } else {
                 HashSet::new()
             }
@@ -65,7 +64,7 @@ fn valids_n(r: &Regex, n: usize) -> HashSet<String> {
             .collect(),
         Regex::Star(inner) => {
             if n == 0 {
-                ["".into()].into()
+                [String::new()].into()
             } else {
                 (1..=n)
                     .flat_map(|i| {

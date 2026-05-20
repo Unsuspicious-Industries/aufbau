@@ -1,7 +1,19 @@
 # Build artifacts
 target
 examine_*.ast
+verification/.build/
 verification/_build/
+verification/*.vo
+verification/*.vok
+verification/*.vos
+verification/*.glob
+verification/*.aux
+verification/.*.aux
+
+# OCaml extraction + dune build
+verification/_build/
+verification/ocaml_exports/*.ml
+verification/ocaml_exports/*.mli
 
 
 # Virtual environments

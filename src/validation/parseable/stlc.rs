@@ -4,13 +4,20 @@
 //! all prefixes are parseable without doing full completion search.
 //! Focuses on left-recursive application parsing.
 
-use super::*;
+use super::ParseTestCase;
+#[cfg(test)]
+use {
+    super::{load_example_grammar, run_parse_batch},
+    crate::domains::typing::TypingDomain,
+    crate::engine::grammar::SPG,
+};
 
 #[cfg(test)]
 fn stlc_grammar() -> SPG<TypingDomain> {
     load_example_grammar("stlc")
 }
 
+#[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         // === Simple partial cases ===
@@ -63,6 +70,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     cases
 }
 
+#[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         // === Invalid variable names ===
@@ -107,6 +115,7 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     ]
 }
 
+#[must_use]
 pub fn left_recursive_application_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         // === Test left-associative application parsing ===

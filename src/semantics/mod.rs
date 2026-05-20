@@ -1,8 +1,9 @@
-//! Parser-facing semantic domain interface.
+//! Parser-facing semantic domain interface — `sec:semantic-domains`.
 //!
 //! The parser owns the syntactic fixed point and the obligation-routing
 //! backbone. Domain implementations own the meaning of evidence IDs, contexts,
-//! and right-bound effects.
+//! and right-bound effects. The semantics module encodes `def:evidence-graph`
+//! vertices as arena interned handles and edges as obligation constraints.
 
 pub mod domain;
 pub mod evidence;
@@ -32,6 +33,7 @@ pub struct SemanticSummary {
 }
 
 impl SemanticSummary {
+    #[must_use]
     pub fn new(evidence: EvidenceId, effect: Option<EffectId>, complete: bool) -> Self {
         Self {
             evidence,
@@ -62,7 +64,7 @@ pub trait SemanticRuntime {
     ) -> Result<SemanticSummary, TransitionError>;
 
     /// Update the input segmentation visible to evidence lexemes.
-    fn set_segs(&mut self, _s: &[Segment]) {}
+    fn load_segs(&mut self, _s: &[Segment]) {}
 
     /// Apply a right-bound effect exported by an exact left sibling.
     fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError>;

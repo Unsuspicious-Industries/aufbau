@@ -1,10 +1,17 @@
-use super::*;
+use super::ParseTestCase;
+#[cfg(test)]
+use {
+    super::{load_example_grammar, run_parse_batch},
+    crate::domains::typing::TypingDomain,
+    crate::engine::grammar::SPG,
+};
 
 #[cfg(test)]
 fn fun_grammar() -> SPG<TypingDomain> {
     load_example_grammar("fun")
 }
 
+#[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         // === Literals ===
@@ -150,6 +157,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     cases
 }
 
+#[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         // === Syntax errors ===

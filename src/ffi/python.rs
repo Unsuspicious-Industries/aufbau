@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 
 use crate::domains::typing::TypingRuntime;
 use crate::domains::typing::{Context, Type, TypingDomain, TypingRule, TypingSynth};
-use crate::engine::grammar::{Production, Segment, Symbol, SPG};
+use crate::engine::grammar::{Production, SPG, Segment, Symbol};
 use crate::engine::parse::arena::ParseArena;
 use crate::engine::structure::ast::FusionAST;
 use crate::regex::{PrefixStatus, Regex};

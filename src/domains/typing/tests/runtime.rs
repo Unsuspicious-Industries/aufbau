@@ -1,12 +1,12 @@
 use crate::domains::typing::Type;
 use crate::domains::typing::TypingDomain;
+use crate::engine::Segment;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{AltRange, ArenaNode, Lexeme, NodeStatus, Span, TOP};
 use crate::engine::path::TreePath;
-use crate::engine::Segment;
+use crate::semantics::Obligations;
 use crate::semantics::domain::{ConstraintDomain, Verdict};
 use crate::semantics::evidence::EvidenceStore;
-use crate::semantics::Obligations;
 use std::collections::HashMap;
 
 fn segs(parts: &[&str]) -> Vec<Segment> {
@@ -37,7 +37,7 @@ fn descend_extends_context_with_constant_type() {
     .unwrap();
     let prod = (grammar.nt_index("Bind").unwrap(), 0);
     let s = segs(&["x", "body"]);
-    let domain = TypingDomain::new();
+    let domain = TypingDomain;
     let evidence = EvidenceStore::new(Type::Any, Type::None);
     let rule = grammar.rules().get("bind").unwrap();
 
@@ -67,7 +67,7 @@ fn descend_resolves_type_binding_before_context_extension() {
     .unwrap();
     let prod = (grammar.nt_index("Bind").unwrap(), 0);
     let s = segs(&["x", ":", "A", ".", "body"]);
-    let domain = TypingDomain::new();
+    let domain = TypingDomain;
     let evidence = EvidenceStore::new(Type::Any, Type::None);
     let rule = grammar.rules().get("bind").unwrap();
 
@@ -107,7 +107,7 @@ fn finalize_resolves_output_context_types_before_export() {
     .unwrap();
     let prod = (grammar.nt_index("Decl").unwrap(), 0);
     let s = segs(&["x", ":", "A"]);
-    let domain = TypingDomain::new();
+    let domain = TypingDomain;
     let evidence = EvidenceStore::new(Type::Any, Type::None);
     let rule = grammar.rules().get("decl").unwrap();
 
@@ -157,7 +157,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
     .unwrap();
     let prod = (grammar.nt_index("Decl").unwrap(), 0);
     let s = segs(&["x", ":", "Int", "=", "true"]);
-    let domain = TypingDomain::new();
+    let domain = TypingDomain;
     let evidence = EvidenceStore::new(Type::Any, Type::None);
     let rule = grammar.rules().get("decl").unwrap();
 

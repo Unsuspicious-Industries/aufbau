@@ -230,50 +230,51 @@ pub struct FusionNode<'a, D: ConstraintDomain> {
 }
 
 impl<'a, D: ConstraintDomain> FusionNode<'a, D> {
+    #[must_use] 
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
 
+    #[must_use] 
     pub fn evidence(&self) -> crate::engine::parse::arena::EvidenceId {
         self.ast
             .arena
             .node(self.node_id)
-            .map(|n| n.evidence)
-            .unwrap_or(0)
+            .map_or(0, |n| n.evidence)
     }
 
+    #[must_use] 
     pub fn is_complete(&self) -> bool {
         node_has_complete_alt(&self.ast.arena, self.node_id)
     }
 
+    #[must_use] 
     pub fn text(&self) -> String {
         text_from_node(&self.ast.arena, &self.ast.segments, self.node_id)
     }
 
+    #[must_use] 
     pub fn child_count(&self) -> usize {
         self.ast
             .arena
             .alts_for(self.node_id)
-            .map(|alts| alts.first().map(|alt| alt.children.len()).unwrap_or(0))
-            .unwrap_or(0)
+            .map_or(0, |alts| alts.first().map_or(0, |alt| alt.children.len()))
     }
 
+    #[must_use] 
     pub fn rhs_len(&self) -> usize {
         self.ast
             .arena
             .alts_for(self.node_id)
-            .map(|alts| {
+            .map_or(0, |alts| {
                 alts.first()
-                    .map(|alt| {
+                    .map_or(0, |alt| {
                         self.ast
                             .grammar
                             .prod(alt.prod)
-                            .map(|p| p.rhs.len())
-                            .unwrap_or(0)
+                            .map_or(0, |p| p.rhs.len())
                     })
-                    .unwrap_or(0)
             })
-            .unwrap_or(0)
     }
 
     pub fn children(&self) -> impl Iterator<Item = FusionChild<'a, D>> + 'a {
@@ -311,6 +312,7 @@ impl<'a, D: ConstraintDomain> FusionNode<'a, D> {
 // FusionChild — either a node or a terminal
 // ============================================================================
 
+#[derive(Clone)]
 pub enum FusionChild<'a, D: ConstraintDomain> {
     Node(FusionNode<'a, D>),
     Terminal { text: String, complete: bool },
@@ -323,12 +325,12 @@ pub enum FusionChild<'a, D: ConstraintDomain> {
 impl<D: ConstraintDomain> std::fmt::Display for FusionAST<D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, &root_id) in self.roots.iter().enumerate() {
-            writeln!(f, "\nTree {}:", i)?;
+            writeln!(f, "\nTree {i}:")?;
             let node = FusionNode {
                 ast: self,
                 node_id: root_id,
             };
-            write!(f, "{}", node)?;
+            write!(f, "{node}")?;
         }
         Ok(())
     }
@@ -352,14 +354,13 @@ impl<D: ConstraintDomain> FusionNode<'_, D> {
             .ast
             .arena
             .node(self.node_id)
-            .map(|n| {
+            .map_or(("?".into(), String::new()), |n| {
                 let nt = format!("nt{}", n.nt);
                 let ty = format!(":EvidenceId({})", n.evidence);
                 (nt, ty)
-            })
-            .unwrap_or(("?".into(), String::new()));
+            });
 
-        writeln!(f, "{}{}{}{}", prefix, branch, nt_name, ty_str)?;
+        writeln!(f, "{prefix}{branch}{nt_name}{ty_str}")?;
 
         let child_prefix = format!("{}{}", prefix, if is_last { "   " } else { "│  " });
         let children: Vec<_> = self.children().collect();
@@ -441,7 +442,7 @@ fn collect_bound_texts_rec(
         return;
     };
 
-    for (_name, status) in &node.binding_map {
+    for status in node.binding_map.values() {
         if let crate::engine::parse::arena::BindingStatus::Resolved {
             span,
             complete: _,
@@ -451,7 +452,7 @@ fn collect_bound_texts_rec(
         {
             let l = Lexeme::new(*span, true, false);
             if let Some(value) = l.value(s) {
-                out.insert(value.to_string());
+                out.insert(value.clone());
             }
         }
     }

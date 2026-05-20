@@ -1,4 +1,4 @@
-//! Typing constraint domain — §3 of `draft/sections/03-typing-domain-implementation.tex`.
+//! Typing constraint domain — `sec:typing-domain`, §3 of the draft.
 //!
 //! Instantiates `ConstraintDomain` with:
 //! - `Rule`     = `TypingRule`
@@ -21,33 +21,31 @@
 //! ### Rule realizability (`lem:rule-realizable`-analog)
 //! Status: PROVEN — §3 Lemma (Rule realizability).
 //!
-//! ### eval_impl = eval (`thm:typing-realizable`-analog)
+//! ### `eval_impl` = eval (`thm:typing-realizable`-analog)
 //! Status: PROVEN — §3 Theorem (Typing implementation computes ideal evaluator).
 
+pub mod compiler;
 pub mod context;
 pub mod domain;
-pub mod fill;
 pub mod loader;
 pub mod ops;
-mod pool;
 pub mod rule;
 pub mod syntax;
 pub mod types;
 
-
 #[cfg(test)]
 mod tests;
 
+pub use compiler::{compile_rule, CompiledRule};
 pub use context::{Context, ContextTransition, TreeStatus};
 pub use domain::TypingDomain;
 pub use loader::TypingRuleLoader;
 pub use ops::{Unifier, UnifyResult, equal, subtype};
-pub use pool::{SharedType, intern_type};
 pub use types::{Type, TypeExpr};
 
 pub use rule::{
-    CompiledRule, CompilationPass, Conclusion, ConclusionContext, Premise, RuleParser, Term,
-    TypeAscription, TypeSetting, TypingJudgment, TypingRule,
+    Conclusion, ConclusionContext, Premise, PremiseStatus, RuleParser, Term, TypeAscription,
+    TypeSetting, TypingJudgment, TypingRule,
 };
 
 /// Concrete runtime for the typing domain.

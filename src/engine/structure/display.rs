@@ -1,7 +1,7 @@
-use crate::semantics::SemanticRuntime;
 use crate::engine::grammar::Segment;
 use crate::engine::parse::arena::EvidenceId;
 use crate::engine::parse::arena::Lexeme;
+use crate::semantics::SemanticRuntime;
 
 use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
 use crate::engine::parse::{State, TypedParser};
@@ -79,7 +79,7 @@ fn render_pretty(
             for child in &alt.children {
                 match child {
                     ChildRef::Node(child_id) => {
-                        render_pretty(arena, *child_id, segments, indent + 1, out)
+                        render_pretty(arena, *child_id, segments, indent + 1, out);
                     }
                     ChildRef::Terminal(Lexeme {
                         matched: span,
@@ -101,7 +101,7 @@ fn render_pretty(
 
 fn render_evidence_label(evidence_id: Option<EvidenceId>) -> String {
     match evidence_id {
-        Some(id) => format!("EvidenceId({})", id),
+        Some(id) => format!("EvidenceId({id})"),
         None => "None".to_string(),
     }
 }
@@ -124,7 +124,7 @@ pub fn pretty_prefix_state<D: ConstraintDomain, T: SemanticRuntime>(
         state.span.start,
         state.span.end,
         state.root,
-        state.frontier.as_ref().map_or(0, |frontier| frontier.len()),
+        state.frontier.as_ref().map_or(0, std::vec::Vec::len),
     ));
     out.push_str("root:\n");
     let pretty = pretty_node(parser, state.root, segments);
@@ -144,7 +144,7 @@ impl std::fmt::Display for State {
             self.span.start,
             self.span.end,
             self.root,
-            self.frontier.as_ref().map_or(0, |frontier| frontier.len()),
+            self.frontier.as_ref().map_or(0, std::vec::Vec::len),
         )
     }
 }

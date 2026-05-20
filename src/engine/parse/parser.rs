@@ -1,5 +1,5 @@
 use crate::debug_trace;
-use crate::engine::grammar::{SPG, Segment, Symbol};
+use crate::engine::grammar::{Segment, Symbol, SPG};
 use crate::regex::PrefixStatus;
 use crate::semantics::domain::ConstraintDomain;
 use crate::semantics::{Obligations, SemanticRuntime};
@@ -9,21 +9,8 @@ use crate::engine::error::{PrefixError, TransitionError};
 use crate::engine::structure::ast::{FusionAST, FusionForest};
 
 use crate::engine::parse::arena::{
-    TOP,
-    AltRange,
-    ArenaNode,
-    BindingMap,
-    ChildRef,
-    CtxId,
-    EvidenceId,
-    Lexeme,
-    NodeId,
-    NodeStatus,
-    NtId,
-    PackedAlt,
-    ParseArena,
-    ProdId,
-    Span,
+    AltRange, ArenaNode, BindingMap, ChildRef, CtxId, EvidenceId, Lexeme, NodeId, NodeStatus, NtId,
+    PackedAlt, ParseArena, ProdId, Span, TOP,
 };
 
 use super::TypedParser;
@@ -132,7 +119,7 @@ where
     ///
     /// Four cases:
     ///   - Past end of input -> item goes to frontier (waiting for more input).
-    ///   - NoMatch -> item is dead, dropped.
+    ///   - `NoMatch` -> item is dead, dropped.
     ///   - Prefix -> the segment starts a valid match but needs more characters.
     ///     At end of input this becomes a frontier lexeme that does not yet
     ///     satisfy the terminal symbol. Mid-input it's dead.
@@ -229,6 +216,54 @@ where
         }
     }
 
+    /// Transparent wrapper inheritance.
+    ///
+    /// A production is structurally transparent when it contains exactly one
+    /// nonterminal child and no bound terminals. If the parent NT also lacks an
+    /// explicit typing rule, the parser propagates the child's evidence and
+    /// effects upward — the wrapper contributes no semantics of its own.
+    fn transparent_inheritance(&self, item: &Item) -> Option<ArenaNode> {
+        let has_rule = self
+            .grammar
+            .nt(item.prod.0)
+            .and_then(|n| self.grammar.nt_rule(n))
+            .is_some();
+        if has_rule {
+            return None;
+        }
+
+        let transparent = self.grammar.prod(item.prod).is_some_and(|prod| {
+            let nt_count = prod
+                .rhs
+                .iter()
+                .filter(|sym| matches!(sym, Symbol::Nonterminal { .. }))
+                .count();
+            let has_bound = prod.rhs.iter().any(|sym| {
+                matches!(
+                    sym,
+                    Symbol::Terminal {
+                        binding: Some(_),
+                        ..
+                    }
+                )
+            });
+            nt_count == 1 && !has_bound
+        });
+        if !transparent {
+            return None;
+        }
+
+        let node_children: Vec<_> = item
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                ChildRef::Node(id) => self.arena.node(*id).map(|n| n.clone()),
+                ChildRef::Terminal(_) => None,
+            })
+            .collect();
+        node_children.into_iter().next()
+    }
+
     pub(super) fn finish(&mut self, item: &Item) -> Result<Option<NodeId>, PrefixError> {
         let any_open = item.children.iter().any(|child| self.arena.open(child));
         let status = match (self.alt_is_complete(item), any_open) {
@@ -255,71 +290,36 @@ where
         {
             Ok(summary) => {
                 let mut evidence = summary.evidence;
-                let nt_name = self.grammar.nt(item.prod.0).unwrap_or("");
-                let has_user_rule = self.grammar.nt(item.prod.0).and_then(|n| self.grammar.nt_rule(n)).is_some_and(|name| !name.starts_with("__br_"));
-                // Invariant: inheritance is production-local. A structurally
-                // transparent production has exactly one nonterminal child and
-                // no bound terminals. Such a production contributes no local
-                // semantic evidence beyond its child.
-                let transparent_prod = self.grammar.prod(item.prod).is_some_and(|prod| {
-                    let nonterminal_children = prod
-                        .rhs
-                        .iter()
-                        .filter(|sym| {
-                            matches!(sym, crate::engine::grammar::Symbol::Nonterminal { .. })
-                        })
-                        .count();
-                    let bound_terminals = prod.rhs.iter().any(|sym| {
-                        matches!(
-                            sym,
-                            crate::engine::grammar::Symbol::Terminal {
-                                binding: Some(_),
-                                ..
-                            }
-                        )
-                    });
-                    nonterminal_children == 1 && !bound_terminals
-                });
-                let child_inheriting = transparent_prod && !has_user_rule;
-                let inherited_child = if child_inheriting {
-                    let mut node_children = item.children.iter().filter_map(|child| match child {
-                        ChildRef::Node(child_id) => self.arena.node(*child_id).map(|n| n.clone()),
-                        ChildRef::Terminal(_) => None,
-                    });
-                    let first = node_children.next();
-                    if node_children.next().is_none() {
-                        first
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                let inherited = self.transparent_inheritance(item);
 
+                // Empty span: no content to type, default to TOP.
                 if status == NodeStatus::Prefix && item.start == item.pos {
                     evidence = TOP;
-                } else if let Some(child) = &inherited_child {
+                // Transparent wrapper without a rule: inherit child evidence.
+                } else if let Some(child) = &inherited {
                     evidence = child.evidence;
                 }
 
+                // Transparent wrapper without a rule: compose child effects.
                 let effect = if status == NodeStatus::Exact {
-                    if child_inheriting {
-                        let mut effects = Vec::new();
-                        for child in &item.children {
-                            if let ChildRef::Node(child_id) = child
-                                && let Some(child) = self.arena.node(*child_id)
-                                && let Some(effect) = child.effect
-                            {
-                                effects.push(effect);
-                            }
-                        }
-                        if let Some(local_effect) = summary.effect {
-                            effects.push(local_effect);
+                    if inherited.is_some() {
+                        let mut effects: Vec<_> = item
+                            .children
+                            .iter()
+                            .filter_map(|child| match child {
+                                ChildRef::Node(child_id) => {
+                                    self.arena.node(*child_id).and_then(|n| n.effect)
+                                }
+                                ChildRef::Terminal(_) => None,
+                            })
+                            .collect();
+                        if let Some(local) = summary.effect {
+                            effects.push(local);
                         }
                         self.typing.compose_effects(effects).map_err(|e| {
                             PrefixError::rejected(
                                 item.pos,
-                                format!("semantic effect composition failed: {:?}", e),
+                                format!("semantic effect composition failed: {e:?}"),
                             )
                         })?
                     } else {
@@ -355,7 +355,7 @@ where
                 debug_trace!(
                     "fusion_parser",
                     "push node nt={} status={:?} evidence={}",
-                    nt_name,
+                    self.grammar.nt(item.prod.0).unwrap_or("<?>"),
                     status,
                     evidence
                 );
@@ -397,7 +397,7 @@ where
             resumed.ctx = self.typing.apply_effect(resumed.ctx, effect).map_err(|e| {
                 PrefixError::rejected(
                     resumed.pos,
-                    format!("semantic effect failed during resume: {:?}", e),
+                    format!("semantic effect failed during resume: {e:?}"),
                 )
             })?;
         }
@@ -709,7 +709,7 @@ where
             .grammar
             .tokenize(input)
             .map_err(|err| PrefixError::rejected(input.len(), err))?;
-        self.typing.set_segs(&self.segments);
+        self.typing.load_segs(&self.segments);
         Ok(())
     }
 

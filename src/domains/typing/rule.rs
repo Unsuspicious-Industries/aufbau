@@ -1,15 +1,13 @@
-//! Typing Rules — data structures, parsing, and meta compilation.
+//! Typing Rules — data structures, parsing, and analysis.
 //!
 //! # Architecture (matching §3 of the draft)
 //!
 //! 1. **Rule text** is parsed into `TypingRule` with `TypeExpr` in premises
 //!    and conclusions.  Metas (`?A`) appear as `TypeExpr::Meta`.
-//! 2. **Compilation** (`CompilationPass`) eliminates Metas via:
-//!    - *Arrow decomposition*: `b : ?A → ?B` is desugared into
-//!      `typeof(b) = ?fresh1 → ?fresh2` with Meta bindings.
-//!    - *Meta unification*: same-named Metas at different positions
-//!      become equality constraints on `typeof` projections.
-//! 3. **CompiledRule**: the result — no `TypeExpr::Meta` variants remain.
+//! 2. **Compilation** lives in [`super::compiler`](super::compiler) — eliminates
+//!    Metas via arrow decomposition and meta unification.
+//! 3. **`CompiledRule`** lives in [`super::compiler`](super::compiler) — the
+//!    post-compilation form with no `TypeExpr::Meta` variants.
 //!    All checking is by equality/inclusion/ascription on `TypeExpr`
 //!    whose runtime expressions (`TypeOf`, `ContextExt`) are resolved
 //!    against obligations and context.
@@ -20,10 +18,8 @@
 //!   with domain projected to the position of `?A` and codomain
 //!   projected to the position of `?B`.
 
-use crate::domains::typing::ContextTransition;
 use super::{Type, TypeExpr};
-use regex::Regex;
-use std::collections::HashMap;
+use crate::domains::typing::ContextTransition;
 use std::fmt;
 
 // =============================================================================
@@ -40,7 +36,7 @@ pub enum TypeOperation {
 /// Term representation (binding name in the grammar)
 pub type Term = String;
 
-/// A type ascription: term : type_expr
+/// A type ascription: term : `type_expr`
 pub type TypeAscription = (Term, TypeExpr);
 
 /// Typing context with optional extensions: Γ or Γ[x:τ]
@@ -54,11 +50,11 @@ pub struct TypeSetting {
 /// A judgment that can appear in premises
 #[derive(Debug, Clone)]
 pub enum TypingJudgment {
-    /// Type ascription: e : τ  (τ is a TypeExpr)
+    /// Type ascription: e : τ  (τ is a `TypeExpr`)
     Ascription(TypeAscription),
     /// Context membership: x ∈ Γ
     Membership(String, String),
-    /// Type operation: τ₁ op τ₂  (both are TypeExpr)
+    /// Type operation: τ₁ op τ₂  (both are `TypeExpr`)
     Operation {
         left: TypeExpr,
         op: TypeOperation,
@@ -91,6 +87,7 @@ pub struct ConclusionContext {
 }
 
 impl ConclusionContext {
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.input.is_empty() && self.output.is_none()
     }
@@ -105,7 +102,7 @@ pub struct Conclusion {
 }
 
 /// A complete typing rule with premises and conclusion.
-/// Metas (`?A`) may still appear — they are eliminated by `CompilationPass`.
+/// Metas (`?A`) may still appear — they are eliminated by `compile_rule`.
 #[derive(Debug, Clone)]
 pub struct TypingRule {
     pub name: String,
@@ -120,352 +117,6 @@ pub enum RuleResult {
     Contradiction,
 }
 
-// =============================================================================
-// CompiledRule — post-compilation form with no Metas
-// =============================================================================
-
-/// A compiled rule ready for evaluation.  Fresh internal Metas (`_0`, `_1`, …)
-/// may remain; they are resolved at evaluation time by the meta-substitution
-/// map in `apply_rule` via `bind_ascription_metas` and `bind_equality_metas`.
-#[derive(Debug, Clone)]
-pub struct CompiledRule {
-    pub name: String,
-    pub premises: Vec<Premise>,
-    pub conclusion: Conclusion,
-}
-
-impl CompiledRule {
-    pub fn new(name: String, premises: Vec<Premise>, conclusion: Conclusion) -> Self {
-        Self { name, premises, conclusion }
-    }
-
-    fn assert_no_metas_in_judgment(j: &TypingJudgment, rule_name: &str) {
-        match j {
-            TypingJudgment::Ascription((_, ty)) => {
-                debug_assert!(!ty.has_metas(), "ascription in {} has Metas", rule_name);
-            }
-            TypingJudgment::Operation { left, right, .. } => {
-                debug_assert!(!left.has_metas(), "operation left in {} has Metas", rule_name);
-                debug_assert!(!right.has_metas(), "operation right in {} has Metas", rule_name);
-            }
-            TypingJudgment::Equality { left, right } => {
-                debug_assert!(!left.has_metas(), "equality left in {} has Metas", rule_name);
-                debug_assert!(!right.has_metas(), "equality right in {} has Metas", rule_name);
-            }
-            TypingJudgment::Membership(_, _) => {}
-        }
-    }
-
-    /// Check post-compilation invariants.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.conclusion.kind.has_metas() {
-            return Err(format!("conclusion of {} has Metas", self.name));
-        }
-        for (i, p) in self.premises.iter().enumerate() {
-            if let Some(j) = &p.judgment {
-                Self::check_judgment_no_metas(j, &self.name, i)?;
-            }
-            if let Some(s) = &p.setting {
-                for (name, ty) in &s.extensions {
-                    if ty.has_metas() {
-                        return Err(format!(
-                            "setting {}.{} of {} has Metas",
-                            name, i, self.name
-                        ));
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn check_judgment_no_metas(j: &TypingJudgment, rule: &str, i: usize) -> Result<(), String> {
-        match j {
-            TypingJudgment::Ascription((_, ty)) if ty.has_metas() => {
-                Err(format!("ascription premise {} of {} has Metas", i, rule))
-            }
-            TypingJudgment::Operation { left, right, .. } => {
-                if left.has_metas() {
-                    return Err(format!("operation left premise {} of {} has Metas", i, rule));
-                }
-                if right.has_metas() {
-                    return Err(format!("operation right premise {} of {} has Metas", i, rule));
-                }
-                Ok(())
-            }
-            TypingJudgment::Equality { left, right } => {
-                if left.has_metas() {
-                    return Err(format!("equality left premise {} of {} has Metas", i, rule));
-                }
-                if right.has_metas() {
-                    return Err(format!("equality right premise {} of {} has Metas", i, rule));
-                }
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-    }
-}
-
-// =============================================================================
-// CompilationPass — §3 Meta compilation
-// =============================================================================
-
-/// Compiles a `TypingRule` (with `TypeExpr::Meta`) into a `CompiledRule`
-/// (fresh internal metas retained; resolved at evaluation time).
-///
-/// Pipeline (draft §3 “Meta compilation pipeline”, sec:meta-compilation)
-///
-/// **Phase 1 — Fresh meta generation.**
-/// Each user-named `?A` → fresh `_k`.  Top-level ascriptions `b : ?A`
-/// emit `typeof(b) = _k`.  Nested metas (inside arrows) skip the typeof
-/// constraint — decomposition is deferred to evaluation.
-///
-/// **Phase 2 — Shared-meta equality.**
-/// Same-named metas at distinct positions link their fresh metas:
-/// `_i = _j`.
-///
-/// After compilation the rule holds only fresh internal metas; these are
-/// resolved at evaluation time by `bind_ascription_metas` (domain.rs)
-/// and `bind_equality_metas` (domain.rs) via a local meta-substitution map.
-pub struct CompilationPass;
-
-/// Tracks how a Meta name maps to a specific `TypeOf` + projection position.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum MetaResolution {
-    /// The meta maps to `typeof(binding)`.
-    TypeOf(String),
-    /// The meta maps to a fresh internal variable (unresolved).
-    Fresh(usize),
-}
-
-impl CompilationPass {
-    /// Compile a `TypingRule` into a `CompiledRule`.
-    pub fn compile(rule: &TypingRule) -> Result<CompiledRule, String> {
-        if !Self::has_metas(rule) {
-            return Ok(CompiledRule {
-                name: rule.name.clone(),
-                premises: rule.premises.clone(),
-                conclusion: rule.conclusion.clone(),
-            });
-        }
-
-        let compiler = MetaCompiler::new(rule);
-        let (premises, conclusion) = compiler.compile()?;
-
-        Ok(CompiledRule::new(rule.name.clone(), premises, conclusion))
-    }
-
-    pub fn has_metas(rule: &TypingRule) -> bool {
-        if rule.conclusion.kind.has_metas() {
-            return true;
-        }
-        for p in &rule.premises {
-            if p.has_metas() {
-                return true;
-            }
-        }
-        false
-    }
-}
-
-/// Internal state for meta compilation.
-struct MetaCompiler<'a> {
-    rule: &'a TypingRule,
-    /// Meta name → (typeof binding, optional component index for arrows).
-    /// component: None = whole type, Some(0) = domain, Some(1) = codomain.
-    meta_bindings: HashMap<String, TypeExpr>,
-    /// Generated equality constraints (from shared metas).
-    equalities: Vec<(TypeExpr, TypeExpr)>,
-    /// Counter for fresh internal variables.
-    fresh_counter: usize,
-}
-
-impl<'a> MetaCompiler<'a> {
-    fn new(rule: &'a TypingRule) -> Self {
-        Self {
-            rule,
-            meta_bindings: HashMap::new(),
-            equalities: Vec::new(),
-            fresh_counter: 0,
-        }
-    }
-
-    fn fresh(&mut self) -> usize {
-        let n = self.fresh_counter;
-        self.fresh_counter += 1;
-        n
-    }
-
-    fn compile(mut self) -> Result<(Vec<Premise>, Conclusion), String> {
-        let mut premises: Vec<Premise> = Vec::new();
-
-        for premise in &self.rule.premises {
-            let compiled_premise = self.compile_premise(premise)?;
-            premises.push(compiled_premise);
-        }
-
-        // Add equality constraints from shared metas
-        for (left, right) in &self.equalities {
-            premises.push(Premise {
-                setting: None,
-                judgment: Some(TypingJudgment::Equality {
-                    left: left.clone(),
-                    right: right.clone(),
-                }),
-            });
-        }
-
-        let conclusion = self.compile_conclusion(&self.rule.conclusion)?;
-
-        Ok((premises, conclusion))
-    }
-
-    fn compile_premise(&mut self, premise: &Premise) -> Result<Premise, String> {
-        let setting = if let Some(setting) = &premise.setting {
-            let extensions: Vec<(String, TypeExpr)> = setting
-                .extensions
-                .iter()
-                .map(|(name, ty)| {
-                    let compiled = self.compile_expression(ty, name);
-                    (name.clone(), compiled)
-                })
-                .collect();
-            Some(TypeSetting {
-                name: setting.name.clone(),
-                extensions,
-                no_propagate: setting.no_propagate,
-            })
-        } else {
-            None
-        };
-
-        let judgment = if let Some(judgment) = &premise.judgment {
-            Some(self.compile_judgment(judgment)?)
-        } else {
-            None
-        };
-
-        Ok(Premise { setting, judgment })
-    }
-
-    fn compile_judgment(&mut self, judgment: &TypingJudgment) -> Result<TypingJudgment, String> {
-        match judgment {
-            TypingJudgment::Ascription((term, ty)) => {
-                let compiled_ty = self.compile_expression(ty, term);
-                Ok(TypingJudgment::Ascription((term.clone(), compiled_ty)))
-            }
-            TypingJudgment::Membership(var, ctx) => {
-                Ok(TypingJudgment::Membership(var.clone(), ctx.clone()))
-            }
-            TypingJudgment::Operation { left, op, right } => {
-                let l = self.compile_expression(left, "");
-                let r = self.compile_expression(right, "");
-                Ok(TypingJudgment::Operation { left: l, op: op.clone(), right: r })
-            }
-            TypingJudgment::Equality { left, right } => {
-                let l = self.compile_expression(left, "");
-                let r = self.compile_expression(right, "");
-                Ok(TypingJudgment::Equality { left: l, right: r })
-            }
-        }
-    }
-
-    /// Replace Metas with fresh internal metas. When `binding` is non-empty
-    /// (top-level ascription), generate `typeof(binding) = fresh` constraints.
-    /// For nested Metas (inside arrows), only register the fresh meta mapping.
-    fn compile_expression(&mut self, ty: &TypeExpr, binding: &str) -> TypeExpr {
-        match ty {
-            TypeExpr::Arrow(domain, codomain) => {
-                TypeExpr::Arrow(
-                    Box::new(self.compile_expression(domain, "")),
-                    Box::new(self.compile_expression(codomain, "")),
-                )
-            }
-            TypeExpr::Meta(name) => {
-                let fresh = self.fresh_meta_name();
-                let fresh_ty = TypeExpr::Meta(fresh);
-                if let Some(existing) = self.meta_bindings.get(name) {
-                    self.equalities.push((existing.clone(), fresh_ty.clone()));
-                } else {
-                    self.meta_bindings.insert(name.to_string(), fresh_ty.clone());
-                }
-                // Only for top-level ascription metas: typeof(binding) = fresh
-                if !binding.is_empty() {
-                    self.equalities.push((
-                        TypeExpr::TypeOf(binding.to_string()),
-                        fresh_ty.clone(),
-                    ));
-                }
-                fresh_ty
-            }
-            other => other.clone(),
-        }
-    }
-
-    fn compile_conclusion(&mut self, conclusion: &Conclusion) -> Result<Conclusion, String> {
-        let output = if let Some(out) = &conclusion.context.output {
-            let exts: Vec<(String, TypeExpr)> = out.extensions.iter()
-                .map(|(n, ty)| (n.clone(), self.compile_expression(ty, n)))
-                .collect();
-            Some(TypeSetting {
-                name: out.name.clone(), extensions: exts, no_propagate: out.no_propagate,
-            })
-        } else { None };
-        let ctx = ConclusionContext { input: conclusion.context.input.clone(), output };
-        let kind = self.compile_expression(&conclusion.kind, "");
-        Ok(Conclusion { context: ctx, kind })
-    }
-
-    fn fresh_meta_name(&mut self) -> String {
-        let n = self.fresh_counter;
-        self.fresh_counter += 1;
-        format!("_{}", n)
-    }
-}
-
-// =============================================================================
-// HasBindings impl
-// =============================================================================
-
-impl crate::semantics::domain::HasBindings for TypingRule {
-    fn referenced_bindings(&self) -> Box<dyn Iterator<Item = &str> + '_> {
-        Box::new(self.used_bindings().into_iter())
-    }
-}
-
-// =============================================================================
-// HasMetas helpers
-// =============================================================================
-
-impl Premise {
-    fn has_metas(&self) -> bool {
-        if let Some(s) = &self.setting {
-            if s.extensions.iter().any(|(_, ty)| ty.has_metas()) {
-                return true;
-            }
-        }
-        if let Some(j) = &self.judgment {
-            return j.has_metas();
-        }
-        false
-    }
-}
-
-impl TypingJudgment {
-    fn has_metas(&self) -> bool {
-        match self {
-            TypingJudgment::Ascription((_, ty)) => ty.has_metas(),
-            TypingJudgment::Operation { left, right, .. } => {
-                left.has_metas() || right.has_metas()
-            }
-            TypingJudgment::Equality { left, right } => {
-                left.has_metas() || right.has_metas()
-            }
-            TypingJudgment::Membership(_, _) => false,
-        }
-    }
-}
 
 // =============================================================================
 // RULE ANALYSIS
@@ -473,6 +124,7 @@ impl TypingJudgment {
 
 impl TypingRule {
     /// Get the set of binding names referenced by this rule.
+    #[must_use] 
     pub fn used_bindings(&self) -> std::collections::HashSet<&str> {
         let mut bindings = std::collections::HashSet::new();
 
@@ -515,10 +167,7 @@ impl TypingRule {
         bindings
     }
 
-    fn collect_typeof_bindings<'a>(
-        ty: &'a TypeExpr,
-        out: &mut std::collections::HashSet<&'a str>,
-    ) {
+    fn collect_typeof_bindings<'a>(ty: &'a TypeExpr, out: &mut std::collections::HashSet<&'a str>) {
         match ty {
             TypeExpr::TypeOf(name) => {
                 out.insert(name.as_str());
@@ -533,12 +182,16 @@ impl TypingRule {
                 }
             }
             TypeExpr::Not(inner) => Self::collect_typeof_bindings(inner, out),
-            TypeExpr::Meta(_) | TypeExpr::Lit(_) | TypeExpr::Any
-            | TypeExpr::None | TypeExpr::ContextExt(_) => {}
+            TypeExpr::Meta(_)
+            | TypeExpr::Lit(_)
+            | TypeExpr::Any
+            | TypeExpr::None
+            | TypeExpr::ContextExt(_) => {}
         }
     }
 
     /// Pretty multiline formatting as an inference rule
+    #[must_use] 
     pub fn pretty(&self, indent: usize) -> String {
         let indent_str = "  ".repeat(indent);
         let mut out = String::new();
@@ -555,7 +208,7 @@ impl TypingRule {
         let premise_lines: Vec<String> = self
             .premises
             .iter()
-            .map(|p| format!("{}{}", indent_str, p))
+            .map(|p| format!("{indent_str}{p}"))
             .collect();
         let max_width = premise_lines
             .iter()
@@ -569,7 +222,7 @@ impl TypingRule {
         out.push('\n');
         out.push_str(&format!("{} [{}]", bar, self.name));
         out.push('\n');
-        out.push_str(&format!("{}{}", indent_str, conclusion_str));
+        out.push_str(&format!("{indent_str}{conclusion_str}"));
         out
     }
 }
@@ -642,7 +295,7 @@ impl RuleParser {
             let var = var.trim().to_string();
             let ctx = ctx.trim().to_string();
             if var.is_empty() || ctx.is_empty() {
-                return Err(format!("Invalid membership premise: '{}'", s));
+                return Err(format!("Invalid membership premise: '{s}'"));
             }
             return Ok(Some(Premise {
                 setting: None,
@@ -693,19 +346,33 @@ impl RuleParser {
             });
         }
 
-        let name_re = Regex::new(r"^\s*([^\[\s]+)\s*\[").map_err(|e| e.to_string())?;
-        let name = name_re
-            .captures(s)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().to_string())
+        let first_bracket = s
+            .find('[')
             .ok_or_else(|| "Invalid setting: expected name before '['".to_string())?;
+        let name = s[..first_bracket].trim().to_string();
+        if name.is_empty() {
+            return Err("Invalid setting: expected name before '['".to_string());
+        }
 
-        let ext_re = Regex::new(r"\[([^:\]]+):([^\]]+)\]").map_err(|e| e.to_string())?;
         let mut extensions = Vec::new();
-        for cap in ext_re.captures_iter(s) {
-            let var = cap[1].trim().to_string();
-            let ty = TypeExpr::parse(cap[2].trim())?;
-            extensions.push((var, ty));
+        let rest = &s[first_bracket..];
+        let mut pos = 0;
+        while let Some(bracket_start) = rest[pos..].find('[') {
+            let abs_start = pos + bracket_start + 1;
+            if let Some(colon) = rest[abs_start..].find(':') {
+                let key = rest[abs_start..abs_start + colon].trim();
+                let val_start = abs_start + colon + 1;
+                if let Some(bracket_end) = rest[val_start..].find(']') {
+                    let val = rest[val_start..val_start + bracket_end].trim();
+                    let ty = TypeExpr::parse(val)?;
+                    extensions.push((key.to_string(), ty));
+                    pos = val_start + bracket_end + 1;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
         }
 
         Ok(TypeSetting {
@@ -720,8 +387,7 @@ impl RuleParser {
         let parts: Vec<&str> = s.splitn(2, ':').map(str::trim).collect();
         if parts.len() != 2 {
             return Err(format!(
-                "Invalid ascription: expected 'term : type', got '{}'",
-                s
+                "Invalid ascription: expected 'term : type', got '{s}'"
             ));
         }
         let term = parts[0].to_string();
@@ -732,9 +398,8 @@ impl RuleParser {
     /// Try to parse a type operation: `τ₁ = τ₂` or `τ₁ ⊆ τ₂`
     fn try_parse_operation(s: &str) -> Option<(TypeExpr, TypeOperation, TypeExpr)> {
         // Try equality
-        if let Some((l, r)) = s.split_once("=")
-            && let (Ok(left), Ok(right)) =
-                (TypeExpr::parse(l.trim()), TypeExpr::parse(r.trim()))
+        if let Some((l, r)) = s.split_once('=')
+            && let (Ok(left), Ok(right)) = (TypeExpr::parse(l.trim()), TypeExpr::parse(r.trim()))
         {
             return Some((left, TypeOperation::Equality, right));
         }
@@ -794,10 +459,12 @@ impl TypingRule {
 }
 
 impl Conclusion {
+    #[must_use = "discarding parse errors masks ill-formed conclusions"]
     pub fn try_from_str(s: &str) -> Result<Self, String> {
         RuleParser::parse_conclusion(s)
     }
 
+    #[must_use = "discarding parse errors masks ill-formed conclusions"]
     pub fn try_from_string(s: String) -> Result<Self, String> {
         Self::try_from_str(&s)
     }
@@ -824,15 +491,15 @@ impl fmt::Display for TypeSetting {
             let exts: Vec<String> = self
                 .extensions
                 .iter()
-                .map(|(t, ty)| format!("{}:{}", t, ty))
+                .map(|(t, ty)| format!("{t}:{ty}"))
                 .collect();
             format!("{}[{}]", self.name, exts.join(", "))
         };
 
         if self.no_propagate {
-            write!(f, "[{}]", base)
+            write!(f, "[{base}]")
         } else {
-            write!(f, "{}", base)
+            write!(f, "{base}")
         }
     }
 }
@@ -840,13 +507,13 @@ impl fmt::Display for TypeSetting {
 impl fmt::Display for TypingJudgment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TypingJudgment::Ascription((term, ty)) => write!(f, "{} : {}", term, ty),
-            TypingJudgment::Membership(var, ctx) => write!(f, "{} ∈ {}", var, ctx),
+            TypingJudgment::Ascription((term, ty)) => write!(f, "{term} : {ty}"),
+            TypingJudgment::Membership(var, ctx) => write!(f, "{var} ∈ {ctx}"),
             TypingJudgment::Operation { left, op, right } => {
-                write!(f, "{} {} {}", left, op, right)
+                write!(f, "{left} {op} {right}")
             }
             TypingJudgment::Equality { left, right } => {
-                write!(f, "{} = {}", left, right)
+                write!(f, "{left} = {right}")
             }
         }
     }
@@ -855,9 +522,9 @@ impl fmt::Display for TypingJudgment {
 impl fmt::Display for Premise {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match (&self.setting, &self.judgment) {
-            (Some(s), Some(j)) => write!(f, "{} ⊢ {}", s, j),
-            (Some(s), None) => write!(f, "{}", s),
-            (None, Some(j)) => write!(f, "{}", j),
+            (Some(s), Some(j)) => write!(f, "{s} ⊢ {j}"),
+            (Some(s), None) => write!(f, "{s}"),
+            (None, Some(j)) => write!(f, "{j}"),
             (None, None) => Ok(()),
         }
     }
@@ -884,7 +551,7 @@ impl fmt::Display for TypingRule {
         if self.premises.is_empty() {
             write!(f, "[{}] {}", self.name, self.conclusion)
         } else {
-            let premises: Vec<String> = self.premises.iter().map(|p| p.to_string()).collect();
+            let premises: Vec<String> = self.premises.iter().map(std::string::ToString::to_string).collect();
             write!(
                 f,
                 "[{}] {} ⇒ {}",
@@ -903,6 +570,7 @@ impl fmt::Display for TypingRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domains::typing::compiler::compile_rule;
 
     #[test]
     fn parse_app_rule_with_metas() {
@@ -920,12 +588,7 @@ mod tests {
 
     #[test]
     fn parse_var_rule() {
-        let rule = TypingRule::new(
-            "x ∈ Γ".into(),
-            "Γ(x)".into(),
-            "var".into(),
-        )
-        .unwrap();
+        let rule = TypingRule::new("x ∈ Γ".into(), "Γ(x)".into(), "var".into()).unwrap();
 
         assert_eq!(rule.name, "var");
         assert_eq!(rule.premises.len(), 1);
@@ -977,12 +640,16 @@ mod tests {
             "Γ ⊢ l : ?A -> ?B, Γ ⊢ r : ?A".into(),
             "?B".into(),
             "app".into(),
-        ).unwrap();
-        let compiled = CompilationPass::compile(&rule).unwrap();
+        )
+        .unwrap();
+        let compiled = compile_rule(&rule).unwrap();
         // Original named Metas (?A, ?B) are replaced with fresh internal metas (_0, _1, …)
         let all_metas = compiled.conclusion.kind.metas();
-        assert!(!all_metas.iter().any(|m| *m == "A" || *m == "B"),
-            "original user-named metas should be gone, got {:?}", all_metas);
+        assert!(
+            !all_metas.iter().any(|m| *m == "A" || *m == "B"),
+            "original user-named metas should be gone, got {:?}",
+            all_metas
+        );
     }
 
     #[test]
@@ -991,24 +658,25 @@ mod tests {
             "Γ ⊢ l : ?A -> ?B, Γ ⊢ r : ?A".into(),
             "?B".into(),
             "app".into(),
-        ).unwrap();
-        let compiled = CompilationPass::compile(&rule).unwrap();
+        )
+        .unwrap();
+        let compiled = compile_rule(&rule).unwrap();
         // After compilation, fresh metas and typeof/equality constraints are present
         assert!(!compiled.premises.is_empty(), "should have premises");
         let texts: Vec<_> = compiled.premises.iter().map(|p| format!("{}", p)).collect();
         let j = texts.join("\n");
         // At least one equality or typeof constraint should exist
-        assert!(j.contains("=") || j.contains("typeof"), "premises should have constraints: {}", j);
+        assert!(
+            j.contains("=") || j.contains("typeof"),
+            "premises should have constraints: {}",
+            j
+        );
     }
 
     #[test]
     fn rule_with_single_meta_compiles() {
-        let rule = TypingRule::new(
-            "Γ ⊢ e : ?R".into(),
-            "?R".into(),
-            "single".into(),
-        ).unwrap();
-        let compiled = CompilationPass::compile(&rule).unwrap();
+        let rule = TypingRule::new("Γ ⊢ e : ?R".into(), "?R".into(), "single".into()).unwrap();
+        let compiled = compile_rule(&rule).unwrap();
         // Meta("R") is replaced with a fresh meta, top-level so typeof(e) = _0 is added
         let has_typeof_e = compiled.premises.iter().any(|p| {
             let s = format!("{}", p);

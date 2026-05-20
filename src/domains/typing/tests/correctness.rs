@@ -1,4 +1,5 @@
-use crate::domains::typing::rule::{CompilationPass, TypingRule};
+use crate::domains::typing::compiler::compile_rule;
+use crate::domains::typing::rule::TypingRule;
 use crate::domains::typing::{subtype, Context, Type, TypingDomain, Unifier, UnifyResult};
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
@@ -31,7 +32,7 @@ fn mkob(evidence: &EvidenceStore<Type>, name: &str, ty: Type) -> Obligation {
 }
 
 fn setup() -> (TypingDomain, EvidenceStore<Type>) {
-    let domain = TypingDomain::new();
+    let domain = TypingDomain;
     let evidence = EvidenceStore::new(Type::Any, Type::None);
     (domain, evidence)
 }
@@ -160,7 +161,7 @@ fn arrow_decomposition_rejects_domain_mismatch() {
 #[test]
 fn compilation_preserves_premise_cardinality() {
     let rule = parse_rule("Γ ⊢ f : ?A -> ?B, Γ ⊢ x : ?A", "?B", "app");
-    let compiled = CompilationPass::compile(&rule).unwrap();
+    let compiled = compile_rule(&rule).unwrap();
     assert!(
         compiled.premises.len() >= 2,
         "compiled has {} premises",

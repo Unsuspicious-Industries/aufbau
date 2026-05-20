@@ -23,12 +23,15 @@ pub enum UnifyResult {
 }
 
 impl UnifyResult {
+    #[must_use] 
     pub fn is_ok(&self) -> bool {
         matches!(self, UnifyResult::Ok)
     }
+    #[must_use] 
     pub fn is_fail(&self) -> bool {
         matches!(self, UnifyResult::Fail(_))
     }
+    #[must_use] 
     pub fn is_indeterminate(&self) -> bool {
         matches!(self, UnifyResult::Indeterminate)
     }
@@ -47,6 +50,7 @@ impl UnifyResult {
 pub struct Unifier;
 
 impl Unifier {
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
@@ -55,6 +59,7 @@ impl Unifier {
     /// - Ok: types are structurally equal
     /// - Indeterminate: can't decide (involves Any, Partial)
     /// - Fail: types are definitively incompatible
+    #[must_use] 
     pub fn unify(t1: &Type, t2: &Type) -> UnifyResult {
         match (t1, t2) {
             // Identical constructors
@@ -62,7 +67,7 @@ impl Unifier {
                 if a == b {
                     UnifyResult::Ok
                 } else {
-                    UnifyResult::Fail(format!("'{}' ≠ '{}'", a, b))
+                    UnifyResult::Fail(format!("'{a}' ≠ '{b}'"))
                 }
             }
 
@@ -119,11 +124,11 @@ impl Unifier {
 
             // Union vs non-union: fail
             (Type::Union(_), _) | (_, Type::Union(_)) => {
-                UnifyResult::Fail(format!("Cannot unify {} with {}", t1, t2))
+                UnifyResult::Fail(format!("Cannot unify {t1} with {t2}"))
             }
 
             // Structural mismatch
-            _ => UnifyResult::Fail(format!("Cannot unify {} with {}", t1, t2)),
+            _ => UnifyResult::Fail(format!("Cannot unify {t1} with {t2}")),
         }
     }
 }
@@ -134,6 +139,7 @@ impl Unifier {
 
 /// Structural equality on closed types.
 /// Returns `None` when equality depends on unknown information (Any).
+#[must_use] 
 pub fn equal(t1: &Type, t2: &Type) -> Option<bool> {
     match (t1, t2) {
         (Type::Raw(a), Type::Raw(b)) => Some(a == b),
@@ -169,6 +175,7 @@ pub fn equal(t1: &Type, t2: &Type) -> Option<bool> {
 /// -  τ ⊆ ⊤   (Everything is subtype of Any)
 /// -  τ ⊆ τ   (Reflexivity)
 /// -  τ₁ → τ₂  ⊆  σ₁ → σ₂  iff  σ₁ ⊆ τ₁ ∧ τ₂ ⊆ σ₂  (contravariant domain)
+#[must_use] 
 pub fn subtype(t1: &Type, t2: &Type) -> bool {
     if matches!(t1, Type::None) || matches!(t2, Type::Any) {
         return true;

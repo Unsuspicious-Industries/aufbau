@@ -136,7 +136,6 @@ dependencies = [
  "pyo3",
  "rand 0.8.5",
  "rayon",
- "regex",
  "regex-syntax",
  "rouille",
  "serde",

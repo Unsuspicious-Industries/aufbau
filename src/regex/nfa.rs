@@ -1,7 +1,7 @@
 // Custom engine for automata
 // drawings from asciiflow.com
 
-use crate::regex::{dfa::DFA, Regex};
+use crate::regex::{Regex, dfa::DFA};
 
 // Core types
 type StateId = usize;
@@ -189,7 +189,7 @@ impl fmt::Display for NFA {
         writeln!(f)?;
 
         for (id, state) in self.states.iter().enumerate() {
-            write!(f, "State {}", id)?;
+            write!(f, "State {id}")?;
             if id == self.start {
                 write!(f, " (START)")?;
             }
@@ -206,7 +206,7 @@ impl fmt::Display for NFA {
                     writeln!(f, "  └─'{}'───> ({})", { *symbol }, to)?;
                 }
                 for to in &state.epsilon {
-                    writeln!(f, "  └─ε───> ({})", to)?;
+                    writeln!(f, "  └─ε───> ({to})")?;
                 }
             }
         }

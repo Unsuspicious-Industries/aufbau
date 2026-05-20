@@ -89,12 +89,11 @@ fn write_row(
 // ── Subcommand entry point ────────────────────────────────────────────────────
 
 pub fn run(cmd: &ChartCmd) {
-    if let Some(parent) = cmd.output.parent() {
-        if !parent.as_os_str().is_empty() {
+    if let Some(parent) = cmd.output.parent()
+        && !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
                 .unwrap_or_else(|e| panic!("cannot create {}: {e}", parent.display()));
         }
-    }
 
     let file = std::fs::File::create(&cmd.output)
         .unwrap_or_else(|e| panic!("cannot create {}: {e}", cmd.output.display()));

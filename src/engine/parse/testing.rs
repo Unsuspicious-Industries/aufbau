@@ -1,7 +1,7 @@
 use super::{Item, TypedParser};
 use crate::engine::error::PrefixError;
-use crate::semantics::{Obligations, SemanticRuntime};
 use crate::semantics::domain::ConstraintDomain;
+use crate::semantics::{Obligations, SemanticRuntime};
 
 #[cfg(test)]
 impl<D: ConstraintDomain, T: SemanticRuntime> TypedParser<D, T> {

@@ -1,4 +1,4 @@
-use crate::domains::typing::{Context, Type, TypeExpr, TypingDomain, TypingSynth};
+use crate::domains::typing::{Context, Type, TypingDomain, TypingSynth};
 use crate::engine::grammar::SPG;
 use crate::validation::parseable::check_all_prefixes_parseable;
 use proptest::prelude::*;
@@ -53,7 +53,7 @@ fn ctx_from_owned(pairs: &[(String, String)]) -> Context {
 
 #[test]
 fn any_vs_concrete_is_indeterminate() {
-    use crate::domains::typing::{Unifier, UnifyResult};
+    use crate::domains::typing::Unifier;
     assert!(Unifier::unify(&Type::Any, &Type::parse_raw("number").unwrap()).is_indeterminate());
 }
 
@@ -166,13 +166,19 @@ fn transparent_unary_ruleless_root_inherits_child_type() {
     let mut synth = TypingSynth::new(grammar, "x");
     let ast = synth.parse_with(&ctx_of(&[("x", "'X'")])).unwrap();
     let arena = ast.arena();
+    eprintln!("DEBUG: {} root ids", ast.root_ids().len());
     let root_types: Vec<_> = ast
         .root_ids()
         .iter()
         .filter_map(|&id| {
-            arena
-                .node(id)
-                .map(|node| (id, node.nt, synth.runtime().evidence_of(node.evidence)))
+            arena.node(id).map(|node| {
+                let ev = synth.runtime().evidence_of(node.evidence);
+                eprintln!(
+                    "DEBUG: root id={} nt={} evidence={:?} status={:?} children={:?}",
+                    id, node.nt, ev, node.status, node.alts
+                );
+                (id, node.nt, ev)
+            })
         })
         .collect();
     assert!(
@@ -290,7 +296,7 @@ fn closed_parenthesized_int_expr_does_not_reopen_for_float_operator() {
 
 proptest! {
     #[test]
-    fn prop_bridge_wrapper_inherits_child_type(name in "[a-z]{1,6}") {
+    fn prop_transparent_wrapper_inherits_child_type(name in "[a-z]{1,6}") {
         let grammar = SPG::<TypingDomain>::load(
             r#"
             Identifier ::= /[a-z]+/

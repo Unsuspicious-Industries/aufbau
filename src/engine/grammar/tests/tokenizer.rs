@@ -1,4 +1,4 @@
-use crate::engine::grammar::tokenizer::{DEFAULT_DELIMITERS, Segment, Tokenizer};
+use crate::engine::grammar::tokenizer::Tokenizer;
 
 #[test]
 fn test_tokenize_with_special_tokens() {
@@ -240,21 +240,9 @@ fn fun_identifier_ending_in_keyword_prefix() {
 fn fun_identifier_containing_keyword() {
     let mut t = fun_tokenizer();
     let result = tok(&mut t, "int");
-    assert_eq!(
-        result,
-        vec![
-            ("in".into(), false),
-            ("t".into(), true),
-        ]
-    );
+    assert_eq!(result, vec![("in".into(), false), ("t".into(), true),]);
     let result = tok(&mut t, "iff");
-    assert_eq!(
-        result,
-        vec![
-            ("if".into(), false),
-            ("f".into(), true),
-        ]
-    );
+    assert_eq!(result, vec![("if".into(), false), ("f".into(), true),]);
 }
 
 #[test]
@@ -295,13 +283,7 @@ fn fun_keyword_followed_by_space_and_identifier() {
 fn fun_partial_arrow_after_typename() {
     let mut t = fun_tokenizer();
     let result = tok(&mut t, "Int-");
-    assert_eq!(
-        result,
-        vec![
-            ("Int".into(), false),
-            ("-".into(), true),
-        ]
-    );
+    assert_eq!(result, vec![("Int".into(), false), ("-".into(), true),]);
 }
 
 #[test]

@@ -1,10 +1,11 @@
-use super::{Symbol, SPG};
+use super::{SPG, Symbol};
 use crate::semantics::domain::ConstraintDomain;
 use crate::semantics::loader::ConstraintLoader;
 use std::path::Path;
 
 impl<D: ConstraintDomain> SPG<D> {
     /// Produce the textual specification string.
+    #[must_use] 
     pub fn to_spec_string(&self) -> String {
         let mut out = String::new();
         // Preserve original declaration order; fall back to sorted for any missing
@@ -17,7 +18,7 @@ impl<D: ConstraintDomain> SPG<D> {
                 let mut first = true;
                 for prod in alts {
                     let lhs = if let Some(rule_name) = self.nt_rule(nt) {
-                        format!("{}({})", nt, rule_name)
+                        format!("{nt}({rule_name})")
                     } else {
                         nt.clone()
                     };
@@ -25,10 +26,10 @@ impl<D: ConstraintDomain> SPG<D> {
                     let rhs = self.format_rhs(&prod.rhs);
 
                     if first {
-                        out.push_str(&format!("{} ::= {}", lhs, rhs));
+                        out.push_str(&format!("{lhs} ::= {rhs}"));
                         first = false;
                     } else {
-                        out.push_str(&format!(" | {}", rhs));
+                        out.push_str(&format!(" | {rhs}"));
                     }
                 }
                 out.push('\n');
@@ -55,15 +56,15 @@ impl<D: ConstraintDomain> SPG<D> {
         match symbol {
             Symbol::Nonterminal { name, binding, .. } => {
                 if let Some(b) = binding {
-                    format!("{}[{}]", name, b)
+                    format!("{name}[{b}]")
                 } else {
-                    name.to_string()
+                    name.clone()
                 }
             }
             Symbol::Terminal { regex, binding } => {
                 let base = format!("/{}/", regex.to_pattern());
                 if let Some(b) = binding {
-                    format!("{}[{}]", base, b)
+                    format!("{base}[{b}]")
                 } else {
                     base
                 }

@@ -150,7 +150,7 @@ Arrow (`→` / `->` / `=>`) is right-associative: `A → B → C` parses as
 
 ---
 
-## Transparent Nonterminals and Bridge Rules
+## Transparent Nonterminals
 
 A nonterminal is **transparent** if every alternative has exactly one
 nonterminal child and no bound terminal symbols. For example:
@@ -159,20 +159,8 @@ nonterminal child and no bound terminal symbols. For example:
 Wrapped ::= '(' Expression[e] ')'
 ```
 
-When no rule is explicitly assigned to a transparent nonterminal,
-`fill_and_compile` generates a **bridge rule** that passes through the child's
-type:
-
-```
-__br_Wrapped ::= '(' Expression[__Wrapped_0] ')'
-
-typeof(__Wrapped_0) : ?__Wrapped_0
---------------------------------- (__br_Wrapped)
-typeof(__Wrapped_0)
-```
-
-This means the wrapper inherits the type of its inner expression
-automatically.
+When no rule is explicitly assigned to a transparent nonterminal, the
+parser inherits the child's type directly.
 
 To opt out, assign an explicit rule name:
 
@@ -228,9 +216,6 @@ x ∈ Γ
   ├─ Blocks with "::="  ──→ load_ebnf()  ──→ Productions + NT→rule-name map
   │
   └─ Other blocks  ──→ ConstraintLoader::load()  ──→ Rule table by rule name
-  │
-  ▼
-postprocess (fill_and_compile)  ──→ auto-bridge rules + compile metas
   │
   ▼
 grammar ready for use

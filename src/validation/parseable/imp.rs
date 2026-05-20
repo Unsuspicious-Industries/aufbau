@@ -1,10 +1,17 @@
-use super::*;
+use super::ParseTestCase;
+#[cfg(test)]
+use {
+    super::{load_example_grammar, run_parse_batch},
+    crate::domains::typing::TypingDomain,
+    crate::engine::grammar::SPG,
+};
 
 #[cfg(test)]
 fn imp_grammar() -> SPG<TypingDomain> {
     load_example_grammar("imp")
 }
 
+#[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     let cases = vec![
         ParseTestCase::valid("assign int", "{ let x:Int=5; }"),
@@ -30,6 +37,7 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     cases
 }
 
+#[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::invalid("assign before decl", "{x=5;"),

@@ -1,0 +1,19 @@
+# ── line‑count budgets (mirrors STYLE.md §1) ──────────────────────────────────
+# `//` trailing comments are stripped before parsing.
+# Paths ending with `/` are directory budgets; others are single‑file budgets.
+
+[budgets]
+"src/engine/parse/"             = 1200
+"src/engine/grammar/"           = 1000
+"src/domains/typing/"           = 2800
+"src/regex/"                    = 1500
+"src/domains/typing/domain.rs"   = 600
+"src/domains/typing/rule.rs"     = 750
+"src/domains/typing/syntax.rs"   = 500
+"src/engine/parse/parser.rs"      = 750
+"src/engine/structure/ast.rs"    = 500
+"src/ffi/python.rs"              = 700
+
+[limits]
+per-file                        = 400
+per-function                    = 40

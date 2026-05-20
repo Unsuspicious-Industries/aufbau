@@ -55,7 +55,7 @@ pub fn run() {
     set_debug_level(level);
 
     if let Some(mods) = &cli.modules {
-        for m in mods.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        for m in mods.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             add_module_filter(m);
         }
     }

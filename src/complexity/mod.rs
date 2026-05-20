@@ -12,9 +12,9 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
+    use crate::domains::typing::Type;
     use crate::domains::typing::{Context, TypingDomain, TypingSynth};
     use crate::engine::grammar::SPG;
-    use crate::domains::typing::Type;
 
     const BATCH_BUDGET: Duration = Duration::from_secs(1);
 

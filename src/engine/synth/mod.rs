@@ -54,7 +54,7 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
         &self.ctx
     }
 
-    pub fn set_ctx(&mut self, ctx: D::Context) {
+    pub fn with_ctx(&mut self, ctx: D::Context) {
         self.ctx = ctx;
         self.tree = None;
         let _ = self.ast();
@@ -71,32 +71,31 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
     }
 
     pub fn ast(&mut self) -> Result<FusionAST<D>, String> {
-        match &self.tree {
-            Some(ast) => Ok(ast.clone()),
-            None => {
-                let ctx_id = ctx_id(&self.ctx, &self.runtime);
-                match self.parser.parse(&self.input, ctx_id) {
-                    Ok(ast) => {
-                        debug_trace!("synth", "ast: input='{}' parsed successfully", self.input);
-                        self.tree = Some(ast.clone());
-                        Ok(ast)
-                    }
-                    Err(err) => {
-                        debug_trace!("synth", "ast: input='{}' parse failed: {}", self.input, err);
-                        Err(format!("Parse error: {}", err))
-                    }
+        if let Some(ast) = &self.tree {
+            Ok(ast.clone())
+        } else {
+            let ctx_id = ctx_id(&self.ctx, &self.runtime);
+            match self.parser.parse(&self.input, ctx_id) {
+                Ok(ast) => {
+                    debug_trace!("synth", "ast: input='{}' parsed successfully", self.input);
+                    self.tree = Some(ast.clone());
+                    Ok(ast)
+                }
+                Err(err) => {
+                    debug_trace!("synth", "ast: input='{}' parse failed: {}", self.input, err);
+                    Err(format!("Parse error: {err}"))
                 }
             }
         }
     }
 
     pub fn parse_with(&mut self, ctx: &D::Context) -> Result<FusionAST<D>, String> {
-        self.set_ctx(ctx.clone());
+        self.with_ctx(ctx.clone());
         self.ast()
     }
 
     pub fn feed_with(&mut self, token: &str, ctx: &D::Context) -> Result<FusionAST<D>, String> {
-        self.set_ctx(ctx.clone());
+        self.with_ctx(ctx.clone());
         self.feed(token)
     }
 
@@ -107,13 +106,14 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
         self.ast()
     }
 
+    #[must_use = "discarding try_feed result hides parse failures"]
     pub fn try_feed(&mut self, token: &str) -> Result<FusionAST<D>, String> {
         debug_trace!("synth", "try: input='{}' token='{}'", self.input, token);
         let extended = format!("{}{}", self.input, token);
         let mut p = self.parser.fork();
         match p.parse(&extended, ctx_id(&self.ctx, &self.runtime)) {
             Ok(ast) => Ok(ast),
-            Err(err) => Err(format!("try_feed failed: {}", err)),
+            Err(err) => Err(format!("try_feed failed: {err}")),
         }
     }
 }

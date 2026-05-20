@@ -1,7 +1,7 @@
 use super::Symbol;
-use regex::Regex as ExternalRegex;
 
 // collection of utils for working with grammar definitions
+#[must_use] 
 pub fn is_regex(pattern: &str) -> bool {
     // Only slash-delimited patterns: /regex/
     pattern.starts_with('/') && pattern.ends_with('/') && pattern.len() > 2
@@ -11,7 +11,7 @@ pub fn is_regex(pattern: &str) -> bool {
 pub fn parse_production(line: &str) -> Result<(String, String), String> {
     let parts: Vec<&str> = line.splitn(2, "::=").collect();
     if parts.len() != 2 {
-        return Err(format!("Invalid production line: {}", line));
+        return Err(format!("Invalid production line: {line}"));
     }
     Ok((parts[0].trim().to_string(), parts[1].trim().to_string()))
 }
@@ -82,7 +82,7 @@ fn split_alternatives(rhs: &str) -> Result<Vec<String>, String> {
         }
     }
     if in_single_quotes || in_double_quotes {
-        return Err(format!("Unclosed quotes in grammar rule: {}", rhs));
+        return Err(format!("Unclosed quotes in grammar rule: {rhs}"));
     }
     if !current.trim().is_empty() {
         alternatives.push(current.trim().to_string());
@@ -109,7 +109,7 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
         let mut symbols_in_alt = Vec::new();
         let mut is_epsilon_alt = false;
         for token in alt.split_whitespace() {
-            let (base_token, binding) = split_binding(&token)?;
+            let (base_token, binding) = split_binding(token)?;
             if base_token == "ε" {
                 // epsion is for empty alternative
                 if binding.is_some() {
@@ -126,7 +126,7 @@ pub fn parse_rhs(rhs: &str) -> Result<ParsedRhs, String> {
             {
                 literal_tokens.push(lit.clone());
             }
-            let mut symbol = Symbol::new(base_token);
+            let mut symbol = Symbol::new(base_token)?;
             if let Some(binding) = binding {
                 symbol = symbol.attach_binding(binding);
             }
@@ -159,31 +159,46 @@ pub fn parse_inference_rule(lines: &[&str]) -> Result<(String, String, String), 
     let mut name = String::new();
     let mut in_conclusion = false;
 
-    // Regex that captures `(name)` only when the parentheses occur at end of string (optional trailing whitespace)
-    let name_at_end = ExternalRegex::new(r"\(([^)]+)\)\s*$").unwrap();
+    fn extract_name_at_end(s: &str) -> Option<(String, String)> {
+        let s = s.trim();
+        let last_open = s.rfind('(')?;
+        let after_open = &s[last_open + 1..];
+        let close_pos = after_open.find(')')?;
+        let name = after_open[..close_pos].trim().to_string();
+        if name.is_empty() {
+            return None;
+        }
+        let after_close = after_open[close_pos + 1..].trim();
+        if !after_close.is_empty()
+            && !after_close.starts_with('-')
+            && !after_close.starts_with('\u{2014}')
+            && !after_close.starts_with('\u{2015}')
+        {
+            return None;
+        }
+        let remainder = s[..last_open].trim_end().to_string();
+        Some((name, remainder))
+    }
 
     for line in lines {
         let trimmed = line.trim();
         if trimmed.contains("---") {
-            // dashed separator – start collecting conclusion next
-            if let Some(cap) = name_at_end.captures(trimmed) {
-                name = cap[1].trim().to_string();
+            if let Some((n, _)) = extract_name_at_end(trimmed) {
+                name = n;
             }
             in_conclusion = true;
             continue;
         }
-        if !in_conclusion {
-            premises = trimmed.to_string();
-        } else {
-            // first non-dash line after separator is conclusion
+        if in_conclusion {
             conclusion = trimmed.to_string();
-            // Try to extract rule name if not found yet and present at end of conclusion line
             if name.is_empty()
-                && let Some(cap) = name_at_end.captures(trimmed)
+                && let Some((n, rest)) = extract_name_at_end(trimmed)
             {
-                name = cap[1].trim().to_string();
-                conclusion = name_at_end.replace(trimmed, "").trim().to_string();
+                name = n;
+                conclusion = rest.trim().to_string();
             }
+        } else {
+            premises = trimmed.to_string();
         }
     }
 
@@ -202,12 +217,12 @@ fn split_binding(token: &str) -> Result<(String, Option<String>), String> {
     let close_bracket = token.len() - 1;
     let open_bracket = token[..close_bracket]
         .rfind('[')
-        .ok_or_else(|| format!("Malformed binding in token '{}': missing '['", token))?;
+        .ok_or_else(|| format!("Malformed binding in token '{token}': missing '['"))?;
 
     let value = token[..open_bracket].to_string();
     let binding = token[open_bracket + 1..close_bracket].to_string();
     if binding.is_empty() {
-        return Err(format!("Empty binding name in token '{}'", token));
+        return Err(format!("Empty binding name in token '{token}'"));
     }
 
     Ok((value, Some(binding)))

@@ -1,4 +1,3 @@
-
 pub mod load;
 pub mod production;
 pub mod save;
@@ -84,7 +83,14 @@ impl<D: ConstraintDomain> std::hash::Hash for SPG<D> {
     }
 }
 
+impl<D: ConstraintDomain> Default for SPG<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<D: ConstraintDomain> SPG<D> {
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             name: String::new(),
@@ -108,12 +114,11 @@ impl<D: ConstraintDomain> SPG<D> {
         self.rules.insert(name, rule);
     }
 
-    pub fn set_nt_rule(&mut self, nt: String, rule_name: String) -> Result<(), String> {
+    pub fn bind_nt_rule(&mut self, nt: String, rule_name: String) -> Result<(), String> {
         if let Some(existing) = self.nonterminal_rules.get(&nt) {
             if existing != &rule_name {
                 return Err(format!(
-                    "Conflicting typing rules for nonterminal {}: {} vs {}",
-                    nt, existing, rule_name
+                    "Conflicting typing rules for nonterminal {nt}: {existing} vs {rule_name}"
                 ));
             }
         } else {
@@ -125,19 +130,23 @@ impl<D: ConstraintDomain> SPG<D> {
         Ok(())
     }
 
+    #[must_use] 
     pub fn nt_rule(&self, nt: &str) -> Option<&String> {
         self.nonterminal_rules.get(nt)
     }
 
+    #[must_use] 
     pub fn rule_for_prod(&self, prod: ProdId) -> Option<&String> {
         self.nt(prod.0).and_then(|n| self.nt_rule(n))
     }
 
-    pub fn rule_of_prod<'a>(&'a self, prod: ProdId) -> Option<&'a D::Rule> {
+    #[must_use] 
+    pub fn rule_of_prod(&self, prod: ProdId) -> Option<&D::Rule> {
         self.rule_for_prod(prod)
             .and_then(|name| self.rules.get(name.as_str()))
     }
 
+    #[must_use] 
     pub fn is_transparent_nt(&self, nt: &str) -> bool {
         self.productions.get(nt).is_some_and(|productions| {
             !productions.is_empty()
@@ -168,10 +177,11 @@ impl<D: ConstraintDomain> SPG<D> {
         self.productions.entry(nt.clone()).or_default().push(prod);
     }
 
-    pub fn set_start<S: Into<String>>(&mut self, start: S) {
+    pub fn with_start<S: Into<String>>(&mut self, start: S) {
         self.start = Some(start.into());
     }
 
+    #[must_use] 
     pub fn start(&self) -> Option<&String> {
         self.start.as_ref()
     }
@@ -186,34 +196,42 @@ impl<D: ConstraintDomain> SPG<D> {
         }
     }
 
+    #[must_use] 
     pub fn production_count(&self) -> usize {
         self.nonterminals.len()
     }
 
+    #[must_use] 
     pub fn production(&self, nt: &str) -> Option<&Vec<Production>> {
         self.productions.get(nt)
     }
 
+    #[must_use] 
     pub fn nt(&self, idx: usize) -> Option<&str> {
-        self.nonterminals.get(idx).map(|n| n.as_str())
+        self.nonterminals.get(idx).map(std::string::String::as_str)
     }
 
+    #[must_use] 
     pub fn nt_index(&self, name: &str) -> Option<usize> {
         self.nonterminals.iter().position(|n| n == name)
     }
 
+    #[must_use] 
     pub fn productions_at(&self, idx: usize) -> Option<&Vec<Production>> {
         self.nt(idx).and_then(|nts| self.productions.get(nts))
     }
 
+    #[must_use] 
     pub fn prod(&self, pid: ProdId) -> Option<Production> {
         self.productions_at(pid.0)?.get(pid.1).cloned()
     }
 
+    #[must_use] 
     pub fn specials(&self) -> Option<&Vec<String>> {
-        self.tokenizer.as_ref().map(|t| t.specials())
+        self.tokenizer.as_ref().map(tokenizer::Tokenizer::specials)
     }
 
+    #[must_use] 
     pub fn rules(&self) -> &HashMap<String, D::Rule> {
         &self.rules
     }
@@ -222,13 +240,13 @@ impl<D: ConstraintDomain> SPG<D> {
         self.productions.iter().map(|(k, v)| (k.as_str(), v))
     }
 
+    #[must_use] 
     pub fn nu(&self, symbol: &Symbol) -> bool {
         match symbol {
             Symbol::Terminal { .. } => false,
             Symbol::Nonterminal { name: nt, .. } => {
                 let nt = self.productions.get(nt);
-                nt.map(|prod| prod.iter().all(|s| s.rhs.iter().all(|sym| self.nu(sym))))
-                    .unwrap_or(false)
+                nt.is_some_and(|prod| prod.iter().all(|s| s.rhs.iter().all(|sym| self.nu(sym))))
             }
         }
     }
@@ -237,6 +255,9 @@ impl<D: ConstraintDomain> SPG<D> {
         if self.tokenizer.is_none() {
             self.build_tokenizer();
         }
-        self.tokenizer.as_mut().unwrap().tokenize(input)
+        let Some(tokenizer) = self.tokenizer.as_mut() else {
+            return Err("tokenizer not initialized".to_string());
+        };
+        tokenizer.tokenize(input)
     }
 }

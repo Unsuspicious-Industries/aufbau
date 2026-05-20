@@ -1,7 +1,7 @@
 use super::*;
-use crate::domains::typing::TypingSynth;
 use crate::domains::typing::Context;
 use crate::domains::typing::Type;
+use crate::domains::typing::TypingSynth;
 use crate::validation::parseable::check_all_prefixes_parseable;
 use crate::validation::parseable::load_example_grammar;
 
@@ -584,8 +584,10 @@ fn repro_let_prefix_before_body() {
 
 #[test]
 fn repro_weird_epsilon_empty() {
-    let g =
-        SPG::<TypingDomain>::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
+    let g = SPG::<TypingDomain>::load(
+        "A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C",
+    )
+    .unwrap();
     let mut synth = TypingSynth::new(g, "");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "epsilon empty: {:?}", result);
@@ -593,8 +595,10 @@ fn repro_weird_epsilon_empty() {
 
 #[test]
 fn repro_weird_epsilon_a() {
-    let g =
-        SPG::<TypingDomain>::load("A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C").unwrap();
+    let g = SPG::<TypingDomain>::load(
+        "A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C",
+    )
+    .unwrap();
     let mut synth = TypingSynth::new(g, "a");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "epsilon a: {:?}", result);

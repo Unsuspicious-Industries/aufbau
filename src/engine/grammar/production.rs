@@ -15,7 +15,7 @@ fn fmt_symbol(s: &Symbol) -> String {
 
 impl std::fmt::Display for Production {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let symbols: Vec<String> = self.rhs.iter().map(|s| fmt_symbol(s)).collect();
+        let symbols: Vec<String> = self.rhs.iter().map(fmt_symbol).collect();
         write!(f, "{}", symbols.join(" "))
     }
 }
@@ -31,7 +31,13 @@ impl std::ops::Index<usize> for Production {
 
 // .len() for production
 impl Production {
+    #[must_use]
     pub fn len(&self) -> usize {
         self.rhs.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.rhs.is_empty()
     }
 }

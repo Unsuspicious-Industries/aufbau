@@ -15,15 +15,24 @@ fn main() {
 
     if !errors.is_empty() {
         for err in &errors {
-            println!("cargo:warning={}", err);
+            println!("cargo:warning={err}");
         }
         panic!(
             "engine module must not import from domains::typing\n{}",
             errors.join("\n")
         );
     }
-}
 
+    // ── Line-count budget check (STYLE.md §1) ────────────────────────────
+    let lc_status = std::process::Command::new("scripts/lc.sh")
+        .arg("--check")
+        .status()
+        .unwrap_or_else(|e| panic!("failed to run scripts/lc.sh: {e}"));
+    assert!(
+        lc_status.success(),
+        "line-count budgets exceeded — run ./scripts/lc.sh for details"
+    );
+}
 fn collect_rs_files(dir: &Path, errors: &mut Vec<String>) {
     for entry in fs::read_dir(dir).unwrap() {
         let entry = entry.unwrap();

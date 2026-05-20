@@ -62,10 +62,6 @@ impl ConstraintLoader for TypingRuleLoader {
         }
         out
     }
-
-    fn postprocess(g: &mut SPG<Self::Domain>) -> Result<(), String> {
-        crate::domains::typing::fill::fill_and_compile(g)
-    }
 }
 
 /// Helper to format a list of premises as a string
@@ -82,29 +78,28 @@ fn format_premises(premises: &[crate::domains::typing::Premise]) -> String {
                     let exts = setting
                         .extensions
                         .iter()
-                        .map(|(v, t)| format!("[{}:{}]", v, t))
-                        .collect::<Vec<_>>()
-                        .join("");
+                        .map(|(v, t)| format!("[{v}:{t}]"))
+                        .collect::<String>();
                     format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
                 }
             }
             (None, Some(TypingJudgment::Ascription((term, ty)))) => {
-                format!("{} : {}", term, ty)
+                format!("{term} : {ty}")
             }
             (None, Some(TypingJudgment::Membership(var, ctx))) => {
-                format!("{} ∈ {}", var, ctx)
+                format!("{var} ∈ {ctx}")
             }
             (Some(_), Some(TypingJudgment::Membership(var, ctx))) => {
                 // Membership with setting doesn't make sense in current design, but handle it
-                format!("{} ∈ {}", var, ctx)
+                format!("{var} ∈ {ctx}")
             }
             (_, Some(TypingJudgment::Operation { left, op, right })) => {
-                format!("{} {} {}", left, op, right)
+                format!("{left} {op} {right}")
             }
             (_, Some(TypingJudgment::Equality { left, right })) => {
-                format!("{} = {}", left, right)
+                format!("{left} = {right}")
             }
-            (Some(setting), None) => setting.name.to_string(),
+            (Some(setting), None) => setting.name.clone(),
             (None, None) => String::new(),
         })
         .collect::<Vec<_>>()
@@ -112,5 +107,5 @@ fn format_premises(premises: &[crate::domains::typing::Premise]) -> String {
 }
 
 fn format_conclusion(conclusion: &Conclusion) -> String {
-    format!("{}", conclusion)
+    format!("{conclusion}")
 }

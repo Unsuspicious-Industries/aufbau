@@ -1,6 +1,6 @@
+use crate::domains::typing::Context;
 use crate::domains::typing::{TypingDomain, TypingSynth};
 use crate::engine::grammar::SPG;
-use crate::domains::typing::Context;
 
 use super::token_texts;
 
@@ -37,9 +37,6 @@ fn feed_reparses_cached_ast_after_punctuation_token() {
     assert_eq!(fed.text(), "let x:");
     assert_same_parse_shape(&mut synth, &mut fresh);
 }
-
-
-
 
 #[test]
 fn feed_avoids_separator_when_token_boundaries_are_unambiguous() {
@@ -92,7 +89,10 @@ fn feed_with_context_uses_latest_bindings() {
     )
     .unwrap();
     let ctx = Context::new()
-        .extend("foo".into(), crate::domains::typing::Type::Raw("bool".into()))
+        .extend(
+            "foo".into(),
+            crate::domains::typing::Type::Raw("bool".into()),
+        )
         .unwrap();
     let mut synth = TypingSynth::new(grammar.clone(), "");
 
@@ -116,4 +116,3 @@ fn feed_error_leaves_extended_input_visible() {
     assert!(err.starts_with("Parse error:"));
     assert_eq!(synth.input(), "xy");
 }
-

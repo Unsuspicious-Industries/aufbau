@@ -28,6 +28,7 @@ pub struct Segment {
 
 impl Segment {
     /// Create a new segment from bytes and byte positions
+    #[must_use] 
     pub fn new(bytes: Vec<u8>, start: usize, end: usize) -> Self {
         Self {
             bytes,
@@ -39,6 +40,7 @@ impl Segment {
     }
 
     /// Create a new segment with an index
+    #[must_use] 
     pub fn with_index(bytes: Vec<u8>, start: usize, end: usize, index: usize) -> Self {
         Self {
             bytes,
@@ -50,6 +52,7 @@ impl Segment {
     }
 
     /// Create a segment from a string slice and byte positions
+    #[must_use] 
     pub fn from_str(text: &str, start: usize, end: usize) -> Self {
         Self {
             bytes: text.as_bytes().to_vec(),
@@ -61,6 +64,7 @@ impl Segment {
     }
 
     /// Create a segment marked as a partial special token
+    #[must_use] 
     pub fn partial_special(bytes: Vec<u8>, start: usize, end: usize, index: usize) -> Self {
         Self {
             bytes,
@@ -72,27 +76,34 @@ impl Segment {
     }
 
     /// Get the text as a borrowed UTF-8 string.
+    #[must_use] 
     pub fn as_str(&self) -> &str {
-        // Segments are always built from slices of the original UTF-8 input.
-        std::str::from_utf8(&self.bytes).expect("segment bytes must be valid UTF-8")
+        // SAFETY: segment bytes are always sliced from the original
+        // UTF-8 input string by Tokenizer::tokenize, which operates
+        // on &str boundaries.
+        unsafe { std::str::from_utf8_unchecked(&self.bytes) }
     }
 
     /// Get the text as an owned UTF-8 string
+    #[must_use] 
     pub fn text(&self) -> String {
         self.as_str().to_owned()
     }
 
     /// Get the raw bytes
+    #[must_use] 
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
     /// Get the length in bytes
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.bytes.len()
     }
 
     /// Check if the segment is empty
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.bytes.is_empty()
     }
@@ -120,7 +131,7 @@ impl Default for Tokenizer {
     fn default() -> Self {
         Self {
             special_tokens: Vec::new(),
-            delimiters: DEFAULT_DELIMITERS.iter().cloned().collect(),
+            delimiters: DEFAULT_DELIMITERS.iter().copied().collect(),
             sorted_specials: Vec::new(),
             needs_build: false,
         }
@@ -129,12 +140,14 @@ impl Default for Tokenizer {
 
 impl Tokenizer {
     /// Create a new empty tokenizer with default delimiters.
+    #[must_use] 
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Create a tokenizer from special tokens and delimiters.
     /// Special tokens are sorted by length (longest first) for proper matching.
+    #[must_use] 
     pub fn with_specials_and_delimiters(
         special_tokens: Vec<String>,
         delimiters: Vec<char>,
@@ -160,12 +173,8 @@ impl Tokenizer {
         }
     }
 
-    /// Set the delimiters for tokenization.
-    pub fn set_delimiters(&mut self, delimiters: Vec<char>) {
-        self.delimiters = delimiters.into_iter().collect();
-    }
-
     /// Return the list of configured special tokens.
+    #[must_use] 
     pub fn specials(&self) -> &Vec<String> {
         &self.special_tokens
     }
@@ -177,7 +186,8 @@ impl Tokenizer {
             return;
         }
         self.sorted_specials = self.special_tokens.clone();
-        self.sorted_specials.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        self.sorted_specials
+            .sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
         self.sorted_specials.dedup();
         self.needs_build = false;
     }
@@ -244,7 +254,9 @@ impl Tokenizer {
             }
 
             // Check if current char is a delimiter
-            let c = remaining.chars().next().unwrap();
+            let Some(c) = remaining.chars().next() else {
+                break;
+            };
             if self.is_delimiter(c) {
                 byte_pos += c.len_utf8();
                 continue;
@@ -304,4 +316,3 @@ impl Tokenizer {
         Ok(segments)
     }
 }
-
