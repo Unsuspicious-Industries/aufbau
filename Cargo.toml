@@ -53,6 +53,7 @@ once_cell = "1.17.1"
 indicatif = "0.17"
 atty = "0.2"
 pyo3 = { version = "0.23", optional = true }
+ocaml = { version = "1.3", optional = true, default-features = false, features = ["derive", "link"] }
 [dev-dependencies]
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -64,3 +65,4 @@ harness = false
 [features]
 default = []
 python-ffi = ["dep:pyo3", "pyo3/extension-module"]
+ocaml-ffi = ["dep:ocaml"]

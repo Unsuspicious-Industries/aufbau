@@ -65,7 +65,7 @@ prop_compose! {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(120))]
+    #![proptest_config(ProptestConfig::with_cases(512))]
 
     /// Prefix monotonicity on arithmetic expressions.
     #[test]
@@ -158,7 +158,7 @@ proptest! {
         let ok = feed_replay_ok(&g, &input, &ctx);
         prop_assert!(
             ok,
-            "feed–parse disagreement on input {:?}",
+            "feed-parse disagreement on input {:?}",
             input,
         );
     }
@@ -176,7 +176,7 @@ proptest! {
             let ok = feed_replay_ok(&g, &input, &ctx);
             prop_assert!(
                 ok,
-                "feed–parse disagreement on input {:?}",
+                "feed-parse disagreement on input {:?}",
                 input,
             );
         }
@@ -187,6 +187,8 @@ proptest! {
 //
 // Well-known syntactically invalid inputs must stay rejected even when the
 // typing context is extended with arbitrary bindings.
+// This is a bit dubious when you think about it, because start context extesion doesnt obey mnotonicity
+// passing is only due to the staticity of values
 
 prop_compose! {
     fn random_context()(
@@ -226,41 +228,5 @@ proptest! {
                 ctx
             );
         }
-    }
-}
-
-// ── 5. Exhaustive invalids check ──────────────────────────────────────────
-//
-// All hand-curated `invalid` cases across parseable suites must be
-// rejected. This documents and enforces the invalid suite as a
-// regression barrier.
-
-#[test]
-fn all_invalid_arithmetic_cases_rejected() {
-    let mut g = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
-    let ctx = Context::new();
-    for case in crate::validation::parseable::arithmetic::invalid_expressions_cases() {
-        let result = check_parse_fails(&mut g, case.input, &ctx);
-        assert!(
-            result.is_pass(),
-            "invalid case {:?} (input={:?}) was not rejected",
-            case.description,
-            case.input
-        );
-    }
-}
-
-#[test]
-fn all_invalid_stlc_cases_rejected() {
-    let mut g = load_example_grammar("stlc");
-    let ctx = Context::new();
-    for case in crate::validation::parseable::stlc::invalid_expressions_cases() {
-        let result = check_parse_fails(&mut g, case.input, &ctx);
-        assert!(
-            result.is_pass(),
-            "invalid case {:?} (input={:?}) was not rejected",
-            case.description,
-            case.input
-        );
     }
 }

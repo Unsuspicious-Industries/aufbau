@@ -95,10 +95,11 @@ fn complete_records_result_span_on_first_call() {
             start: 0,
             end: 1,
             node: node_id,
+            ctx: 0,
         })
         .unwrap();
 
-    let spans = parser.tables.results.get(&(a_nt, 0)).unwrap();
+    let spans = parser.tables.results.get(&(a_nt, 0, 0)).unwrap();
     assert_eq!(spans, &vec![1]);
 }
 
@@ -120,6 +121,7 @@ fn complete_keeps_result_span_unique_but_allows_distinct_nodes() {
             start: 0,
             end: 1,
             node: node1,
+            ctx: 0,
         })
         .unwrap();
     parser
@@ -128,10 +130,11 @@ fn complete_keeps_result_span_unique_but_allows_distinct_nodes() {
             start: 0,
             end: 1,
             node: node2,
+            ctx: 0,
         })
         .unwrap();
 
-    let spans = parser.tables.results.get(&(a_nt, 0)).unwrap();
+    let spans = parser.tables.results.get(&(a_nt, 0, 0)).unwrap();
     assert_eq!(spans, &vec![1]);
 }
 
@@ -152,6 +155,7 @@ fn completed_nodes_records_all_semantic_nodes_at_same_span() {
             start: 0,
             end: 1,
             node: node1,
+            ctx: 0,
         })
         .unwrap();
     parser
@@ -160,10 +164,11 @@ fn completed_nodes_records_all_semantic_nodes_at_same_span() {
             start: 0,
             end: 1,
             node: node2,
+            ctx: 0,
         })
         .unwrap();
 
-    let recorded = parser.tables.completed_nodes.get(&(a_nt, 0, 1)).unwrap();
+    let recorded = parser.tables.completed_nodes.get(&(a_nt, 0, 1, 0)).unwrap();
     assert_eq!(recorded.len(), 2);
     assert!(recorded.contains(&node1));
     assert!(recorded.contains(&node2));
@@ -194,6 +199,7 @@ fn complete_wakes_waiter_for_each_distinct_completed_node() {
             start: 0,
             end: 1,
             node: node1,
+            ctx: 0,
         })
         .unwrap();
     let items_after_first = parser.tables.agenda.len();
@@ -208,6 +214,7 @@ fn complete_wakes_waiter_for_each_distinct_completed_node() {
             start: 0,
             end: 1,
             node: node2,
+            ctx: 0,
         })
         .unwrap();
     let items_after_second = parser.tables.agenda.len();
@@ -235,11 +242,12 @@ fn results_table_records_end_position_once() {
                 start: 0,
                 end: 1,
                 node,
+                ctx: 0,
             })
             .unwrap();
     }
 
-    let ends = parser.tables.results.get(&(a_nt, 0)).unwrap();
+    let ends = parser.tables.results.get(&(a_nt, 0, 0)).unwrap();
     assert_eq!(ends.len(), 1);
     assert_eq!(ends[0], 1);
 }

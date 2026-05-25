@@ -137,6 +137,54 @@ fn repro_stlc_identity_a() {
     );
 }
 
+/// STLC: lambda-bound variable must not escape its scope when used as an argument.
+/// Specifically `λx:A.x (x)` parses as `(λx:A.x)(x)`, but the outer `(x)` references
+/// `x` which is only in scope inside the lambda — cross-context node reuse must not
+/// allow the inner `{x:A}` context to bleed into the outer `{}` context.
+#[test]
+fn repro_stlc_escape() {
+    set_debug_level(DebugLevel::Trace);
+    crate::add_module_filter("fusion_typing");
+    let g = load_example_grammar("stlc");
+    let mut synth = TypingSynth::new(g, "λx:A.x (x)");
+    let result = synth.parse_with(&Context::new());
+    for r in result.iter() {
+        println!("{}", r);
+    }
+    assert!(
+        !result.is_ok(),
+        "scope-escape: λx:A.x (x) should be rejected but parsed as: {:?}",
+        result
+    );
+}
+
+/// STLC: `(λx:A.x) y` — applying lambda to unbound variable must be rejected.
+#[test]
+fn repro_stlc_escape_applied_unbound() {
+    let g = load_example_grammar("stlc");
+    let mut synth = TypingSynth::new(g, "(λx:A.x) y");
+    let result = synth.parse_with(&Context::new());
+    assert!(
+        !result.is_ok(),
+        "scope-escape: (λx:A.x) y should be rejected (y unbound) but got: {:?}",
+        result
+    );
+}
+
+/// STLC: nested lambda where inner variable escapes outer application must be rejected.
+#[test]
+fn repro_stlc_escape_nested() {
+    let g = load_example_grammar("stlc");
+    // λx:A.x applied to (λy:B.y) applied to outer x — outer x is unbound
+    let mut synth = TypingSynth::new(g, "λx:A.x (λy:B.y) (x)");
+    let result = synth.parse_with(&Context::new());
+    assert!(
+        !result.is_ok(),
+        "scope-escape nested: should be rejected but got: {:?}",
+        result
+    );
+}
+
 /// STLC: prefix 'λ' alone should produce a partial parse.
 #[test]
 fn repro_stlc_partial_lambda() {

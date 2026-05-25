@@ -1,10 +1,10 @@
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
+use super::grammar::PyGrammar;
+use super::parse::PyAst;
 use crate::domains::typing::{Context, Type, TypingDomain, TypingRule, TypingSynth};
 use crate::engine::grammar::SPG;
-use crate::ffi::grammar::PyGrammar;
-use crate::ffi::parse::PyAst;
 use crate::regex::{PrefixStatus, Regex};
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -112,6 +112,13 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("shadowed var used outside", "λx:A.(λy:B.x) y"),
         ParseTestCase::invalid("apply unresolved callee", "x x"),
         ParseTestCase::invalid("lambda escapes scope", "(λx:A.x) y"),
+        // special weird shit
+        ParseTestCase::invalid("bad propagation", "λx:A.x (x)"),
+        ParseTestCase::invalid("bad propagation", "λx:A.(xx)"),
+        // Scope-escape: lambda-bound variable must not be reused outside its scope
+        ParseTestCase::invalid("scope escape explicit paren", "(λx:A.x) (x)"),
+        ParseTestCase::invalid("scope escape applied unbound", "(λx:A.x) y"),
+
     ]
 }
 

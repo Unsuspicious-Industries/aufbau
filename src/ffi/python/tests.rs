@@ -1,4 +1,4 @@
-use super::python::*;
+use super::*;
 use pyo3::prelude::*;
 
 const SPEC: &str = "start ::= 'x' 'y'";

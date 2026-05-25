@@ -34,11 +34,15 @@ pub struct Completion {
     pub start: usize,
     pub end: usize,
     pub node: NodeId,
+    /// The child context (item.ctx) in which this node was created.
+    pub ctx: CtxId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Waiter {
     pub item: Item,
+    /// The child context expected when this waiter was registered.
+    pub child_ctx: CtxId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -53,8 +57,8 @@ pub struct Tables {
 
     // Dedup with: prod, dot, start, pos, ctx
     pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId)>,
-    pub results: HashMap<(NtId, usize), Vec<usize>>,
-    pub completed_nodes: HashMap<(NtId, usize, usize), Vec<NodeId>>,
+    pub results: HashMap<(NtId, usize, CtxId), Vec<usize>>,
+    pub completed_nodes: HashMap<(NtId, usize, usize, CtxId), Vec<NodeId>>,
     // (NT, start)
     pub waiters: HashMap<(NtId, usize), Vec<Waiter>>,
     pub frontier: Vec<Item>,
@@ -416,7 +420,7 @@ where
         );
         self.tables
             .completed_nodes
-            .entry((completion.nt, completion.start, completion.end))
+            .entry((completion.nt, completion.start, completion.end, completion.ctx))
             .or_default()
             .push(completion.node);
 
@@ -426,7 +430,7 @@ where
         let ends = self
             .tables
             .results
-            .entry((completion.nt, completion.start))
+            .entry((completion.nt, completion.start, completion.ctx))
             .or_default();
         if !ends.contains(&completion.end) {
             ends.push(completion.end);
@@ -439,6 +443,9 @@ where
             .cloned()
         {
             for waiter in waiters {
+                if waiter.child_ctx != completion.ctx {
+                    continue;
+                }
                 if let Ok(resumed) = self.resume(&waiter.item, completion.node) {
                     self.enqueue_process(resumed);
                 }
@@ -461,6 +468,7 @@ where
                     start: item.start,
                     end: item.pos,
                     node,
+                    ctx: item.ctx,
                 });
             }
             return Ok(());
@@ -496,20 +504,20 @@ where
                     .waiters
                     .entry((nt, item.pos))
                     .or_default()
-                    .push(Waiter { item: item.clone() });
+                    .push(Waiter { item: item.clone(), child_ctx });
 
-                // Resume from already-completed children
+                // Resume from already-completed children, filtered by child context.
                 let ends = self
                     .tables
                     .results
-                    .get(&(nt, item.pos))
+                    .get(&(nt, item.pos, child_ctx))
                     .cloned()
                     .unwrap_or_default();
                 for end in ends {
                     let nodes = self
                         .tables
                         .completed_nodes
-                        .get(&(nt, item.pos, end))
+                        .get(&(nt, item.pos, end, child_ctx))
                         .cloned()
                         .unwrap_or_default();
                     for node_id in nodes {
@@ -607,15 +615,16 @@ where
                 node_id
             );
 
+            let node_ctx = item.ctx;
             self.tables
                 .completed_nodes
-                .entry((node.nt, node.span.start as usize, node.span.end as usize))
+                .entry((node.nt, node.span.start as usize, node.span.end as usize, node_ctx))
                 .or_default()
                 .push(node_id);
             let ends = self
                 .tables
                 .results
-                .entry((node.nt, node.span.start as usize))
+                .entry((node.nt, node.span.start as usize, node_ctx))
                 .or_default();
             if !ends.contains(&(node.span.end as usize)) {
                 ends.push(node.span.end as usize);
@@ -628,6 +637,9 @@ where
                 .cloned()
                 .unwrap_or_default();
             for waiter in waiters {
+                if waiter.child_ctx != node_ctx {
+                    continue;
+                }
                 if let Ok(resumed) = self.resume(&waiter.item, node_id) {
                     queue.push_back(resumed);
                 }
@@ -762,7 +774,7 @@ where
         let mut roots = self
             .tables
             .completed_nodes
-            .get(&(start, 0, end))
+            .get(&(start, 0, end, ctx))
             .cloned()
             .unwrap_or_default();
         roots.sort_unstable();

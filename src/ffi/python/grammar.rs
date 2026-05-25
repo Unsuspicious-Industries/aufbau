@@ -10,7 +10,7 @@ use crate::engine::grammar::{Production, Segment, Symbol, SPG};
 
 #[pyclass(unsendable, name = "SPG")]
 pub struct PyGrammar {
-    inner: SPG<TypingDomain>,
+    pub(crate) inner: SPG<TypingDomain>,
 }
 
 #[pymethods]
@@ -63,7 +63,7 @@ impl PyGrammar {
 
     /// Whether a nonterminal is transparent.
     fn is_transparent(&self, nt: &str) -> bool {
-        self.inner.transparent(nt)
+        self.inner.is_transparent_nt(nt)
     }
 }
 
