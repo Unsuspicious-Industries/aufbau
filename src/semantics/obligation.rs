@@ -7,7 +7,6 @@ use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId, Span};
 use crate::engine::parse::NtId;
 use crate::engine::path::{GrammarPath, TreePath};
-use crate::semantics::domain::{ConstraintDomain, HasBindings};
 use std::collections::HashSet;
 
 /// Deferred semantic requirement induced by a semantic rule.
@@ -129,7 +128,7 @@ impl<'a> IntoIterator for &'a Obligations {
 impl Obligations {
     /// Create the obligations induced by a production at `root`.
     #[must_use]
-    pub fn create<D: ConstraintDomain>(grammar: &SPG<D>, prod: ProdId, root: TreePath) -> Self {
+    pub fn create(grammar: &SPG, prod: ProdId, root: TreePath) -> Self {
         let Some(_) = grammar.prod(prod) else {
             return Self::new(root, Vec::new());
         };
@@ -161,7 +160,8 @@ impl Obligations {
 
         let alt = prod.1;
         let items = rule
-            .referenced_bindings()
+            .used_bindings()
+            .into_iter()
             .filter_map(|name| {
                 let paths = binding_map.get(name, rule_name)?;
                 let filtered: Vec<GrammarPath> = paths
@@ -320,7 +320,7 @@ impl Obligations {
 
     /// Compute the alternatives permitted by the remaining obligations.
     #[must_use]
-    pub fn prune<D: ConstraintDomain>(&self, nt: NtId, grammar: &SPG<D>) -> Vec<ProdId> {
+    pub fn prune(&self, nt: NtId, grammar: &SPG) -> Vec<ProdId> {
         let total = grammar
             .productions_at(nt)
             .map_or(0, |productions: &Vec<_>| productions.len());

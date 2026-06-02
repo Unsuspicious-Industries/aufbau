@@ -1,14 +1,13 @@
 //! Tests for frontier items and partial parse behavior.
 
 use super::*;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::Task;
 
 #[test]
 fn items_at_eof_go_to_frontier() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x' 'y'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -33,8 +32,8 @@ fn items_at_eof_go_to_frontier() {
 
 #[test]
 fn item_at_beginning_of_input_does_not_go_to_frontier() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x' 'y'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -59,8 +58,8 @@ fn item_at_beginning_of_input_does_not_go_to_frontier() {
 
 #[test]
 fn partial_input_produces_partial_node() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x' 'y'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("x", 0).unwrap();
     assert!(!ast.is_complete());
     assert!(!ast.is_empty());
@@ -68,8 +67,8 @@ fn partial_input_produces_partial_node() {
 
 #[test]
 fn empty_input_against_non_nullable_grammar_produces_partial_node() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("", 0).unwrap();
     assert!(!ast.is_complete());
     assert!(!ast.is_empty());
@@ -77,8 +76,8 @@ fn empty_input_against_non_nullable_grammar_produces_partial_node() {
 
 #[test]
 fn partial_node_has_partial_status() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x' 'y'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("x", 0).unwrap();
 
     assert!(!ast.is_empty());
@@ -91,8 +90,8 @@ fn partial_node_has_partial_status() {
 
 #[test]
 fn frontier_item_cascades_completion_to_parent_waiter() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x' 'y'\nStart ::= A 'z'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x' 'y'\nStart ::= A 'z'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("x", 0).unwrap();
 
     assert!(!ast.is_empty());
@@ -101,8 +100,8 @@ fn frontier_item_cascades_completion_to_parent_waiter() {
 
 #[test]
 fn full_input_has_no_frontier_items() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a' 'b'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a' 'b'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("a b").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -127,8 +126,8 @@ fn full_input_has_no_frontier_items() {
 
 #[test]
 fn partial_node_has_concrete_type() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a' 'b'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a' 'b'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("a", 0).unwrap();
 
     assert!(!ast.is_empty());

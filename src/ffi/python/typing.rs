@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 
 use super::grammar::PyGrammar;
 use super::parse::PyAst;
-use crate::domains::typing::{Context, Type, TypingDomain, TypingRule, TypingSynth};
+use crate::domains::typing::{Context, Type, TypingRule, TypingSynth};
 use crate::engine::grammar::SPG;
 use crate::regex::{PrefixStatus, Regex};
 
@@ -64,7 +64,7 @@ impl PySynthesizer {
     #[new]
     #[pyo3(signature = (spec_source, input = ""))]
     fn new(spec_source: String, input: &str) -> PyResult<Self> {
-        let grammar = SPG::<TypingDomain>::load(&spec_source)
+        let grammar = SPG::load(&spec_source)
             .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {e}")))?;
         let synth = TypingSynth::new(grammar, input);
         Ok(Self {
@@ -76,7 +76,7 @@ impl PySynthesizer {
 
     /// Re-create the internal synthesizer with new input.
     fn set_input(&mut self, input: &str) -> PyResult<()> {
-        let grammar = SPG::<TypingDomain>::load(&self.spec_source)
+        let grammar = SPG::load(&self.spec_source)
             .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {e}")))?;
         self.synth = TypingSynth::new(grammar, input);
         Ok(())

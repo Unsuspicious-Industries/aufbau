@@ -1,8 +1,7 @@
 //! Typing rule loader — domain-specific half of grammar loading.
 //!
-//! Implements `ConstraintLoader` for `TypingDomain`.
-//! Parses non-EBNF blocks from `.auf` source into a rule table.
-//! The `NT → rule-name` mapping is handled separately by `Grammar::load`.
+//! Parses the non-EBNF blocks of an `.auf` source into a rule table. The
+//! `NT → rule-name` mapping is handled separately by `SPG::load`.
 
 use std::collections::HashMap;
 
@@ -10,58 +9,50 @@ use crate::domains::typing::Conclusion;
 use crate::domains::typing::TypingRule;
 use crate::engine::grammar::utils::parse_inference_rule;
 use crate::engine::grammar::SPG;
-use crate::semantics::loader::ConstraintLoader;
 
-use super::domain::TypingDomain;
-
-#[derive(Default)]
-pub struct TypingRuleLoader;
-
-impl ConstraintLoader for TypingRuleLoader {
-    type Domain = TypingDomain;
-
-    fn load(blocks: &[&str]) -> Result<HashMap<String, TypingRule>, String> {
-        let mut rules = HashMap::new();
-        for block in blocks {
-            let lines: Vec<&str> = block
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty() && !l.starts_with("//"))
-                .collect();
-            if lines.is_empty() {
-                continue;
-            }
-            if lines.iter().any(|l| l.contains("::=")) {
-                continue;
-            }
-
-            let (premises, conclusion, name) = parse_inference_rule(&lines)?;
-            let rule = TypingRule::new(premises, conclusion, name.clone())?;
-            rules.insert(name, rule);
+/// Parse the rule-body blocks into a `rule-name → TypingRule` table.
+pub fn load(blocks: &[&str]) -> Result<HashMap<String, TypingRule>, String> {
+    let mut rules = HashMap::new();
+    for block in blocks {
+        let lines: Vec<&str> = block
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("//"))
+            .collect();
+        if lines.is_empty() {
+            continue;
         }
-        Ok(rules)
+        if lines.iter().any(|l| l.contains("::=")) {
+            continue;
+        }
+
+        let (premises, conclusion, name) = parse_inference_rule(&lines)?;
+        let rule = TypingRule::new(premises, conclusion, name.clone())?;
+        rules.insert(name, rule);
     }
+    Ok(rules)
+}
 
-    fn save(g: &SPG<Self::Domain>) -> String {
-        let mut out = String::new();
-        if g.rules.is_empty() {
-            return String::new();
-        }
-        out.push_str("// --- Rules ---\n");
-        let mut rule_list: Vec<_> = g.rules.values().collect();
-        rule_list.sort_by_key(|r| &r.name);
-
-        for rule in rule_list {
-            out.push_str(&format_premises(&rule.premises));
-            out.push('\n');
-            let concl_str = format_conclusion(&rule.conclusion);
-            let line = "-".repeat(std::cmp::max(20, concl_str.len() + 5));
-            out.push_str(&format!("{} ({})\n", line, rule.name));
-            out.push_str(&concl_str);
-            out.push_str("\n\n");
-        }
-        out
+/// Render the rule table back to `.auf` source.
+pub fn save(g: &SPG) -> String {
+    let mut out = String::new();
+    if g.rules.is_empty() {
+        return String::new();
     }
+    out.push_str("// --- Rules ---\n");
+    let mut rule_list: Vec<_> = g.rules.values().collect();
+    rule_list.sort_by_key(|r| &r.name);
+
+    for rule in rule_list {
+        out.push_str(&format_premises(&rule.premises));
+        out.push('\n');
+        let concl_str = format_conclusion(&rule.conclusion);
+        let line = "-".repeat(std::cmp::max(20, concl_str.len() + 5));
+        out.push_str(&format!("{} ({})\n", line, rule.name));
+        out.push_str(&concl_str);
+        out.push_str("\n\n");
+    }
+    out
 }
 
 /// Helper to format a list of premises as a string

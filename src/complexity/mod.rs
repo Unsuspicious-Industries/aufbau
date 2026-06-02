@@ -13,12 +13,12 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use crate::domains::typing::Type;
-    use crate::domains::typing::{Context, TypingDomain, TypingSynth};
+    use crate::domains::typing::{Context, TypingSynth};
     use crate::engine::grammar::SPG;
 
     const BATCH_BUDGET: Duration = Duration::from_secs(1);
 
-    fn parse_complete(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> usize {
+    fn parse_complete(grammar: &SPG, input: &str, ctx: &Context) -> usize {
         let mut synth = TypingSynth::new(grammar.clone(), input);
         let ast = synth
             .parse_with(ctx)
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn random_stlc_application_chains_stay_bounded() {
-        let grammar = SPG::<TypingDomain>::load(include_str!("../../examples/stlc.auf")).unwrap();
+        let grammar = SPG::load(include_str!("../../examples/stlc.auf")).unwrap();
         let mut rng = StdRng::seed_from_u64(10);
         let start = Instant::now();
         let mut max_nodes = 0usize;
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn random_imp_declaration_blocks_stay_bounded() {
-        let grammar = SPG::<TypingDomain>::load(include_str!("../../examples/imp.auf")).unwrap();
+        let grammar = SPG::load(include_str!("../../examples/imp.auf")).unwrap();
         let mut rng = StdRng::seed_from_u64(10);
         let start = Instant::now();
         let mut max_nodes = 0usize;
@@ -123,14 +123,14 @@ mod tests {
 
     #[test]
     fn weird_recursive_grammars_stay_bounded() {
-        let right_recursive = SPG::<TypingDomain>::load(
+        let right_recursive = SPG::load(
             r#"
             A ::= 'a' A | 'b'
             start ::= A
             "#,
         )
         .unwrap();
-        let epsilon_heavy = SPG::<TypingDomain>::load(
+        let epsilon_heavy = SPG::load(
             r#"
             A ::= 'a' B | ε
             B ::= 'b' C | ε

@@ -5,11 +5,9 @@
 //! status propagation, and obligation correctness.
 
 use super::utils::*;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::ChildRef;
 use crate::engine::parse::Task;
-use crate::engine::parse::TypedParser;
 use proptest::prelude::*;
 use proptest::proptest;
 
@@ -53,15 +51,15 @@ fn grammar_and_input() -> impl Strategy<Value = (String, String)> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-fn try_parse(grammar: &SPG<TypingDomain>, input: &str) -> Result<bool, ()> {
-    let mut parser = TypedParser::new(grammar.clone(), StubTyping);
+fn try_parse(grammar: &SPG, input: &str) -> Result<bool, ()> {
+    let mut parser = stub_parser(grammar.clone());
     match parser.parse(input, 0) {
         Ok(ast) => Ok(ast.is_complete()),
         Err(_) => Err(()),
     }
 }
 
-fn token_prefixes(grammar: &mut SPG<TypingDomain>, input: &str) -> Vec<String> {
+fn token_prefixes(grammar: &mut SPG, input: &str) -> Vec<String> {
     match grammar.tokenize(input) {
         Ok(segs) => {
             let mut prefixes = vec![String::new()];
@@ -103,7 +101,7 @@ proptest! {
 
     #[test]
     fn prefix_monotone((spec, input) in grammar_and_input()) {
-        let mut grammar = SPG::<TypingDomain>::load(&spec).unwrap();
+        let mut grammar = SPG::load(&spec).unwrap();
         let full = try_parse(&grammar, &input);
         let prefixes = token_prefixes(&mut grammar, &input);
 
@@ -129,8 +127,8 @@ proptest! {
 
     #[test]
     fn arena_spans_are_consistent((spec, input) in grammar_and_input()) {
-        let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
-        let mut parser = TypedParser::new(grammar, StubTyping);
+        let grammar = SPG::load(&spec).unwrap();
+        let mut parser = stub_parser(grammar);
         let Ok(ast) = parser.parse(&input, 0) else { return Ok(()); };
         let arena = ast.arena();
 
@@ -157,10 +155,10 @@ proptest! {
 
     #[test]
     fn parse_is_deterministic((spec, input) in grammar_and_input()) {
-        let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
+        let grammar = SPG::load(&spec).unwrap();
 
-        let mut p1 = TypedParser::new(grammar.clone(), StubTyping);
-        let mut p2 = TypedParser::new(grammar.clone(), StubTyping);
+        let mut p1 = stub_parser(grammar.clone());
+        let mut p2 = stub_parser(grammar.clone());
 
         let r1 = p1.parse(&input, 0);
         let r2 = p2.parse(&input, 0);
@@ -197,8 +195,8 @@ proptest! {
 
     #[test]
     fn seen_process_covers_agenda((spec, input) in grammar_and_input()) {
-        let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
-        let mut parser = TypedParser::new(grammar, StubTyping);
+        let grammar = SPG::load(&spec).unwrap();
+        let mut parser = stub_parser(grammar);
 
         let start_nt = {
             let g = parser.grammar();
@@ -250,8 +248,8 @@ proptest! {
 
     #[test]
     fn complete_roots_have_complete_descendants((spec, input) in grammar_and_input()) {
-        let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
-        let mut parser = TypedParser::new(grammar, StubTyping);
+        let grammar = SPG::load(&spec).unwrap();
+        let mut parser = stub_parser(grammar);
         let Ok(ast) = parser.parse(&input, 0) else { return Ok(()); };
         let arena = ast.arena();
 
@@ -292,8 +290,8 @@ proptest! {
 
     #[test]
     fn every_arena_node_has_alternatives((spec, input) in grammar_and_input()) {
-        let grammar = SPG::<TypingDomain>::load(&spec).unwrap();
-        let mut parser = TypedParser::new(grammar, StubTyping);
+        let grammar = SPG::load(&spec).unwrap();
+        let mut parser = stub_parser(grammar);
         let Ok(ast) = parser.parse(&input, 0) else { return Ok(()); };
         let arena = ast.arena();
 

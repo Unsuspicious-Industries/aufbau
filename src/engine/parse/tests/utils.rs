@@ -1,66 +1,11 @@
-use super::*;
-use crate::semantics::{Obligations, SemanticSummary};
+use crate::domains::typing::TypingDomain;
+use crate::engine::grammar::SPG;
+use crate::engine::parse::TypedParser;
+use crate::semantics::TypingRuntime;
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct StubTyping;
-
-impl SemanticRuntime for StubTyping {
-    fn descend(
-        &self,
-        _prod: ProdId,
-        _binding: Option<&str>,
-        ctx: CtxId,
-        _obligations: &Obligations,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx)
-    }
-
-    fn finalize(
-        &self,
-        _prod: ProdId,
-        _ctx: CtxId,
-        _obligations: &Obligations,
-        _status: NodeStatus,
-    ) -> Result<SemanticSummary, TransitionError> {
-        Ok(SemanticSummary::new(0, None, true))
-    }
-    fn apply_effect(&self, ctx: CtxId, _effect: EffectId) -> Result<CtxId, TransitionError> {
-        Ok(ctx)
-    }
-
-    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
-        Ok(effects.into_iter().next())
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct RejectingTyping;
-
-impl SemanticRuntime for RejectingTyping {
-    fn descend(
-        &self,
-        _prod: ProdId,
-        _binding: Option<&str>,
-        ctx: CtxId,
-        _obligations: &Obligations,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx)
-    }
-
-    fn finalize(
-        &self,
-        _prod: ProdId,
-        _ctx: CtxId,
-        _obligations: &Obligations,
-        _status: NodeStatus,
-    ) -> Result<SemanticSummary, TransitionError> {
-        Err(TransitionError::Rejected)
-    }
-    fn apply_effect(&self, ctx: CtxId, _effect: EffectId) -> Result<CtxId, TransitionError> {
-        Ok(ctx)
-    }
-
-    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
-        Ok(effects.into_iter().next())
-    }
+/// Parser over a real typing runtime. Grammars without typing rules finalize
+/// every node to TOP, so this is the structural-only parsing harness.
+pub(crate) fn stub_parser(grammar: SPG) -> TypedParser {
+    let runtime = TypingRuntime::new(TypingDomain, grammar.clone());
+    TypedParser::new(grammar, runtime)
 }

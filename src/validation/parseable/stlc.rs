@@ -8,12 +8,11 @@ use super::ParseTestCase;
 #[cfg(test)]
 use {
     super::{load_example_grammar, run_parse_batch},
-    crate::domains::typing::TypingDomain,
     crate::engine::grammar::SPG,
 };
 
 #[cfg(test)]
-fn stlc_grammar() -> SPG<TypingDomain> {
+fn stlc_grammar() -> SPG {
     load_example_grammar("stlc")
 }
 

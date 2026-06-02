@@ -18,25 +18,24 @@ pub type NtId = usize;
 
 pub type ProdId = (NtId, AltId);
 
-use crate::semantics::domain::ConstraintDomain;
+use crate::domains::typing::TypingRule;
 use std::collections::HashMap;
 
-/// SPG<D> — Syntax-directed Program Grammar parameterized by constraint domain D.
+/// Syntax-directed Program Grammar `G = (N, T, P, S, Θ, R, B, A)` — `sec:gram-def`.
 ///
-/// Corresponds to `G = (N, T, P, S, Θ, 𝒯, B, A)` from §1.2 `sec:gram-def`.
-/// The rule table `Θ` has type `HashMap<String, D::Rule>`.
+/// `R` maps each nonterminal to its typing-rule name; `Θ` is the rule table.
 #[derive(Debug)]
-pub struct SPG<D: ConstraintDomain> {
+pub struct SPG {
     /// Human-readable name for the grammar (not part of the formal tuple).
     pub name: String,
     /// `P` — the set of production rules, keyed by nonterminal name.
     pub productions: HashMap<String, Vec<Production>>,
     /// `N` — the ordered set of nonterminal symbols.
     pub nonterminals: Vec<String>,
-    /// `𝒯` — maps each nonterminal to its typing rule name.
+    /// `R` — maps each nonterminal to its typing rule name.
     pub nonterminal_rules: HashMap<String, String>,
-    /// `Θ` — the set of constraint-domain typing rules.
-    pub rules: HashMap<String, D::Rule>,
+    /// `Θ` — the set of typing rules.
+    pub rules: HashMap<String, TypingRule>,
 
     /// `S` — the designated start symbol.
     pub start: Option<String>,
@@ -46,7 +45,7 @@ pub struct SPG<D: ConstraintDomain> {
     pub bindings: Option<BindingMap>,
 }
 
-impl<D: ConstraintDomain> Clone for SPG<D> {
+impl Clone for SPG {
     fn clone(&self) -> Self {
         Self {
             name: self.name.clone(),
@@ -61,14 +60,14 @@ impl<D: ConstraintDomain> Clone for SPG<D> {
     }
 }
 
-impl<D: ConstraintDomain> PartialEq for SPG<D> {
+impl PartialEq for SPG {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
-impl<D: ConstraintDomain> Eq for SPG<D> {}
+impl Eq for SPG {}
 
-impl<D: ConstraintDomain> std::hash::Hash for SPG<D> {
+impl std::hash::Hash for SPG {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.name.hash(state);
         let mut keys: Vec<&String> = self.productions.keys().collect();
@@ -83,13 +82,13 @@ impl<D: ConstraintDomain> std::hash::Hash for SPG<D> {
     }
 }
 
-impl<D: ConstraintDomain> Default for SPG<D> {
+impl Default for SPG {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<D: ConstraintDomain> SPG<D> {
+impl SPG {
     #[must_use] 
     pub fn new() -> Self {
         Self {
@@ -110,7 +109,7 @@ impl<D: ConstraintDomain> SPG<D> {
             .add_special(token);
     }
 
-    pub fn add_rule(&mut self, name: String, rule: D::Rule) {
+    pub fn add_rule(&mut self, name: String, rule: TypingRule) {
         self.rules.insert(name, rule);
     }
 
@@ -141,7 +140,7 @@ impl<D: ConstraintDomain> SPG<D> {
     }
 
     #[must_use] 
-    pub fn rule_of_prod(&self, prod: ProdId) -> Option<&D::Rule> {
+    pub fn rule_of_prod(&self, prod: ProdId) -> Option<&TypingRule> {
         self.rule_for_prod(prod)
             .and_then(|name| self.rules.get(name.as_str()))
     }
@@ -232,7 +231,7 @@ impl<D: ConstraintDomain> SPG<D> {
     }
 
     #[must_use] 
-    pub fn rules(&self) -> &HashMap<String, D::Rule> {
+    pub fn rules(&self) -> &HashMap<String, TypingRule> {
         &self.rules
     }
 

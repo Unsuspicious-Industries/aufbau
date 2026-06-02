@@ -1,3 +1,4 @@
+use crate::domains::typing::Context;
 use crate::domains::typing::Type;
 use crate::domains::typing::TypingDomain;
 use crate::engine::Segment;
@@ -5,7 +6,7 @@ use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{AltRange, ArenaNode, Lexeme, NodeStatus, Span, TOP};
 use crate::engine::path::TreePath;
 use crate::semantics::Obligations;
-use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use std::collections::HashMap;
 
@@ -23,7 +24,7 @@ fn segs(parts: &[&str]) -> Vec<Segment> {
 
 #[test]
 fn descend_extends_context_with_constant_type() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Body ::= Identifier[e]
@@ -44,14 +45,14 @@ fn descend_extends_context_with_constant_type() {
     let mut obs = Obligations::create(&grammar, prod, TreePath::new());
     obs.resolve_terminal(0, 0, &Lexeme::new(Span { start: 0, end: 1 }, true, false));
 
-    let ctx = domain.empty_context();
+    let ctx = Context::new();
     let result_ctx = domain.descend(rule, Some("e"), &ctx, &obs, &s, &evidence);
     assert_eq!(result_ctx.lookup("x"), Some(&Type::parse_raw("A").unwrap()));
 }
 
 #[test]
 fn descend_resolves_type_binding_before_context_extension() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         TypeName ::= /[A-Z]+/
         Type ::= TypeName
@@ -86,14 +87,14 @@ fn descend_resolves_type_binding_before_context_extension() {
     };
     obs.resolve_nonterminal(2, 0, &type_node);
 
-    let ctx = domain.empty_context();
+    let ctx = Context::new();
     let result_ctx = domain.descend(rule, Some("e"), &ctx, &obs, &s, &evidence);
     assert_eq!(result_ctx.lookup("x"), Some(&Type::parse_raw("A").unwrap()));
 }
 
 #[test]
 fn finalize_resolves_output_context_types_before_export() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         TypeName ::= /[A-Z]+/
         Type ::= TypeName
@@ -126,7 +127,7 @@ fn finalize_resolves_output_context_types_before_export() {
     };
     obs.resolve_nonterminal(2, 0, &type_node);
 
-    let ctx = domain.empty_context();
+    let ctx = Context::new();
     let (verdict, _, _) = domain.finalize(rule, &ctx, &obs, &s, NodeStatus::Exact, &evidence);
     assert!(
         matches!(verdict, Verdict::Satisfied),
@@ -138,7 +139,7 @@ fn finalize_resolves_output_context_types_before_export() {
 
 #[test]
 fn finalize_rejects_closed_ascription_mismatch() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         TypeName ::= 'Int' | 'Bool'
@@ -189,7 +190,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
     };
     obs.resolve_nonterminal(4, 0, &bool_node);
 
-    let ctx = domain.empty_context();
+    let ctx = Context::new();
     let (verdict, _, _) = domain.finalize(rule, &ctx, &obs, &s, NodeStatus::Exact, &evidence);
     assert!(
         matches!(verdict, Verdict::Lost),

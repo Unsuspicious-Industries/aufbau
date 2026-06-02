@@ -1,12 +1,11 @@
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{AltRange, ArenaNode, NodeStatus, Span};
 use crate::engine::path::TreePath;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 
-fn grammar_with_rule_obligations() -> SPG<TypingDomain> {
-    SPG::<TypingDomain>::load(
+fn grammar_with_rule_obligations() -> SPG {
+    SPG::load(
         r#"
         Number ::= /[0-9]+/
         Pair(pair) ::= Number[x] ',' Number[x]

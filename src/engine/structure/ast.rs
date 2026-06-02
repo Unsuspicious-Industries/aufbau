@@ -3,7 +3,6 @@
 use crate::debug_trace;
 use crate::engine::grammar::{Segment, SPG};
 use crate::engine::parse::arena::Lexeme;
-use crate::semantics::domain::ConstraintDomain;
 use std::collections::BTreeSet;
 
 use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
@@ -12,22 +11,22 @@ use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
 // FusionAST — owns arena, computes everything on-demand
 // ============================================================================
 
-pub struct FusionAST<D: ConstraintDomain> {
-    grammar: SPG<D>,
+pub struct FusionAST {
+    grammar: SPG,
     arena: ParseArena,
     segments: Vec<Segment>,
     roots: Vec<NodeId>,
     input: String,
 }
 
-pub struct FusionForest<'a, D: ConstraintDomain> {
-    _grammar: &'a SPG<D>,
+pub struct FusionForest<'a> {
+    _grammar: &'a SPG,
     arena: &'a ParseArena,
     roots: &'a [NodeId],
     input: &'a str,
 }
 
-impl<D: ConstraintDomain> Clone for FusionAST<D> {
+impl Clone for FusionAST {
     fn clone(&self) -> Self {
         Self {
             grammar: self.grammar.clone(),
@@ -39,7 +38,7 @@ impl<D: ConstraintDomain> Clone for FusionAST<D> {
     }
 }
 
-impl<D: ConstraintDomain> std::fmt::Debug for FusionAST<D> {
+impl std::fmt::Debug for FusionAST {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FusionAST")
             .field("roots", &self.roots.len())
@@ -49,9 +48,9 @@ impl<D: ConstraintDomain> std::fmt::Debug for FusionAST<D> {
     }
 }
 
-impl<D: ConstraintDomain> FusionAST<D> {
+impl FusionAST {
     pub fn new(
-        grammar: SPG<D>,
+        grammar: SPG,
         arena: ParseArena,
         segments: Vec<Segment>,
         roots: Vec<NodeId>,
@@ -74,7 +73,7 @@ impl<D: ConstraintDomain> FusionAST<D> {
         self.view().len()
     }
 
-    pub fn first(&self) -> Option<FusionNode<'_, D>> {
+    pub fn first(&self) -> Option<FusionNode<'_>> {
         self.roots.first().map(|&id| FusionNode {
             ast: self,
             node_id: id,
@@ -120,7 +119,7 @@ impl<D: ConstraintDomain> FusionAST<D> {
         self.is_complete()
     }
 
-    pub fn roots(&self) -> impl Iterator<Item = FusionNode<'_, D>> {
+    pub fn roots(&self) -> impl Iterator<Item = FusionNode<'_>> {
         self.roots.iter().map(|&id| FusionNode {
             ast: self,
             node_id: id,
@@ -131,7 +130,7 @@ impl<D: ConstraintDomain> FusionAST<D> {
         &self.segments
     }
 
-    pub fn grammar(&self) -> &SPG<D> {
+    pub fn grammar(&self) -> &SPG {
         &self.grammar
     }
 
@@ -152,7 +151,7 @@ impl<D: ConstraintDomain> FusionAST<D> {
         self.view().bound_texts(&self.segments)
     }
 
-    pub(crate) fn view(&self) -> FusionForest<'_, D> {
+    pub(crate) fn view(&self) -> FusionForest<'_> {
         FusionForest {
             _grammar: &self.grammar,
             arena: &self.arena,
@@ -162,9 +161,9 @@ impl<D: ConstraintDomain> FusionAST<D> {
     }
 }
 
-impl<'a, D: ConstraintDomain> FusionForest<'a, D> {
+impl<'a> FusionForest<'a> {
     pub(crate) fn new(
-        grammar: &'a SPG<D>,
+        grammar: &'a SPG,
         arena: &'a ParseArena,
         _segments: &'a [Segment],
         roots: &'a [NodeId],
@@ -224,12 +223,12 @@ impl<'a, D: ConstraintDomain> FusionForest<'a, D> {
 // ============================================================================
 
 #[derive(Clone, Copy)]
-pub struct FusionNode<'a, D: ConstraintDomain> {
-    ast: &'a FusionAST<D>,
+pub struct FusionNode<'a> {
+    ast: &'a FusionAST,
     node_id: NodeId,
 }
 
-impl<'a, D: ConstraintDomain> FusionNode<'a, D> {
+impl<'a> FusionNode<'a> {
     #[must_use] 
     pub fn node_id(&self) -> NodeId {
         self.node_id
@@ -277,13 +276,13 @@ impl<'a, D: ConstraintDomain> FusionNode<'a, D> {
             })
     }
 
-    pub fn children(&self) -> impl Iterator<Item = FusionChild<'a, D>> + 'a {
+    pub fn children(&self) -> impl Iterator<Item = FusionChild<'a>> + 'a {
         let alts_data = self
             .ast
             .arena
             .alts_for(self.node_id)
             .and_then(|alts| alts.first().cloned());
-        let children: Vec<FusionChild<'a, D>> = alts_data
+        let children: Vec<FusionChild<'a>> = alts_data
             .map(|alt| {
                 alt.children
                     .iter()
@@ -313,8 +312,8 @@ impl<'a, D: ConstraintDomain> FusionNode<'a, D> {
 // ============================================================================
 
 #[derive(Clone)]
-pub enum FusionChild<'a, D: ConstraintDomain> {
-    Node(FusionNode<'a, D>),
+pub enum FusionChild<'a> {
+    Node(FusionNode<'a>),
     Terminal { text: String, complete: bool },
 }
 
@@ -322,7 +321,7 @@ pub enum FusionChild<'a, D: ConstraintDomain> {
 // Display
 // ============================================================================
 
-impl<D: ConstraintDomain> std::fmt::Display for FusionAST<D> {
+impl std::fmt::Display for FusionAST {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, &root_id) in self.roots.iter().enumerate() {
             writeln!(f, "\nTree {i}:")?;
@@ -336,13 +335,13 @@ impl<D: ConstraintDomain> std::fmt::Display for FusionAST<D> {
     }
 }
 
-impl<D: ConstraintDomain> std::fmt::Display for FusionNode<'_, D> {
+impl std::fmt::Display for FusionNode<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.fmt_tree(f, "", true)
     }
 }
 
-impl<D: ConstraintDomain> FusionNode<'_, D> {
+impl FusionNode<'_> {
     fn fmt_tree(
         &self,
         f: &mut std::fmt::Formatter<'_>,

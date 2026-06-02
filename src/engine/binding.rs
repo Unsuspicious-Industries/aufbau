@@ -11,7 +11,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::engine::grammar::{Production, Symbol, SPG};
 pub use crate::engine::path::{GrammarPath, PathStep};
-use crate::semantics::domain::ConstraintDomain;
 
 const MAX_RECURSION_DEPTH: usize = 16;
 
@@ -67,7 +66,7 @@ impl BindingMap {
 /// This currently enumerates acyclic paths only; recursive bindings will be
 /// generalised into regular path expressions in future iterations.
 #[must_use]
-pub fn build_binding_map<D: ConstraintDomain>(grammar: &SPG<D>) -> BindingMap {
+pub fn build_binding_map(grammar: &SPG) -> BindingMap {
     let mut binding_map = BindingMap::new();
 
     for (nt_name, productions) in &grammar.productions {
@@ -95,8 +94,8 @@ pub fn build_binding_map<D: ConstraintDomain>(grammar: &SPG<D>) -> BindingMap {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn collect_paths<D: ConstraintDomain>(
-    grammar: &SPG<D>,
+fn collect_paths(
+    grammar: &SPG,
     current_nt: &str,
     current_alt: usize,
     production: &Production,

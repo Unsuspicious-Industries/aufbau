@@ -16,7 +16,7 @@ fn ctx_of(pairs: &[(&str, &str)]) -> Context {
 }
 
 fn parse(grammar: &str, input: &str, ctx: &Context) -> Result<String, String> {
-    let g = crate::engine::grammar::SPG::<TypingDomain>::load(grammar).expect("bad grammar");
+    let g = crate::engine::grammar::SPG::load(grammar).expect("bad grammar");
     let mut synth = TypingSynth::new(g, input);
     match synth.parse_with(ctx) {
         Ok(ast) => Ok(format!(
@@ -465,7 +465,7 @@ fn trace_transparent_unary_propagation() {
     crate::add_module_filter("fusion_parser");
     crate::add_module_filter("fusion_typing");
 
-    let grammar = crate::engine::grammar::SPG::<TypingDomain>::load(
+    let grammar = crate::engine::grammar::SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -517,7 +517,7 @@ fn trace_weird_pre_prefix() {
     crate::add_module_filter("fusion_parser");
     crate::add_module_filter("fusion_typing");
 
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -632,7 +632,7 @@ fn repro_let_prefix_before_body() {
 
 #[test]
 fn repro_weird_epsilon_empty() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         "A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C",
     )
     .unwrap();
@@ -643,7 +643,7 @@ fn repro_weird_epsilon_empty() {
 
 #[test]
 fn repro_weird_epsilon_a() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         "A ::= 'a' B | ε\nB ::= 'b' C | ε\nC ::= 'c' | ε\nstart ::= A B C",
     )
     .unwrap();
@@ -654,7 +654,7 @@ fn repro_weird_epsilon_a() {
 
 #[test]
 fn repro_weird_deep_x() {
-    let g = SPG::<TypingDomain>::load("Atom ::= 'x'\nL1 ::= '(' L2 ')' | Atom\nL2 ::= '(' L3 ')' | L1\nL3 ::= '(' L3 ')' | L2\nstart ::= L3").unwrap();
+    let g = SPG::load("Atom ::= 'x'\nL1 ::= '(' L2 ')' | Atom\nL2 ::= '(' L3 ')' | L1\nL3 ::= '(' L3 ')' | L2\nstart ::= L3").unwrap();
     let mut synth = TypingSynth::new(g, "x");
     let result = synth.parse_with(&Context::new());
     assert!(result.is_ok(), "deep x: {:?}", result);
@@ -662,7 +662,7 @@ fn repro_weird_deep_x() {
 
 #[test]
 fn repro_weird_stmt_empty_block() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         r#"
     Identifier ::= /[a-z]+/
     Type ::= 'I' | 'B'
@@ -695,7 +695,7 @@ fn repro_weird_stmt_empty_block() {
 
 #[test]
 fn repro_weird_diamond_deep() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         r#"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]
@@ -726,7 +726,7 @@ fn repro_weird_diamond_deep() {
 
 #[test]
 fn repro_weird_scoped_let() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         r#"
     Identifier ::= /[a-z]+/
     Type ::= 'X' | 'Y'
@@ -762,7 +762,7 @@ fn repro_weird_scoped_let() {
 #[test]
 fn repro_weird_mutual_nested() {
     let mut synth = TypingSynth::new(
-        SPG::<TypingDomain>::load(MUTUAL).unwrap(),
+        SPG::load(MUTUAL).unwrap(),
         "set x : Num = 1 then set y : Num = 2 then x",
     );
     let result = synth.parse_with(&Context::new());
@@ -771,7 +771,7 @@ fn repro_weird_mutual_nested() {
 
 #[test]
 fn repro_weird_union_partial() {
-    let g = SPG::<TypingDomain>::load(
+    let g = SPG::load(
         r#"
     Identifier ::= /[a-z]+/
     Variable(var) ::= Identifier[x]

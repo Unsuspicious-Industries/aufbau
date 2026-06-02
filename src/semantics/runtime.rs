@@ -1,18 +1,23 @@
-//! Generic domain runtime — bridges `ConstraintDomain` to `SemanticRuntime`.
+//! Concrete typing runtime.
+//!
+//! Interns the typing domain's value-level `Type`/`Context`/`ContextTransition`
+//! into arena ids and exposes the id-based hooks the prefix parser calls:
+//! `descend`, `finalize`, `apply_effect`, `compose_effects`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use crate::domains::typing::{Context, ContextTransition, Type, TypingDomain, TypingRule};
 use crate::engine::error::TransitionError;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, NodeStatus, ProdId, TOP};
 use crate::engine::Segment;
-use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::obligation::Obligations;
-use crate::semantics::{SemanticRuntime, SemanticSummary};
+use crate::semantics::SemanticSummary;
 
 // ── Generic interner ─────────────────────────────────────────────────────────
 
@@ -46,19 +51,26 @@ impl<T: Hash + Eq + Clone> Interner<T> {
     }
 }
 
-// ── DomainRuntime ─────────────────────────────────────────────────────────────
+// ── TypingRuntime ─────────────────────────────────────────────────────────────
 
-/// Generic bridge: `ConstraintDomain` → `SemanticRuntime`.
-pub struct DomainRuntime<D: ConstraintDomain> {
-    domain: D,
-    spg: SPG<D>,
-    evidence: Rc<EvidenceStore<D::Evidence>>,
-    contexts: Rc<Interner<D::Context>>,
-    effects: Rc<Interner<D::Effect>>,
+/// Interning bridge between the typing domain's value-level evaluation and the
+/// parser's id-based interface.
+pub struct TypingRuntime {
+    domain: TypingDomain,
+    spg: SPG,
+    evidence: Rc<EvidenceStore<Type>>,
+    contexts: Rc<Interner<Context>>,
+    effects: Rc<Interner<ContextTransition>>,
     segs: Vec<Segment>,
 }
 
-impl<D: ConstraintDomain + Clone> Clone for DomainRuntime<D> {
+impl std::fmt::Debug for TypingRuntime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TypingRuntime").finish_non_exhaustive()
+    }
+}
+
+impl Clone for TypingRuntime {
     fn clone(&self) -> Self {
         Self {
             domain: self.domain.clone(),
@@ -71,11 +83,12 @@ impl<D: ConstraintDomain + Clone> Clone for DomainRuntime<D> {
     }
 }
 
-impl<D: ConstraintDomain> DomainRuntime<D> {
-    pub fn new(domain: D, spg: SPG<D>) -> Self {
-        let top = domain.top_evidence();
-        let bot = domain.bottom_evidence();
-        let evidence = Rc::new(EvidenceStore::new(top, bot));
+impl TypingRuntime {
+    pub fn new(domain: TypingDomain, spg: SPG) -> Self {
+        let evidence = Rc::new(EvidenceStore::new(
+            TypingDomain::top_evidence(),
+            TypingDomain::bottom_evidence(),
+        ));
         let rt = Self {
             domain,
             spg,
@@ -84,49 +97,47 @@ impl<D: ConstraintDomain> DomainRuntime<D> {
             effects: Rc::new(Interner::new()),
             segs: Vec::new(),
         };
-        let empty_ctx = rt.domain.empty_context();
-        let _ = rt.contexts.intern(empty_ctx);
+        let _ = rt.contexts.intern(Context::new());
         rt
     }
 
-    pub fn grammar(&self) -> &SPG<D> {
+    pub fn grammar(&self) -> &SPG {
         &self.spg
     }
 
-    pub fn intern_context(&self, ctx: D::Context) -> CtxId {
+    pub fn intern_context(&self, ctx: Context) -> CtxId {
         self.contexts.intern(ctx)
     }
 
-    pub fn context(&self, id: CtxId) -> Option<D::Context> {
+    pub fn context(&self, id: CtxId) -> Option<Context> {
         self.contexts.get(id)
     }
 
-    pub fn intern_evidence(&self, ev: D::Evidence) -> EvidenceId {
+    pub fn intern_evidence(&self, ev: Type) -> EvidenceId {
         self.evidence.intern(ev)
     }
 
-    pub fn evidence_of(&self, id: EvidenceId) -> Option<D::Evidence> {
+    pub fn evidence_of(&self, id: EvidenceId) -> Option<Type> {
         self.evidence.get(id)
     }
 
-    pub fn intern_effect(&self, eff: D::Effect) -> EffectId {
+    pub fn intern_effect(&self, eff: ContextTransition) -> EffectId {
         self.effects.intern(eff)
     }
 
-    pub fn effect_of(&self, id: EffectId) -> Option<D::Effect> {
+    pub fn effect_of(&self, id: EffectId) -> Option<ContextTransition> {
         self.effects.get(id)
     }
 
-    fn rule_for_prod(&self, prod: ProdId) -> Option<&D::Rule> {
+    fn rule_for_prod(&self, prod: ProdId) -> Option<&TypingRule> {
         let rule_name = self.spg.nt(prod.0).and_then(|nt| self.spg.nt_rule(nt))?;
         self.spg.rules.get(rule_name.as_str())
     }
-}
 
-// ── SemanticRuntime impl ──────────────────────────────────────────────────────
+    // ── Parser-facing hooks ───────────────────────────────────────────────────
 
-impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
-    fn descend(
+    /// Context selected before entering the child at the current dot.
+    pub fn descend(
         &self,
         prod: ProdId,
         binding: Option<&str>,
@@ -137,37 +148,27 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
             return Ok(ctx);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let next = self.domain.descend(
-            rule,
-            binding,
-            &ctx_val,
-            obligations,
-            &self.segs,
-            &self.evidence,
-        );
+        let next =
+            self.domain
+                .descend(rule, binding, &ctx_val, obligations, &self.segs, &self.evidence);
         Ok(self.intern_context(next))
     }
 
-    fn finalize(
+    /// Final semantic summary for a closed or prefix parser item.
+    pub fn finalize(
         &self,
         prod: ProdId,
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
     ) -> Result<SemanticSummary, TransitionError> {
-        let any_summary = SemanticSummary::new(TOP, None, true);
         let Some(rule) = self.rule_for_prod(prod) else {
-            return Ok(any_summary);
+            return Ok(SemanticSummary::new(TOP, None, true));
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let (verdict, evidence, effect) = self.domain.finalize(
-            rule,
-            &ctx_val,
-            obligations,
-            &self.segs,
-            status,
-            &self.evidence,
-        );
+        let (verdict, evidence, effect) =
+            self.domain
+                .finalize(rule, &ctx_val, obligations, &self.segs, status, &self.evidence);
         match verdict {
             Verdict::Lost => Err(TransitionError::Rejected),
             Verdict::Live => {
@@ -185,24 +186,30 @@ impl<D: ConstraintDomain> SemanticRuntime for DomainRuntime<D> {
         }
     }
 
-    fn load_segs(&mut self, s: &[Segment]) {
+    /// Update the input segmentation visible to evidence lexemes.
+    pub fn load_segs(&mut self, s: &[Segment]) {
         self.segs = s.to_vec();
     }
 
-    fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError> {
+    /// Apply a right-bound effect exported by an exact left sibling.
+    pub fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError> {
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
         let eff_val = self.effect_of(effect).ok_or(TransitionError::Rejected)?;
         let next = self.domain.apply_effect(ctx_val, &eff_val);
         Ok(self.intern_context(next))
     }
 
-    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
-        let vals: Result<Vec<D::Effect>, _> = effects
+    /// Compose exact child effects left-to-right for transparent productions.
+    pub fn compose_effects(
+        &self,
+        effects: Vec<EffectId>,
+    ) -> Result<Option<EffectId>, TransitionError> {
+        let vals: Result<Vec<ContextTransition>, _> = effects
             .iter()
             .map(|&id| self.effect_of(id).ok_or(TransitionError::Rejected))
             .collect();
         let vals = vals?;
-        let refs: Vec<&D::Effect> = vals.iter().collect();
+        let refs: Vec<&ContextTransition> = vals.iter().collect();
         Ok(self
             .domain
             .compose_effects(&refs)

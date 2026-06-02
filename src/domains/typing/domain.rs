@@ -14,15 +14,15 @@ use crate::domains::typing::{
 };
 use crate::engine::parse::arena::{Lexeme, NodeStatus};
 use crate::engine::Segment;
-use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::Obligations;
 
-use super::loader::TypingRuleLoader;
-
 // ── TypingDomain ──────────────────────────────────────────────────────────────
 
-/// `TypingDomain` — `sec:typing-domain`, the current typing-domain instance.
+/// Pure, value-level typing evaluation: `descend`/`finalize`/`apply_effect`/
+/// `compose_effects` over `Type`/`Context`/`ContextTransition`. The stateful
+/// id-interning shell lives in `semantics::runtime::TypingRuntime`.
 #[derive(Clone, Debug)]
 pub struct TypingDomain;
 
@@ -475,28 +475,21 @@ impl TypingDomain {
     }
 }
 
-// ── ConstraintDomain impl ────────────────────────────────────────────────────
+// ── Value-level evaluation ───────────────────────────────────────────────────
 
-impl ConstraintDomain for TypingDomain {
-    type Rule = TypingRule;
-    type Evidence = Type;
-    type Context = Context;
-    type Effect = ContextTransition;
-    type Loader = TypingRuleLoader;
-
-    fn empty_context(&self) -> Context {
-        Context::new()
-    }
-
-    fn top_evidence(&self) -> Type {
+impl TypingDomain {
+    /// The top evidence sentinel (interns to `TOP = 0`).
+    pub fn top_evidence() -> Type {
         Type::Any
     }
 
-    fn bottom_evidence(&self) -> Type {
+    /// The bottom evidence sentinel (interns to `BOT = 1`).
+    pub fn bottom_evidence() -> Type {
         Type::None
     }
 
-    fn descend(
+    /// Context to use when entering the child bound by `binding` — `sec:context-flow`.
+    pub fn descend(
         &self,
         rule: &TypingRule,
         binding: Option<&str>,
@@ -545,7 +538,8 @@ impl ConstraintDomain for TypingDomain {
         ctx.clone()
     }
 
-    fn finalize(
+    /// Per-node verdict, evidence, and exported effect — `def:eval-impl`.
+    pub fn finalize(
         &self,
         rule: &TypingRule,
         ctx: &Context,
@@ -580,14 +574,16 @@ impl ConstraintDomain for TypingDomain {
         }
     }
 
-    fn apply_effect(&self, ctx: Context, effect: &ContextTransition) -> Context {
+    /// Apply a right-bound effect to a sibling context — `⊕` of `def:constraint-domain`.
+    pub fn apply_effect(&self, ctx: Context, effect: &ContextTransition) -> Context {
         effect
             .transforms
             .iter()
             .fold(ctx, |acc, (var, ty)| Self::extend(&acc, var, ty.clone()))
     }
 
-    fn compose_effects(&self, effects: &[&ContextTransition]) -> Option<ContextTransition> {
+    /// Left-to-right composition of effects for transparent productions.
+    pub fn compose_effects(&self, effects: &[&ContextTransition]) -> Option<ContextTransition> {
         let mut composed = ContextTransition::identity();
         for &effect in effects {
             composed = composed.compose(effect);

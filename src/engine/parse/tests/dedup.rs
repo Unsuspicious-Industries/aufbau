@@ -1,7 +1,6 @@
 //! Tests for deduplication invariants in the agenda parser.
 
 use super::*;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::engine::parse::parser::Completion;
@@ -9,8 +8,8 @@ use crate::engine::parse::Item;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 
-fn push_test_node<D: crate::semantics::domain::ConstraintDomain>(
-    parser: &mut TypedParser<D, impl crate::semantics::SemanticRuntime>,
+fn push_test_node(
+    parser: &mut TypedParser,
     nt: usize,
     start: usize,
     end: usize,
@@ -47,8 +46,8 @@ fn test_item(prod: ProdId, pos: usize) -> Item {
 
 #[test]
 fn enqueue_process_deduplicates_identical_key() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("a").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -63,8 +62,8 @@ fn enqueue_process_deduplicates_identical_key() {
 
 #[test]
 fn enqueue_process_allows_different_syntactic_positions() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a' 'b'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a' 'b'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("a b").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -82,8 +81,8 @@ fn enqueue_process_allows_different_syntactic_positions() {
 
 #[test]
 fn complete_records_result_span_on_first_call() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();
@@ -107,8 +106,8 @@ fn complete_records_result_span_on_first_call() {
 fn complete_keeps_result_span_unique_but_allows_distinct_nodes() {
     // Property: result spans are memoized once, but every completed node may
     // still wake waiters because resumption depends on child type/effect.
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();
@@ -140,8 +139,8 @@ fn complete_keeps_result_span_unique_but_allows_distinct_nodes() {
 
 #[test]
 fn completed_nodes_records_all_semantic_nodes_at_same_span() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();
@@ -178,8 +177,8 @@ fn completed_nodes_records_all_semantic_nodes_at_same_span() {
 fn complete_wakes_waiter_for_each_distinct_completed_node() {
     // Property: semantically distinct completed nodes at the same span may all
     // wake waiters because resumption depends on child summaries, not span only.
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x'\nStart ::= A 'y'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x'\nStart ::= A 'y'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x y").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -228,8 +227,8 @@ fn complete_wakes_waiter_for_each_distinct_completed_node() {
 
 #[test]
 fn results_table_records_end_position_once() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();
@@ -254,8 +253,8 @@ fn results_table_records_end_position_once() {
 
 #[test]
 fn parse_left_recursive_produces_bounded_node_count() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x' | A 'x'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x' | A 'x'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("x x x x x", 0).unwrap();
     assert!(ast.is_complete());
     assert!(ast.node_count() < 50);

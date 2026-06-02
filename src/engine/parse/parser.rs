@@ -1,8 +1,7 @@
 use crate::debug_trace;
 use crate::engine::grammar::{Segment, Symbol, SPG};
 use crate::regex::PrefixStatus;
-use crate::semantics::domain::ConstraintDomain;
-use crate::semantics::{Obligations, SemanticRuntime};
+use crate::semantics::{Obligations, TypingRuntime};
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::engine::error::{PrefixError, TransitionError};
@@ -80,10 +79,7 @@ pub struct Tables {
 
 // ── Engine ───────────────────────────────────────────────────────────────────
 
-impl<D: ConstraintDomain, T> TypedParser<D, T>
-where
-    T: SemanticRuntime,
-{
+impl TypedParser {
     pub(super) fn enqueue_process(&mut self, item: Item) {
         let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
         if self.tables.seen_process.insert(key) {
@@ -659,10 +655,7 @@ where
     }
 
     #[track_caller]
-    pub fn fork(&self) -> Self
-    where
-        T: Clone,
-    {
+    pub fn fork(&self) -> Self {
         Self {
             grammar: self.grammar.clone(),
             typing: self.typing.clone(),
@@ -678,7 +671,7 @@ where
         roots: &[NodeId],
         segments: Vec<Segment>,
         input: String,
-    ) -> FusionAST<D> {
+    ) -> FusionAST {
         debug_trace!(
             "fusion_memory",
             "typed_parser_materialize roots={} segments={} input_len={}",
@@ -700,11 +693,11 @@ where
         roots: &'a [NodeId],
         segments: &'a [Segment],
         input: &'a str,
-    ) -> FusionForest<'a, D> {
+    ) -> FusionForest<'a> {
         FusionForest::new(&self.grammar, self.arena(), segments, roots, input)
     }
 
-    pub fn new(grammar: SPG<D>, typing: T) -> Self {
+    pub fn new(grammar: SPG, typing: TypingRuntime) -> Self {
         Self {
             grammar,
             typing,
@@ -725,7 +718,7 @@ where
         Ok(())
     }
 
-    pub fn parse(&mut self, input: &str, ctx: CtxId) -> Result<FusionAST<D>, PrefixError> {
+    pub fn parse(&mut self, input: &str, ctx: CtxId) -> Result<FusionAST, PrefixError> {
         #[cfg(test)]
         debug_trace!("fusion_parser", "parse start input='{}' ctx={}", input, ctx);
 

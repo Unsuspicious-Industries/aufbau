@@ -1,4 +1,4 @@
-use crate::domains::typing::{Context, Type, TypingDomain, TypingSynth};
+use crate::domains::typing::{Context, Type, TypingSynth};
 use crate::engine::grammar::SPG;
 use crate::validation::parseable::check_all_prefixes_parseable;
 use proptest::prelude::*;
@@ -68,7 +68,7 @@ fn equal_raw_types() {
 
 #[test]
 fn untyped_closed_child_does_not_satisfy_concrete_ascription() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Untyped ::= 'u'
         Use(use) ::= Untyped[value]
@@ -86,7 +86,7 @@ fn untyped_closed_child_does_not_satisfy_concrete_ascription() {
 
 #[test]
 fn context_membership_rejects_open_prefix_with_no_possible_binding() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -104,7 +104,7 @@ fn context_membership_rejects_open_prefix_with_no_possible_binding() {
 
 #[test]
 fn context_membership_accepts_open_prefix_with_possible_binding() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -122,7 +122,7 @@ fn context_membership_accepts_open_prefix_with_possible_binding() {
 
 #[test]
 fn ruleless_multichild_root_has_any_type() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -150,7 +150,7 @@ fn ruleless_multichild_root_has_any_type() {
 
 #[test]
 fn transparent_unary_ruleless_root_inherits_child_type() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -195,7 +195,7 @@ fn transparent_unary_ruleless_root_inherits_child_type() {
 
 #[test]
 fn mixed_nonterminal_unary_alt_inherits_child_type() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -221,7 +221,7 @@ fn mixed_nonterminal_unary_alt_inherits_child_type() {
 
 #[test]
 fn transparent_delimited_wrapper_inherits_child_type() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -247,7 +247,7 @@ fn transparent_delimited_wrapper_inherits_child_type() {
 
 #[test]
 fn unresolved_meta_is_not_exported_as_final_chain_type() {
-    let grammar = SPG::<TypingDomain>::load(include_str!("../../../../examples/stlc.auf")).unwrap();
+    let grammar = SPG::load(include_str!("../../../../examples/stlc.auf")).unwrap();
     let mut synth = TypingSynth::new(grammar, "f x y");
     let ast = synth
         .parse_with(&ctx_of(&[("f", "A->B->C"), ("x", "A"), ("y", "B")]))
@@ -263,7 +263,7 @@ fn unresolved_meta_is_not_exported_as_final_chain_type() {
 
 #[test]
 fn empty_variable_prefix_is_accepted_as_unknown_not_contradiction() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -282,14 +282,14 @@ fn empty_variable_prefix_is_accepted_as_unknown_not_contradiction() {
 
 #[test]
 fn closed_int_left_operand_does_not_reopen_for_float_operator() {
-    let grammar = SPG::<TypingDomain>::load(include_str!("../../../../examples/fun.auf")).unwrap();
+    let grammar = SPG::load(include_str!("../../../../examples/fun.auf")).unwrap();
     let mut synth = TypingSynth::new(grammar, "10 /. 2.0");
     assert!(synth.parse_with(&Context::new()).is_err());
 }
 
 #[test]
 fn closed_parenthesized_int_expr_does_not_reopen_for_float_operator() {
-    let grammar = SPG::<TypingDomain>::load(include_str!("../../../../examples/fun.auf")).unwrap();
+    let grammar = SPG::load(include_str!("../../../../examples/fun.auf")).unwrap();
     let mut synth = TypingSynth::new(grammar, "((1 + 2) * (3 + 4)) /. 2.0");
     assert!(synth.parse_with(&Context::new()).is_err());
 }
@@ -297,7 +297,7 @@ fn closed_parenthesized_int_expr_does_not_reopen_for_float_operator() {
 proptest! {
     #[test]
     fn prop_transparent_wrapper_inherits_child_type(name in "[a-z]{1,6}") {
-        let grammar = SPG::<TypingDomain>::load(
+        let grammar = SPG::load(
             r#"
             Identifier ::= /[a-z]+/
             Variable(var) ::= Identifier[x]
@@ -323,7 +323,7 @@ proptest! {
     #[test]
     fn prop_ruleless_multichild_stays_any(a in "[a-z]{1,4}", b in "[a-z]{1,4}") {
         prop_assume!(a != b);
-        let grammar = SPG::<TypingDomain>::load(
+        let grammar = SPG::load(
             r#"
             Identifier ::= /[a-z]+/
             Variable(var) ::= Identifier[x]
@@ -348,7 +348,7 @@ proptest! {
 
     #[test]
     fn prop_generated_stlc_chains_parse_and_resolve(arg_count in 1usize..6) {
-        let grammar = SPG::<TypingDomain>::load(include_str!("../../../../examples/stlc.auf")).unwrap();
+        let grammar = SPG::load(include_str!("../../../../examples/stlc.auf")).unwrap();
         let input = stlc_chain_input(arg_count);
         let ctx_pairs = stlc_chain_context(arg_count);
         let ctx = ctx_from_owned(&ctx_pairs);
@@ -367,7 +367,7 @@ proptest! {
 
     #[test]
     fn prop_generated_stlc_chain_prefixes_parse(arg_count in 1usize..6) {
-        let mut grammar = SPG::<TypingDomain>::load(include_str!("../../../../examples/stlc.auf")).unwrap();
+        let mut grammar = SPG::load(include_str!("../../../../examples/stlc.auf")).unwrap();
         let input = stlc_chain_input(arg_count);
         let ctx_pairs = stlc_chain_context(arg_count);
         let ctx = ctx_from_owned(&ctx_pairs);

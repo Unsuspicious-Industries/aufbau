@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod debug_tests {
-    use crate::domains::typing::TypingDomain;
     use crate::domains::typing::{Context, Type, TypingSynth};
     use crate::engine::grammar::SPG;
 
-    fn load_stlc() -> SPG<TypingDomain> {
+    fn load_stlc() -> SPG {
         let src = include_str!("../../../../examples/stlc.auf");
-        SPG::<TypingDomain>::load(src).unwrap()
+        SPG::load(src).unwrap()
     }
 
     #[test]

@@ -1,9 +1,8 @@
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 
 mod feed;
 
-pub(super) fn token_texts(grammar: &SPG<TypingDomain>, input: &str) -> Vec<String> {
+pub(super) fn token_texts(grammar: &SPG, input: &str) -> Vec<String> {
     let mut grammar = grammar.clone();
     grammar
         .tokenize(input)

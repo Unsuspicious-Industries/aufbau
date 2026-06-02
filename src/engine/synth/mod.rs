@@ -1,60 +1,53 @@
 use crate::debug_trace;
+use crate::domains::typing::{Context, TypingDomain};
 use crate::engine::grammar::SPG;
-use crate::engine::parse::{CtxId, TypedParser};
+use crate::engine::parse::TypedParser;
 use crate::engine::structure::ast::FusionAST;
-use crate::semantics::domain::ConstraintDomain;
-use crate::semantics::runtime::DomainRuntime;
+use crate::semantics::TypingRuntime;
 
 #[cfg(test)]
 mod tests;
 
-pub struct Synthesizer<D: ConstraintDomain + Clone> {
-    spg: SPG<D>,
-    runtime: DomainRuntime<D>,
-    parser: TypedParser<D, DomainRuntime<D>>,
+pub struct Synthesizer {
+    spg: SPG,
+    runtime: TypingRuntime,
+    parser: TypedParser,
 
     input: String,
-    ctx: D::Context,
-    tree: Option<FusionAST<D>>,
+    ctx: Context,
+    tree: Option<FusionAST>,
 }
 
-impl<D: ConstraintDomain + Clone + Default> Synthesizer<D> {
-    pub fn new(spg: SPG<D>, input: impl Into<String>) -> Self {
-        Self::with_domain(D::default(), spg, input)
-    }
-}
-
-impl<D: ConstraintDomain + Clone> Synthesizer<D> {
-    pub fn with_domain(domain: D, spg: SPG<D>, input: impl Into<String>) -> Self {
+impl Synthesizer {
+    pub fn new(spg: SPG, input: impl Into<String>) -> Self {
         let input = input.into();
         debug_trace!("synth", "new: input='{}'", input);
-        let ctx = domain.empty_context();
-        let runtime = DomainRuntime::new(domain, spg.clone());
+        let runtime = TypingRuntime::new(TypingDomain, spg.clone());
         let parser = TypedParser::new(spg.clone(), runtime.clone());
 
         Self {
             spg,
             runtime,
             parser,
-            ctx,
+            ctx: Context::new(),
             input,
             tree: None,
         }
     }
 
-    pub fn grammar(&self) -> &SPG<D> {
+    pub fn grammar(&self) -> &SPG {
         &self.spg
     }
 
-    pub fn runtime(&self) -> &DomainRuntime<D> {
+    pub fn runtime(&self) -> &TypingRuntime {
         &self.runtime
     }
 
-    pub fn ctx(&self) -> &D::Context {
+    pub fn ctx(&self) -> &Context {
         &self.ctx
     }
 
-    pub fn with_ctx(&mut self, ctx: D::Context) {
+    pub fn with_ctx(&mut self, ctx: Context) {
         self.ctx = ctx;
         self.tree = None;
         let _ = self.ast();
@@ -70,11 +63,11 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
         let _ = self.ast();
     }
 
-    pub fn ast(&mut self) -> Result<FusionAST<D>, String> {
+    pub fn ast(&mut self) -> Result<FusionAST, String> {
         if let Some(ast) = &self.tree {
             Ok(ast.clone())
         } else {
-            let ctx_id = ctx_id(&self.ctx, &self.runtime);
+            let ctx_id = self.runtime.intern_context(self.ctx.clone());
             match self.parser.parse(&self.input, ctx_id) {
                 Ok(ast) => {
                     debug_trace!("synth", "ast: input='{}' parsed successfully", self.input);
@@ -89,17 +82,17 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
         }
     }
 
-    pub fn parse_with(&mut self, ctx: &D::Context) -> Result<FusionAST<D>, String> {
+    pub fn parse_with(&mut self, ctx: &Context) -> Result<FusionAST, String> {
         self.with_ctx(ctx.clone());
         self.ast()
     }
 
-    pub fn feed_with(&mut self, token: &str, ctx: &D::Context) -> Result<FusionAST<D>, String> {
+    pub fn feed_with(&mut self, token: &str, ctx: &Context) -> Result<FusionAST, String> {
         self.with_ctx(ctx.clone());
         self.feed(token)
     }
 
-    pub fn feed(&mut self, token: &str) -> Result<FusionAST<D>, String> {
+    pub fn feed(&mut self, token: &str) -> Result<FusionAST, String> {
         debug_trace!("synth", "feed: input='{}' token='{}'", self.input, token);
         let extended = format!("{}{}", self.input, token);
         self.set_input(extended);
@@ -107,17 +100,14 @@ impl<D: ConstraintDomain + Clone> Synthesizer<D> {
     }
 
     #[must_use = "discarding try_feed result hides parse failures"]
-    pub fn try_feed(&mut self, token: &str) -> Result<FusionAST<D>, String> {
+    pub fn try_feed(&mut self, token: &str) -> Result<FusionAST, String> {
         debug_trace!("synth", "try: input='{}' token='{}'", self.input, token);
         let extended = format!("{}{}", self.input, token);
         let mut p = self.parser.fork();
-        match p.parse(&extended, ctx_id(&self.ctx, &self.runtime)) {
+        let ctx_id = self.runtime.intern_context(self.ctx.clone());
+        match p.parse(&extended, ctx_id) {
             Ok(ast) => Ok(ast),
             Err(err) => Err(format!("try_feed failed: {err}")),
         }
     }
-}
-
-fn ctx_id<D: ConstraintDomain>(ctx: &D::Context, runtime: &DomainRuntime<D>) -> CtxId {
-    runtime.intern_context(ctx.clone())
 }

@@ -1,5 +1,5 @@
 use crate::domains::typing::Context;
-use crate::domains::typing::{TypingDomain, TypingSynth};
+use crate::domains::typing::{TypingSynth};
 use crate::engine::grammar::SPG;
 
 use super::token_texts;
@@ -17,7 +17,7 @@ fn assert_same_parse_shape(left: &mut TypingSynth, right: &mut TypingSynth) {
 
 #[test]
 fn feed_reparses_cached_ast_after_punctuation_token() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Name ::= /[a-z]+/
         Start ::= 'let' Name ':' 't' '=' Name
@@ -40,7 +40,7 @@ fn feed_reparses_cached_ast_after_punctuation_token() {
 
 #[test]
 fn feed_avoids_separator_when_token_boundaries_are_unambiguous() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Name ::= /[a-z]+/
         Start ::= 'let' Name ':' 't'
@@ -57,7 +57,7 @@ fn feed_avoids_separator_when_token_boundaries_are_unambiguous() {
 
 #[test]
 fn feed_preserves_token_sequence_for_original_input() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Name ::= /[a-z]+/
         Start ::= 'let' Name ':' 't' '=' Name
@@ -76,7 +76,7 @@ fn feed_preserves_token_sequence_for_original_input() {
 
 #[test]
 fn feed_with_context_uses_latest_bindings() {
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]
@@ -108,7 +108,7 @@ fn feed_with_context_uses_latest_bindings() {
 
 #[test]
 fn feed_error_leaves_extended_input_visible() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x'").unwrap();
+    let grammar = SPG::load("Start ::= 'x'").unwrap();
     let mut synth = TypingSynth::new(grammar, "x");
 
     let err = synth.feed("y").unwrap_err();

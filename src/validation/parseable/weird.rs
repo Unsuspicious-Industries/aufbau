@@ -1,7 +1,6 @@
 #[cfg(test)]
 use super::run_parse_batch;
 use super::ParseTestCase;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 
 // Small subset of pathological grammars adapted for parseability checks.
@@ -238,8 +237,8 @@ const CHILD_CONTEXT_LOCALITY: &str = r"
     τ
 ";
 
-fn load_inline_grammar(content: &str) -> SPG<TypingDomain> {
-    SPG::<TypingDomain>::load(content).expect("failed to load inline grammar")
+fn load_inline_grammar(content: &str) -> SPG {
+    SPG::load(content).expect("failed to load inline grammar")
 }
 
 // === Per-grammar case lists ===
@@ -517,7 +516,7 @@ fn child_context_invalid_cases() -> Vec<ParseTestCase> {
 #[must_use]
 pub fn suites() -> Vec<(
     &'static str,
-    SPG<TypingDomain>,
+    SPG,
     Vec<ParseTestCase>,
     Vec<ParseTestCase>,
 )> {

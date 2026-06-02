@@ -5,7 +5,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 
 use aufbau::domains::typing::{Context, Type};
-use aufbau::domains::typing::{TypingDomain, TypingSynth};
+use aufbau::domains::typing::{TypingSynth};
 use aufbau::engine::grammar::SPG;
 use aufbau::engine::structure::FusionNode;
 
@@ -33,7 +33,7 @@ pub fn run(args: &CheckCmd) {
             std::process::exit(2);
         }
     };
-    let grammar = match SPG::<TypingDomain>::load(&spec_src) {
+    let grammar = match SPG::load(&spec_src) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("error: failed to load grammar: {e}");
@@ -68,10 +68,10 @@ pub fn run(args: &CheckCmd) {
 
     let is_partial = complete_roots.is_empty();
 
-    let display_roots: Vec<FusionNode<TypingDomain>> = if args.all {
+    let display_roots: Vec<FusionNode> = if args.all {
         typed.roots().collect()
     } else if !complete_roots.is_empty() {
-        let well_typed: Vec<FusionNode<TypingDomain>> = complete_roots
+        let well_typed: Vec<FusionNode> = complete_roots
             .iter()
             .filter(|r| {
                 let ty = runtime.evidence_of(r.evidence());

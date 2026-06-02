@@ -1,47 +1,11 @@
 use super::*;
 use crate::domains::typing::Context;
-use crate::domains::typing::TypingDomain;
 use crate::domains::typing::TypingSynth;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{ChildRef, Lexeme};
 use crate::engine::structure::ast::FusionAST;
-use crate::semantics::{Obligations, SemanticSummary};
 
-#[derive(Clone, Debug, Default)]
-struct CtxTrackingTyping;
-
-impl SemanticRuntime for CtxTrackingTyping {
-    fn descend(
-        &self,
-        _prod: ProdId,
-        _binding: Option<&str>,
-        ctx: CtxId,
-        _obligations: &Obligations,
-    ) -> Result<CtxId, TransitionError> {
-        Ok(ctx)
-    }
-
-    fn finalize(
-        &self,
-        _prod: ProdId,
-        ctx: CtxId,
-        _obligations: &Obligations,
-        _status: NodeStatus,
-    ) -> Result<SemanticSummary, TransitionError> {
-        Ok(SemanticSummary::new(ctx, Some(1), true))
-    }
-
-    fn apply_effect(&self, ctx: CtxId, effect: EffectId) -> Result<CtxId, TransitionError> {
-        Ok(ctx + effect)
-    }
-
-    fn compose_effects(&self, effects: Vec<EffectId>) -> Result<Option<EffectId>, TransitionError> {
-        let total = effects.into_iter().sum();
-        Ok((total > 0).then_some(total))
-    }
-}
-
-fn assert_status_model(ast: &FusionAST<TypingDomain>, grammar: &SPG<TypingDomain>) {
+fn assert_status_model(ast: &FusionAST, grammar: &SPG) {
     let arena = ast.arena();
     let input_end = ast.segs().len();
 
@@ -100,47 +64,10 @@ fn assert_status_model(ast: &FusionAST<TypingDomain>, grammar: &SPG<TypingDomain
     }
 }
 
-fn assert_non_closed_nodes_do_not_export_context(ast: &FusionAST<TypingDomain>) {
-    let arena = ast.arena();
-    for id in 0..arena.node_count() {
-        let node = arena.node(id).expect("arena node should exist");
-        if node.status != NodeStatus::Exact {
-            assert!(
-                node.effect.is_none(),
-                "non-closed node {id} exported a context transition"
-            );
-        }
-    }
-}
-
-fn assert_root_with(
-    grammar: SPG<TypingDomain>,
-    input: &str,
-    expected_status: NodeStatus,
-    expected_evidence: EvidenceId,
-) {
-    let mut parser = TypedParser::new(grammar, CtxTrackingTyping);
-    let ast = parser.parse(input, 0).unwrap();
-    let arena = ast.arena();
-    let root_summaries: Vec<_> = ast
-        .root_ids()
-        .iter()
-        .filter_map(|&id| arena.node(id).map(|node| (node.status, node.evidence)))
-        .collect();
-
-    assert!(
-        root_summaries
-            .iter()
-            .any(|&(status, evidence)| status == expected_status && evidence == expected_evidence),
-        "expected root ({expected_status:?}, evidence={expected_evidence}), got {root_summaries:?}"
-    );
-    assert_non_closed_nodes_do_not_export_context(&ast);
-}
-
 #[test]
 fn interior_extensible_terminal_does_not_make_wrapper_open() {
-    let grammar = SPG::<TypingDomain>::load("Word ::= /[a-z]+/\nStart ::= Word ':' '!'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Word ::= /[a-z]+/\nStart ::= Word ':' '!'").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("foo : !", 0).unwrap();
     let arena = ast.arena();
     let root_statuses: Vec<_> = ast
@@ -172,8 +99,8 @@ fn interior_extensible_terminal_does_not_make_wrapper_open() {
 
 #[test]
 fn eof_extensible_terminal_is_accepted_but_not_exact() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= /[a-z]+/").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= /[a-z]+/").unwrap();
+    let mut parser = stub_parser(grammar);
     let ast = parser.parse("foo", 0).unwrap();
 
     assert!(
@@ -195,8 +122,8 @@ fn eof_extensible_terminal_is_accepted_but_not_exact() {
 
 #[test]
 fn prefix_match_inside_input_is_dead_not_frontier_open() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'false' '!' ").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'false' '!' ").unwrap();
+    let mut parser = stub_parser(grammar);
     assert!(
         parser.parse("f !", 0).is_err(),
         "mid-input prefix of a terminal should be dead, not a frontier candidate"
@@ -205,7 +132,7 @@ fn prefix_match_inside_input_is_dead_not_frontier_open() {
 
 #[test]
 fn exact_parse_requires_closed_root() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'x'").unwrap();
+    let grammar = SPG::load("Start ::= 'x'").unwrap();
     let mut synth = TypingSynth::new(grammar, "x");
     let ast = synth.parse_with(&Context::new()).unwrap();
     let arena = ast.arena();
@@ -232,41 +159,10 @@ fn parser_nodes_satisfy_documented_status_model() {
     ];
 
     for (spec, input) in cases {
-        let grammar = SPG::<TypingDomain>::load(spec).unwrap();
-        let mut parser = TypedParser::new(grammar.clone(), StubTyping);
+        let grammar = SPG::load(spec).unwrap();
+        let mut parser = stub_parser(grammar.clone());
         let ast = parser.parse(input, 0).unwrap();
 
         assert_status_model(&ast, &grammar);
     }
-}
-
-#[test]
-fn context_transforms_flow_left_to_right_through_closed_children_only() {
-    assert_root_with(
-        SPG::<TypingDomain>::load("A ::= 'a'\nB ::= 'b'\nStart ::= A B").unwrap(),
-        "a b",
-        NodeStatus::Exact,
-        2,
-    );
-
-    assert_root_with(
-        SPG::<TypingDomain>::load("A ::= 'a'\nB ::= 'b' 'c'\nStart ::= A B").unwrap(),
-        "a b",
-        NodeStatus::Prefix,
-        1,
-    );
-
-    assert_root_with(
-        SPG::<TypingDomain>::load("A ::= 'a' 'x'\nB ::= 'b'\nStart ::= A B").unwrap(),
-        "a",
-        NodeStatus::Prefix,
-        0,
-    );
-
-    assert_root_with(
-        SPG::<TypingDomain>::load("A ::= /[a-z]+/\nB ::= 'b'\nStart ::= A B").unwrap(),
-        "foo",
-        NodeStatus::Prefix,
-        0,
-    );
 }

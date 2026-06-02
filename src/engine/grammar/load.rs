@@ -1,10 +1,9 @@
 use super::utils::{ParsedRhs, parse_nonterminal, parse_production, parse_rhs};
 use crate::engine::grammar::{Production, SPG};
-use crate::semantics::domain::ConstraintDomain;
 
-/// Domain-neutral EBNF parsing. Returns the partial grammar (productions only,
-/// no rules) and the non-production text blocks for the domain loader.
-pub fn load_ebnf<D: ConstraintDomain>(source: &str) -> Result<(SPG<D>, Vec<String>), String> {
+/// EBNF parsing. Returns the partial grammar (productions only, no rules) and
+/// the non-production text blocks for the rule loader.
+pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
     let mut grammar = SPG::new();
     let mut nt_order: Vec<String> = Vec::new();
     let mut rule_blocks: Vec<String> = Vec::new();
@@ -85,19 +84,14 @@ pub fn load_ebnf<D: ConstraintDomain>(source: &str) -> Result<(SPG<D>, Vec<Strin
     Ok((grammar, rule_blocks))
 }
 
-impl<D: ConstraintDomain> SPG<D> {
+impl SPG {
     /// Load a complete grammar from `.auf` source.
     pub fn load(source: &str) -> Result<Self, String> {
-        use crate::semantics::loader::ConstraintLoader;
-
-        let (mut grammar, rule_blocks) = load_ebnf::<D>(source)?;
+        let (mut grammar, rule_blocks) = load_ebnf(source)?;
         let block_refs: Vec<&str> = rule_blocks.iter().map(String::as_str).collect();
-        let rules = <D::Loader as ConstraintLoader>::load(&block_refs)?;
-        for (name, rule) in rules {
+        for (name, rule) in crate::domains::typing::loader::load(&block_refs)? {
             grammar.add_rule(name, rule);
         }
-
-        <D::Loader as ConstraintLoader>::postprocess(&mut grammar)?;
         grammar.build_bindings();
         grammar.build_tokenizer();
 

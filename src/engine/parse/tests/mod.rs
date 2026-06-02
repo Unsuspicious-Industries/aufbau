@@ -1,10 +1,7 @@
 use crate::DebugLevel;
-use crate::domains::typing::TypingDomain;
-use crate::semantics::SemanticRuntime;
-use crate::engine::error::TransitionError;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::NodeStatus;
-use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, ProdId};
+use crate::engine::parse::arena::ProdId;
 use crate::set_debug_level;
 
 use super::*;
@@ -23,7 +20,7 @@ mod status;
 #[test]
 fn debug_smoke() {
     set_debug_level(DebugLevel::Trace);
-    let grammar = SPG::<TypingDomain>::load(
+    let grammar = SPG::load(
         r#"
     
     A ::= A ':' A | 'a'
@@ -31,7 +28,7 @@ fn debug_smoke() {
     "#,
     )
     .unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let mut parser = stub_parser(grammar);
     let res = parser.parse("a : ", 0).unwrap();
     assert!(!res.is_empty());
 }

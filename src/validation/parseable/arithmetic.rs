@@ -1,7 +1,6 @@
 #[cfg(test)]
 use super::run_parse_batch;
 use super::ParseTestCase;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 
 pub const ARITHMETIC_GRAMMAR: &str = r"
@@ -15,8 +14,8 @@ pub const ARITHMETIC_GRAMMAR: &str = r"
 ";
 
 #[must_use]
-pub fn arithmetic_grammar() -> SPG<TypingDomain> {
-    SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).expect("failed to load arithmetic grammar")
+pub fn arithmetic_grammar() -> SPG {
+    SPG::load(ARITHMETIC_GRAMMAR).expect("failed to load arithmetic grammar")
 }
 
 #[must_use]

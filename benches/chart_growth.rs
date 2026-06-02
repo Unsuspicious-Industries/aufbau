@@ -7,7 +7,7 @@
 //!
 //! HTML reports land in target/criterion/.
 
-use aufbau::domains::typing::{Context, Type, TypingDomain, TypingSynth};
+use aufbau::domains::typing::{Context, Type, TypingSynth};
 use aufbau::engine::grammar::SPG;
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -63,13 +63,13 @@ fn arith_nested(n: usize) -> String {
 
 // ── Benchmarks ────────────────────────────────────────────────────────────────
 
-fn parse_with_ctx(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> usize {
+fn parse_with_ctx(grammar: &SPG, input: &str, ctx: &Context) -> usize {
     let mut synth = TypingSynth::new(grammar.clone(), input);
     synth.parse_with(ctx).unwrap().node_count()
 }
 
 fn bench_stlc_chain(c: &mut Criterion) {
-    let grammar = SPG::<TypingDomain>::load(include_str!("../examples/stlc.auf")).unwrap();
+    let grammar = SPG::load(include_str!("../examples/stlc.auf")).unwrap();
     let mut group = c.benchmark_group("stlc/application_chain");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {
@@ -82,7 +82,7 @@ fn bench_stlc_chain(c: &mut Criterion) {
 }
 
 fn bench_imp_block(c: &mut Criterion) {
-    let grammar = SPG::<TypingDomain>::load(include_str!("../examples/imp.auf")).unwrap();
+    let grammar = SPG::load(include_str!("../examples/imp.auf")).unwrap();
     let mut group = c.benchmark_group("imp/declaration_block");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {
@@ -95,7 +95,7 @@ fn bench_imp_block(c: &mut Criterion) {
 }
 
 fn bench_arith_flat(c: &mut Criterion) {
-    let grammar = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
+    let grammar = SPG::load(ARITHMETIC_GRAMMAR).unwrap();
     let mut group = c.benchmark_group("arith/flat_sum");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=10usize {
@@ -108,7 +108,7 @@ fn bench_arith_flat(c: &mut Criterion) {
 }
 
 fn bench_arith_nested(c: &mut Criterion) {
-    let grammar = SPG::<TypingDomain>::load(ARITHMETIC_GRAMMAR).unwrap();
+    let grammar = SPG::load(ARITHMETIC_GRAMMAR).unwrap();
     let mut group = c.benchmark_group("arith/nested_parens");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {

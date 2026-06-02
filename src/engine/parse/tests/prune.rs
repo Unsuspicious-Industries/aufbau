@@ -1,13 +1,12 @@
 //! Tests for obligation-based pruning and seeding.
 
 use super::*;
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 
 #[test]
 fn seed_with_no_obligations_enqueues_all_alternatives() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x' | 'y' | 'z'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x' | 'y' | 'z'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();
@@ -18,8 +17,8 @@ fn seed_with_no_obligations_enqueues_all_alternatives() {
 
 #[test]
 fn seed_single_alt_enqueues_one() {
-    let grammar = SPG::<TypingDomain>::load("Start ::= 'a'").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("Start ::= 'a'").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("a").unwrap();
 
     let start_nt = parser.grammar.nt_index("Start").unwrap();
@@ -30,8 +29,8 @@ fn seed_single_alt_enqueues_one() {
 
 #[test]
 fn prune_does_not_introduce_alternatives_not_in_grammar() {
-    let grammar = SPG::<TypingDomain>::load("A ::= 'x' | 'y'\nStart ::= A").unwrap();
-    let mut parser = TypedParser::new(grammar, StubTyping);
+    let grammar = SPG::load("A ::= 'x' | 'y'\nStart ::= A").unwrap();
+    let mut parser = stub_parser(grammar);
     parser.set_input("x").unwrap();
 
     let a_nt = parser.grammar.nt_index("A").unwrap();

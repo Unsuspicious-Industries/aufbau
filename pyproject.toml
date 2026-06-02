@@ -19,4 +19,4 @@ Repository = "https://github.com/Unsuspicious-Industries/aufbau"
 features = ["python-ffi", "pyo3/extension-module"]
 module-name = "aufbau"
 bindings = "pyo3"
-target-version = "3.13"
+target-version = "3.11"

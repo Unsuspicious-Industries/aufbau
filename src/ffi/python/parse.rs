@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::domains::typing::{TypingDomain, TypingRuntime};
+use crate::domains::typing::{TypingRuntime};
 use crate::engine::grammar::{Segment, SPG};
 use crate::engine::parse::arena::{ChildRef, ParseArena};
 use crate::engine::structure::ast::FusionAST;
@@ -19,7 +19,7 @@ pub struct PyAst {
 }
 
 impl PyAst {
-    pub(crate) fn from_fusion(ast: &FusionAST<TypingDomain>, runtime: TypingRuntime) -> Self {
+    pub(crate) fn from_fusion(ast: &FusionAST, runtime: TypingRuntime) -> Self {
         let arena = ast.arena();
         let grammar = ast.grammar();
         let roots: Vec<PyNode> = ast
@@ -229,7 +229,7 @@ impl PyChild {
 
 // ── Tree-folding helpers ─────────────────────────────────────────────────────
 
-fn fold_node(arena: &ParseArena, grammar: &SPG<TypingDomain>, node_id: usize) -> PyNode {
+fn fold_node(arena: &ParseArena, grammar: &SPG, node_id: usize) -> PyNode {
     let node = arena.node(node_id);
     let (evidence, is_complete, span_start, span_end, nt_name, children, rhs_len) =
         if let Some(ref n) = node {
@@ -269,7 +269,7 @@ fn fold_node(arena: &ParseArena, grammar: &SPG<TypingDomain>, node_id: usize) ->
     }
 }
 
-fn fold_child(arena: &ParseArena, grammar: &SPG<TypingDomain>, child: &ChildRef) -> PyChild {
+fn fold_child(arena: &ParseArena, grammar: &SPG, child: &ChildRef) -> PyChild {
     match child {
         ChildRef::Node(id) => PyChild {
             kind: "node".into(),

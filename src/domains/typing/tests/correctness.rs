@@ -3,7 +3,7 @@ use crate::domains::typing::rule::TypingRule;
 use crate::domains::typing::{subtype, Context, Type, TypingDomain, Unifier, UnifyResult};
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
-use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::{Obligation, Obligations};
 use proptest::prelude::*;

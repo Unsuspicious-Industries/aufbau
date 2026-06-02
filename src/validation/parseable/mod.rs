@@ -19,7 +19,7 @@ pub mod weird;
 
 use crate::domains::typing::Context;
 use crate::domains::typing::Type;
-use crate::domains::typing::{TypingDomain, TypingSynth};
+use crate::domains::typing::{TypingSynth};
 use crate::engine::grammar::SPG;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
@@ -110,7 +110,7 @@ impl ParseTestCase {
 /// `thm:completability-soundness`: invalid inputs must not produce
 /// complete roots.
 pub fn check_all_prefixes_parseable(
-    grammar: &mut SPG<TypingDomain>,
+    grammar: &mut SPG,
     input: &str,
     ctx: &Context,
 ) -> ParseResult {
@@ -173,7 +173,7 @@ pub fn check_all_prefixes_parseable(
 ///
 /// Property: the full input must not yield a complete accepted root.
 #[must_use]
-pub fn check_parse_fails(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> ParseResult {
+pub fn check_parse_fails(grammar: &SPG, input: &str, ctx: &Context) -> ParseResult {
     let start = Instant::now();
     let mut synth = TypingSynth::new(grammar.clone(), input);
     match synth.parse_with(ctx) {
@@ -210,7 +210,7 @@ fn build_context(pairs: &[(&str, &str)]) -> Context {
 }
 
 /// Run a single parseability test case
-pub fn run_parse_test(grammar: &mut SPG<TypingDomain>, case: &ParseTestCase) -> ParseResult {
+pub fn run_parse_test(grammar: &mut SPG, case: &ParseTestCase) -> ParseResult {
     let ctx = build_context(&case.context);
     if case.xfail {
         check_parse_fails(grammar, case.input, &ctx)
@@ -270,7 +270,7 @@ impl BatchResult {
 
 /// Run a batch of parseability test cases
 pub fn run_parse_batch(
-    grammar: &mut SPG<TypingDomain>,
+    grammar: &mut SPG,
     cases: &[ParseTestCase],
 ) -> (BatchResult, Vec<serde_json::Value>) {
     let start = Instant::now();
@@ -366,13 +366,13 @@ pub fn run_parse_batch(
 #[must_use]
 pub fn all_suites() -> Vec<(
     &'static str,
-    SPG<TypingDomain>,
+    SPG,
     Vec<ParseTestCase>,
     Vec<ParseTestCase>,
 )> {
     let mut modules: Vec<(
         &str,
-        SPG<TypingDomain>,
+        SPG,
         Vec<ParseTestCase>,
         Vec<ParseTestCase>,
     )> = vec![
@@ -417,7 +417,7 @@ pub fn all_suites() -> Vec<(
 
 /// Load a grammar from the examples directory
 #[must_use]
-pub fn load_example_grammar(name: &str) -> SPG<TypingDomain> {
+pub fn load_example_grammar(name: &str) -> SPG {
     use std::path::Path;
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = Path::new(manifest_dir)
@@ -425,5 +425,5 @@ pub fn load_example_grammar(name: &str) -> SPG<TypingDomain> {
         .join(format!("{name}.auf"));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    SPG::<TypingDomain>::load(&content).unwrap_or_else(|e| panic!("Failed to load {name}: {e}"))
+    SPG::load(&content).unwrap_or_else(|e| panic!("Failed to load {name}: {e}"))
 }

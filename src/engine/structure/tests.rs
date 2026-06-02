@@ -1,4 +1,3 @@
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::{ParseArena, State};
 
@@ -6,8 +5,8 @@ use super::ast::FusionAST;
 
 #[test]
 fn empty_ast_reports_empty_view() {
-    let ast = FusionAST::<TypingDomain>::new(
-        SPG::<TypingDomain>::new(),
+    let ast = FusionAST::new(
+        SPG::new(),
         ParseArena::new(),
         Vec::new(),
         Vec::new(),

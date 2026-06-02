@@ -4,7 +4,7 @@ use crate::domains::typing::{Context, Type, TypingDomain};
 use crate::engine::grammar::Segment;
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
-use crate::semantics::domain::{ConstraintDomain, Verdict};
+use crate::semantics::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::Obligation;
 use crate::semantics::Obligations;

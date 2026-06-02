@@ -234,12 +234,6 @@ impl<'a> MetaCompiler<'a> {
     }
 }
 
-impl crate::semantics::domain::HasBindings for TypingRule {
-    fn referenced_bindings(&self) -> Box<dyn Iterator<Item = &str> + '_> {
-        Box::new(self.used_bindings().into_iter())
-    }
-}
-
 impl Premise {
     fn has_metas(&self) -> bool {
         self.setting

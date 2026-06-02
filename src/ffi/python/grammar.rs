@@ -1,7 +1,6 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::{Production, Segment, Symbol, SPG};
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -10,14 +9,14 @@ use crate::engine::grammar::{Production, Segment, Symbol, SPG};
 
 #[pyclass(unsendable, name = "SPG")]
 pub struct PyGrammar {
-    pub(crate) inner: SPG<TypingDomain>,
+    pub(crate) inner: SPG,
 }
 
 #[pymethods]
 impl PyGrammar {
     #[new]
     fn new(source: &str) -> PyResult<Self> {
-        let g = SPG::<TypingDomain>::load(source)
+        let g = SPG::load(source)
             .map_err(|e| PyValueError::new_err(format!("grammar load error: {e}")))?;
         Ok(Self { inner: g })
     }

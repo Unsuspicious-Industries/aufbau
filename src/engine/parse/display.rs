@@ -2,8 +2,6 @@
 
 use crate::engine::grammar::Segment;
 use crate::engine::parse::arena::EvidenceId;
-use crate::semantics::SemanticRuntime;
-use crate::semantics::domain::ConstraintDomain;
 
 use super::{ChildRef, NodeId, TypedParser};
 use crate::engine::parse::arena::{ParseArena, Span};
@@ -11,8 +9,8 @@ use crate::engine::parse::arena::{ParseArena, Span};
 use crate::engine::parse::State;
 use crate::engine::parse::arena::Lexeme;
 
-pub fn render_node_text<D: ConstraintDomain, T: SemanticRuntime>(
-    parser: &TypedParser<D, T>,
+pub fn render_node_text(
+    parser: &TypedParser,
     node_id: NodeId,
     segments: &[Segment],
 ) -> String {
@@ -45,8 +43,8 @@ pub fn render_node_text<D: ConstraintDomain, T: SemanticRuntime>(
         .join(" ")
 }
 
-pub fn pretty_node<D: ConstraintDomain, T: SemanticRuntime>(
-    parser: &TypedParser<D, T>,
+pub fn pretty_node(
+    parser: &TypedParser,
     node_id: NodeId,
     segments: &[Segment],
 ) -> String {
@@ -117,8 +115,8 @@ fn render_span(span: Span, segments: &[Segment]) -> String {
         .join(" ")
 }
 
-pub fn pretty_prefix_state<D: ConstraintDomain, T: SemanticRuntime>(
-    parser: &TypedParser<D, T>,
+pub fn pretty_prefix_state(
+    parser: &TypedParser,
     state: &State,
     segments: &[Segment],
 ) -> String {

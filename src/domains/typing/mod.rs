@@ -1,10 +1,10 @@
 //! Typing constraint domain — `sec:typing-domain`, §3 of the draft.
 //!
-//! Instantiates `ConstraintDomain` with:
-//! - `Rule`     = `TypingRule`
-//! - `Evidence` = `Type` (interned as `TypeId = EvidenceId`)
-//! - `Context`  = `Context` (ordered `Identifier → Type` map)
-//! - `Effect`   = `ContextTransition` (extend/overwrite operations on `Context`)
+//! The constraint domain `D = (Rules, Closed, Ctx, eval, ⊕)` is realized by:
+//! - rules    = `TypingRule`
+//! - evidence = `Type` (interned as `TypeId = EvidenceId`)
+//! - `Ctx`    = `Context` (ordered `Identifier → Type` map)
+//! - `∇`      = `ContextTransition` (extend/overwrite operations on `Context`)
 //!
 //! ## Realizability status
 //!
@@ -39,7 +39,6 @@ mod tests;
 pub use compiler::{compile_rule, CompiledRule};
 pub use context::{Context, ContextTransition, TreeStatus};
 pub use domain::TypingDomain;
-pub use loader::TypingRuleLoader;
 pub use ops::{Unifier, UnifyResult, equal, subtype};
 pub use types::{Type, TypeExpr};
 
@@ -48,8 +47,5 @@ pub use rule::{
     TypeSetting, TypingJudgment, TypingRule,
 };
 
-/// Concrete runtime for the typing domain.
-pub type TypingRuntime = crate::semantics::runtime::DomainRuntime<TypingDomain>;
-
-/// Concrete synthesizer for the typing domain.
-pub type TypingSynth = crate::engine::synth::Synthesizer<TypingDomain>;
+pub use crate::engine::synth::Synthesizer as TypingSynth;
+pub use crate::semantics::runtime::TypingRuntime;

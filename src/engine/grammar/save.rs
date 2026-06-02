@@ -1,9 +1,7 @@
 use super::{SPG, Symbol};
-use crate::semantics::domain::ConstraintDomain;
-use crate::semantics::loader::ConstraintLoader;
 use std::path::Path;
 
-impl<D: ConstraintDomain> SPG<D> {
+impl SPG {
     /// Produce the textual specification string.
     #[must_use] 
     pub fn to_spec_string(&self) -> String {
@@ -37,8 +35,7 @@ impl<D: ConstraintDomain> SPG<D> {
         }
         out.push('\n');
 
-        // save domain
-        out.push_str(&<D::Loader as ConstraintLoader>::save(self));
+        out.push_str(&crate::domains::typing::loader::save(self));
 
         out
     }

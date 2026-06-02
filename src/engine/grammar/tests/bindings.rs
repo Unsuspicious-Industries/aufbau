@@ -1,4 +1,3 @@
-use crate::domains::typing::TypingDomain;
 use crate::engine::binding;
 use crate::engine::grammar::SPG;
 
@@ -9,7 +8,7 @@ fn steps(path: &binding::GrammarPath) -> Vec<(usize, usize)> {
 #[test]
 fn stlc_abs_binding_paths_match_spec() {
     let spec = include_str!("../../../../examples/stlc.auf");
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load stlc");
+    let grammar = SPG::load(spec).expect("load stlc");
 
     let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, usize)>>| {
         let paths = grammar
@@ -55,7 +54,7 @@ fn repeated_binding_produces_multiple_paths() {
     'number'
     "#;
 
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load pair grammar");
+    let grammar = SPG::load(spec).expect("load pair grammar");
     let paths = grammar
         .bindings
         .as_ref()
@@ -79,7 +78,7 @@ fn repetition_helpers_preserve_inner_binding_paths() {
     'number'
     "#;
 
-    let grammar = SPG::<TypingDomain>::load(spec).expect("load repetition grammar");
+    let grammar = SPG::load(spec).expect("load repetition grammar");
     let paths = grammar
         .bindings
         .as_ref()

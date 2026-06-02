@@ -19,7 +19,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::domains::typing::{Context, Type, TypingDomain, TypingSynth};
+    use crate::domains::typing::{Context, Type, TypingSynth};
     use crate::engine::grammar::SPG;
 
     const TYPED_EXPR: &str = r#"
@@ -54,7 +54,7 @@ mod tests {
         τ
     "#;
 
-    fn parse(grammar: &SPG<TypingDomain>, input: &str, ctx: &Context) -> Option<bool> {
+    fn parse(grammar: &SPG, input: &str, ctx: &Context) -> Option<bool> {
         let mut synth = TypingSynth::new(grammar.clone(), input);
         match synth.parse_with(ctx) {
             Ok(ast) => Some(ast.is_complete()),
@@ -69,7 +69,7 @@ mod tests {
     /// invariant: the parser never "un-accepts" a prefix it already admitted.
     #[test]
     fn monotonicity_typed_let_expressions() {
-        let grammar = SPG::<TypingDomain>::load(TYPED_EXPR).unwrap();
+        let grammar = SPG::load(TYPED_EXPR).unwrap();
         let ctx = Context::new();
         let inputs = [
             "let x : int = 1 in x",
@@ -100,7 +100,7 @@ mod tests {
     /// context never makes a parseable input un-parseable.
     #[test]
     fn monotonicity_under_context_extension() {
-        let grammar = SPG::<TypingDomain>::load(TYPED_EXPR).unwrap();
+        let grammar = SPG::load(TYPED_EXPR).unwrap();
         let base_ctx = Context::new();
         let mut extended = Context::new();
         extended.add("z".to_string(), Type::parse_raw("int").unwrap());
@@ -123,7 +123,7 @@ mod tests {
     /// that is at least as specific (subtype) as the original prefix's type.
     #[test]
     fn evidence_narrows_under_prefix_extension() {
-        let grammar = SPG::<TypingDomain>::load(CONSTRAINED_EXPR).unwrap();
+        let grammar = SPG::load(CONSTRAINED_EXPR).unwrap();
         let mut ctx = Context::new();
         ctx.add("x".to_string(), Type::parse_raw("int").unwrap());
 
@@ -158,7 +158,7 @@ mod tests {
     /// remaining tokens that would close the annotation).
     #[test]
     fn witness_exists_for_partial_annotation() {
-        let grammar = SPG::<TypingDomain>::load(CONSTRAINED_EXPR).unwrap();
+        let grammar = SPG::load(CONSTRAINED_EXPR).unwrap();
         let mut ctx = Context::new();
         ctx.add("x".to_string(), Type::parse_raw("int").unwrap());
 
@@ -182,7 +182,7 @@ mod tests {
     /// should admit completions that produce well-typed results.
     #[test]
     fn witness_exists_for_partial_let() {
-        let grammar = SPG::<TypingDomain>::load(TYPED_EXPR).unwrap();
+        let grammar = SPG::load(TYPED_EXPR).unwrap();
         let ctx = Context::new();
 
         let prefixes = [
