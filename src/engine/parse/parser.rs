@@ -22,7 +22,15 @@ pub struct Item {
     pub dot: usize,
     pub start: usize,
     pub pos: usize,
+    /// The context this item was predicted at — immutable, and the node's
+    /// resumption identity. Completion and waiter keys use it: a node predicted
+    /// at `ctx` must complete at `ctx` or its parent's waiter never fires.
     pub ctx: CtxId,
+    /// Mutable working context: `ctx` with all left-sibling effects applied.
+    /// Fed into child `descend` and into `finalize`; advanced by `resume`. A
+    /// right-bound effect moves `mctx` (for right siblings) without disturbing
+    /// `ctx` (where the node itself completes).
+    pub mctx: CtxId,
     pub obligations: Obligations,
     pub children: Vec<ChildRef>,
 }
@@ -33,7 +41,7 @@ pub struct Completion {
     pub start: usize,
     pub end: usize,
     pub node: NodeId,
-    /// The child context (item.ctx) in which this node was created.
+    /// Resumption identity: the context the node was predicted at (`item.ctx`).
     pub ctx: CtxId,
 }
 
@@ -68,8 +76,9 @@ pub struct Tables {
 // Items procesing
 //
 // > For every live item,
-// > item.ctx is the effective context after applying the exported transforms
-// > of all already-resumed closed children to the left.
+// > item.mctx is the effective context after applying the exported transforms
+// > of all already-resumed closed children to the left, while item.ctx stays
+// > fixed at the context the item was predicted at (its resumption identity).
 //
 // Obligation fr future nodes processing
 // In order to save up useless stuff we state, unproven that:
@@ -81,7 +90,7 @@ pub struct Tables {
 
 impl TypedParser {
     pub(super) fn enqueue_process(&mut self, item: Item) {
-        let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
+        let key = (item.prod, item.dot, item.start, item.pos, item.mctx);
         if self.tables.seen_process.insert(key) {
             self.tables.agenda.push_back(Task::Process(item));
         }
@@ -109,6 +118,7 @@ impl TypedParser {
                 start: pos,
                 pos,
                 ctx,
+                mctx: ctx,
                 obligations,
                 children: Vec::new(),
             });
@@ -286,7 +296,7 @@ impl TypedParser {
         );
         match self
             .typing
-            .finalize(item.prod, item.ctx, &item.obligations, status)
+            .finalize(item.prod, item.mctx, &item.obligations, status)
         {
             Ok(summary) => {
                 let mut evidence = summary.evidence;
@@ -393,8 +403,10 @@ impl TypedParser {
         resumed.pos = node.span.end as usize;
         resumed.children.push(ChildRef::Node(node_id));
         // Apply right-bound semantic effects exported by exact left siblings.
+        // This advances the working context only; `ctx` (resumption identity)
+        // stays put so this node still completes where its parent predicted it.
         if let Some(effect) = node.effect {
-            resumed.ctx = self.typing.apply_effect(resumed.ctx, effect).map_err(|e| {
+            resumed.mctx = self.typing.apply_effect(resumed.mctx, effect).map_err(|e| {
                 PrefixError::rejected(
                     resumed.pos,
                     format!("semantic effect failed during resume: {e:?}"),
@@ -490,7 +502,7 @@ impl TypedParser {
                 let child_ctx =
                     match self
                         .typing
-                        .descend(item.prod, binding, item.ctx, &item.obligations)
+                        .descend(item.prod, binding, item.mctx, &item.obligations)
                     {
                         Ok(ctx) => ctx,
                         Err(TransitionError::Rejected) => return Ok(()),
@@ -566,7 +578,7 @@ impl TypedParser {
                 item.pos,
                 item.children.len()
             );
-            if !seen_items.insert((item.prod, item.dot, item.start, item.pos, item.ctx)) {
+            if !seen_items.insert((item.prod, item.dot, item.start, item.pos, item.mctx)) {
                 #[cfg(test)]
                 debug_trace!(
                     "fusion_parser",

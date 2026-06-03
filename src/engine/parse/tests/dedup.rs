@@ -39,6 +39,7 @@ fn test_item(prod: ProdId, pos: usize) -> Item {
         start: pos,
         pos,
         ctx: 0,
+        mctx: 0,
         obligations: Obligations::empty(),
         children: vec![],
     }
