@@ -1,7 +1,7 @@
 //! Arena-backed typed structural views over parser output.
 
 use crate::debug_trace;
-use crate::engine::grammar::{Segment, SPG};
+use crate::engine::grammar::{SPG, Segment};
 use crate::engine::parse::arena::Lexeme;
 use std::collections::BTreeSet;
 
@@ -229,30 +229,46 @@ pub struct FusionNode<'a> {
 }
 
 impl<'a> FusionNode<'a> {
-    #[must_use] 
+    #[must_use]
     pub fn node_id(&self) -> NodeId {
         self.node_id
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn evidence(&self) -> crate::engine::parse::arena::EvidenceId {
-        self.ast
-            .arena
-            .node(self.node_id)
-            .map_or(0, |n| n.evidence)
+        self.ast.arena.node(self.node_id).map_or(0, |n| n.evidence)
     }
 
-    #[must_use] 
+    /// The name of this node's nonterminal, the structural constructor label.
+    #[must_use]
+    pub fn nt_name(&self) -> Option<&'a str> {
+        let nt = self.ast.arena.node(self.node_id)?.nt;
+        self.ast.grammar.nt(nt)
+    }
+
+    /// Is this a transparent wrapper, by the grammar's one definition
+    /// ([`SPG::is_transparent`])? A transparent node is collapsed to its child.
+    #[must_use]
+    pub fn is_transparent(&self) -> bool {
+        let prod = self
+            .ast
+            .arena
+            .alts_for(self.node_id)
+            .and_then(|alts| alts.first().map(|a| a.prod));
+        prod.is_some_and(|p| self.ast.grammar.is_transparent(p))
+    }
+
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         node_has_complete_alt(&self.ast.arena, self.node_id)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn text(&self) -> String {
         text_from_node(&self.ast.arena, &self.ast.segments, self.node_id)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn child_count(&self) -> usize {
         self.ast
             .arena
@@ -260,20 +276,13 @@ impl<'a> FusionNode<'a> {
             .map_or(0, |alts| alts.first().map_or(0, |alt| alt.children.len()))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn rhs_len(&self) -> usize {
-        self.ast
-            .arena
-            .alts_for(self.node_id)
-            .map_or(0, |alts| {
-                alts.first()
-                    .map_or(0, |alt| {
-                        self.ast
-                            .grammar
-                            .prod(alt.prod)
-                            .map_or(0, |p| p.rhs.len())
-                    })
+        self.ast.arena.alts_for(self.node_id).map_or(0, |alts| {
+            alts.first().map_or(0, |alt| {
+                self.ast.grammar.prod(alt.prod).map_or(0, |p| p.rhs.len())
             })
+        })
     }
 
     pub fn children(&self) -> impl Iterator<Item = FusionChild<'a>> + 'a {
@@ -349,15 +358,15 @@ impl FusionNode<'_> {
         is_last: bool,
     ) -> std::fmt::Result {
         let branch = if is_last { "└─ " } else { "├─ " };
-        let (nt_name, ty_str) = self
-            .ast
-            .arena
-            .node(self.node_id)
-            .map_or(("?".into(), String::new()), |n| {
-                let nt = format!("nt{}", n.nt);
-                let ty = format!(":EvidenceId({})", n.evidence);
-                (nt, ty)
-            });
+        let (nt_name, ty_str) =
+            self.ast
+                .arena
+                .node(self.node_id)
+                .map_or(("?".into(), String::new()), |n| {
+                    let nt = format!("nt{}", n.nt);
+                    let ty = format!(":EvidenceId({})", n.evidence);
+                    (nt, ty)
+                });
 
         writeln!(f, "{prefix}{branch}{nt_name}{ty_str}")?;
 

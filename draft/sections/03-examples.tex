@@ -1,0 +1,63 @@
+\section{Examples}
+\label{sec:examples}
+
+\subsection{Simply-typed lambda calculus}
+
+The type fragment is part of the grammar, not a separate algebra
+(Definition~\ref{def:term-language}):
+\[
+  \begin{aligned}
+    \text{Identifier} & \to \mathcal{R}(\texttt{[A-Za-z\_][A-Za-z0-9]}^\ast)                                                \\
+    \text{Type}       & \to \text{Identifier} \mid \text{Type}\;\text{`$\to$'}\;\text{Type} \mid \text{`('}\,\text{Type}\,\text{`)'} \\
+    \text{Variable}   & \to \text{Identifier}[x]                                                            & (\textsc{var}) \\
+    \text{Lambda}     & \to \text{`$\lambda$'}\,\text{Identifier}[a]\,\text{`:'}\,\text{Type}[t]\,\text{`.'}\,\text{Expression}[e] & (\textsc{lam}) \\
+    \text{Application}& \to \text{Expression}[l]\;\text{Expression}[r]                                      & (\textsc{app}) \\
+    \text{Expression} & \to \text{Variable} \mid \text{Lambda} \mid \text{Application}
+  \end{aligned}
+\]
+
+Each rule is a set of ascriptions (Definition~\ref{def:ascription}); holes are
+written $?A$:
+\[
+  \frac{x : ?A \ \text{in}\ \Gamma}{\,:\,?A}\;(\textsc{var})
+  \qquad
+  \frac{\Gamma[a{:}t] \vdash e : ?B}{\,:\,t \to ?B}\;(\textsc{lam})
+  \qquad
+  \frac{l : ?A \to ?B \quad r : ?A}{\,:\,?B}\;(\textsc{app})
+\]
+
+The \textsc{app} rule has no idea what a function is. The premise $l : ?A \to ?B$
+is one constructor pattern: $\to$ is the Arrow constructor the grammar defines,
+$?A, ?B$ its two subterm holes. Unifying it against $l$'s type matches the Arrow
+node and binds each hole to a subtree (Definition~\ref{def:match}), first-order
+and unitary, with no decomposition step and no notion of domain or codomain
+beyond which subterm each hole occupies. The shared $?A$ in $r : ?A$ is the
+rule's only equality, forcing $r$'s type to unify with that subterm.
+\textsc{lam} extends the context for its body (\S\ref{sec:effects}) and concludes
+$t \to ?B$; \textsc{var} ascribes the type found for $x$ in $\Gamma$. The arrow
+means only what hole-sharing across the three rules makes it mean.
+
+\paragraph{Prefix (live).}
+On $\lambda x{:}\mathrm{Int}$ the lambda node is $\mathsf{Prefix}$: the body
+binding $e$ is past the frontier, so $\beta(\nu, e) = \mathsf{Pending}$ and the
+\textsc{lam} ascription is incident to a frontier vertex. The graph is open and
+the verdict is $\mathsf{Live}$; reading $.\,x$ resolves $e$ and closes it.
+
+\paragraph{Prefix (lost).}
+On $\lambda f{:}\mathrm{Int}\to\mathrm{Bool}.\ f\,(\lambda y{:}\mathrm{Int}.\ y\,($
+the argument of $f$ has committed to the lambda alternative, so any completion of
+that subtree has the Arrow constructor at its head, while \textsc{app} requires it
+to unify with the leaf $\mathrm{Int}$. An Arrow-headed term against a leaf is a
+constructor clash with no unifier, and by Lemma~\ref{lem:hole-monotone} no
+extension recovers it: the verdict is $\mathsf{Lost}$ and the parser may discard
+the prefix before the closing parenthesis.
+
+\subsection{Imperative declarations}
+
+A declaration $\texttt{let } x : t = e\,;$ exports a right-bound effect
+(\S\ref{sec:effects}) extending the context with $x{:}t$, so a following
+statement sees $x$ in scope. Because the effect moves only the working context
+and not the declaration node's resumption identity, a block
+$\{\texttt{ let } x{:}\mathrm{Int}{=}5;\ \texttt{let } y{:}\mathrm{Int}{=}3; \}$
+threads $x$, then $x,y$, through successive statements while each statement still
+closes at the context it was predicted in.

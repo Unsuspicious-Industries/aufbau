@@ -1,6 +1,6 @@
+use super::ParseTestCase;
 #[cfg(test)]
 use super::run_parse_batch;
-use super::ParseTestCase;
 use crate::engine::grammar::SPG;
 
 pub const ARITHMETIC_GRAMMAR: &str = r"

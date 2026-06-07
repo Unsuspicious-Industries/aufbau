@@ -18,7 +18,8 @@ pub type NtId = usize;
 
 pub type ProdId = (NtId, AltId);
 
-use crate::domains::typing::TypingRule;
+use crate::typing::domain::Trees;
+use crate::typing::{Normalizer, RewriteRule, Term, TyExpr, TypingRule};
 use std::collections::HashMap;
 
 /// Syntax-directed Program Grammar `G = (N, T, P, S, Θ, R, B, A)` — `sec:gram-def`.
@@ -36,6 +37,11 @@ pub struct SPG {
     pub nonterminal_rules: HashMap<String, String>,
     /// `Θ` — the set of typing rules.
     pub rules: HashMap<String, TypingRule>,
+    /// Oriented type-rewrite rules `lhs ⇝ rhs` (the normalization theory), as raw
+    /// source-string pairs. The runtime parses each side into a term with the
+    /// grammar (`?A` is a metavariable, everything else concrete type syntax),
+    /// exactly as it parses the rule type-expressions.
+    pub rewrites: Vec<(String, String)>,
 
     /// `S` — the designated start symbol.
     pub start: Option<String>,
@@ -53,6 +59,7 @@ impl Clone for SPG {
             nonterminals: self.nonterminals.clone(),
             nonterminal_rules: self.nonterminal_rules.clone(),
             rules: self.rules.clone(),
+            rewrites: self.rewrites.clone(),
             start: self.start.clone(),
             tokenizer: self.tokenizer.clone(),
             bindings: self.bindings.clone(),
@@ -89,7 +96,7 @@ impl Default for SPG {
 }
 
 impl SPG {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             name: String::new(),
@@ -97,6 +104,7 @@ impl SPG {
             nonterminals: Vec::default(),
             nonterminal_rules: HashMap::default(),
             rules: HashMap::default(),
+            rewrites: Vec::default(),
             start: None,
             tokenizer: Some(Tokenizer::new()),
             bindings: None,
@@ -129,44 +137,80 @@ impl SPG {
         Ok(())
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn nt_rule(&self, nt: &str) -> Option<&String> {
         self.nonterminal_rules.get(nt)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn rule_for_prod(&self, prod: ProdId) -> Option<&String> {
         self.nt(prod.0).and_then(|n| self.nt_rule(n))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn rule_of_prod(&self, prod: ProdId) -> Option<&TypingRule> {
         self.rule_for_prod(prod)
             .and_then(|name| self.rules.get(name.as_str()))
     }
 
-    #[must_use] 
-    pub fn is_transparent_nt(&self, nt: &str) -> bool {
-        self.productions.get(nt).is_some_and(|productions| {
-            !productions.is_empty()
-                && productions.iter().all(|production| {
-                    let nonterminal_children = production
-                        .rhs
-                        .iter()
-                        .filter(|symbol| matches!(symbol, Symbol::Nonterminal { .. }))
-                        .count();
-                    let bound_terminals = production.rhs.iter().any(|symbol| {
-                        matches!(
-                            symbol,
-                            Symbol::Terminal {
-                                binding: Some(_),
-                                ..
-                            }
-                        )
-                    });
-                    nonterminal_children == 1 && !bound_terminals
+    /// Is this production a *transparent* wrapper: rule-less, exactly one
+    /// nonterminal child, and no bound terminal? Such a node carries no
+    /// semantics of its own, so it is collapsed to its single child. This is
+    /// the one definition of transparency, shared by elaboration (evidence
+    /// pass-through) and term construction (tree pass-through); nothing else
+    /// should restate it.
+    #[must_use]
+    pub fn is_transparent(&self, prod: ProdId) -> bool {
+        if self.rule_for_prod(prod).is_some() {
+            return false;
+        }
+        let Some(p) = self.prod(prod) else {
+            return false;
+        };
+        let nts = p
+            .rhs
+            .iter()
+            .filter(|s| matches!(s, Symbol::Nonterminal { .. }))
+            .count();
+        let bound_terminal = p
+            .rhs
+            .iter()
+            .any(|s| matches!(s, Symbol::Terminal { binding: Some(_), .. }));
+        nts == 1 && !bound_terminal
+    }
+
+    /// The rewrite theory parsed against this grammar. Empty ⇒ the normalizer is
+    /// the identity. A side that fails to parse is dropped (no silent mis-rewrite).
+    #[must_use]
+    pub fn normalizer(&self) -> Normalizer {
+        let rules = self
+            .rewrites
+            .iter()
+            .filter_map(|(l, r)| {
+                Some(RewriteRule {
+                    lhs: Term::parse(self, l).ok()?,
+                    rhs: Term::parse(self, r).ok()?,
                 })
-        })
+            })
+            .collect();
+        Normalizer::from_rules(rules)
+    }
+
+    /// Each rule type-expression parsed into its tree once. A pattern that cannot
+    /// be built (ambiguous, or no parse) is left out and reads as unresolved.
+    #[must_use]
+    pub fn type_trees(&self) -> Trees {
+        let mut trees = Trees::new();
+        for rule in self.rules.values() {
+            for te in rule.type_exprs() {
+                if !trees.contains_key(te)
+                    && let Ok(ty) = TyExpr::build(self, te)
+                {
+                    trees.insert(te.clone(), ty);
+                }
+            }
+        }
+        trees
     }
 
     pub fn add_production(&mut self, nt: String, prod: Production) {
@@ -180,7 +224,7 @@ impl SPG {
         self.start = Some(start.into());
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn start(&self) -> Option<&String> {
         self.start.as_ref()
     }
@@ -195,42 +239,42 @@ impl SPG {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn production_count(&self) -> usize {
         self.nonterminals.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn production(&self, nt: &str) -> Option<&Vec<Production>> {
         self.productions.get(nt)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn nt(&self, idx: usize) -> Option<&str> {
         self.nonterminals.get(idx).map(std::string::String::as_str)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn nt_index(&self, name: &str) -> Option<usize> {
         self.nonterminals.iter().position(|n| n == name)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn productions_at(&self, idx: usize) -> Option<&Vec<Production>> {
         self.nt(idx).and_then(|nts| self.productions.get(nts))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn prod(&self, pid: ProdId) -> Option<Production> {
         self.productions_at(pid.0)?.get(pid.1).cloned()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn specials(&self) -> Option<&Vec<String>> {
         self.tokenizer.as_ref().map(tokenizer::Tokenizer::specials)
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn rules(&self) -> &HashMap<String, TypingRule> {
         &self.rules
     }
@@ -239,7 +283,7 @@ impl SPG {
         self.productions.iter().map(|(k, v)| (k.as_str(), v))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn nu(&self, symbol: &Symbol) -> bool {
         match symbol {
             Symbol::Terminal { .. } => false,

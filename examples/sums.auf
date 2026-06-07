@@ -1,0 +1,39 @@
+// Sums — demonstrates the new model: sum types are ordinary constructors, and a
+// type-rewrite rule (⇝) defines a normalization theory, so two syntactically
+// different types compare equal through ascription.
+//
+// Try:
+//   echo '(x : Bool) ~ (y : Unit + Unit)' | aufbau check -s examples/sums.auf
+// It type-checks only because of the rewrite  Bool ⇝ Unit + Unit  below: without
+// it, Bool (a leaf) and Unit + Unit (a SumType node) would clash.
+
+// ===================== Types =====================
+TypeName ::= /[A-Z][a-z]*/
+
+// `+` is just a binary constructor; a sum has structure, not a magic union.
+AtomicType ::= TypeName | '(' Type ')'
+SumType ::= AtomicType '+' Type
+Type ::= AtomicType | SumType
+
+// ===================== Values =====================
+Word ::= 'x' | 'y' | 'z'
+
+// An annotated value: its type is exactly the annotation.
+Annot(annot) ::= '(' Word[w] ':' Type[τ] ')'
+
+// `a ~ b` requires a and b to have the same type (unification on ?T).
+Same(same) ::= Annot[a] '~' Annot[b]
+
+Expression ::= Annot | Same
+
+// ===================== Typing rules =====================
+----------- (annot)
+τ
+
+Γ ⊢ a : ?T, Γ ⊢ b : ?T
+---------------------- (same)
+?T
+
+// ===================== Rewrite theory (normalization) =====================
+// Bool is a synonym for Unit + Unit. Ascription unifies *modulo* this.
+Bool ⇝ Unit + Unit

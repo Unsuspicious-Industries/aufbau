@@ -13,14 +13,10 @@
 \usepackage{xcolor}
 \usepackage{xparse}
 
-\newcommand{\cmt}[1]{\textcolor{red}{\texttt{#1}}}
-\long\def\sugadd#1{{\color{blue}#1}}
-\long\def\sugdel#1{{\color{red}#1}}
-
 \newcommand{\aufbau}{\textsc{Aufbau}\xspace}
 \newcommand{\spg}{\textsc{SPG}\xspace}
 
-\title{\aufbau: Semantic Prefix Grammars, Effects, and Parser Soundness}
+\title{\aufbau: Semantic Prefix Grammars and a Unified Constraint Model}
 \author{Paul Kronlund-Drouault}
 \date{Working Draft}
 
@@ -36,71 +32,117 @@
 \newtheorem{remark}[definition]{Remark}
 \newcommand{\keywords}[1]{\par\smallskip\noindent\textbf{Keywords: }#1}
 
-
 \begin{document}
 
 \maketitle
 
-
 \begin{abstract}
-	Semantic prefix grammars (\spg) are a declarative framework for prefix parsing with context-dependent semantic constraints. An SPG pairs context-free productions with binding annotations and semantic premises over a decidable, abstract domain which is syntactically realizable in the attached grammar. A prefix is accepted exactly when the combined syntactic and semantic state remains extendable to at least one complete semantically valid expression. This draft isolates the formal constraint model, the generic prefix parser with evidence summaries and right-bound effects, and the current typing-domain instance. The central soundness target is that every accepted prefix has a valid completion.
-\keywords{Static analysis, prefix parsing, semantic constraints, type checking, program synthesis}
+  Semantic prefix grammars (\spg) are a declarative framework for parsing
+  \emph{prefixes} under context-dependent semantic constraints: a partial input
+  is accepted exactly when both its syntax and its semantics can still be
+  completed to a valid whole. This draft presents the constraint model and a
+  single, uniform semantic layer. Syntax is an ordinary grammar with binding
+  annotations; semantics is recorded as a constraint graph over the evidence
+  exposed by bound children. The semantic layer has one operation, \emph{type
+  ascription}, discharged by one mechanism, \emph{unification} of terms over the
+  grammar's own signature, regular at the leaves. Types are not a separate
+  algebra but terms in the same grammar, so context lookup, equality, inclusion,
+  and structural matching are all ascriptions. The soundness target is that the
+  parser discards a prefix only when no completion can satisfy its constraints.
+  \keywords{prefix parsing, semantic constraints, unification, constraint graphs, type checking}
 \end{abstract}
+
 \section{Introduction}
 \label{sec:introduction}
+
 \paragraph{Problem.}
-Prefix-oriented construction of formal artifacts needs structural guarantees: a partial term may already have left the target language, violated a type rule, or invalidated a proof script. Many important constraints are semantic in the ordinary programming-language sense: identifiers must be in scope, declarations modify future contexts, branches must agree on types, and expression forms may be valid only under language-specific side conditions. These constraints are context-dependent even when the surface syntax is context-free.
+Building a formal artifact left to right needs guarantees on the partial result:
+a half-written term may already have left the language, broken a typing rule, or
+become impossible to complete. Many of these constraints are semantic in the
+ordinary sense (names must be in scope, declarations extend later contexts,
+branches must agree on types) and remain context-dependent even when the
+surface syntax is context-free. The semantic layer must therefore be evaluated
+\emph{online}, over partial forests, and must never reject a prefix that still
+admits a satisfying completion.
 
-Grammar-only prefix parsing addresses regular and context-free structure. This is necessary but not sufficient for programming languages and proof-oriented languages. The semantic layer must be evaluated online, over partial forests, without rejecting prefixes that still admit a satisfying completion.
-\paragraph{Main idea.}
+\paragraph{This draft.}
+We keep syntax ordinary and make semantics a constraint problem. Productions
+carry binding annotations that expose child evidence; semantic rules relate that
+evidence by ascription. The accumulated ascriptions form a constraint graph
+whose closure under unification yields a three-valued verdict (satisfied,
+still-live, or lost), and the parser may prune only on \emph{lost}. Types are
+not a separate language: \S\ref{sec:constraints} shows that context lookup,
+equality, inclusion, and structural matching are one primitive, ascription by
+unification, over terms in the same grammar.
 
-We propose a declarative framework for prefix parsing with semantic constraints. A specification contains ordinary productions with binding annotations, plus inference-style semantic rules. The parser maintains a partial forest and a finite semantic state. A continuation is accepted when syntactic parsing and semantic evaluation can derive a closed work in the language by completing it.
-
-We reuse the standard view of attribute grammars~\cite{knuth1968semantics} and constraint/logic grammars~\cite{pereira1980definite,shieber1986unification}: a context-free derivation is accepted only when attached semantic information admits a satisfying valuation. We name our class \emph{semantic prefix grammars} and add the condition that the constraint domain must be decidable and its partial evaluator must be realizable over prefixes (semantic completability corresponds to syntactic completability). The current instantiation supports typed languages with finite contexts, rule-local unification, binding evidence, and context transforms.
-Keeping the same model, richer fragments of languages such as TypeScript or Python can be obtained by extending the premise language and context structures while preserving the same parser architecture.
+\paragraph{Lineage.}
+The mechanism is first-order unification~\cite{robinson1965,martelli1982}, read
+as constraint-based type inference~\cite{PottierRemy2005} executed incrementally;
+its solver is constraint handling~\cite{Sneyers2009} over an equality core in the
+style of equality saturation~\cite{Willsey2021,Tiurin2024}, and its equational and
+dependent extensions follow standard unification
+theory~\cite{baader2001unification,miller1991}. The grammar-as-signature reading
+is the tradition of unification-based grammar~\cite{shieber1986unification};
+regular leaves and prefix-aware terminals rest on regular-expression
+derivatives~\cite{brzozowski1964derivatives,owens2009regex}; the parser is
+Earley-style saturation~\cite{earley1970efficient}; and pending evidence at the
+right frontier plays the role of a typed hole~\cite{omar2017hazelnut,zhao2024marking}.
 
 \paragraph{Contributions.}
-
-This paper makes the following contributions:
-\begin{enumerate}
-	\item A formal model of \emph{prefix closure} parsing for our grammar class along with proof targets for generalized realizable semantic constraints.
-	\item A generic prefix parsing algorithm based on Earley-style saturation~\cite{earley1970efficient}, enriched with semantic obligations, evidence summaries, right-bound effects, and an end-of-input closure phase.
-	\item A current typing-domain instance with finite contexts, local unification, child ascription, and context transforms.
+\begin{enumerate}[nosep]
+  \item A constraint model for prefix parsing (\S\ref{sec:foundations}): an
+        evidence graph, a three-valued evaluator, and the safe-pruning property.
+  \item A unified semantic layer (\S\ref{sec:constraints}): one operation
+        (ascription), one mechanism (first-order unification over the grammar's
+        signature, regular at the leaves), with types as terms in the same grammar.
+  \item Worked instances (\S\ref{sec:examples}) recasting the simply-typed
+        lambda calculus and an imperative fragment in the unified model.
 \end{enumerate}
 
-\paragraph{Target} This framework is meant to support mechanized correctness guarantees: the proof obligations are deliberately structured for eventual formalization in a proof assistant, and the framework extends to richer type systems and proof-oriented domains on the same parser architecture.
-
-% Formal core: keep these inputs in this order.
+% Formal core. The \code macro links definitions to their code counterparts.
 \input{code-refs}
-\input{sections/01-abstract-spg-definition.tex}
-\input{sections/02-generic-parser-algorithm.tex}
-\input{sections/03-typing-domain-implementation.tex}
-\input{sections/04-generation.tex}
+\input{sections/01-foundations.tex}
+\input{sections/02-patterns-and-constraints.tex}
+\input{sections/03-examples.tex}
 
-\section{Limitations}
+\section{Limitations and Open Problems}
 \label{sec:limitations}
 
-\paragraph{Language coverage.}
-The current semantic algebra supports finite typing contexts, is quite limited, and could only be extended to a small subset of real world general purpose programming languages.  Realistic TypeScript or Python fragments would require additional premise forms (for instance row polymorphism, structural subtyping, and effect tracking) and broader context domains (module-level scopes, mutable cells, refinement information). We expect these extensions to fit the same parser architecture, but each new premise form has to be checked for realizability before it can be admitted into the framework. This might be hard due to second order logic requirement we cannot implement yet.
+\paragraph{Beyond the syntactic core.}
+The syntactic core is unitary, so match ambiguity is not an open problem
+(\S\ref{sec:ambiguity}); multiplicity appears only with the equational and
+recursive extensions a grammar may opt into, where unification is finitary, not
+unitary. Those extensions, and the dependent-fragment conversion regime, are
+stated but not developed here.
 
-\paragraph{Performance.}
-While overhead is manageable for the grammars used as running examples, large grammars with many typing rules, deep nesting, or expensive obligation resolution can slow parsing. Cost grows with the number of live items kept on the agenda, with the size of the obligation store on each item, and with the cost of evaluating individual premises. Industrial-scale grammars would benefit from caching and chart sharing strategies that are not yet modeled here.
+\paragraph{Coverage.}
+The model targets languages whose type fragment is a grammar signature with
+regular leaves. Features that need an equational theory (commutative or
+record-like types) or second-order reasoning (row polymorphism, dependency) ride
+on the named extensions of \S\ref{sec:ambiguity}, and each new use must be
+checked for realizability before admission.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented semantic prefix grammars, a language-parametric framework for context-dependent semantic checks over prefix parse forests. The core idea is to keep syntax ordinary and make semantics explicit: bound productions expose evidence, semantic premises evaluate conservatively over partial input, and exact nodes alone may export right-bound effects. This gives a principled path from CFG-only prefix parsing toward realistic programming-language and proof-oriented fragments. Key directions for future work are richer semantic algebras, proof-domain instances, and mechanized proofs of the semantic invariants.
+Semantic prefix grammars keep syntax ordinary and make semantics a constraint
+graph solved online. Typing is ascription-by-unification over terms in the
+grammar's own signature, with $\top$ a bare variable and $\bot$ a unification
+failure. The syntactic core is unitary, so disambiguation is not an open
+problem; the remaining work is the equational, recursive, and dependent
+extensions and the mechanized proof of the semantic invariants.
 
 \section*{Acknowledgments}
 
-We thank Niels M\"undler at ETH Z\"urich's SRI Lab for feedback on the implementation, help with references, and theoretical advice.
-This work was supported by Unsuspicious Industries, an independent nonprofit research collective.
+We thank Niels M\"undler at ETH Z\"urich's SRI Lab for feedback on the
+implementation and theoretical advice. This work was supported by Unsuspicious
+Industries, an independent nonprofit research collective.
 
 \bibliographystyle{plain}
 \bibliography{references}
 
-\begin{codereferences}
-\input{code-refs-gen}
-\end{codereferences}
+% Code-reference appendix omitted while code `///` labels are reconciled with the
+% rewritten definitions; regenerate with scripts/gen-code-refs.sh and restore
+% \begin{codereferences}\input{code-refs-gen}\end{codereferences}.
 
 \end{document}

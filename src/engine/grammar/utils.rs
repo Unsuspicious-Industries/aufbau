@@ -1,7 +1,7 @@
 use super::Symbol;
 
 // collection of utils for working with grammar definitions
-#[must_use] 
+#[must_use]
 pub fn is_regex(pattern: &str) -> bool {
     // Only slash-delimited patterns: /regex/
     pattern.starts_with('/') && pattern.ends_with('/') && pattern.len() > 2

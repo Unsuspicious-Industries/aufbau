@@ -148,57 +148,57 @@ impl DFA {
     where
         F: Fn(bool, bool) -> bool,
     {
+        // States are paired as `Option<StateId>`: `None` is the dead sink a DFA
+        // enters on a missing transition (non-accepting, absorbing). This keeps
+        // the product total over the union alphabet, so complement and
+        // difference are sound — without it, `A − B` drops any string using a
+        // symbol absent from `B`.
         let mut state_map = HashMap::new();
         let mut queue = VecDeque::new();
         let mut product_states = Vec::new();
         let mut transitions = Vec::new();
 
-        // Initialize with start state pair
-        let start_pair = (self.start, other.start);
+        let start_pair = (Some(self.start), Some(other.start));
         state_map.insert(start_pair, 0);
         queue.push_back(start_pair);
         product_states.push(start_pair);
         transitions.push(HashMap::new());
 
-        // Collect alphabet from both DFAs
         let alphabet = self
             .extract_dfa_alphabet()
             .union(&other.extract_dfa_alphabet())
             .copied()
             .collect::<HashSet<_>>();
 
-        // Build product automaton
         while let Some((s1, s2)) = queue.pop_front() {
             let current_id = state_map[&(s1, s2)];
 
             for symbol in &alphabet {
-                // Both DFAs must have a transition
-                if let (Some(&n1), Some(&n2)) = (
-                    self.states[s1].transitions.get(symbol),
-                    other.states[s2].transitions.get(symbol),
-                ) {
-                    let next_pair = (n1, n2);
-                    let next_id = *state_map.entry(next_pair).or_insert_with(|| {
-                        let id = product_states.len();
-                        product_states.push(next_pair);
-                        transitions.push(HashMap::new());
-                        queue.push_back(next_pair);
-                        id
-                    });
-
-                    transitions[current_id].insert(*symbol, next_id);
+                let n1 = s1.and_then(|s| self.states[s].transitions.get(symbol).copied());
+                let n2 = s2.and_then(|s| other.states[s].transitions.get(symbol).copied());
+                // Both sides dead: target is the omitted sink state.
+                if n1.is_none() && n2.is_none() {
+                    continue;
                 }
+                let next_pair = (n1, n2);
+                let next_id = *state_map.entry(next_pair).or_insert_with(|| {
+                    let id = product_states.len();
+                    product_states.push(next_pair);
+                    transitions.push(HashMap::new());
+                    queue.push_back(next_pair);
+                    id
+                });
+                transitions[current_id].insert(*symbol, next_id);
             }
         }
 
-        // Determine accept states using the provided function
         let accept_states = product_states
             .iter()
             .enumerate()
             .filter(|(_, (s1, s2))| {
                 accept_fn(
-                    self.accept_states.contains(s1),
-                    other.accept_states.contains(s2),
+                    s1.is_some_and(|s| self.accept_states.contains(&s)),
+                    s2.is_some_and(|s| other.accept_states.contains(&s)),
                 )
             })
             .map(|(id, _)| id)

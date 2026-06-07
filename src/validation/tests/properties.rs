@@ -1,7 +1,7 @@
 use proptest::prelude::*;
 
-use crate::domains::typing::{Context, Type};
-use crate::domains::typing::{TypingSynth};
+use crate::typing::{Context, Type};
+use crate::typing::{TypingSynth};
 use crate::engine::grammar::SPG;
 use crate::validation::parseable::{
     arithmetic::ARITHMETIC_GRAMMAR, check_all_prefixes_parseable, check_parse_fails,

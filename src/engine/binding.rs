@@ -9,7 +9,7 @@
 // mirrors the formal β(τ₁, abs) = 3@1·0 constraint.
 use std::collections::{HashMap, HashSet};
 
-use crate::engine::grammar::{Production, Symbol, SPG};
+use crate::engine::grammar::{Production, SPG, Symbol};
 pub use crate::engine::path::{GrammarPath, PathStep};
 
 const MAX_RECURSION_DEPTH: usize = 16;

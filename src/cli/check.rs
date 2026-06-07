@@ -4,10 +4,10 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use aufbau::domains::typing::{Context, Type};
-use aufbau::domains::typing::{TypingSynth};
 use aufbau::engine::grammar::SPG;
 use aufbau::engine::structure::FusionNode;
+use aufbau::typing::Context;
+use aufbau::typing::TypingSynth;
 
 #[derive(Args, Debug, Clone)]
 pub struct CheckCmd {
@@ -63,7 +63,10 @@ pub fn run(args: &CheckCmd) {
     }
 
     let runtime = synth.runtime().clone();
-    let complete_roots: Vec<_> = typed.roots().filter(aufbau::engine::structure::FusionNode::is_complete).collect();
+    let complete_roots: Vec<_> = typed
+        .roots()
+        .filter(aufbau::engine::structure::FusionNode::is_complete)
+        .collect();
     let partial_roots: Vec<_> = typed.roots().filter(|r| !r.is_complete()).collect();
 
     let is_partial = complete_roots.is_empty();
@@ -75,7 +78,7 @@ pub fn run(args: &CheckCmd) {
             .iter()
             .filter(|r| {
                 let ty = runtime.evidence_of(r.evidence());
-                ty.is_some_and(|t| !matches!(t, Type::Any))
+                ty.is_some_and(|t| !t.is_top())
             })
             .cloned()
             .collect();
@@ -98,7 +101,7 @@ pub fn run(args: &CheckCmd) {
         };
         if args.all || !seen_types.contains(&ty_s) {
             seen_types.push(ty_s);
-            unique_roots.push(root.clone());
+            unique_roots.push(*root);
         }
     }
 
@@ -106,12 +109,9 @@ pub fn run(args: &CheckCmd) {
         println!("partial  \"{input}\"");
         println!();
         if unique_roots.len() == 1 {
-            let root = unique_roots[0].clone();
+            let root = unique_roots[0];
             let ty = runtime.evidence_of(root.evidence());
-            println!(
-                "type : {}",
-                ty.map(|t| format!("{t}")).unwrap_or_default()
-            );
+            println!("type : {}", ty.map(|t| format!("{t}")).unwrap_or_default());
         } else {
             println!("{} candidate type(s):", unique_roots.len());
             for (i, root) in unique_roots.iter().enumerate() {
@@ -124,7 +124,7 @@ pub fn run(args: &CheckCmd) {
             }
         }
     } else if unique_roots.len() == 1 {
-        let root = unique_roots[0].clone();
+        let root = unique_roots[0];
         println!(
             "{} : {}",
             input,

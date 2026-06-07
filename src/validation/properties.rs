@@ -32,9 +32,9 @@
 mod tests {
     use proptest::prelude::*;
 
-    use crate::domains::typing::{Context, Type};
-    use crate::domains::typing::{TypingSynth};
     use crate::engine::grammar::SPG;
+    use crate::typing::TypingSynth;
+    use crate::typing::{Context, Type};
     use crate::validation::parseable::{
         arithmetic::ARITHMETIC_GRAMMAR, check_all_prefixes_parseable, check_parse_fails,
         load_example_grammar,
@@ -126,8 +126,8 @@ mod tests {
             }
             let mut ctx = Context::new();
             ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
-            for i in 0..n {
-                ctx.add(format!("x{i}"), Type::parse_raw(&type_names[i]).unwrap());
+            for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
+                ctx.add(name, Type::parse_raw(&type_names[i]).unwrap());
             }
             let input = std::iter::once("f".to_string())
                 .chain((0..n).map(|i| format!("x{i}")))
@@ -269,10 +269,10 @@ mod tests {
 
     #[test]
     fn all_invalid_arithmetic_cases_rejected() {
-        let mut g = SPG::load(ARITHMETIC_GRAMMAR).unwrap();
+        let g = SPG::load(ARITHMETIC_GRAMMAR).unwrap();
         let ctx = Context::new();
         for case in crate::validation::parseable::arithmetic::invalid_expressions_cases() {
-            let result = check_parse_fails(&mut g, case.input, &ctx);
+            let result = check_parse_fails(&g, case.input, &ctx);
             assert!(
                 result.is_pass(),
                 "invalid case {:?} (input={:?}) was not rejected",
@@ -284,10 +284,10 @@ mod tests {
 
     #[test]
     fn all_invalid_stlc_cases_rejected() {
-        let mut g = load_example_grammar("stlc");
+        let g = load_example_grammar("stlc");
         let ctx = Context::new();
         for case in crate::validation::parseable::stlc::invalid_expressions_cases() {
-            let result = check_parse_fails(&mut g, case.input, &ctx);
+            let result = check_parse_fails(&g, case.input, &ctx);
             assert!(
                 result.is_pass(),
                 "invalid case {:?} (input={:?}) was not rejected",

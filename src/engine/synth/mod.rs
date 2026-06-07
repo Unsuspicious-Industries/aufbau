@@ -1,9 +1,9 @@
 use crate::debug_trace;
-use crate::domains::typing::{Context, TypingDomain};
 use crate::engine::grammar::SPG;
 use crate::engine::parse::TypedParser;
 use crate::engine::structure::ast::FusionAST;
 use crate::semantics::TypingRuntime;
+use crate::typing::{Context, TypingDomain};
 
 #[cfg(test)]
 mod tests;

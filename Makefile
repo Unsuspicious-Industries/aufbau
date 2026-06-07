@@ -1,6 +1,6 @@
 .PHONY: all build clean rust help test test-rust test-py dev check-deps check lc run \
         verif verif-build verif-check verif-clean clean-verif \
-        verif-ocaml verif-ocaml-test
+        verif-ocaml verif-ocaml-test ocaml ocaml-run test-ocaml
 
 ARGS ?=
 
@@ -24,7 +24,7 @@ clean-rust:
 	@echo "Cleaning Rust artifacts..."
 	@cargo clean
 
-test: test-rust test-py
+test: test-rust test-py test-ocaml
 
 test-rust:
 	@echo "Running Rust tests..."
@@ -90,6 +90,27 @@ verif-ocaml:
 
 verif-ocaml-test: verif-ocaml
 	@$(MAKE) -C verification ocaml-test
+	@echo "✓ OCaml tests passed"
+
+# ---- OCaml FFI -------------------------------------------------------------
+# The inductive type-algebra binding (ocaml/). Builds the engine as a static
+# archive (with the ocaml-ffi exports), stages it alongside boxroot, and builds
+# the dune library + demo.
+
+ocaml:
+	@echo "Building OCaml FFI..."
+	@cargo build --features ocaml-ffi
+	@cp target/debug/libaufbau.a ocaml/libaufbau.a
+	@cp "$$(find target/debug -name libocaml-boxroot.a | head -1)" ocaml/libocaml-boxroot.a
+	@dune build --root ocaml
+	@echo "✓ OCaml FFI built"
+
+ocaml-run: ocaml
+	@dune exec --root ocaml ./demo.exe
+
+test-ocaml: ocaml
+	@echo "Running OCaml FFI tests..."
+	@dune runtest --root ocaml
 	@echo "✓ OCaml tests passed"
 
 help:

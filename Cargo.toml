@@ -8,6 +8,8 @@ license = "MIT"
 repository = "https://github.com/Unsuspicious-Industries/aufbau"
 homepage = "https://unsuspicious.org/blog/proposition-7"
 readme = "README.md"
+# examples/ contains only .auf grammars, not Rust; runnable tours live in tour/.
+autoexamples = false
 keywords = ["llm", "constrained-decoding", "type-systems", "grammar", "parsing"]
 categories = ["parsing", "text-processing", "development-tools"]
 exclude = [
@@ -29,6 +31,11 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [[bin]]
 name = "aufbau"
 path = "src/main.rs"
+
+# examples/ holds only .auf grammars; runnable Rust tours live in tour/.
+[[example]]
+name = "term_unification"
+path = "tour/term_unification.rs"
 
 [dependencies]
 bimap = "0.6.3"
@@ -53,7 +60,9 @@ once_cell = "1.17.1"
 indicatif = "0.17"
 atty = "0.2"
 pyo3 = { version = "0.23", optional = true }
-ocaml = { version = "1.3", optional = true, default-features = false, features = ["derive", "link"] }
+# no `link` feature: OCaml is the host and provides its own runtime; bundling it
+# into the staticlib would multiply-define caml_* symbols at the OCaml link step.
+ocaml = { version = "1.3", optional = true, default-features = false, features = ["derive"] }
 [dev-dependencies]
 proptest = "1"
 criterion = { version = "0.5", features = ["html_reports"] }

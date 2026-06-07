@@ -5,7 +5,7 @@ use crate::debug_trace;
 use super::{PrefixStatus, Regex, nfa};
 
 // ===== Predicates =====
-#[must_use] 
+#[must_use]
 pub fn is_empty(r: &Regex) -> bool {
     match r {
         Regex::Empty => true,
@@ -15,7 +15,7 @@ pub fn is_empty(r: &Regex) -> bool {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn is_nullable(r: &Regex) -> bool {
     match r {
         Regex::Epsilon | Regex::Star(_) => true,
@@ -26,7 +26,7 @@ pub fn is_nullable(r: &Regex) -> bool {
 }
 
 // ===== Simplification =====
-#[must_use] 
+#[must_use]
 pub fn simplify(r: &Regex) -> Regex {
     match r {
         Regex::Concat(a, b) => match (simplify(a), simplify(b)) {
@@ -48,7 +48,7 @@ pub fn simplify(r: &Regex) -> Regex {
 }
 
 // ===== Derivatives =====
-#[must_use] 
+#[must_use]
 pub fn deriv(r: &Regex, c: char) -> Regex {
     let d = match r {
         Regex::Empty | Regex::Epsilon => Regex::Empty,
@@ -77,12 +77,12 @@ pub fn deriv(r: &Regex, c: char) -> Regex {
     d
 }
 
-#[must_use] 
+#[must_use]
 pub fn derivative(r: &Regex, s: &str) -> Regex {
     s.chars().fold(r.clone(), |r, c| deriv(&r, c))
 }
 
-#[must_use] 
+#[must_use]
 pub fn matches(r: &Regex, s: &str) -> bool {
     let nfa = nfa::NFA::from(r.clone());
     let mut current_states = nfa.epsilon_closure(vec![nfa.start]);
@@ -105,7 +105,7 @@ pub fn matches(r: &Regex, s: &str) -> bool {
     current_states.contains(&nfa.accept)
 }
 
-#[must_use] 
+#[must_use]
 pub fn match_len(r: &Regex, s: &str) -> Option<usize> {
     let nfa = nfa::NFA::from(r.clone());
 
@@ -137,7 +137,7 @@ pub fn match_len(r: &Regex, s: &str) -> Option<usize> {
     max_len
 }
 
-#[must_use] 
+#[must_use]
 pub fn prefix_match(r: &Regex, s: &str) -> PrefixStatus {
     let d = derivative(r, s).simplify();
     if is_empty(&d) {
@@ -153,7 +153,7 @@ pub fn prefix_match(r: &Regex, s: &str) -> PrefixStatus {
 
 // ===== Cartesian Product =====
 /// Compute cartesian product: [[a,b], [x,y]] -> [ax, ay, bx, by]
-#[must_use] 
+#[must_use]
 pub fn product(choices: Vec<Vec<Regex>>) -> Vec<Regex> {
     choices.into_iter().fold(vec![Regex::Epsilon], |acc, alts| {
         acc.into_iter()
@@ -163,7 +163,7 @@ pub fn product(choices: Vec<Vec<Regex>>) -> Vec<Regex> {
 }
 
 /// Product with index tracking: returns (`alt_indices`, regex)
-#[must_use] 
+#[must_use]
 pub fn product_traced(choices: Vec<Vec<Regex>>) -> Vec<(Vec<usize>, Regex)> {
     choices
         .into_iter()
@@ -181,7 +181,7 @@ pub fn product_traced(choices: Vec<Vec<Regex>>) -> Vec<(Vec<usize>, Regex)> {
 }
 
 // ===== Utilities =====
-#[must_use] 
+#[must_use]
 pub fn unwrap_star(r: &Regex) -> Regex {
     if let Regex::Star(r) = r {
         (**r).clone()
@@ -190,7 +190,7 @@ pub fn unwrap_star(r: &Regex) -> Regex {
     }
 }
 
-#[must_use] 
+#[must_use]
 pub fn to_pattern(r: &Regex) -> String {
     match r {
         Regex::Empty => "(?!)".into(),

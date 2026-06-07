@@ -8,7 +8,7 @@ use std::ops::{Add, Mul};
 pub struct TreePath(Vec<usize>);
 
 impl TreePath {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -21,17 +21,17 @@ impl TreePath {
         self.0.pop()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn as_slice(&self) -> &[usize] {
         &self.0
     }
@@ -40,7 +40,7 @@ impl TreePath {
         self.0.iter()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn into_vec(self) -> Vec<usize> {
         self.0
     }
@@ -67,7 +67,7 @@ pub struct PathStep {
 }
 
 impl PathStep {
-    #[must_use] 
+    #[must_use]
     pub fn new(i: usize, a: usize) -> Self {
         Self { i, a }
     }
@@ -96,7 +96,7 @@ impl PartialOrd for GrammarPath {
 }
 
 impl GrammarPath {
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self { steps: Vec::new() }
     }
@@ -109,17 +109,17 @@ impl GrammarPath {
         self.steps.pop()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.steps.len()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn steps(&self) -> &[PathStep] {
         &self.steps
     }
@@ -128,24 +128,24 @@ impl GrammarPath {
         self.steps.iter()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn forward(&self) -> Option<(PathStep, Self)> {
         let first = self.steps.first().cloned()?;
         let rest = self.steps[1..].to_vec();
         Some((first, Self { steps: rest }))
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn alts(&self) -> Vec<usize> {
         self.steps.iter().map(|step| step.a).collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn indices(&self) -> Vec<usize> {
         self.steps.iter().map(|step| step.i).collect()
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn idxs(&self) -> Vec<usize> {
         self.indices()
     }

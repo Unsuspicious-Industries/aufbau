@@ -3,7 +3,7 @@ use std::path::Path;
 
 impl SPG {
     /// Produce the textual specification string.
-    #[must_use] 
+    #[must_use]
     pub fn to_spec_string(&self) -> String {
         let mut out = String::new();
         // Preserve original declaration order; fall back to sorted for any missing
@@ -35,7 +35,7 @@ impl SPG {
         }
         out.push('\n');
 
-        out.push_str(&crate::domains::typing::loader::save(self));
+        out.push_str(&crate::typing::loader::save(self));
 
         out
     }

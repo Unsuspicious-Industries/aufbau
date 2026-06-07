@@ -1,0 +1,263 @@
+\section{Types, Unification, and Constraints}
+\label{sec:constraints}
+
+There is one kind of object, a \emph{term} over the grammar's signature; one
+semantic operation, \emph{ascription} (a check of a term against an expected
+one); and one mechanism, \emph{unification}. Context lookup, type equality,
+inclusion, and structural matching are all ascription discharged by unification.
+The type constructors are the grammar's own productions, so there is no separate
+algebra of types.
+
+\subsection{Types as terms}
+
+\begin{definition}[Type as term]
+  \label{def:term-language}
+  \code{def:term-language}
+  The productions of the designated type fragment $\mathsf{Ty} \in N$ form a
+  \emph{signature} $\Sigma$: each production is a constructor whose arity is its
+  right-hand nonterminals. A \emph{type} is a term in $T(\Sigma)$, a parse tree
+  over $\mathsf{Ty}$. There is no privileged type algebra: $\to$, products, and
+  unions are constructors only because the grammar writes them. Terminal leaves
+  (type names) are recognized by regular terminals, so a type term is a tree
+  with \emph{regular leaves}.
+\end{definition}
+
+\subsection{Terms with holes}
+\label{sec:patterns}
+
+\begin{definition}[Hole]
+  \label{def:hole}
+  A \emph{hole} $?A, ?B, \dots$ is a variable standing for an unknown subterm. A
+  hole at an internal position ranges over terms; a hole at a leaf position
+  ranges over that leaf's regular language, so holes are sorted by the grammar's
+  nonterminals (order-sorted, \cite{baader2001unification}). Two are
+  distinguished: $\top$, a bare unconstrained hole, the most general type; and
+  $\bot$, the absence of any term, a unification failure.
+\end{definition}
+
+\begin{definition}[Pattern]
+  \label{def:pattern}
+  \code{def:pattern}
+  A \emph{pattern} is a term with holes, an element of $T(\Sigma, X)$. It is
+  \emph{closed} when it has no holes (an ordinary type) and \emph{linear} when no
+  hole name repeats. Structure lives in the tree; a repeated hole name is the
+  only carrier of equality between positions.
+\end{definition}
+
+\subsection{Normal forms}
+
+Equality is compared on normal forms, not on raw trees.
+
+\begin{definition}[Normal form]
+  \label{def:normal-form}
+  A confluent, terminating rewrite $\mathrm{nf}$ sends each term to a unique
+  normal form. The core assumes only the free part: collapse every
+  \emph{transparent} node, a production that is delimiters plus a single
+  semantic child. Redundant grouping then disappears, so $\mathrm{Int} \to
+  (\mathrm{Int} \to \mathrm{Int})$ and $\mathrm{Int} \to \mathrm{Int} \to
+  \mathrm{Int}$ are one term. Richer normalizers (declared equations
+  \S\ref{sec:ambiguity}, or $\beta$-conversion for a dependent fragment) are
+  named extensions; only confluence and termination are assumed here.
+\end{definition}
+
+\subsection{Unification}
+\label{sec:unify}
+
+\begin{definition}[Unification]
+  \label{def:match}
+  \code{def:match}
+  $\mathrm{unify}(s, t)$ is the most general substitution $\theta$, if one
+  exists, with $\theta\,\mathrm{nf}(s) = \theta\,\mathrm{nf}(t)$: structural
+  equality of normal forms, leaf holes meeting their regular constraints. This is
+  first-order syntactic unification~\cite{robinson1965,martelli1982}: $\top$ (a
+  bare hole) unifies with everything, $\bot$ (a constructor clash, or an
+  occurs-check failure) with nothing. \emph{Matching} is the one-sided case, a
+  pattern against a closed type, and is the basis of ascription.
+\end{definition}
+
+\begin{lemma}[Unification is unitary and decidable]
+  \label{lem:match-finite}
+  \code{lem:match-finite}
+  With the occurs-check on (finite terms), $\mathrm{unify}(s, t)$ either fails or
+  returns a single most general unifier, unique up to renaming, decidably and in
+  near-linear time. No branching arises.
+\end{lemma}
+
+\noindent The proof is standard~\cite{martelli1982} and deferred. Unitarity is
+the point: the disambiguation that a string-matching model must perform does not
+occur, because the parse already fixes which subterm each hole binds. Dropping
+the occurs-check admits cyclic terms and gives rational-tree unification for
+recursive types (\S\ref{sec:ambiguity}).
+
+\subsection{Ascription: the only operation}
+
+\begin{definition}[Ascription]
+  \label{def:ascription}
+  The single semantic primitive is the \emph{ascription}
+  \[
+    b : P,
+  \]
+  read ``the evidence term $\tau_b$ at $b$ unifies with the expected pattern
+  $P$.'' Evaluating it emits $\mathrm{unify}(P, \tau_b)$
+  (Definition~\ref{def:evidence}) and contributes the resulting substitution to
+  the ambient solution. Read bidirectionally, $P$ is the checked type and
+  $\tau_b$ the synthesized one.
+\end{definition}
+
+Every typing relation is an ascription, with shared holes the sole carrier of
+equality:
+\begin{itemize}[nosep]
+  \item \emph{Equality} $\tau_1 = \tau_2$ is $\tau_1 : \tau_2$.
+  \item \emph{Membership} $x \in \Gamma$ is $x : ?A$ solved against $\Gamma$.
+  \item \emph{Inclusion} $\sigma \sqsubseteq \tau$ is subsumption: $\sigma$ is an
+        instance of $\tau$ (the one-sided match). $\top$ is above all, $\bot$
+        below all.
+  \item A structural shape such as $\mathrm{Arrow}(?A, ?B)$ has no built-in
+        meaning: $\mathrm{Arrow}$ is a constructor because the grammar wrote it,
+        and $?A, ?B$ bind its subterms. Unifying $b : \mathrm{Arrow}(?A, ?B)$
+        matches the constructor and binds each subterm by position. No
+        decomposition step, and no notion of domain or codomain beyond which
+        subterm each hole occupies.
+\end{itemize}
+
+\begin{remark}[Subtyping is the subsumption order]
+  \label{rem:subtype-inclusion}
+  A type at any stage is a term, ground or with holes. Refinement is term
+  subsumption,
+  \[
+    \sigma \sqsubseteq \tau \iff \sigma \text{ is an instance of } \tau,
+  \]
+  so a hole-bearing (partial, unknown) type is \emph{more general} than its
+  instances; $\top$ (a bare hole) is the top, $\bot$ (no unifier) the bottom.
+  Unification is the meet: $\mathrm{unify}(\sigma, \tau)$ is their most general
+  common instance. Regular sets survive at the leaves, where a leaf hole's value
+  is the intersection of its regular constraints, so the prefix layer's regex
+  machinery is the leaf case of one structural order. This is at once semantic
+  subtyping (a more specific type is an instance) and the prefix order of
+  incremental parsing (a partial type is more general, and input only
+  instantiates it, Lemma~\ref{lem:hole-monotone}).
+
+  The order is used in one direction. A more general (unknown) actual refutes but
+  never confirms: a failed unification against a closed expectation forces
+  $\mathsf{Lost}$ and stays failed under instantiation, but a success against a
+  still-open actual is $\mathsf{Live}$, not $\mathsf{Satisfied}$. Only a ground
+  instance, or containment of the actual in the expectation, closes an edge; a
+  premature $\mathsf{Satisfied}$ is an unsound accept. So the syntactic layer
+  bounds the semantic one without fusing them.
+\end{remark}
+
+\subsection{Rules as constraint generators}
+
+\begin{definition}[Rule]
+  \label{def:rule}
+  \code{def:rule}
+  A rule attached to $n \in N$ is a pair $(\Phi, c)$ where the premises
+  $\Phi = (b_1 : P_1, \dots, b_m : P_m)$ and the conclusion $c = (\,:\!P_c)$ are
+  ascriptions over a shared hole alphabet. Firing the rule at an evidence node
+  $\nu$ emits, into the constraint graph
+  (Definition~\ref{def:constraint-graph}), one unification edge per premise plus
+  the conclusion edge; holes shared between ascriptions become equality edges
+  joining the corresponding subterms.
+\end{definition}
+
+A rule contributes no control flow of its own: it only \emph{adds edges}, and
+shared holes are the joints. This is the constraint-generation reading of type
+inference~\cite{PottierRemy2005}: a program is elaborated into a constraint, and
+typing is solving it.
+
+\subsection{Solving}
+
+\begin{definition}[Solve]
+  \label{def:solve}
+  \code{def:solve}
+  The solver closes the constraint graph under unification to a fixed point:
+  select a pending edge, unify its endpoints, propagate the substitution to
+  incident edges, and merge equal holes, until no edge can fire. Closure is
+  monotone (substitutions only instantiate, equalities only merge), so the fixed
+  point exists and is order-independent. The substrate is union-find over the
+  term structure; constraint handling~\cite{Sneyers2009} drives the schedule, and
+  the equational extension of \S\ref{sec:ambiguity} represents alternatives as an
+  e-graph in the sense of equality saturation~\cite{Willsey2021}.
+\end{definition}
+
+The three-valued verdict of \S\ref{sec:guarantees} is read off the closed graph:
+\textsf{Satisfied} when every edge unifies and no frontier remains, \textsf{Lost}
+when some edge fails (unifies against $\bot$), and \textsf{Live} otherwise.
+
+\subsection{Context and effects}
+\label{sec:effects}
+
+A rule may thread a semantic context $\Gamma \in \mathsf{Ctx}$ and export a
+\emph{right-bound effect} $\nabla$ that extends the context seen by later
+siblings; a declaration adding a binding is the canonical case. Only an
+\emph{exact} node exports an effect, since a prefix node's right boundary is not
+yet fixed, and effects compose left to right, applied by $\oplus$
+(Definition~\ref{def:constraint-domain}). Operationally this needs two contexts
+per node, not one: the context the node was \emph{predicted at} (its
+resumption identity, fixed once) and the \emph{working} context that
+accumulates left-sibling effects and feeds the next child. Keeping them distinct
+is what lets an exported effect reach right siblings without moving where the
+node itself closes.
+
+\subsection{Monotonicity and realizability}
+\label{sec:guarantees}
+
+\begin{lemma}[Completion monotonicity]
+  \label{lem:hole-monotone}
+  \code{lem:hole-monotone}
+  For an evidence node $e$, the set $\mathrm{comp}(e, s)$ of ground instances of
+  its type term only shrinks under extension: $\mathrm{comp}(e, sr) \subseteq
+  \mathrm{comp}(e, s)$.
+\end{lemma}
+\begin{proof}
+  Reading input only instantiates holes and grows the context, never the
+  reverse: substitution is monotone, so a bound hole stays bound, and a leaf
+  hole's regular residual only shrinks under its
+  derivative~\cite{owens2009regex}.
+\end{proof}
+
+By contraposition $\mathsf{Lost}$ is stable: once no instance satisfies a
+constraint, none ever will.
+
+\begin{theorem}[Solver correctness]
+  \label{thm:solver-correct}
+  \code{thm:solver-correct}
+  For the syntactic core the solver verdict on $\mathcal{G}(s)$ equals
+  $\mathit{eval}(\mathcal{G}(s))$ (Definition~\ref{def:eval}) at every reachable
+  $s$.
+\end{theorem}
+
+\noindent\emph{Proof (sketch; full proof deferred).} Induct on the AST. Each
+non-$\mathsf{Lost}$ ascription has a satisfying continuation by productivity, and
+$\mathsf{Lost}$-stability (Lemma~\ref{lem:hole-monotone}) forbids recovery;
+unitarity (Lemma~\ref{lem:match-finite}) makes the per-node unifier unique, so the
+join over children matches the open/closed split of
+Definition~\ref{def:open-closed}. The equational extension of
+\S\ref{sec:ambiguity} is the deferred case.
+
+\subsection{Where multiplicity lives: beyond syntactic unification}
+\label{sec:ambiguity}
+
+The syntactic core is unitary, so rule firing never branches and there is no
+disambiguation problem: the parse fixes the structure each hole binds.
+Multiplicity reappears only when unification runs \emph{modulo} a theory the
+grammar declares, each an opt-in extension rather than engine machinery:
+\begin{enumerate}[nosep]
+  \item \textbf{Equational equivalences.} Declaring $A \mid B \equiv B \mid A$
+        and the like makes equality unification modulo an equational
+        theory~\cite{baader2001unification}, which is finitary but not unitary
+        (associative-commutative unification is the classic
+        case~\cite{stickel1981}). The e-graph of Definition~\ref{def:solve}
+        represents the alternatives without committing.
+  \item \textbf{Recursive types.} Dropping the occurs-check admits cyclic terms;
+        unification becomes rational-tree
+        unification~\cite{colmerauer1982,Tiurin2024}, still decidable.
+  \item \textbf{Conversion.} For a dependent fragment the normal form of
+        Definition~\ref{def:normal-form} is $\beta$-normal form and equality is
+        conversion, lifting unification to higher-order pattern
+        unification~\cite{miller1991}. Decidability rests on strong
+        normalization. This is the regime of a small dependent
+        kernel~\cite{harper1993lf} and the eventual target of the framework.
+\end{enumerate}
+The core stays first-order and unitary; the cost is exactly the equational power
+a grammar asks for.

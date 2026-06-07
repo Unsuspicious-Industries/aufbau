@@ -3,8 +3,8 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use aufbau::domains::typing::{Context, TypingSynth};
 use aufbau::engine::grammar::SPG;
+use aufbau::typing::{Context, TypingSynth};
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 
 pub mod inputs;
@@ -90,10 +90,11 @@ fn write_row(
 
 pub fn run(cmd: &ChartCmd) {
     if let Some(parent) = cmd.output.parent()
-        && !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .unwrap_or_else(|e| panic!("cannot create {}: {e}", parent.display()));
-        }
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .unwrap_or_else(|e| panic!("cannot create {}: {e}", parent.display()));
+    }
 
     let file = std::fs::File::create(&cmd.output)
         .unwrap_or_else(|e| panic!("cannot create {}: {e}", cmd.output.display()));

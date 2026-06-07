@@ -6,8 +6,8 @@
 
 use super::utils::*;
 use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::ChildRef;
 use crate::engine::parse::Task;
+use crate::engine::parse::arena::ChildRef;
 use proptest::prelude::*;
 use proptest::proptest;
 
@@ -254,24 +254,24 @@ proptest! {
         let arena = ast.arena();
 
         for &root_id in ast.root_ids() {
-            if let Some(node) = arena.node(root_id) {
-                if node.is_complete() {
-                    let mut stack = vec![root_id];
-                    while let Some(id) = stack.pop() {
-                        if let Some(alts) = arena.alts_for(id) {
-                            if let Some(alt) = alts.first() {
-                                for child in &alt.children {
-                                    if let ChildRef::Node(cid) = child {
-                                        if let Some(cnode) = arena.node(*cid) {
-                                            prop_assert!(
-                                                cnode.status.complete(),
-                                                "child {cid} of complete node {id} has status {:?}",
-                                                cnode.status
-                                            );
-                                        }
-                                        stack.push(*cid);
-                                    }
+            if let Some(node) = arena.node(root_id)
+                && node.is_complete()
+            {
+                let mut stack = vec![root_id];
+                while let Some(id) = stack.pop() {
+                    if let Some(alts) = arena.alts_for(id)
+                        && let Some(alt) = alts.first()
+                    {
+                        for child in &alt.children {
+                            if let ChildRef::Node(cid) = child {
+                                if let Some(cnode) = arena.node(*cid) {
+                                    prop_assert!(
+                                        cnode.status.complete(),
+                                        "child {cid} of complete node {id} has status {:?}",
+                                        cnode.status
+                                    );
                                 }
+                                stack.push(*cid);
                             }
                         }
                     }

@@ -1,7 +1,7 @@
 //! Canonical input generators shared by the chart CLI subcommand and
 //! the Criterion benchmarks.
 
-use aufbau::domains::typing::{Context, Type};
+use aufbau::typing::{Context, Type};
 
 /// `f x0 x1 … x{n-1}` with a well-typed context for n-argument application.
 pub fn stlc_chain(n: usize) -> (String, Context) {
@@ -12,8 +12,8 @@ pub fn stlc_chain(n: usize) -> (String, Context) {
     }
     let mut ctx = Context::new();
     ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
-    for i in 0..n {
-        ctx.add(format!("x{i}"), Type::parse_raw(&type_names[i]).unwrap());
+    for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
+        ctx.add(name, Type::parse_raw(&type_names[i]).unwrap());
     }
     let input = std::iter::once("f".to_string())
         .chain((0..n).map(|i| format!("x{i}")))

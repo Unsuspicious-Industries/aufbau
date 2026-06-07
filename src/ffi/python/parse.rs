@@ -1,9 +1,9 @@
 use pyo3::prelude::*;
 
-use crate::domains::typing::{TypingRuntime};
-use crate::engine::grammar::{Segment, SPG};
+use crate::engine::grammar::{SPG, Segment};
 use crate::engine::parse::arena::{ChildRef, ParseArena};
 use crate::engine::structure::ast::FusionAST;
+use crate::typing::TypingRuntime;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PyAst — Owned parse tree with type resolution

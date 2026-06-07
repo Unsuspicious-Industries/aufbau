@@ -2,13 +2,13 @@
 
 use super::Regex;
 
-#[must_use] 
+#[must_use]
 pub fn example(r: &Regex) -> Option<String> {
     let examples = examples(r, 1);
     examples.first().cloned()
 }
 
-#[must_use] 
+#[must_use]
 pub fn examples(r: &Regex, n: usize) -> Vec<String> {
     let mut out = Vec::with_capacity(n);
     collect(r, n, &mut out);

@@ -2,18 +2,13 @@
 
 use super::*;
 use crate::engine::grammar::SPG;
+use crate::engine::parse::Item;
 use crate::engine::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
 use crate::engine::parse::parser::Completion;
-use crate::engine::parse::Item;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 
-fn push_test_node(
-    parser: &mut TypedParser,
-    nt: usize,
-    start: usize,
-    end: usize,
-) -> NodeId {
+fn push_test_node(parser: &mut TypedParser, nt: usize, start: usize, end: usize) -> NodeId {
     parser.arena.push_node(
         ArenaNode {
             nt,

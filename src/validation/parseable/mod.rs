@@ -14,13 +14,14 @@ pub mod arithmetic;
 pub mod fun;
 pub mod imp;
 pub mod stlc;
+pub mod sums;
 pub mod toy;
 pub mod weird;
 
-use crate::domains::typing::Context;
-use crate::domains::typing::Type;
-use crate::domains::typing::{TypingSynth};
 use crate::engine::grammar::SPG;
+use crate::typing::Context;
+use crate::typing::Type;
+use crate::typing::TypingSynth;
 use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
@@ -109,11 +110,7 @@ impl ParseTestCase {
 /// every prefix must also parse. The dual `check_parse_fails` enforces
 /// `thm:completability-soundness`: invalid inputs must not produce
 /// complete roots.
-pub fn check_all_prefixes_parseable(
-    grammar: &mut SPG,
-    input: &str,
-    ctx: &Context,
-) -> ParseResult {
+pub fn check_all_prefixes_parseable(grammar: &mut SPG, input: &str, ctx: &Context) -> ParseResult {
     let start = Instant::now();
     // Prefer token-boundary prefixes when tokenization succeeds. This keeps
     // parseability checks representative while avoiding quadratic character-level
@@ -364,18 +361,8 @@ pub fn run_parse_batch(
 ///
 /// Each entry is `(suite_name, grammar, valid_cases, invalid_cases)`.
 #[must_use]
-pub fn all_suites() -> Vec<(
-    &'static str,
-    SPG,
-    Vec<ParseTestCase>,
-    Vec<ParseTestCase>,
-)> {
-    let mut modules: Vec<(
-        &str,
-        SPG,
-        Vec<ParseTestCase>,
-        Vec<ParseTestCase>,
-    )> = vec![
+pub fn all_suites() -> Vec<(&'static str, SPG, Vec<ParseTestCase>, Vec<ParseTestCase>)> {
+    let mut modules: Vec<(&str, SPG, Vec<ParseTestCase>, Vec<ParseTestCase>)> = vec![
         (
             "arithmetic",
             arithmetic::arithmetic_grammar(),

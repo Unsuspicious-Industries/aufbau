@@ -7,8 +7,8 @@
 //!
 //! HTML reports land in target/criterion/.
 
-use aufbau::domains::typing::{Context, Type, TypingSynth};
 use aufbau::engine::grammar::SPG;
+use aufbau::typing::{Context, Type, TypingSynth};
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::time::Duration;
@@ -23,8 +23,8 @@ fn stlc_chain(n: usize) -> (String, Context) {
     }
     let mut ctx = Context::new();
     ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
-    for i in 0..n {
-        ctx.add(format!("x{i}"), Type::parse_raw(&type_names[i]).unwrap());
+    for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
+        ctx.add(name, Type::parse_raw(&type_names[i]).unwrap());
     }
     let input = std::iter::once("f".to_string())
         .chain((0..n).map(|i| format!("x{i}")))

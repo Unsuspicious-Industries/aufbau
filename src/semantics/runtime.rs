@@ -9,15 +9,17 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::domains::typing::{Context, ContextTransition, Type, TypingDomain, TypingRule};
+use crate::engine::Segment;
 use crate::engine::error::TransitionError;
 use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, NodeStatus, ProdId, TOP};
-use crate::engine::Segment;
+use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, Lexeme, NodeStatus, ProdId, Span};
+use crate::semantics::SemanticSummary;
 use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::obligation::Obligations;
-use crate::semantics::SemanticSummary;
+use crate::typing::domain::Trees;
+use crate::typing::pattern::Pattern;
+use crate::typing::{Context, ContextTransition, Normalizer, Term, Type, TypingDomain, TypingRule};
 
 // ── Generic interner ─────────────────────────────────────────────────────────
 
@@ -58,6 +60,10 @@ impl<T: Hash + Eq + Clone> Interner<T> {
 pub struct TypingRuntime {
     domain: TypingDomain,
     spg: SPG,
+    /// Each rule `TypeExpr` parsed into its tree once (the grammar is needed).
+    trees: Rc<Trees>,
+    /// The grammar's type-rewrite theory; empty ⇒ `normalize` is the identity.
+    norm: Rc<Normalizer>,
     evidence: Rc<EvidenceStore<Type>>,
     contexts: Rc<Interner<Context>>,
     effects: Rc<Interner<ContextTransition>>,
@@ -75,6 +81,8 @@ impl Clone for TypingRuntime {
         Self {
             domain: self.domain.clone(),
             spg: self.spg.clone(),
+            trees: Rc::clone(&self.trees),
+            norm: Rc::clone(&self.norm),
             evidence: Rc::clone(&self.evidence),
             contexts: Rc::clone(&self.contexts),
             effects: Rc::clone(&self.effects),
@@ -89,9 +97,13 @@ impl TypingRuntime {
             TypingDomain::top_evidence(),
             TypingDomain::bottom_evidence(),
         ));
+        let trees = spg.type_trees();
+        let norm = spg.normalizer();
         let rt = Self {
             domain,
             spg,
+            trees: Rc::new(trees),
+            norm: Rc::new(norm),
             evidence,
             contexts: Rc::new(Interner::new()),
             effects: Rc::new(Interner::new()),
@@ -99,6 +111,33 @@ impl TypingRuntime {
         };
         let _ = rt.contexts.intern(Context::new());
         rt
+    }
+
+    /// Structural evidence for a rule-less node: its own parse tree. A node with
+    /// child nodes is a `Con` over their evidence; a bare span is a `Leaf` of its
+    /// text. This is how syntax and typing share one object (evidence is a tree).
+    pub fn structural_evidence(
+        &self,
+        nt: &str,
+        child_evidence: &[EvidenceId],
+        span: Span,
+    ) -> EvidenceId {
+        let term = if child_evidence.is_empty() {
+            Term::Leaf(Pattern::raw(self.render(span)))
+        } else {
+            let kids = child_evidence
+                .iter()
+                .filter_map(|&id| self.evidence.get(id))
+                .collect();
+            Term::Con(nt.to_string(), kids)
+        };
+        self.evidence.intern(term)
+    }
+
+    fn render(&self, span: Span) -> String {
+        Lexeme::new(span, true, false)
+            .value(&self.segs)
+            .unwrap_or_default()
     }
 
     pub fn grammar(&self) -> &SPG {
@@ -148,40 +187,56 @@ impl TypingRuntime {
             return Ok(ctx);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let next =
-            self.domain
-                .descend(rule, binding, &ctx_val, obligations, &self.segs, &self.evidence);
+        let next = self.domain.descend(
+            &self.trees,
+            rule,
+            binding,
+            &ctx_val,
+            obligations,
+            &self.segs,
+            &self.evidence,
+        );
         Ok(self.intern_context(next))
     }
 
-    /// Final semantic summary for a closed or prefix parser item.
+    /// Evaluate the typing rule of a closed or prefix parser item. `None` means
+    /// the production has no rule, so the domain says nothing and the node's
+    /// evidence is decided structurally (parser elaboration). A `Lost` verdict
+    /// rejects the item.
     pub fn finalize(
         &self,
         prod: ProdId,
         ctx: CtxId,
         obligations: &Obligations,
         status: NodeStatus,
-    ) -> Result<SemanticSummary, TransitionError> {
+    ) -> Result<Option<SemanticSummary>, TransitionError> {
         let Some(rule) = self.rule_for_prod(prod) else {
-            return Ok(SemanticSummary::new(TOP, None, true));
+            return Ok(None);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let (verdict, evidence, effect) =
-            self.domain
-                .finalize(rule, &ctx_val, obligations, &self.segs, status, &self.evidence);
+        let (verdict, evidence, effect) = self.domain.finalize(
+            &self.trees,
+            &self.norm,
+            rule,
+            &ctx_val,
+            obligations,
+            &self.segs,
+            status,
+            &self.evidence,
+        );
         match verdict {
             Verdict::Lost => Err(TransitionError::Rejected),
             Verdict::Live => {
                 let id = self.evidence.intern(evidence);
-                Ok(SemanticSummary::new(id, None, false))
+                Ok(Some(SemanticSummary::new(id, None, false)))
             }
             Verdict::Satisfied => {
                 let id = self.evidence.intern(evidence);
-                Ok(SemanticSummary::new(
+                Ok(Some(SemanticSummary::new(
                     id,
                     effect.map(|e| self.intern_effect(e)),
                     true,
-                ))
+                )))
             }
         }
     }

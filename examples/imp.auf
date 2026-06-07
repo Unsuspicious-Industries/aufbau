@@ -7,8 +7,7 @@ TypeName ::= 'Int' | 'Bool'
 
 // ===================== Types =====================
 BaseType ::= TypeName | '(' Type ')'
-UnionType ::= BaseType '|' Type
-Type ::= BaseType | UnionType
+Type ::= BaseType
 
 // ===================== Literals =====================
 Integer(int_lit) ::= /[0-9]+/

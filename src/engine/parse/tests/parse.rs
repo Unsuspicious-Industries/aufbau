@@ -86,10 +86,8 @@ fn parse_alternatives_second_branch() {
 #[test]
 fn parse_epsilon_alternative_matches_empty_span() {
     // ExprTail ::= ε means it matches the empty continuation.
-    let grammar = SPG::load(
-        "ExprTail ::= '+' Term | ε\nTerm ::= 'x'\nStart ::= Term ExprTail",
-    )
-    .unwrap();
+    let grammar =
+        SPG::load("ExprTail ::= '+' Term | ε\nTerm ::= 'x'\nStart ::= Term ExprTail").unwrap();
     let mut parser = stub_parser(grammar);
     // Just "x": ExprTail should match ε
     let ast = parser.parse("x", 0).unwrap();
@@ -101,10 +99,8 @@ fn parse_epsilon_alternative_matches_empty_span() {
 
 #[test]
 fn parse_epsilon_alternative_matches_non_empty_span() {
-    let grammar = SPG::load(
-        "ExprTail ::= '+' Term | ε\nTerm ::= 'x'\nStart ::= Term ExprTail",
-    )
-    .unwrap();
+    let grammar =
+        SPG::load("ExprTail ::= '+' Term | ε\nTerm ::= 'x'\nStart ::= Term ExprTail").unwrap();
     let mut parser = stub_parser(grammar);
     let ast = parser.parse("x + x", 0).unwrap();
     assert!(ast.is_complete(), "non-epsilon branch should also parse");
@@ -254,9 +250,7 @@ fn parse_regex_terminal_rejects_non_match() {
 
 #[test]
 fn parse_nested_nonterminals() {
-    let grammar =
-        SPG::load("Atom ::= 'x'\nExpr ::= Atom | '(' Expr ')'\nStart ::= Expr")
-            .unwrap();
+    let grammar = SPG::load("Atom ::= 'x'\nExpr ::= Atom | '(' Expr ')'\nStart ::= Expr").unwrap();
     let mut parser = stub_parser(grammar);
     let ast = parser.parse("( ( x ) )", 0).unwrap();
     assert!(ast.is_complete());

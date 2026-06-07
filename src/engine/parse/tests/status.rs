@@ -1,9 +1,9 @@
 use super::*;
-use crate::domains::typing::Context;
-use crate::domains::typing::TypingSynth;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{ChildRef, Lexeme};
 use crate::engine::structure::ast::FusionAST;
+use crate::typing::Context;
+use crate::typing::TypingSynth;
 
 fn assert_status_model(ast: &FusionAST, grammar: &SPG) {
     let arena = ast.arena();

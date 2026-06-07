@@ -91,7 +91,7 @@ impl Symbol {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn attach_binding(mut self, binding: String) -> Self {
         match &mut self {
             Symbol::Nonterminal { binding: slot, .. } | Symbol::Terminal { binding: slot, .. } => {
@@ -101,7 +101,7 @@ impl Symbol {
         self
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn binding(&self) -> Option<&String> {
         match self {
             Symbol::Nonterminal { binding, .. } | Symbol::Terminal { binding, .. } => {
@@ -110,7 +110,7 @@ impl Symbol {
         }
     }
 
-    #[must_use] 
+    #[must_use]
     pub fn has_binding(&self) -> bool {
         self.binding().is_some()
     }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::engine::parse::arena::{EvidenceId, BOT, TOP};
+use crate::engine::parse::arena::{BOT, EvidenceId, TOP};
 
 pub struct EvidenceStore<E: Hash + Eq + Clone> {
     values: Rc<RefCell<Vec<E>>>,

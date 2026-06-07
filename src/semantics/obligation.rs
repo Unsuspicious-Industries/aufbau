@@ -4,8 +4,8 @@
 //! lexemes according to binding positions, but do not interpret the evidence.
 
 use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId, Span};
 use crate::engine::parse::NtId;
+use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId, Span};
 use crate::engine::path::{GrammarPath, TreePath};
 use std::collections::HashSet;
 

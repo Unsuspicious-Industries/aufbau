@@ -1,4 +1,5 @@
 pub mod arena;
+mod elaborate;
 pub mod parser;
 pub mod state;
 

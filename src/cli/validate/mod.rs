@@ -304,7 +304,11 @@ fn write_profiles(
 
     let failures: Vec<_> = records
         .iter()
-        .filter(|c| !c.get("passed").and_then(serde_json::Value::as_bool).unwrap_or(false))
+        .filter(|c| {
+            !c.get("passed")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+        })
         .collect();
     let fail_obj = json!({
         "generated_by": format!("aufbau validate {}", module_name),

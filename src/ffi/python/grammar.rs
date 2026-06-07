@@ -1,7 +1,10 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::collections::HashMap;
 
-use crate::engine::grammar::{Production, Segment, Symbol, SPG};
+use super::typing::PyTerm;
+use crate::engine::grammar::{Production, SPG, Segment, Symbol};
+use crate::typing::{Subst, Term, compile, render, term, unify_modulo};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PyGrammar — Grammar inspection
@@ -60,9 +63,99 @@ impl PyGrammar {
         Ok(segs.into_iter().map(PySegment::from_inner).collect())
     }
 
-    /// Whether a nonterminal is transparent.
-    fn is_transparent(&self, nt: &str) -> bool {
-        self.inner.is_transparent_nt(nt)
+    // ── Type layer (the low-level objects) ──────────────────────────────────
+
+    /// Parse a type string into its term (tree), using the grammar's structure.
+    fn parse_type(&self, s: &str) -> PyResult<PyTerm> {
+        Term::parse(&self.inner, s)
+            .map(|inner| PyTerm { inner })
+            .map_err(PyValueError::new_err)
+    }
+
+    /// Render a term back to the grammar's surface syntax.
+    fn show(&self, t: &PyTerm) -> String {
+        render(&self.inner, &t.inner)
+    }
+
+    /// Normal form of a type under the grammar's rewrite theory.
+    fn normalize(&self, s: &str) -> PyResult<PyTerm> {
+        let t = Term::parse(&self.inner, s).map_err(PyValueError::new_err)?;
+        Ok(PyTerm {
+            inner: self.inner.normalizer().normalize(&t),
+        })
+    }
+
+    /// Unify two types in the free theory: `var → type` bindings, or `None` on
+    /// clash.
+    fn unify(&self, a: &str, b: &str) -> PyResult<Option<HashMap<String, String>>> {
+        self.unify_impl(a, b, false)
+    }
+
+    /// Unify two types modulo the rewrite theory (normalize, then unify).
+    fn unify_modulo(&self, a: &str, b: &str) -> PyResult<Option<HashMap<String, String>>> {
+        self.unify_impl(a, b, true)
+    }
+
+    /// The declared rewrite theory, as `(lhs, rhs)` source pairs.
+    fn rewrites(&self) -> Vec<(String, String)> {
+        self.inner.rewrites.clone()
+    }
+
+    /// The type signature: every constructor (nonterminal) with an arity it
+    /// appears at, sorted.
+    fn signature(&self) -> Vec<(String, usize)> {
+        let mut out: Vec<(String, usize)> = Vec::new();
+        for (nt, prods) in &self.inner.productions {
+            for p in prods {
+                let arity = p
+                    .rhs
+                    .iter()
+                    .filter(|s| matches!(s, Symbol::Nonterminal { .. }))
+                    .count();
+                let entry = (nt.clone(), arity);
+                if !out.contains(&entry) {
+                    out.push(entry);
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// The compiled IR of a typing rule: the instruction stream it lowers to.
+    fn ir(&self, rule: &str) -> PyResult<String> {
+        let r = self
+            .inner
+            .rules
+            .get(rule)
+            .ok_or_else(|| PyValueError::new_err(format!("no rule '{rule}'")))?;
+        Ok(compile(r, &self.inner.type_trees()).to_string())
+    }
+}
+
+impl PyGrammar {
+    fn unify_impl(
+        &self,
+        a: &str,
+        b: &str,
+        modulo: bool,
+    ) -> PyResult<Option<HashMap<String, String>>> {
+        let ta = Term::parse(&self.inner, a).map_err(PyValueError::new_err)?;
+        let tb = Term::parse(&self.inner, b).map_err(PyValueError::new_err)?;
+        let mut s = Subst::new();
+        let ok = if modulo {
+            unify_modulo(&self.inner.normalizer(), &ta, &tb, &mut s, true)
+        } else {
+            term::unify(&ta, &tb, &mut s, true)
+        };
+        if !ok {
+            return Ok(None);
+        }
+        let map = s
+            .iter()
+            .map(|(k, v)| (k.clone(), render(&self.inner, &term::apply(v, &s))))
+            .collect();
+        Ok(Some(map))
     }
 }
 

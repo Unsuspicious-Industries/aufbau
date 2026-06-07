@@ -1,6 +1,6 @@
+use super::ParseTestCase;
 #[cfg(test)]
 use super::run_parse_batch;
-use super::ParseTestCase;
 use crate::engine::grammar::SPG;
 
 // Small subset of pathological grammars adapted for parseability checks.
@@ -514,12 +514,7 @@ fn child_context_invalid_cases() -> Vec<ParseTestCase> {
 /// Expose suites for each inline grammar so the validate runner can exercise
 /// each grammar independently.
 #[must_use]
-pub fn suites() -> Vec<(
-    &'static str,
-    SPG,
-    Vec<ParseTestCase>,
-    Vec<ParseTestCase>,
-)> {
+pub fn suites() -> Vec<(&'static str, SPG, Vec<ParseTestCase>, Vec<ParseTestCase>)> {
     vec![
         (
             "weird::right",

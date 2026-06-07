@@ -12,9 +12,9 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
-    use crate::domains::typing::Type;
-    use crate::domains::typing::{Context, TypingSynth};
     use crate::engine::grammar::SPG;
+    use crate::typing::Type;
+    use crate::typing::{Context, TypingSynth};
 
     const BATCH_BUDGET: Duration = Duration::from_secs(1);
 
@@ -50,8 +50,10 @@ mod tests {
         ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
 
         let mut names = vec!["f".to_string()];
-        for idx in 0..arg_count {
+        for (idx, name) in (0..arg_count).map(|idx| {
             let name = format!("x{idx}");
+            (idx, name)
+        }) {
             ctx.add(name.clone(), Type::parse_raw(&type_names[idx]).unwrap());
             names.push(name);
         }

@@ -1,0 +1,148 @@
+\section{Foundations}
+\label{sec:foundations}
+
+We fix an alphabet $\Sigma$ and write $L \subseteq \Sigma^\ast$ for a language. A
+prefix $s$ is \emph{completable} for $L$ when $s s' \in L$ for some
+$s' \in \Sigma^\ast$. Prefix parsing accepts exactly the completable prefixes;
+the semantic layer of \S\ref{sec:constraints} refines acceptance so that a prefix
+survives only when it is completable to a \emph{semantically} valid whole.
+
+\subsection{Grammar}
+\label{sec:grammar}
+
+\begin{definition}[Semantic prefix grammar]
+  \label{def:spg}
+  \code{def:spg}
+  A semantic prefix grammar is a tuple $G = (N, T, P, S, \Theta, \mathcal{T},
+  \mathcal{B})$ with nonterminals $N$, terminal recognizers $T$ over segment
+  text, productions $P$, start symbol $S \in N$, semantic rules $\Theta$
+  (\S\ref{sec:constraints}), a partial map $\mathcal{T} : N \rightharpoonup
+  \Theta$ attaching a rule to a nonterminal, and binding identifiers
+  $\mathcal{B}$. A production for $n$ is a sequence
+  $\alpha_1[b_1]\cdots\alpha_m[b_m]$ where each $\alpha_i \in T \cup N$ and each
+  $b_i \in \mathcal{B} \cup \{\varepsilon\}$ names the child's evidence for use
+  by a rule. We assume every reachable production has some terminal yield.
+\end{definition}
+
+Bindings are syntactic annotations only; they do not affect the context-free
+structure. We require $G$ \emph{binding-regular}: each $b \in \mathcal{B}$ occurs
+in the productions of exactly one nonterminal and exactly once per production, so
+a binding names a unique child position. Terminals are matched through a
+segment-level interface returning a status in $\{\mathsf{Prefix},
+\mathsf{Exact}, \mathsf{Extensible}\}$ together with a regular residual; this is
+the regular-expression derivative~\cite{brzozowski1964derivatives,owens2009regex}
+of the recognizer after the consumed segment. The parser depends only on this
+status, not on how recognizers are implemented.
+
+\subsection{Evidence}
+\label{sec:evidence}
+
+Parsing a prefix yields an AST whose nodes carry status and, at bound positions,
+\emph{evidence}: the summary a semantic rule reads.
+
+\begin{definition}[Evidence summary]
+  \label{def:evidence}
+  \code{def:evidence}
+  The summary of an internal node $\langle n, p, (c_1,\dots,c_k)\rangle$ over
+  segment span $[i,j)$ is $\nu = \langle n, [i,j), \rho, \tau, \nabla,
+  \beta\rangle$, where $\rho \in \{\mathsf{Exact}, \mathsf{Prefix},
+  \mathsf{Extensible}\}$ is the status propagated bottom-up (a node is
+  $\mathsf{Exact}$ when complete with an exact last child, $\mathsf{Extensible}$
+  when complete but the last child may still grow, $\mathsf{Prefix}$ otherwise),
+  $\tau$ is its \emph{type term} (\S\ref{sec:constraints}), $\nabla$ is an
+  exported context effect (\S\ref{sec:effects}), and $\beta$ resolves bindings.
+  For $b$ at child position $i_b$,
+  \[
+    \beta(\nu, b) =
+    \begin{cases}
+      \mathsf{Resolved}(\nu_{c_{i_b}}) & i_b \le k, \\
+      \mathsf{Pending}(i_b)            & i_b > k,
+    \end{cases}
+  \]
+  so a binding past the right frontier is $\mathsf{Pending}$ until the dot
+  reaches it, then $\mathsf{Resolved}$, never the reverse. This is the
+  available/unavailable split of incremental attribute
+  grammars~\cite{demers1981incremental} and the typed-hole reading of an unfilled
+  position~\cite{omar2017hazelnut}.
+\end{definition}
+
+\subsection{The constraint graph}
+\label{sec:graph}
+
+Semantic information is a graph over evidence, not a tree. Rules relate evidence
+summaries directly: the relations need not follow the AST shape.
+
+\begin{definition}[Constraint graph]
+  \label{def:constraint-graph}
+  \code{def:constraint-graph}
+  At a reachable prefix $s$, the constraint graph is a finite hypergraph
+  $\mathcal{G}(s) = (\mathcal{E}(s), \mathcal{C}(s))$ whose vertices
+  $\mathcal{E}(s)$ are the evidence summaries, terminal leaves, and
+  binding-references at $s$, and whose edges $\mathcal{C}(s)$ are the ascription
+  constraints emitted so far by fired rules (\S\ref{sec:constraints}).
+\end{definition}
+
+A vertex is \emph{frontier} when it still carries an incomplete-input signal:
+status in $\{\mathsf{Prefix}, \mathsf{Extensible}\}$, or a $\mathsf{Pending}$
+binding-reference. By the propagation rule only the rightmost descendant chain
+can be frontier.
+
+\begin{definition}[Open / closed]
+  \label{def:open-closed}
+  \code{def:open-closed}
+  $\mathcal{G}(s)$ is \emph{open} when some edge is incident to a frontier
+  vertex, and \emph{closed} when it is not open and the constraint domain finds
+  no contradiction in it.
+\end{definition}
+
+\subsection{Evaluation and safe pruning}
+\label{sec:eval}
+
+\begin{definition}[Constraint domain]
+  \label{def:constraint-domain}
+  \code{def:constraint-domain}
+  A constraint domain is a tuple $D = (\Theta, \mathsf{Closed}, \mathsf{Ctx},
+  \mathit{eval}, \oplus)$: a decidable rule language $\Theta$, the closed graphs
+  $\mathsf{Closed}$ it admits, semantic contexts $\mathsf{Ctx}$ with empty
+  context $\Gamma_0$, the evaluator $\mathit{eval}$ below, and a right-effect
+  application $\oplus : \mathsf{Ctx} \times \nabla \to \mathsf{Ctx}$
+  (\S\ref{sec:effects}).
+\end{definition}
+
+\begin{definition}[Witness, denotation, verdict]
+  \label{def:eval}
+  \code{def:eval}
+  A \emph{witness} for $\mathcal{G}(s)$ is $r \in \Sigma^\ast$ with
+  $\mathcal{G}(s r)$ closed; the \emph{denotation} $\mathcal{D}(\mathcal{G}(s))$
+  is the set of witnesses. The ideal evaluator is three-valued:
+  \[
+    \mathit{eval}(\mathcal{G}(s)) =
+    \begin{cases}
+      \mathsf{Satisfied} & \mathcal{G}(s) \in \mathsf{Closed}, \\
+      \mathsf{Live}      & \mathcal{G}(s) \notin \mathsf{Closed}
+                           \ \land\ \mathcal{D}(\mathcal{G}(s)) \neq \emptyset, \\
+      \mathsf{Lost}      & \mathcal{D}(\mathcal{G}(s)) = \emptyset.
+    \end{cases}
+  \]
+\end{definition}
+
+\begin{lemma}[Safe pruning]
+  \label{lem:safe-pruning}
+  \code{lem:safe-pruning}
+  If the parser discards a prefix $s$ only when $\mathit{eval}(\mathcal{G}(s)) =
+  \mathsf{Lost}$, it never discards a prefix with a satisfying completion.
+\end{lemma}
+
+\begin{proof}
+  $\mathit{eval}(\mathcal{G}(s)) = \mathsf{Lost}$ means
+  $\mathcal{D}(\mathcal{G}(s)) = \emptyset$ by Definition~\ref{def:eval}: no
+  extension of $s$ closes the graph, so discarding $s$ removes nothing
+  completable.
+\end{proof}
+
+Realizing this evaluator requires that the implementation's verdict track the
+ideal one as input grows. That rests on monotonicity (a hole's completion set
+only shrinks under extension, Lemma~\ref{lem:hole-monotone}), so a
+$\mathsf{Lost}$ verdict, once reached, is stable. We develop the operational
+side in \S\ref{sec:constraints} and state the realizability target in
+\S\ref{sec:examples}.

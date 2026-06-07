@@ -60,3 +60,9 @@ docs/
 .DS_Store
 Thumbs.db
 draft/refs/
+
+# OCaml FFI build artifacts (the source under ocaml/ is tracked)
+ocaml/_build/
+ocaml/*.a
+ocaml/*.install
+ocaml/*.merlin

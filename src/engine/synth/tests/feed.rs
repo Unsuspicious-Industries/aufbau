@@ -1,6 +1,6 @@
-use crate::domains::typing::Context;
-use crate::domains::typing::{TypingSynth};
 use crate::engine::grammar::SPG;
+use crate::typing::Context;
+use crate::typing::TypingSynth;
 
 use super::token_texts;
 
@@ -89,10 +89,7 @@ fn feed_with_context_uses_latest_bindings() {
     )
     .unwrap();
     let ctx = Context::new()
-        .extend(
-            "foo".into(),
-            crate::domains::typing::Type::Raw("bool".into()),
-        )
+        .extend("foo".into(), crate::typing::Type::raw("bool"))
         .unwrap();
     let mut synth = TypingSynth::new(grammar.clone(), "");
 

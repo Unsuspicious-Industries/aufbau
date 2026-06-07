@@ -65,7 +65,7 @@ pub fn clear_module_filters() {
 }
 
 /// Check if debugging is enabled for a specific level and module
-#[must_use] 
+#[must_use]
 pub fn is_debug_enabled(level: DebugLevel, module: &str) -> bool {
     DEBUG_CONFIG.with(|config| {
         let config = config.borrow();

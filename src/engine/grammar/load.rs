@@ -89,9 +89,11 @@ impl SPG {
     pub fn load(source: &str) -> Result<Self, String> {
         let (mut grammar, rule_blocks) = load_ebnf(source)?;
         let block_refs: Vec<&str> = rule_blocks.iter().map(String::as_str).collect();
-        for (name, rule) in crate::domains::typing::loader::load(&block_refs)? {
+        let (rules, rewrites) = crate::typing::loader::load(&block_refs)?;
+        for (name, rule) in rules {
             grammar.add_rule(name, rule);
         }
+        grammar.rewrites = rewrites;
         grammar.build_bindings();
         grammar.build_tokenizer();
 

@@ -3,9 +3,9 @@ use pyo3::prelude::*;
 
 use super::grammar::PyGrammar;
 use super::parse::PyAst;
-use crate::domains::typing::{Context, Type, TypingRule, TypingSynth};
 use crate::engine::grammar::SPG;
 use crate::regex::{PrefixStatus, Regex};
+use crate::typing::{Context, Term, Type, TypingRule, TypingSynth};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PyTypingRule — Read-only view of a typing rule
@@ -45,6 +45,53 @@ impl PyTypingRule {
 
     fn __repr__(&self) -> String {
         format!("TypingRule('{}')", self.inner.name)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PyTerm — a type as a tree (the low-level object: Var | Con(label, kids) | Leaf)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[pyclass(unsendable, name = "Term")]
+#[derive(Clone)]
+pub struct PyTerm {
+    pub(crate) inner: Term,
+}
+
+#[pymethods]
+impl PyTerm {
+    fn __repr__(&self) -> String {
+        format!("Term({})", self.inner)
+    }
+    fn __str__(&self) -> String {
+        self.inner.to_string()
+    }
+    /// Constructor label (the nonterminal), or `None` for a hole or leaf.
+    fn label(&self) -> Option<String> {
+        match &self.inner {
+            Term::Con(l, _) => Some(l.clone()),
+            _ => None,
+        }
+    }
+    /// Child terms of a constructor (empty for a hole or leaf).
+    fn children(&self) -> Vec<PyTerm> {
+        match &self.inner {
+            Term::Con(_, kids) => kids.iter().cloned().map(|inner| PyTerm { inner }).collect(),
+            _ => vec![],
+        }
+    }
+    fn is_var(&self) -> bool {
+        matches!(self.inner, Term::Var(_))
+    }
+    fn is_leaf(&self) -> bool {
+        matches!(self.inner, Term::Leaf(_))
+    }
+    fn is_con(&self) -> bool {
+        matches!(self.inner, Term::Con(..))
+    }
+    /// No unification variables: a fully determined type.
+    fn is_ground(&self) -> bool {
+        self.inner.is_ground()
     }
 }
 
@@ -111,9 +158,11 @@ impl PySynthesizer {
             .map_err(PyRuntimeError::new_err)
     }
 
-    /// Add a variable to the typing context.
+    /// Add a variable to the typing context. The type is parsed with the grammar
+    /// into its tree, so a structured type (`A -> B`) becomes a constructor, not a
+    /// flat leaf.
     fn add_to_ctx(&mut self, name: &str, ty: &str) -> PyResult<()> {
-        let ty = Type::parse_raw(ty)
+        let ty = Type::parse(self.synth.grammar(), ty)
             .map_err(|e| PyValueError::new_err(format!("invalid type '{ty}': {e}")))?;
         self.ctx.add(name.to_string(), ty);
         Ok(())

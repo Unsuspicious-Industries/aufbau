@@ -1,5 +1,5 @@
 use crate::debug_trace;
-use crate::engine::grammar::{Segment, Symbol, SPG};
+use crate::engine::grammar::{SPG, Segment, Symbol};
 use crate::regex::PrefixStatus;
 use crate::semantics::{Obligations, TypingRuntime};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -9,7 +9,7 @@ use crate::engine::structure::ast::{FusionAST, FusionForest};
 
 use crate::engine::parse::arena::{
     AltRange, ArenaNode, BindingMap, ChildRef, CtxId, EvidenceId, Lexeme, NodeId, NodeStatus, NtId,
-    PackedAlt, ParseArena, ProdId, Span, TOP,
+    PackedAlt, ParseArena, ProdId, Span,
 };
 
 use super::TypedParser;
@@ -226,54 +226,6 @@ impl TypedParser {
         }
     }
 
-    /// Transparent wrapper inheritance.
-    ///
-    /// A production is structurally transparent when it contains exactly one
-    /// nonterminal child and no bound terminals. If the parent NT also lacks an
-    /// explicit typing rule, the parser propagates the child's evidence and
-    /// effects upward — the wrapper contributes no semantics of its own.
-    fn transparent_inheritance(&self, item: &Item) -> Option<ArenaNode> {
-        let has_rule = self
-            .grammar
-            .nt(item.prod.0)
-            .and_then(|n| self.grammar.nt_rule(n))
-            .is_some();
-        if has_rule {
-            return None;
-        }
-
-        let transparent = self.grammar.prod(item.prod).is_some_and(|prod| {
-            let nt_count = prod
-                .rhs
-                .iter()
-                .filter(|sym| matches!(sym, Symbol::Nonterminal { .. }))
-                .count();
-            let has_bound = prod.rhs.iter().any(|sym| {
-                matches!(
-                    sym,
-                    Symbol::Terminal {
-                        binding: Some(_),
-                        ..
-                    }
-                )
-            });
-            nt_count == 1 && !has_bound
-        });
-        if !transparent {
-            return None;
-        }
-
-        let node_children: Vec<_> = item
-            .children
-            .iter()
-            .filter_map(|child| match child {
-                ChildRef::Node(id) => self.arena.node(*id).map(|n| n.clone()),
-                ChildRef::Terminal(_) => None,
-            })
-            .collect();
-        node_children.into_iter().next()
-    }
-
     pub(super) fn finish(&mut self, item: &Item) -> Result<Option<NodeId>, PrefixError> {
         let any_open = item.children.iter().any(|child| self.arena.open(child));
         let status = match (self.alt_is_complete(item), any_open) {
@@ -299,45 +251,9 @@ impl TypedParser {
             .finalize(item.prod, item.mctx, &item.obligations, status)
         {
             Ok(summary) => {
-                let mut evidence = summary.evidence;
-                let inherited = self.transparent_inheritance(item);
-
-                // Empty span: no content to type, default to TOP.
-                if status == NodeStatus::Prefix && item.start == item.pos {
-                    evidence = TOP;
-                // Transparent wrapper without a rule: inherit child evidence.
-                } else if let Some(child) = &inherited {
-                    evidence = child.evidence;
-                }
-
-                // Transparent wrapper without a rule: compose child effects.
-                let effect = if status == NodeStatus::Exact {
-                    if inherited.is_some() {
-                        let mut effects: Vec<_> = item
-                            .children
-                            .iter()
-                            .filter_map(|child| match child {
-                                ChildRef::Node(child_id) => {
-                                    self.arena.node(*child_id).and_then(|n| n.effect)
-                                }
-                                ChildRef::Terminal(_) => None,
-                            })
-                            .collect();
-                        if let Some(local) = summary.effect {
-                            effects.push(local);
-                        }
-                        self.typing.compose_effects(effects).map_err(|e| {
-                            PrefixError::rejected(
-                                item.pos,
-                                format!("semantic effect composition failed: {e:?}"),
-                            )
-                        })?
-                    } else {
-                        summary.effect
-                    }
-                } else {
-                    None
-                };
+                // Semantics done; elaborate structurally (see `elaborate.rs`).
+                let (evidence, effect) = self.elaborate(item, status, summary.as_ref())?;
+                let semantic_complete = summary.as_ref().is_none_or(|s| s.complete);
                 let binding_map: BindingMap = item
                     .obligations
                     .iter()
@@ -351,7 +267,7 @@ impl TypedParser {
                         end: item.pos as u32,
                     },
                     status,
-                    semantic_complete: summary.complete,
+                    semantic_complete,
                     evidence,
                     effect,
                     binding_map,
@@ -406,12 +322,15 @@ impl TypedParser {
         // This advances the working context only; `ctx` (resumption identity)
         // stays put so this node still completes where its parent predicted it.
         if let Some(effect) = node.effect {
-            resumed.mctx = self.typing.apply_effect(resumed.mctx, effect).map_err(|e| {
-                PrefixError::rejected(
-                    resumed.pos,
-                    format!("semantic effect failed during resume: {e:?}"),
-                )
-            })?;
+            resumed.mctx = self
+                .typing
+                .apply_effect(resumed.mctx, effect)
+                .map_err(|e| {
+                    PrefixError::rejected(
+                        resumed.pos,
+                        format!("semantic effect failed during resume: {e:?}"),
+                    )
+                })?;
         }
         Ok(resumed)
     }
@@ -428,7 +347,12 @@ impl TypedParser {
         );
         self.tables
             .completed_nodes
-            .entry((completion.nt, completion.start, completion.end, completion.ctx))
+            .entry((
+                completion.nt,
+                completion.start,
+                completion.end,
+                completion.ctx,
+            ))
             .or_default()
             .push(completion.node);
 
@@ -512,7 +436,10 @@ impl TypedParser {
                     .waiters
                     .entry((nt, item.pos))
                     .or_default()
-                    .push(Waiter { item: item.clone(), child_ctx });
+                    .push(Waiter {
+                        item: item.clone(),
+                        child_ctx,
+                    });
 
                 // Resume from already-completed children, filtered by child context.
                 let ends = self
@@ -626,7 +553,12 @@ impl TypedParser {
             let node_ctx = item.ctx;
             self.tables
                 .completed_nodes
-                .entry((node.nt, node.span.start as usize, node.span.end as usize, node_ctx))
+                .entry((
+                    node.nt,
+                    node.span.start as usize,
+                    node.span.end as usize,
+                    node_ctx,
+                ))
                 .or_default()
                 .push(node_id);
             let ends = self

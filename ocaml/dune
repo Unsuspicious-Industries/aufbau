@@ -1,0 +1,21 @@
+(library
+ (name aufbau)
+ (modules aufbau)
+ (foreign_archives aufbau ocaml-boxroot))
+
+(executable
+ (name demo)
+ (modules demo)
+ (libraries aufbau)
+ (link_flags
+  (-cclib -lpthread -cclib -ldl -cclib -lm)))
+
+(test
+ (name test)
+ (modules test)
+ (libraries aufbau)
+ (link_flags
+  (-cclib -lpthread -cclib -ldl -cclib -lm)))
+
+; libaufbau.a is the Rust engine, built by `make ocaml` (cargo build
+; --features ocaml-ffi); kept out of git and linked in via foreign_archives.

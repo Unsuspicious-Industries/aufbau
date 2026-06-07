@@ -1,7 +1,7 @@
-use crate::domains::typing::TypingDomain;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::TypedParser;
 use crate::semantics::TypingRuntime;
+use crate::typing::TypingDomain;
 
 /// Parser over a real typing runtime. Grammars without typing rules finalize
 /// every node to TOP, so this is the structural-only parsing harness.

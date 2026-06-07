@@ -5,11 +5,7 @@ use crate::engine::parse::arena::Lexeme;
 use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
 use crate::engine::parse::{State, TypedParser};
 
-pub fn render_node_text(
-    parser: &TypedParser,
-    node_id: NodeId,
-    segments: &[Segment],
-) -> String {
+pub fn render_node_text(parser: &TypedParser, node_id: NodeId, segments: &[Segment]) -> String {
     let Some(alts) = parser.arena().alts_for(node_id) else {
         return String::new();
     };
@@ -39,11 +35,7 @@ pub fn render_node_text(
         .join(" ")
 }
 
-pub fn pretty_node(
-    parser: &TypedParser,
-    node_id: NodeId,
-    segments: &[Segment],
-) -> String {
+pub fn pretty_node(parser: &TypedParser, node_id: NodeId, segments: &[Segment]) -> String {
     let mut out = String::new();
     render_pretty(parser.arena(), node_id, segments, 0, &mut out);
     out
@@ -111,11 +103,7 @@ fn render_span(span: Span, segments: &[Segment]) -> String {
         .join(" ")
 }
 
-pub fn pretty_prefix_state(
-    parser: &TypedParser,
-    state: &State,
-    segments: &[Segment],
-) -> String {
+pub fn pretty_prefix_state(parser: &TypedParser, state: &State, segments: &[Segment]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "State span=({}, {}) root={} frontier={}\n",

@@ -1,8 +1,8 @@
-pub mod domains;
 pub mod engine;
 pub mod ffi;
 pub mod regex;
 pub mod semantics;
+pub mod typing;
 pub mod validation;
 
 #[macro_use]

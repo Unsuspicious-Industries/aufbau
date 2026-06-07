@@ -17,7 +17,6 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("assign int negative", "{ let x:Int=0-5; }"),
         ParseTestCase::valid("assign arithmetic", "{ let x:Int=1+2; }"),
         ParseTestCase::valid("assign bool", "{ let flag:Bool=true; }"),
-        ParseTestCase::valid("assign union bool", "{ let u:Int|Bool=true; }"),
         ParseTestCase::valid("operation", "{ let x:Int=5; let y:Int=3; let z:Int=x+y; }"),
         ParseTestCase::valid(
             "long decl chain",
@@ -64,11 +63,6 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid("unbound var", "{ let y:Int=x; }"),
         ParseTestCase::invalid("unbound var", "{ let y:Int=1; let z:Int=y-x; }"),
         ParseTestCase::invalid("use before decl", "{ let y:Int=x+1; let x:Int=5; }"),
-        ParseTestCase::invalid("union mismatch", "{ let u:Int|Bool=1+2; let z:Int=u+1; }"),
-        ParseTestCase::invalid(
-            "union used as int",
-            "{ let u:Int|Bool=true; let z:Int=u+1; }",
-        ),
         ParseTestCase::invalid(
             "if branch context isolation",
             "{ if (1==1) { let x:Int=1; } else { let y:Int=x; } }",

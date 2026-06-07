@@ -24,8 +24,7 @@ pub fn load_example_grammar(name: &str) -> SPG {
         .join(format!("{}.auf", name));
     let content = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("Failed to read {}: {}", path.display(), e));
-    SPG::load(&content)
-        .unwrap_or_else(|e| panic!("Failed to load grammar '{}': {}", name, e))
+    SPG::load(&content).unwrap_or_else(|e| panic!("Failed to load grammar '{}': {}", name, e))
 }
 
 /// Load grammar from inline specification
