@@ -47,6 +47,31 @@ pub fn load(
     Ok((rules, rewrites))
 }
 
+/// Reject a grammar whose type-level declarations cannot mean what they say:
+/// a rule pattern with no unique parse (it would silently weaken to `⊤`), or a
+/// rewrite that does not parse or invents variables on its right side (which
+/// would let normalization un-ground a ground term).
+pub fn check(g: &SPG) -> Result<(), String> {
+    for rule in g.rules.values() {
+        let bindings = g.rule_bindings(&rule.name);
+        for te in rule.type_exprs() {
+            crate::typing::TyExpr::build(g, te, &bindings)
+                .map_err(|e| format!("rule '{}': {e}", rule.name))?;
+        }
+    }
+    for (l, r) in &g.rewrites {
+        let (lhs, rhs) = (
+            crate::typing::Term::parse(g, l)?,
+            crate::typing::Term::parse(g, r)?,
+        );
+        let lv = lhs.vars();
+        if !rhs.vars().iter().all(|v| lv.contains(v)) {
+            return Err(format!("rewrite '{l} ⇝ {r}' invents a variable"));
+        }
+    }
+    Ok(())
+}
+
 /// Split a `lhs ⇝ rhs` (or `lhs ~> rhs`) line into its two non-empty sides.
 fn split_rewrite(line: &str) -> Option<(String, String)> {
     for sep in ["⇝", "~>"] {

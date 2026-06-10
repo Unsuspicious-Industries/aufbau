@@ -22,7 +22,7 @@ Factor ::= AtomicType | ListType
 ListType(list) ::= Factor 'list'
 ProductType ::= Factor '*' ProductType | Factor
 FunctionType ::= ProductType '->' Type
-Type ::= FunctionType | ProductType
+Type(*) ::= FunctionType | ProductType
 
 // ===================== Literals =====================
 Integer(int) ::= /[0-9]+/

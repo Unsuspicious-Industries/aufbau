@@ -44,7 +44,7 @@ pub use ir::{Instr, Program, compile};
 pub use normalize::{Normalizer, RewriteRule, unify_modulo};
 pub use syntax::render;
 pub use pattern::{Match, Pattern};
-pub use term::{Subst, Term};
+pub use term::{Evidence, Subst, Term};
 pub use types::{Atom, TyExpr, Type, TypeExpr};
 
 pub use rule::{

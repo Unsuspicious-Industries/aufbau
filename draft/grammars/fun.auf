@@ -3,7 +3,7 @@ TypeName ::= /[A-Z][a-z0-9]*/
 
 BaseType ::= TypeName | '(' Type ')'
 FunctionType ::= BaseType '->' Type
-Type ::= BaseType | FunctionType
+Type(*) ::= BaseType | FunctionType
 
 Integer(int) ::= /[0-9]+/
 Boolean(bool) ::= 'true' | 'false'

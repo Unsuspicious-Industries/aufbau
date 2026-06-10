@@ -10,7 +10,7 @@ use crate::typing::ir::compile;
 use crate::typing::rule::TypingRule;
 use crate::typing::Context;
 use crate::typing::Type;
-use crate::typing::{Normalizer, TyExpr, TypingDomain};
+use crate::typing::{Evidence, Normalizer, TyExpr, TypingDomain};
 use std::collections::HashMap;
 
 fn trees(g: &SPG, rule: &TypingRule) -> Trees {
@@ -49,7 +49,7 @@ fn descend_extends_context_with_constant_type() {
     .unwrap();
     let s = segs(&["x", "body"]);
     let domain: TypingDomain = TypingDomain::default();
-    let evidence = EvidenceStore::new(Type::top(), Type::bottom());
+    let evidence = EvidenceStore::new(Evidence::top(), Evidence::bottom());
     let rule = grammar.rules().get("bind").unwrap();
     let trees = trees(&grammar, rule);
 
@@ -66,7 +66,7 @@ fn descend_extends_context_with_constant_type() {
     // `e` — once `a` (= "x") is already resolved. Entering the binder `a` itself
     // would predate `a`'s own resolution, so it carries no extension.
     let next = domain
-        .descend(&program, Some("e"), &ctx, &obs, &s, &evidence)
+        .descend(&program, &Normalizer::new(), Some("e"), &ctx, &obs, &s, &evidence)
         .expect("setting extension should resolve");
     assert!(
         next.lookup("x").is_some(),
@@ -97,7 +97,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
     let prod = (grammar.nt_index("Decl").unwrap(), 0);
     let s = segs(&["x", ":", "Int", "=", "true"]);
     let domain: TypingDomain = TypingDomain::default();
-    let evidence = EvidenceStore::new(Type::top(), Type::bottom());
+    let evidence = EvidenceStore::new(Evidence::top(), Evidence::bottom());
     let rule = grammar.rules().get("decl").unwrap();
 
     let mut obs = Obligations::create(&grammar, prod, TreePath::new());
@@ -108,14 +108,14 @@ fn finalize_rejects_closed_ascription_mismatch() {
         span: Span { start: 2, end: 3 },
         status: NodeStatus::Exact,
         semantic_complete: true,
-        evidence: evidence.intern(Type::raw("Int")),
+        evidence: evidence.intern(Type::raw("Int").into()),
         effect: None,
         binding_map: HashMap::new(),
         alts: AltRange { start: 0, len: 0 },
     };
     obs.resolve_nonterminal(2, 0, &type_node);
     let bool_nt = grammar.nt_index("Boolean").unwrap();
-    let bool_ty = evidence.intern(Type::parse_raw("Bool").unwrap());
+    let bool_ty = evidence.intern(Type::parse_raw("Bool").unwrap().into());
     let bool_node = ArenaNode {
         nt: bool_nt,
         span: Span { start: 4, end: 5 },

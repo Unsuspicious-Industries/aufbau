@@ -19,7 +19,7 @@ use crate::semantics::obligation::Obligations;
 use crate::semantics::SemanticSummary;
 use crate::typing::ir::{compile, Program};
 use crate::typing::pattern::Pattern;
-use crate::typing::{Context, ContextTransition, Normalizer, Term, Type, TypingDomain};
+use crate::typing::{Context, ContextTransition, Evidence, Normalizer, Term, Type, TypingDomain};
 
 // ── Generic interner ─────────────────────────────────────────────────────────
 
@@ -66,7 +66,7 @@ pub struct TypingRuntime {
     programs: Rc<HashMap<String, Program>>,
     /// The grammar's type-rewrite theory; empty ⇒ `normalize` is the identity.
     norm: Rc<Normalizer>,
-    evidence: Rc<EvidenceStore<Type>>,
+    evidence: Rc<EvidenceStore<Evidence>>,
     contexts: Rc<Interner<Context>>,
     effects: Rc<Interner<ContextTransition>>,
     segs: Vec<Segment>,
@@ -95,10 +95,7 @@ impl Clone for TypingRuntime {
 
 impl TypingRuntime {
     pub fn new(domain: TypingDomain<false>, spg: SPG) -> Self {
-        let evidence = Rc::new(EvidenceStore::new(
-            TypingDomain::<false>::top_evidence(),
-            TypingDomain::<false>::bottom_evidence(),
-        ));
+        let evidence = Rc::new(EvidenceStore::new(Evidence::top(), Evidence::bottom()));
         let trees = spg.type_trees();
         let norm = spg.normalizer();
         let programs = spg
@@ -123,22 +120,30 @@ impl TypingRuntime {
     /// Structural evidence for a rule-less node: its own parse tree. A node with
     /// child nodes is a `Con` over their evidence; a bare span is a `Leaf` of its
     /// text. This is how syntax and typing share one object (evidence is a tree).
+    /// Children's residual equations pass through unchanged.
     pub fn structural_evidence(
         &self,
         nt: &str,
         child_evidence: &[EvidenceId],
         span: Span,
     ) -> EvidenceId {
-        let term = if child_evidence.is_empty() {
-            Term::Leaf(Pattern::raw(self.render(span)))
+        let kids: Vec<Evidence> = child_evidence
+            .iter()
+            .filter_map(|&id| self.evidence.get(id))
+            .collect();
+        let ev = if kids.is_empty() {
+            Evidence::new(Term::Leaf(Pattern::raw(self.render(span))))
         } else {
-            let kids = child_evidence
-                .iter()
-                .filter_map(|&id| self.evidence.get(id))
-                .collect();
-            Term::Con(nt.to_string(), kids)
+            let mut eqs: Vec<(String, Term)> =
+                kids.iter().flat_map(|k| k.eqs.iter().cloned()).collect();
+            eqs.sort_by(|a, b| a.0.cmp(&b.0));
+            eqs.dedup();
+            Evidence {
+                term: Term::Con(nt.to_string(), kids.iter().map(|k| k.term.clone()).collect()),
+                eqs,
+            }
         };
-        self.evidence.intern(term)
+        self.evidence.intern(ev)
     }
 
     fn render(&self, span: Span) -> String {
@@ -160,11 +165,12 @@ impl TypingRuntime {
     }
 
     pub fn intern_evidence(&self, ev: Type) -> EvidenceId {
-        self.evidence.intern(ev)
+        self.evidence.intern(ev.into())
     }
 
+    /// The type term at `id`; residual equations are an internal carrier.
     pub fn evidence_of(&self, id: EvidenceId) -> Option<Type> {
-        self.evidence.get(id)
+        self.evidence.get(id).map(|e| e.term)
     }
 
     pub fn intern_effect(&self, eff: ContextTransition) -> EffectId {

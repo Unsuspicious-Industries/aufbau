@@ -103,6 +103,29 @@ record-like types) or second-order reasoning (row polymorphism, dependency) ride
 on the named extensions of \S\ref{sec:ambiguity}, and each new use must be
 checked for realizability before admission.
 
+\paragraph{Syntax-directed, bidirectional presentations only.}
+A rule is attached to a production, so the framework hosts exactly the type
+systems whose rules follow the syntax: at most one rule per construct, with
+conversion folded into the checking sites. This is the bidirectional
+discipline~\cite{dunfield2021bidirectional}, and ascription
+(Definition~\ref{def:ascription}) is already its checking judgment, evidence
+synthesis its inference judgment. A non-syntax-directed rule (standalone
+conversion, subsumption, cut) must be eliminated from the presentation before
+a grammar can carry the system.
+
+\paragraph{Completeness is undecidable for proofs.}
+For a dependent fragment, keeping exactly the completable prefixes would decide
+whether a partial term still inhabits a goal type: type inhabitation,
+undecidable in general and already PSPACE-complete for simple
+types~\cite{statman1979intuitionistic}. The evaluator therefore cannot be
+complete there (Definition~\ref{def:pruning-properties}); it remains a sound
+pruning oracle, and proof-term generation needs a search layer above it that
+backtracks out of $\mathsf{Live}$ dead ends. Soundness of $\mathsf{Lost}$ also
+demands care under conversion: a non-ground failure modulo a theory is not
+stable (\S\ref{sec:constraints}), so a dependent instance may prune only on
+rigid clashes that no instantiation and no reduction can repair, postponing
+the rest.
+
 \section{Conclusion}
 \label{sec:conclusion}
 

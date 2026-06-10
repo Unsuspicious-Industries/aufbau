@@ -172,9 +172,13 @@ const STMT: &str = r"
 
 ";
 
-/// Union-typed choice operator producing union types.
+/// Union-typed choice operator producing union types. The union is a type
+/// constructor of the grammar's own type fragment, not engine machinery.
 const UNION_CHOICE: &str = r"
     Identifier ::= /[a-z]+/
+    TyName ::= 'N' | 'B'
+    Union ::= TyName '|' Ty
+    Ty(*) ::= TyName | Union
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
     BoolLit(blit) ::= 'yes' | 'no'

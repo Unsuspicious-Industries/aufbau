@@ -57,7 +57,7 @@ impl TyExpr {
 #[must_use]
 pub fn render(g: &SPG, t: &Term) -> String {
     match t {
-        Term::Var(n) => format!("?{n}"),
+        Term::Var(n) => format!("?{}", n.split('#').next().unwrap_or(n)),
         Term::Leaf(p) => p.to_string(),
         Term::Con(label, kids) => {
             let prod = g.productions.get(label).and_then(|ps| {
@@ -130,22 +130,32 @@ impl Term {
     }
 }
 
-/// Parse `s` with each nonterminal as the start and return the unique complete
-/// derivation, converted by `f`. No designated start: a type-shaped string is
-/// derived only by the type productions, and two distinct results is a real
-/// ambiguity. A derivation that swallows a placeholder as an interior keyword
-/// (so it never reappears as an atom leaf) is not a materialization of the
-/// metavariable and is discarded via [`all_holes_present`]. Shared by
-/// concrete-type and rule-pattern building.
+/// Parse `s` at the type sort and return the unique complete derivation,
+/// converted by `f`. The start is the designated type fragment `Ty(*)`
+/// (`def:term-language`); a grammar that declares none falls back to trying
+/// every nonterminal, where two distinct results is a real ambiguity. A
+/// derivation that swallows a placeholder as an interior keyword (so it never
+/// reappears as an atom leaf) is not a materialization of the metavariable and
+/// is discarded via [`all_holes_present`]. Shared by concrete-type and
+/// rule-pattern building.
 fn parse_unique<T: PartialEq>(
     g: &SPG,
     s: &str,
     metas: &HashMap<String, TyExpr>,
     f: impl Fn(&FusionNode) -> T,
 ) -> Result<T, String> {
-    let names: Vec<String> = (0..g.production_count())
-        .filter_map(|i| g.nt(i).map(str::to_string))
-        .collect();
+    let names: Vec<String> = match &g.ty {
+        Some(ty) => vec![ty.clone()],
+        None => (0..g.production_count())
+            .filter_map(|i| g.nt(i).map(str::to_string))
+            .collect(),
+    };
+    // Placeholders tokenize atomically even when the grammar has a bare `?`
+    // token (specials match longest-first).
+    let mut g = g.clone();
+    for ph in metas.keys() {
+        g.add_special(ph.clone());
+    }
     let mut found: Option<T> = None;
     for name in names {
         let mut g = g.clone();

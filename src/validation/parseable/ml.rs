@@ -108,6 +108,11 @@ pub fn valid_programs_cases() -> Vec<ParseTestCase> {
             "copy via cons",
             "let rec copy : Int list -> Int list = (xs : Int list) => match xs with [] => [] | h :: t => h :: copy(t) in copy(1 :: 2 :: [])",
         ),
+        // A free element type is fine when the uses agree.
+        ParseTestCase::valid(
+            "match on nil, consistent head",
+            "match [] with [] => 0 | h :: t => h + 1",
+        ),
     ]
 }
 
@@ -123,6 +128,13 @@ pub fn invalid_programs_cases() -> Vec<ParseTestCase> {
         ParseTestCase::invalid(
             "return type mismatch",
             "let rec bad : Int list -> Int = (xs : Int list) => match xs with [] => [] | h :: t => 0 in bad([])",
+        ),
+        // Regression: with a free element type (scrutinee `[]`), the head is one
+        // metavariable across its uses, so `h` as Bool and as Int must clash.
+        // Accepted before the global metavariable store landed.
+        ParseTestCase::invalid(
+            "head used at two types",
+            "match [] with [] => 0 | h :: t => if h then 1 else h + 1",
         ),
     ]
 }
@@ -147,13 +159,10 @@ mod known_limitations {
         ));
     }
 
+    /// Regression: the head's element type is tied to the scrutinee through the
+    /// shared metavariable, so `f(h)` (h:Int) against `Int list` is rejected.
     #[test]
-    #[ignore = "UNSOUND: match pattern-var element type is not tied to the scrutinee, so `f(h)` (h:Int) wrongly unifies against Int list. Needs constraint propagation (inference)."]
-    fn match_head_element_type_is_unconstrained() {
-        // `f(h)` applies `f : Int list -> Int` to the head `h : Int`. A sound
-        // checker rejects it; today the head's type is a free `?A` that unifies
-        // with anything, so this is (wrongly) accepted. The assertion encodes the
-        // sound expectation and fails until the gap is closed.
+    fn match_head_element_type_is_tied_to_scrutinee() {
         assert!(!type_checks(
             "let rec f : Int list -> Int = (xs : Int list) => match xs with [] => 0 | h :: t => f(h) in f(1 :: [])"
         ));

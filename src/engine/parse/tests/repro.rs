@@ -768,6 +768,9 @@ fn repro_weird_union_partial() {
     let g = SPG::load(
         r#"
     Identifier ::= /[a-z]+/
+    TyName ::= 'N' | 'B'
+    Union ::= TyName '|' Ty
+    Ty(*) ::= TyName | Union
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
     BoolLit(blit) ::= 'yes' | 'no'

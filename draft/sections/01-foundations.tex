@@ -140,6 +140,24 @@ can be frontier.
   completable.
 \end{proof}
 
+\begin{definition}[Soundness and completeness of pruning]
+  \label{def:pruning-properties}
+  An evaluator is \emph{sound} when it reports $\mathsf{Lost}$ only on prefixes
+  with no satisfying completion (the hypothesis of
+  Lemma~\ref{lem:safe-pruning}), and \emph{complete} when every prefix it keeps
+  has one.
+\end{definition}
+
+The two halves serve different masters. Soundness protects the input: nothing
+completable is discarded. Completeness protects a \emph{generator} driving
+construction through the parser: if the evaluator is complete, a kept prefix
+always extends to a valid whole, so generation never enters a dead end.
+Soundness is unconditional in this framework; completeness depends on the
+constraint domain, is the realizability target for the instances of
+\S\ref{sec:examples}, and is unattainable for a dependent fragment
+(\S\ref{sec:limitations}), where the generator must instead treat
+$\mathsf{Live}$ as a heuristic signal and backtrack.
+
 Realizing this evaluator requires that the implementation's verdict track the
 ideal one as input grows. That rests on monotonicity (a hole's completion set
 only shrinks under extension, Lemma~\ref{lem:hole-monotone}), so a

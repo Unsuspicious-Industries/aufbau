@@ -33,12 +33,66 @@ pub enum Term {
 /// chases chains and recursion resolves them lazily.
 pub type Subst = HashMap<String, Term>;
 
+/// A node's exported semantic evidence: its type term together with the
+/// *residual equations* its subtree has established on metavariables that
+/// remain visible outside the node. The equations are the operational form of
+/// the draft's constraint graph: a parent merges its children's equations into
+/// one substitution before running its own rule, so a binding discovered deep
+/// in one subtree reaches every other use of the same metavariable at their
+/// least common ancestor. An equation list with two entries for one variable
+/// is not an error; merging unifies the two values.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Evidence {
+    /// The node's type term.
+    pub term: Term,
+    /// Residual equations `x = t`, sorted by variable name.
+    pub eqs: Vec<(String, Term)>,
+}
+
+impl Evidence {
+    #[must_use]
+    pub fn new(term: Term) -> Self {
+        Self {
+            term,
+            eqs: Vec::new(),
+        }
+    }
+    /// `⊤` with no equations (interns to `TOP = 0`).
+    #[must_use]
+    pub fn top() -> Self {
+        Self::new(Term::top())
+    }
+    /// `⊥` with no equations (interns to `BOT = 1`).
+    #[must_use]
+    pub fn bottom() -> Self {
+        Self::new(Term::bottom())
+    }
+    #[must_use]
+    pub fn is_top(&self) -> bool {
+        self.term.is_top()
+    }
+}
+
+impl From<Term> for Evidence {
+    fn from(term: Term) -> Self {
+        Self::new(term)
+    }
+}
+
+impl fmt::Display for Evidence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.term)
+    }
+}
+
 impl fmt::Display for Term {
     /// Generic, constructor-agnostic: `?A`, a leaf as its regular set, and a
     /// node as `label(k₁, …, kₙ)`. No constructor (arrow, product) is special.
+    /// A variable's `#run` qualifier (the per-evaluation α-renaming of a rule
+    /// hole) is display noise and is stripped; `Debug` keeps the full name.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Var(n) => write!(f, "?{n}"),
+            Self::Var(n) => write!(f, "?{}", n.split('#').next().unwrap_or(n)),
             Self::Leaf(p) => write!(f, "{p}"),
             Self::Con(label, kids) => {
                 write!(f, "{label}(")?;
@@ -110,6 +164,15 @@ impl Term {
             Self::Var(_) => true,
             Self::Con(_, kids) => kids.iter().any(Self::has_vars),
             Self::Leaf(_) => false,
+        }
+    }
+    /// Names of the variables occurring in the term.
+    #[must_use]
+    pub fn vars(&self) -> Vec<&str> {
+        match self {
+            Self::Var(n) => vec![n],
+            Self::Con(_, kids) => kids.iter().flat_map(Self::vars).collect(),
+            Self::Leaf(_) => Vec::new(),
         }
     }
     /// No variables: a fully determined type.

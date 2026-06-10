@@ -1,7 +1,7 @@
 // Toy — meaningless but typed fun
 
 Word ::= 'beep' | 'boop' | 'blorp'
-TypeName ::= 'Fizz' | 'Buzz'
+TypeName(*) ::= 'Fizz' | 'Buzz'
 Laugh ::= 'ha' | 'ho' | 'hee'
 Chorus ::= Laugh | Laugh Chorus
 

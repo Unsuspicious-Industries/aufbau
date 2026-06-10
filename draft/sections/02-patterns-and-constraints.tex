@@ -13,7 +13,8 @@ algebra of types.
 \begin{definition}[Type as term]
   \label{def:term-language}
   \code{def:term-language}
-  The productions of the designated type fragment $\mathsf{Ty} \in N$ form a
+  The productions of the designated type fragment $\mathsf{Ty} \in N$ (written
+  \texttt{(*)} on its production in the concrete grammar) form a
   \emph{signature} $\Sigma$: each production is a constructor whose arity is its
   right-hand nonterminals. A \emph{type} is a term in $T(\Sigma)$, a parse tree
   over $\mathsf{Ty}$. There is no privileged type algebra: $\to$, products, and
@@ -21,6 +22,22 @@ algebra of types.
   (type names) are recognized by regular terminals, so a type term is a tree
   with \emph{regular leaves}.
 \end{definition}
+
+\begin{remark}[The grammar is an order-sorted signature]
+  \label{rem:sorts}
+  The nonterminals are \emph{sorts}. An alternative whose body is a single
+  nonterminal, $n \to n'$, is the subsort declaration $n' \leq n$, and a
+  transparent production (Definition~\ref{def:normal-form}) is the injection it
+  denotes, which is why collapsing it preserves meaning. The signature is
+  therefore order-sorted~\cite{goguen1992order}: a hole at a position of sort
+  $n$ ranges over terms of sort at most $n$
+  (Definition~\ref{def:hole}), and a term \emph{is a type} exactly when its
+  sort is below $\mathsf{Ty}$. This answers, inside the model, which terms may
+  stand in type position; no construct outside the fragment can. Order-sorted
+  unification stays unitary when sorts with a common subsort have a greatest
+  one; this regularity condition is checkable at load time and belongs to the
+  realizability gate.
+\end{remark}
 
 \subsection{Terms with holes}
 \label{sec:patterns}
@@ -137,13 +154,15 @@ equality:
   incremental parsing (a partial type is more general, and input only
   instantiates it, Lemma~\ref{lem:hole-monotone}).
 
-  The order is used in one direction. A more general (unknown) actual refutes but
-  never confirms: a failed unification against a closed expectation forces
-  $\mathsf{Lost}$ and stays failed under instantiation, but a success against a
-  still-open actual is $\mathsf{Live}$, not $\mathsf{Satisfied}$. Only a ground
-  instance, or containment of the actual in the expectation, closes an edge; a
-  premature $\mathsf{Satisfied}$ is an unsound accept. So the syntactic layer
-  bounds the semantic one without fusing them.
+  The order is used in one direction. A more general (unknown) actual refutes
+  but never confirms: a stable failure against a closed expectation forces
+  $\mathsf{Lost}$ and stays failed under instantiation, while a success against
+  a still-open actual is provisional. Provisionality costs nothing because
+  verdicts are recomputed at every prefix: an edge satisfied today is
+  re-checked under the further-instantiated actual tomorrow, and nothing
+  irreversible leaves a node before it is exact (its right boundary fixed,
+  \S\ref{sec:effects}). So the syntactic layer bounds the semantic one without
+  fusing them.
 \end{remark}
 
 \subsection{Rules as constraint generators}
@@ -180,9 +199,30 @@ typing is solving it.
   e-graph in the sense of equality saturation~\cite{Willsey2021}.
 \end{definition}
 
+\paragraph{Operational closure.}
+The implementation realizes the closure bottom-up. A rule's holes are
+$\alpha$-renamed at each node, so two firings never collide; the bindings a
+node's solution fixes on \emph{foreign} variables (a child's, or one reaching
+it through the context) are exported as the \emph{residual equations} of its
+evidence, and a node first merges its children's equations into its own
+substitution. A binding discovered deep in one subtree thus reaches every
+other occurrence of the same metavariable at their least common ancestor:
+closure of the constraint graph under unification, computed incrementally.
+Metavariable identity is global. A context entry whose type is still a hole
+stays one unknown across all its uses; only an explicit instantiation
+($\mathsf{inst}$, the elimination of a polymorphic scheme's $\forall$)
+freshens. Freshening an ordinary lookup instead would generalize the unknown
+silently and accept programs with no type.
+
 The three-valued verdict of \S\ref{sec:guarantees} is read off the closed graph:
 \textsf{Satisfied} when every edge unifies and no frontier remains, \textsf{Lost}
-when some edge fails (unifies against $\bot$), and \textsf{Live} otherwise.
+when some edge fails \emph{stably}, and \textsf{Live} otherwise. A failure is
+stable when no instantiation can repair it. Every failure of the free theory is
+stable (a constructor clash or an occurs-violation survives substitution), but
+modulo a rewrite theory a hole can block a redex, so normalization and
+substitution no longer commute on open terms; there only a failure between
+ground terms is stable, and a non-ground failure is postponed as a pending
+constraint rather than pruned.
 
 \subsection{Context and effects}
 \label{sec:effects}

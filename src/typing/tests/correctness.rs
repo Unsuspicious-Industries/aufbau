@@ -6,7 +6,7 @@ use crate::semantics::{Obligation, Obligations};
 use crate::typing::domain::Trees;
 use crate::typing::ir::compile;
 use crate::typing::rule::TypingRule;
-use crate::typing::{Context, Normalizer, TyExpr, Type, TypingDomain};
+use crate::typing::{Context, Evidence, Normalizer, TyExpr, Type, TypingDomain};
 use proptest::prelude::*;
 
 fn parse_rule(p: &str, c: &str, n: &str) -> TypingRule {
@@ -35,13 +35,13 @@ fn trivial_trees(rule: &TypingRule) -> Trees {
 
 fn dom_finalize(
     domain: &TypingDomain,
-    evidence: &EvidenceStore<Type>,
+    evidence: &EvidenceStore<Evidence>,
     trees: &Trees,
     rule: &TypingRule,
     obs: &Obligations,
 ) -> (Verdict, Option<Type>) {
     let program = compile(rule, trees);
-    let (v, ty, _) = domain.finalize(
+    let (v, ev, _) = domain.finalize(
         &program,
         &Normalizer::new(),
         &Context::new(),
@@ -50,21 +50,21 @@ fn dom_finalize(
         NodeStatus::Exact,
         evidence,
     );
-    (v, Some(ty))
+    (v, Some(ev.term))
 }
 
-fn mkob(evidence: &EvidenceStore<Type>, name: &str, ty: Type) -> Obligation {
+fn mkob(evidence: &EvidenceStore<Evidence>, name: &str, ty: Type) -> Obligation {
     Obligation {
         name: name.into(),
         paths: vec![],
         value: Some(Lexeme::new(Span { start: 0, end: 1 }, true, false)),
-        evidence: Some(evidence.intern(ty)),
+        evidence: Some(evidence.intern(ty.into())),
     }
 }
 
-fn setup() -> (TypingDomain, EvidenceStore<Type>) {
+fn setup() -> (TypingDomain, EvidenceStore<Evidence>) {
     let domain: TypingDomain = TypingDomain::default();
-    let evidence = EvidenceStore::new(Type::top(), Type::bottom());
+    let evidence = EvidenceStore::new(Evidence::top(), Evidence::bottom());
     (domain, evidence)
 }
 
@@ -83,7 +83,7 @@ proptest! {
         let with = Obligations::new(TreePath::new(), vec![Obligation {
             name: "x".into(), paths: vec![],
             value: Some(Lexeme::new(Span { start: 0, end: 1 }, true, false)),
-            evidence: Some(evidence.intern(Type::raw("X"))),
+            evidence: Some(evidence.intern(Type::raw("X").into())),
         }]);
         let (vw, _) = dom_finalize(&domain, &evidence, &trees, &rule, &with);
 
@@ -179,7 +179,7 @@ fn context_ext_accepts_open_prefix() {
         .extend("foo".into(), Type::raw("Int"))
         .unwrap();
     let program = compile(&rule, &trivial_trees(&rule));
-    let (v, ty, _) = domain.finalize(
+    let (v, ev, _) = domain.finalize(
         &program,
         &Normalizer::new(),
         &ctx,
@@ -189,5 +189,5 @@ fn context_ext_accepts_open_prefix() {
         &evidence,
     );
     assert_eq!(v, Verdict::Satisfied, "open prefix 'fo' should match 'foo'");
-    assert_eq!(ty, Type::raw("Int"));
+    assert_eq!(ev.term, Type::raw("Int"));
 }

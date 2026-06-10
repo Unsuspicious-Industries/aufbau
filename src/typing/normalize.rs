@@ -49,7 +49,7 @@ pub struct Normalizer {
 
 /// Cap on rewrite steps at one node. A confluent terminating theory never reaches
 /// it; an ill-formed (looping) one is stopped rather than hung. Termination is the
-/// theory author's obligation — this is only a guard.
+/// theory author's obligation 
 const MAX_STEPS: usize = 1024;
 
 impl Normalizer {
@@ -140,9 +140,22 @@ fn match_into(pat: &Term, t: &Term, subst: &mut Subst) -> bool {
     }
 }
 
+/// Is a unification failure between `a` and `b` stable under instantiation
+/// i.e. may the caller prune (`Lost`) on it? In the free theory, yes: the only
+/// failures are rigid-rigid clashes and occurs-check violations, and both
+/// survive any substitution. With rewrite rules, only if both sides are ground:
+/// a hole can block a redex, so instantiating it may enable a rewrite that
+/// repairs the clash (`nf ∘ σ ≠ σ ∘ nf` on open terms). A non-stable failure
+/// must read as `Unknown` (a postponed constraint), never `Lost`.
+#[must_use]
+pub fn failure_is_stable(norm: &Normalizer, a: &Term, b: &Term) -> bool {
+    norm.rules().is_empty() || (a.is_ground() && b.is_ground())
+}
+
 /// Unification modulo the theory: normalize both sides, then unify on the free
 /// theory. Complete for the checking direction (one ground side); see the module
-/// note on narrowing for variables on both sides.
+/// note on narrowing for variables on both sides, and [`failure_is_stable`] for
+/// when a failure licenses pruning.
 #[must_use]
 pub fn unify_modulo(
     norm: &Normalizer,

@@ -4,7 +4,8 @@
 //! premises and conclusion. Holes (`?A`) are first-class; there is no
 //! compilation pass. `domain::eval` resolves and unifies them.
 
-use super::{Type, TypeExpr};
+use super::TypeExpr;
+use crate::typing::term::Evidence;
 use crate::typing::ContextTransition;
 use std::fmt;
 
@@ -93,10 +94,11 @@ pub struct TypingRule {
     pub conclusion: Conclusion,
 }
 
-/// Rule evaluation result
+/// Rule evaluation result. Evidence carries the node's type term together with
+/// the residual equations its premises established (see [`Evidence`]).
 pub enum RuleResult {
-    Success((Type, Option<ContextTransition>)),
-    Partial(Type),
+    Success((Evidence, Option<ContextTransition>)),
+    Partial(Evidence),
     Contradiction,
 }
 

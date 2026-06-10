@@ -45,6 +45,9 @@ pub struct SPG {
 
     /// `S` — the designated start symbol.
     pub start: Option<String>,
+    /// `Ty` — the designated type fragment (`def:term-language`): the sort a
+    /// type term is parsed at. `None` falls back to trying every nonterminal.
+    pub ty: Option<String>,
     /// `A` — the tokenizer holding special tokens and delimiters.
     pub tokenizer: Option<Tokenizer>,
     /// `B` — the binding map from (binding, rule) pairs to grammar paths.
@@ -61,6 +64,7 @@ impl Clone for SPG {
             rules: self.rules.clone(),
             rewrites: self.rewrites.clone(),
             start: self.start.clone(),
+            ty: self.ty.clone(),
             tokenizer: self.tokenizer.clone(),
             bindings: self.bindings.clone(),
         }
@@ -106,6 +110,7 @@ impl SPG {
             rules: HashMap::default(),
             rewrites: Vec::default(),
             start: None,
+            ty: None,
             tokenizer: Some(Tokenizer::new()),
             bindings: None,
         }

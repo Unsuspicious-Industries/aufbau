@@ -2,6 +2,13 @@
 //! unification. A type is a tree over the grammar (`Term`); a rule's flat
 //! `TypeExpr` is parsed into a `TyExpr` pattern (by the runtime), resolved to a
 //! `Term`, and unified. No subtyping: every relation is unifiability.
+//!
+//! Metavariables are global: a rule's holes are α-renamed per evaluation
+//! (`?A` → `A#run`), and the bindings an evaluation discovers on *foreign*
+//! variables (a child's, a sibling's) are exported as the residual equations of
+//! its [`Evidence`]. Parents merge children's equations before running their own
+//! rule, so a constraint discovered deep in one subtree reaches every other use
+//! of the same metavariable at their least common ancestor (`def:solve`).
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -14,29 +21,29 @@ use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::Obligations;
 use crate::typing::ir::{Instr, Program};
-use crate::typing::normalize::{unify_modulo, Normalizer};
+use crate::typing::normalize::{failure_is_stable, unify_modulo, Normalizer};
 use crate::typing::pattern::Pattern;
 use crate::typing::rule::{PremiseStatus, RuleResult};
-use crate::typing::term::{apply, Term};
-use crate::typing::{Context, ContextTransition, Subst, TyExpr, Type, TypeExpr};
+use crate::typing::term::{apply, Evidence, Term};
+use crate::typing::{Context, ContextTransition, Subst, TyExpr, TypeExpr};
 
 /// A rule's flat `TypeExpr`s mapped to their parsed trees. Precomputed by the
 /// runtime, which holds the grammar.
 pub type Trees = HashMap<TypeExpr, TyExpr>;
 
-/// Instantiate a type read from the environment: rename its variables to
-/// globally-fresh ones. This is the instantiation half of let-polymorphism —
-/// `[] : ?A list` yields a fresh element type at each use — and it keeps a rule's
-/// own variables (`?A` in `app`) from colliding with an identically-named
-/// variable in a stored evidence type, which would otherwise trip the
-/// occurs-check. With monomorphic annotations the stored type is ground, so this
-/// is a no-op.
+/// Rename a term's variables to globally-fresh ones — instantiation of a
+/// polymorphic scheme at a use site. Reached only through `inst(x)`; ordinary
+/// lookups share metavariable identity (the monomorphic default).
 fn instantiate(t: &Term) -> Term {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    // Reserve a disjoint id range per call, far larger than any one type's
-    // variable count, so even concurrent parses cannot collide.
     let mut n = NEXT.fetch_add(1 << 20, Ordering::Relaxed);
     t.freshen(&mut n)
+}
+
+/// A fresh evaluation id: the α-renaming scope of one rule run.
+fn rid() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
 /// Per-instruction execution counts. Each `Cell` is incremented in the hot
@@ -156,54 +163,49 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
 
     // ── Expression evaluation ───────────────────────────────────────────────
 
-    /// Resolve a `TyExpr` pattern to a concrete `Term`: holes from `subst` (or
-    /// left as variables), refs from evidence, ctx from the context.
+    /// Resolve a `TyExpr` pattern to a concrete `Term`: holes α-renamed into
+    /// this run's scope, refs from evidence, ctx from the context.
     fn eval(
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
         ty: &TyExpr,
         obligations: &Obligations,
         ctx: &Context,
         segs: &[Segment],
-        subst: &Subst,
+        run: u64,
     ) -> Option<Term> {
         Some(match ty {
             TyExpr::Top => Term::top(),
             TyExpr::Bot => Term::bottom(),
             TyExpr::Lit(s) => Term::Leaf(Pattern::raw(s)),
-            TyExpr::Var(n) => subst
-                .get(n)
-                .cloned()
-                .unwrap_or_else(|| Term::Var(n.clone())),
+            TyExpr::Var(n) => Term::Var(format!("{n}#{run}")),
             TyExpr::Ref(b) => Self::resolve_ref(evidence, obligations, b)?,
             TyExpr::Ctx(v) => Self::resolve_ctx(obligations, ctx, segs, v)?,
             // `inst(x)` is `Γ(x)` with its variables freshened — a polymorphic
-            // scheme made concrete at this use. For now we resolve as `Ctx` and
-            // rely on unification to dedupe the substitution; full α-freshening
-            // is a separate concern from the rule IR.
-            TyExpr::Inst(v) => Self::resolve_inst(obligations, ctx, segs, v)?,
+            // scheme made concrete at this use. The one instantiation point.
+            TyExpr::Inst(v) => instantiate(&Self::resolve_ctx(obligations, ctx, segs, v)?),
             TyExpr::Con(label, kids) => {
                 let mut out = Vec::with_capacity(kids.len());
                 for k in kids {
-                    out.push(Self::eval(evidence, k, obligations, ctx, segs, subst)?);
+                    out.push(Self::eval(evidence, k, obligations, ctx, segs, run)?);
                 }
                 Term::Con(label.clone(), out)
             }
         })
     }
 
-    /// The type of a binding: its evidence tree, instantiated. `⊤` (no constraint
-    /// yet) is not yet a type, so it reads as unresolved.
+    /// The type of a binding: its evidence term, identity shared. `⊤` (no
+    /// constraint yet) is not yet a type, so it reads as unresolved.
     fn resolve_ref(
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
         obligations: &Obligations,
         b: &str,
     ) -> Option<Term> {
         let id = Self::ob_type(obligations, b)?;
-        let t = evidence.get(id)?;
-        (!t.is_top()).then(|| instantiate(&t))
+        let ev = evidence.get(id)?;
+        (!ev.is_top()).then_some(ev.term)
     }
 
-    /// `Γ(v)`: the type bound to `v`'s value in the context, instantiated.
+    /// `Γ(v)`: the type bound to `v`'s value in the context, identity shared.
     fn resolve_ctx(
         obligations: &Obligations,
         ctx: &Context,
@@ -213,32 +215,20 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         let lex = Self::ob_resolve(obligations, v)?;
         let text = lex.value(segs).unwrap_or_default();
         if let Some(t) = ctx.lookup(&text) {
-            return Some(instantiate(t));
+            return Some(t.clone());
         }
         if lex.open {
-            return ctx.lookup_starts_with(&text).map(instantiate);
+            return ctx.lookup_starts_with(&text).cloned();
         }
         None
-    }
-
-    /// `inst(v)`: `Γ(v)` made concrete — same lookup as `Ctx`, distinct node
-    /// in the graph so callers can later add α-freshening without touching
-    /// `Ctx`'s contract.
-    fn resolve_inst(
-        obligations: &Obligations,
-        ctx: &Context,
-        segs: &[Segment],
-        v: &str,
-    ) -> Option<Term> {
-        Self::resolve_ctx(obligations, ctx, segs, v)
     }
 
     // ── Ascription ──────────────────────────────────────────────────────────
 
     /// Discharge `actual : expected` by unification modulo the rewrite theory.
-    /// Success binds holes into `subst` and is `Satisfied`; a clash is
-    /// `Contradiction`, or `Unknown` when the node may still grow (directional via
-    /// openness).
+    /// Success binds holes into `subst` and is `Satisfied`; a failure is
+    /// `Contradiction` only when stable under instantiation
+    /// ([`failure_is_stable`]) and the node can no longer grow.
     fn ascribe(
         &self,
         norm: &Normalizer,
@@ -254,7 +244,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             PremiseStatus::Satisfied
         } else {
             Self::tick(&self.stats.unify_fail);
-            if open {
+            if open || !failure_is_stable(norm, expected, actual) {
                 PremiseStatus::Unknown
             } else {
                 PremiseStatus::Contradiction
@@ -262,9 +252,53 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         }
     }
 
+    /// Merge the residual equations exported by resolved children into `subst`:
+    /// the incremental closure of the constraint graph (`def:solve`). A stable
+    /// conflict between subtrees is a `Contradiction`; an unstable one is
+    /// postponed.
+    fn merge_eqs(
+        &self,
+        norm: &Normalizer,
+        evidence: &EvidenceStore<Evidence>,
+        obligations: &Obligations,
+        subst: &mut Subst,
+    ) -> PremiseStatus {
+        let mut st = PremiseStatus::Satisfied;
+        for ob in obligations {
+            let Some(ev) = ob.evidence.and_then(|id| evidence.get(id)) else {
+                continue;
+            };
+            for (x, t) in &ev.eqs {
+                let v = Term::Var(x.clone());
+                Self::tick(&self.stats.unify);
+                if !unify_modulo(norm, &v, t, subst, true) {
+                    Self::tick(&self.stats.unify_fail);
+                    if failure_is_stable(norm, &v, t) {
+                        return PremiseStatus::Contradiction;
+                    }
+                    st = PremiseStatus::Unknown;
+                }
+            }
+        }
+        st
+    }
+
+    /// Bindings on variables visible outside this evaluation — everything not
+    /// α-renamed by this run — with values fully resolved.
+    fn export(subst: &Subst, run: u64) -> Vec<(String, Term)> {
+        let suffix = format!("#{run}");
+        let mut eqs: Vec<(String, Term)> = subst
+            .keys()
+            .filter(|k| !k.ends_with(&suffix))
+            .map(|k| (k.clone(), apply(&Term::Var(k.clone()), subst)))
+            .collect();
+        eqs.sort_by(|a, b| a.0.cmp(&b.0));
+        eqs
+    }
+
     // ── Context helpers ─────────────────────────────────────────────────────
 
-    fn extend(ctx: &Context, value: &str, resolved: Type) -> Context {
+    fn extend(ctx: &Context, value: &str, resolved: Term) -> Context {
         ctx.shadow(value.to_string(), resolved)
     }
 
@@ -286,23 +320,23 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         regs[dst] = v;
     }
 
-    /// Run one `Eval` instruction: resolve `expr` against `ctx`/`subst` and store
-    /// it in register `dst`. The single implementation of evaluation-into-a-
-    /// register, shared by the `descend` and `run` interpreters.
+    /// Run one `Eval` instruction: resolve `expr` against `ctx` and store it in
+    /// register `dst`. The single implementation of evaluation-into-a-register,
+    /// shared by the `descend` and `run` interpreters.
     #[allow(clippy::too_many_arguments)]
     fn eval_to_reg(
         &self,
         regs: &mut Vec<Option<Term>>,
         dst: usize,
         expr: &TyExpr,
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
         obligations: &Obligations,
         ctx: &Context,
         segs: &[Segment],
-        subst: &Subst,
+        run: u64,
     ) {
         Self::tick(&self.stats.eval);
-        let v = Self::eval(evidence, expr, obligations, ctx, segs, subst);
+        let v = Self::eval(evidence, expr, obligations, ctx, segs, run);
         Self::set(regs, dst, v);
     }
 
@@ -332,7 +366,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
     fn run_ascribe(
         &self,
         norm: &Normalizer,
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
         obligations: &Obligations,
         binding: &str,
         expected: Option<Term>,
@@ -361,15 +395,10 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         let Some(actual) = evidence.get(actual_id) else {
             return PremiseStatus::Contradiction;
         };
-        // Instantiate the sub-expression's type before matching it against the
-        // rule's pattern, so a polymorphic actual (`[] : ?A list`) gets fresh
-        // variables and the rule's own `?A` never clashes with an identically
-        // named variable in `actual` (which would trip the occurs-check).
-        let actual = instantiate(&actual);
         let Some(expected) = expected else {
             return PremiseStatus::Unknown;
         };
-        self.ascribe(norm, &actual, &expected, subst, open)
+        self.ascribe(norm, &actual.term, &expected, subst, open)
     }
 
     /// Discharge a `member` instruction: `binding`'s value is in the context (an
@@ -404,19 +433,20 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         &self,
         program: &Program,
         norm: &Normalizer,
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
         obligations: &Obligations,
         ctx: Context,
         status: NodeStatus,
         segs: &[Segment],
     ) -> RuleResult {
         let allow_missing = status.open();
+        let run = rid();
         let mut subst = Subst::new();
         let mut regs: Vec<Option<Term>> = Vec::new();
         let mut ctxs = vec![ctx];
         let mut satisfied = true;
         let mut output: Option<Term> = None;
-        let mut effects: Vec<(String, Type)> = Vec::new();
+        let mut effects: Vec<(String, Term)> = Vec::new();
 
         // A premise status folds into the running verdict; a contradiction ends it.
         macro_rules! combine {
@@ -429,11 +459,13 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             };
         }
 
+        combine!(self.merge_eqs(norm, evidence, obligations, &mut subst));
+
         for instr in &program.instrs {
             match instr {
                 Instr::Eval { dst, expr } => {
                     let top = Self::top(&ctxs).clone();
-                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &top, segs, &subst);
+                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &top, segs, run);
                 }
                 Instr::Ascribe { binding, expected } => {
                     let exp = Self::reg(&regs, *expected);
@@ -450,16 +482,20 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                 Instr::Equate { left, right } => {
                     Self::tick(&self.stats.equate);
                     let st = match (Self::reg(&regs, *left), Self::reg(&regs, *right)) {
-                        // No subtyping: equality reduces to unifiability (no binding
-                        // is exported, matching the prior operation semantics).
+                        // No subtyping: equality reduces to unifiability.
                         (Some(l), Some(r)) => {
                             let mut s = subst.clone();
                             Self::tick(&self.stats.unify);
                             if unify_modulo(norm, &l, &r, &mut s, true) {
+                                subst = s;
                                 PremiseStatus::Satisfied
                             } else {
                                 Self::tick(&self.stats.unify_fail);
-                                PremiseStatus::Contradiction
+                                if failure_is_stable(norm, &l, &r) {
+                                    PremiseStatus::Contradiction
+                                } else {
+                                    PremiseStatus::Unknown
+                                }
                             }
                         }
                         _ => PremiseStatus::Unknown,
@@ -507,36 +543,31 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             }
         }
 
+        let eqs = Self::export(&subst, run);
         let Some(ty) = output else {
-            return RuleResult::Partial(Type::top());
+            return RuleResult::Partial(Evidence {
+                term: Term::top(),
+                eqs,
+            });
+        };
+        let ev = Evidence {
+            term: apply(&ty, &subst),
+            eqs,
         };
         if !satisfied {
-            return RuleResult::Partial(ty);
+            return RuleResult::Partial(ev);
         }
-        RuleResult::Success((
-            ty,
-            Some(ContextTransition {
-                transforms: effects,
-            }),
-        ))
+        let transforms = effects
+            .into_iter()
+            .map(|(n, t)| (n, apply(&t, &subst)))
+            .collect();
+        RuleResult::Success((ev, Some(ContextTransition { transforms })))
     }
 }
 
 // ── Value-level evaluation ──────────────────────────────────────────────────
 
 impl<const TRACK: bool> TypingDomain<TRACK> {
-    /// The top evidence sentinel (interns to `TOP = 0`).
-    #[must_use]
-    pub fn top_evidence() -> Type {
-        Type::top()
-    }
-
-    /// The bottom evidence sentinel (interns to `BOT = 1`).
-    #[must_use]
-    pub fn bottom_evidence() -> Type {
-        Type::bottom()
-    }
-
     /// Context to use when entering the child bound by `binding`.
     ///
     /// Typing runs per node during the parse, so a binding's setting must be
@@ -559,7 +590,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         ctx: &Context,
         obligations: &Obligations,
         segs: &[Segment],
-        evidence: &EvidenceStore<Type>,
+        evidence: &EvidenceStore<Evidence>,
     ) -> Result<Context, TransitionError> {
         let Some(b) = binding else {
             return Ok(ctx.clone());
@@ -567,15 +598,17 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         let Some(range) = program.splices.get(b).cloned() else {
             return Ok(ctx.clone());
         };
+        let run = rid();
         let mut regs: Vec<Option<Term>> = Vec::new();
         let mut subst = Subst::new();
+        let _ = self.merge_eqs(norm, evidence, obligations, &mut subst);
         // Replay the earlier premises for the substitution they fix. Their own
         // settings are premise-local, so only the judgments that bind metavariables
         // (ascriptions against a resolved sibling, equalities) matter here.
         for instr in &program.instrs[..range.start] {
             match instr {
                 Instr::Eval { dst, expr } => {
-                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, ctx, segs, &subst);
+                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, ctx, segs, run);
                 }
                 Instr::Ascribe { binding, expected } => {
                     if let Some(actual) = Self::resolve_ref(evidence, obligations, binding)
@@ -597,7 +630,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         for instr in &program.instrs[range] {
             match instr {
                 Instr::Eval { dst, expr } => {
-                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &out, segs, &subst);
+                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &out, segs, run);
                 }
                 Instr::Extend { binding, ty } => {
                     Self::tick(&self.stats.extend);
@@ -626,8 +659,8 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         obligations: &Obligations,
         segs: &[Segment],
         status: NodeStatus,
-        evidence: &EvidenceStore<Type>,
-    ) -> (Verdict, Type, Option<ContextTransition>) {
+        evidence: &EvidenceStore<Evidence>,
+    ) -> (Verdict, Evidence, Option<ContextTransition>) {
         match self.run(
             program,
             norm,
@@ -637,21 +670,21 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             status,
             segs,
         ) {
-            RuleResult::Contradiction => (Verdict::Lost, Type::top(), None),
-            RuleResult::Partial(ty) => {
+            RuleResult::Contradiction => (Verdict::Lost, Evidence::top(), None),
+            RuleResult::Partial(ev) => {
                 if status.open() {
-                    (Verdict::Live, ty, None)
+                    (Verdict::Live, ev, None)
                 } else {
-                    (Verdict::Lost, Type::top(), None)
+                    (Verdict::Lost, Evidence::top(), None)
                 }
             }
-            RuleResult::Success((ty, transition)) => {
+            RuleResult::Success((ev, transition)) => {
                 let effect = if status == NodeStatus::Exact {
                     transition.filter(|t| !t.transforms.is_empty())
                 } else {
                     None
                 };
-                (Verdict::Satisfied, ty, effect)
+                (Verdict::Satisfied, ev, effect)
             }
         }
     }

@@ -7,27 +7,12 @@ pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
     let mut grammar = SPG::new();
     let mut nt_order: Vec<String> = Vec::new();
     let mut rule_blocks: Vec<String> = Vec::new();
+    let all: Vec<&str> = source.lines().collect();
 
-    let mut blocks: Vec<String> = Vec::new();
-    let mut current: Vec<&str> = Vec::new();
-    for line in source.lines() {
-        if line.trim().is_empty() {
-            if !current.is_empty() {
-                blocks.push(current.join("\n"));
-                current.clear();
-            }
-        } else {
-            current.push(line);
-        }
-    }
-    if !current.is_empty() {
-        blocks.push(current.join("\n"));
-    }
-
-    for block in blocks {
+    for block in all.split(|l| l.trim().is_empty()) {
         let lines: Vec<&str> = block
-            .lines()
-            .map(str::trim)
+            .iter()
+            .map(|l| l.trim())
             .filter(|line| !line.is_empty() && !line.starts_with("//"))
             .collect();
 
@@ -60,7 +45,14 @@ pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
                     for literal in literal_tokens {
                         grammar.add_special(literal);
                     }
-                    if let Some(rule_name) = rule_name.clone() {
+                    // `Ty(*) ::= …` is a kind annotation, not a rule: it
+                    // designates the type fragment (`def:term-language`).
+                    if rule_name.as_deref() == Some("*") {
+                        if let Some(prev) = &grammar.ty {
+                            return Err(format!("two type fragments: {prev}, {name}"));
+                        }
+                        grammar.ty = Some(name.clone());
+                    } else if let Some(rule_name) = rule_name.clone() {
                         grammar.bind_nt_rule(name.clone(), rule_name)?;
                     }
                     for alt_symbols in alternatives {
@@ -71,7 +63,7 @@ pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
                 }
             }
         } else {
-            rule_blocks.push(block);
+            rule_blocks.push(lines.join("\n"));
         }
     }
 
@@ -96,6 +88,7 @@ impl SPG {
         grammar.rewrites = rewrites;
         grammar.build_bindings();
         grammar.build_tokenizer();
+        crate::typing::loader::check(&grammar)?;
 
         Ok(grammar)
     }

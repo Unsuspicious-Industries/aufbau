@@ -216,3 +216,40 @@ fn bottom_clashes_except_against_a_variable() {
     let s = solve(&Term::var("A"), &Term::bottom()).expect("⊥ instantiates a var");
     assert_eq!(apply(&Term::var("A"), &s), Term::bottom());
 }
+
+// ── Lost-stability of unification failure (lem:hole-monotone) ───────────────
+// A `Lost` verdict must survive instantiation. Free-theory failures do; with a
+// rewrite theory a hole can block a redex, so only ground failures are stable.
+
+#[test]
+fn free_theory_failure_is_stable() {
+    use crate::typing::normalize::{Normalizer, failure_is_stable};
+    let free = Normalizer::new();
+    let open = Term::con("fst", vec![Term::var("X")]);
+    assert!(failure_is_stable(&free, &open, &Term::leaf("Int")));
+    assert!(failure_is_stable(&free, &Term::leaf("A"), &Term::leaf("B")));
+}
+
+#[test]
+fn rewrite_theory_failure_on_open_term_is_not_stable() {
+    use crate::typing::normalize::{Normalizer, RewriteRule, failure_is_stable, unify_modulo};
+    // fst(Pair(?A, ?B)) ⇝ ?A
+    let proj = RewriteRule {
+        lhs: Term::con("fst", vec![Term::con("Pair", vec![Term::var("A"), Term::var("B")])]),
+        rhs: Term::var("A"),
+    };
+    let norm = Normalizer::from_rules(vec![proj]);
+    // fst(?X) clashes with Int now, but ?X := Pair(Int, Y) repairs it: the
+    // failure is not stable, so pruning on it would be unsound.
+    let open = Term::con("fst", vec![Term::var("X")]);
+    let int = Term::leaf("Int");
+    let mut s = Subst::new();
+    assert!(!unify_modulo(&norm, &open, &int, &mut s, true));
+    assert!(!failure_is_stable(&norm, &open, &int));
+    // The repaired instance unifies modulo the theory.
+    let repaired = Term::con("fst", vec![Term::con("Pair", vec![int.clone(), Term::leaf("Y")])]);
+    let mut s2 = Subst::new();
+    assert!(unify_modulo(&norm, &repaired, &int, &mut s2, true));
+    // Ground failures stay prunable even with the theory loaded.
+    assert!(failure_is_stable(&norm, &Term::leaf("A"), &Term::leaf("B")));
+}

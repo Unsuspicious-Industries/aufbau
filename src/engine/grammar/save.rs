@@ -15,7 +15,9 @@ impl SPG {
             if let Some(alts) = self.productions.get(nt) {
                 let mut first = true;
                 for prod in alts {
-                    let lhs = if let Some(rule_name) = self.nt_rule(nt) {
+                    let lhs = if self.ty.as_ref() == Some(nt) {
+                        format!("{nt}(*)")
+                    } else if let Some(rule_name) = self.nt_rule(nt) {
                         format!("{nt}({rule_name})")
                     } else {
                         nt.clone()
