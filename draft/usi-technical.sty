@@ -1,0 +1,218 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{usi-technical}[2026/06/07 USI Dense Technical Paper Style]
+
+% ── colours ──────────────────────────────────────────────────────────
+\RequirePackage{xcolor}
+\definecolor{usiPurple}{HTML}{3730a3}
+\definecolor{usiDark}{HTML}{1f2937}
+\definecolor{usiRaven}{HTML}{6b7280}
+\definecolor{usiLight}{HTML}{f8fafc}
+\definecolor{usiFormal}{HTML}{54005b}
+
+% ── geometry – small margins, single column ──────────────────────────
+\RequirePackage{geometry}
+\geometry{
+  a4paper,
+  left=1.8cm,   right=1.8cm,
+  top=1.5cm,    bottom=1.4cm,
+  headheight=21pt,
+  headsep=7pt,
+  footskip=12pt,
+}
+
+% ── typography – dense serif, tight but readable ─────────────────────
+\RequirePackage{setspace}
+\setstretch{0.97}
+\setlength{\parskip}{2pt plus 1pt minus 0.5pt}
+\setlength{\parindent}{0pt}
+\RequirePackage{microtype}
+
+% ── math ─────────────────────────────────────────────────────────────
+\RequirePackage{amsmath,amssymb,amsthm}
+\RequirePackage{mathtools}
+\RequirePackage{bm}
+
+% ── theorem environments ─────────────────────────────────────────────
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{remark}[theorem]{Remark}
+
+\renewcommand{\qedsymbol}{$\blacksquare$}
+
+% math operators
+\DeclareMathOperator{\Prob}{\mathbb{P}}
+\DeclareMathOperator{\E}{\mathbb{E}}
+\DeclareMathOperator{\Var}{\mathrm{Var}}
+\DeclareMathOperator{\Cov}{\mathrm{Cov}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+% ── logo ─────────────────────────────────────────────────────────────
+\RequirePackage{graphicx}
+\newcommand{\usiLogoFile}{usi-sq.png}
+\newcommand{\setusiLogo}[1]{\renewcommand{\usiLogoFile}{#1}}
+\newlength{\usiHeaderLogoHeight}
+\setlength{\usiHeaderLogoHeight}{0.44cm}
+\newlength{\usiHeaderLogoMaxWidth}
+\setlength{\usiHeaderLogoMaxWidth}{1.1cm}
+\newlength{\usiTitleLogoHeight}
+\setlength{\usiTitleLogoHeight}{0.72cm}
+\newlength{\usiTitleLogoMaxWidth}
+\setlength{\usiTitleLogoMaxWidth}{1.5cm}
+\newcommand{\usiSqTrimL}{56}
+\newcommand{\usiSqTrimB}{31}
+\newcommand{\usiSqTrimR}{56}
+\newcommand{\usiSqTrimT}{72}
+\newcommand{\setusiHeaderLogoHeight}[1]{\setlength{\usiHeaderLogoHeight}{#1}}
+\newcommand{\setusiTitleLogoHeight}[1]{\setlength{\usiTitleLogoHeight}{#1}}
+
+\newcommand{\usiIfFileSet}[3]{%
+  \begingroup
+  \edef\usi@filename{#1}%
+  \ifx\usi@filename\@empty
+    \endgroup #3%
+  \else
+    \IfFileExists{\usi@filename}{\endgroup #2}{\endgroup #3}%
+  \fi
+}
+
+\newcommand{\usiSqLogo}[1]{%
+  \raisebox{-.5\height}{%
+    \includegraphics[trim=\usiSqTrimL bp \usiSqTrimB bp \usiSqTrimR bp \usiSqTrimT bp,%
+      clip,height=#1,width=\usiTitleLogoMaxWidth,keepaspectratio]{\usiLogoFile}%
+  }%
+}
+
+% ── short title (shown in running header) ────────────────────────────
+\newcommand{\usi@shorttitle}{}
+\newcommand{\setshorttitle}[1]{\renewcommand{\usi@shorttitle}{#1}}
+
+% ── abstract + keywords storage ──────────────────────────────────────
+\let\usi@abstract@text\@empty
+\let\usi@keywords@text\@empty
+\newcommand{\setabstract}[1]{\def\usi@abstract@text{#1}}
+\newcommand{\setkeywords}[1]{\def\usi@keywords@text{#1}}
+
+% ── headers / footers ────────────────────────────────────────────────
+\RequirePackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{%
+  \usiIfFileSet{\usiLogoFile}{%
+    \raisebox{-.5\height}{\includegraphics[%
+      trim=\usiSqTrimL bp \usiSqTrimB bp \usiSqTrimR bp \usiSqTrimT bp,%
+      clip,height=\usiHeaderLogoHeight,width=\usiHeaderLogoMaxWidth,keepaspectratio%
+    ]{\usiLogoFile}}\hspace{4pt}%
+  }{}%
+  \raisebox{1pt}{\textcolor{usiRaven}{\tiny\scshape Unsuspicious Industries}}%
+}
+\fancyhead[R]{\footnotesize\color{usiRaven}\itshape\usi@shorttitle}
+\fancyfoot[C]{\footnotesize\color{usiRaven}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{{\color{usiPurple!35}\hrule width\headwidth height\headrulewidth}}
+\renewcommand{\footrulewidth}{0pt}
+
+% ── section headings – small, numbered, thin rule below ──────────────
+\RequirePackage{titlesec}
+\titleformat{\section}
+  {\normalsize\bfseries\color{usiPurple}}
+  {\thesection}{0.6em}{}[%
+    \vspace{1pt}{\color{usiPurple!18}\titlerule[0.3pt]}\vspace{1.5pt}%
+  ]
+\titlespacing{\section}{0pt}{7pt plus 2pt}{1.5pt}
+\titleformat{\subsection}
+  {\normalsize\bfseries\color{usiDark}}
+  {\thesubsection}{0.6em}{}
+\titlespacing{\subsection}{0pt}{5pt plus 1pt}{1pt}
+\titleformat{\subsubsection}[runin]
+  {\normalsize\itshape\color{usiRaven}}
+  {\thesubsubsection}{0.6em}{}[.]
+\titlespacing{\subsubsection}{0pt}{4pt plus 1pt}{0.5em}
+
+% ── lists – very compact ─────────────────────────────────────────────
+\RequirePackage{enumitem}
+\setlist{nosep,leftmargin=*,topsep=1pt,partopsep=0pt,parsep=0pt,itemsep=1pt}
+\setlist[itemize]{label=\color{usiPurple}\textbullet}
+\setlist[enumerate]{label=\color{usiPurple}\bfseries\arabic*.}
+
+% ── code listings ─────────────────────────────────────────────────────
+\RequirePackage{listings}
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  keywordstyle=\color{usiPurple}\bfseries,
+  commentstyle=\color{usiRaven}\itshape,
+  stringstyle=\color{usiFormal},
+  numbers=left,
+  numberstyle=\color{usiRaven}\tiny,
+  numbersep=4pt,
+  frame=single,
+  rulecolor=\color{usiPurple!25},
+  backgroundcolor=\color{usiLight},
+  breaklines=true,
+  captionpos=b,
+  aboveskip=3pt,
+  belowskip=2pt,
+  xleftmargin=5pt,
+  framexleftmargin=5pt,
+  tabsize=2,
+}
+
+% ── caption style ─────────────────────────────────────────────────────
+\RequirePackage{caption}
+\captionsetup{
+  font={footnotesize},
+  labelfont={bf,color=usiPurple},
+  textfont={color=usiRaven},
+  skip=2pt,
+}
+
+% ── hyperlinks ────────────────────────────────────────────────────────
+\RequirePackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=usiPurple!80,
+  urlcolor=usiPurple!80,
+  citecolor=usiPurple!60,
+}
+
+% ── title block – full-width spanning both columns ───────────────────
+\newcommand{\usi@titlebody}{%
+  \noindent
+  \makebox[\textwidth][s]{%
+    \usiIfFileSet{\usiLogoFile}{%
+      \usiSqLogo{\usiTitleLogoHeight}%
+    }{\textcolor{usiPurple}{\large\bfseries USI}}%
+    \hfill
+    {\footnotesize\color{usiRaven}\@date}%
+  }%
+  \par\vspace{5pt}%
+  {\centering\large\bfseries\color{usiDark}\@title\par}%
+  \vspace{4pt}%
+  {\centering\small\color{usiRaven}\@author\par}%
+  \vspace{5pt}%
+  \ifx\usi@abstract@text\@empty\else
+    \noindent{\small\textbf{Abstract.}\enspace\usi@abstract@text}\par
+    \vspace{3pt}%
+  \fi
+  \ifx\usi@keywords@text\@empty\else
+    \noindent{\footnotesize\textbf{Keywords:}\enspace\textit{\usi@keywords@text}}\par
+    \vspace{3pt}%
+  \fi
+  \noindent{\color{usiPurple!50}\rule{\textwidth}{0.5pt}}%
+  \par\vspace{9pt}%
+}
+
+\renewcommand{\maketitle}{%
+  \thispagestyle{empty}%
+  \usi@titlebody%
+  \setcounter{footnote}{0}%
+  \global\let\maketitle\relax%
+}

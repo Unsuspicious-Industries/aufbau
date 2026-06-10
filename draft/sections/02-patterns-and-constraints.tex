@@ -187,11 +187,16 @@ when some edge fails (unifies against $\bot$), and \textsf{Live} otherwise.
 \subsection{Context and effects}
 \label{sec:effects}
 
-A rule may thread a semantic context $\Gamma \in \mathsf{Ctx}$ and export a
-\emph{right-bound effect} $\nabla$ that extends the context seen by later
-siblings; a declaration adding a binding is the canonical case. Only an
-\emph{exact} node exports an effect, since a prefix node's right boundary is not
-yet fixed, and effects compose left to right, applied by $\oplus$
+A rule may extend the context in two ways, and they are kept apart. A premise
+\emph{setting} $\Gamma[b:P]$ is \emph{premise-local}: it extends only the
+context under which that premise's own term is checked (the descent into the
+child the premise binds), and it never reaches a sibling premise. The binder $b$
+is itself such a child, resolved under the ambient context, so the setting does
+not apply to the descent into $b$. A \emph{right-bound effect} $\nabla$, declared
+by the conclusion, is the only thing that crosses to later siblings: it extends
+the context they see; a declaration adding a binding is the canonical case. Only
+an \emph{exact} node exports an effect, since a prefix node's right boundary is
+not yet fixed, and effects compose left to right, applied by $\oplus$
 (Definition~\ref{def:constraint-domain}). Operationally this needs two contexts
 per node, not one: the context the node was \emph{predicted at} (its
 resumption identity, fixed once) and the \emph{working} context that

@@ -3,6 +3,7 @@
 
 use crate::engine::grammar::SPG;
 use crate::typing::{TyExpr, TypeExpr};
+use std::collections::HashSet;
 
 fn grammar() -> SPG {
     SPG::load(
@@ -17,7 +18,10 @@ fn grammar() -> SPG {
 }
 
 fn build(g: &SPG, s: &str) -> TyExpr {
-    TyExpr::build(g, &TypeExpr::parse(s).unwrap()).unwrap()
+    // `τ` is the one binding these type-expressions reference; everything else is
+    // a hole, a lattice symbol, or object-grammar text.
+    let bindings = HashSet::from(["τ".to_string()]);
+    TyExpr::build(g, &TypeExpr::parse(s).unwrap(), &bindings).unwrap()
 }
 
 fn con(label: &str, kids: Vec<TyExpr>) -> TyExpr {
@@ -91,6 +95,6 @@ fn overlap_with_hole_syntax_is_refused() {
         "#,
     )
     .unwrap();
-    let err = TyExpr::build(&g, &TypeExpr::parse("?A - ?B").unwrap());
+    let err = TyExpr::build(&g, &TypeExpr::parse("?A - ?B").unwrap(), &HashSet::new());
     assert!(err.is_err(), "expected overlap refusal, got {err:?}");
 }

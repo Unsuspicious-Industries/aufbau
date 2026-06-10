@@ -167,13 +167,13 @@ fn parse_self_ambiguous_grammar() {
 // Typing constraints
 // ---------------------------------------------------------------------------
 
-// An unsatisfiable premise (Int = Bool never unifies) makes finalize reject.
+// An unsatisfiable premise ('Int' = 'Bool' never unifies) makes finalize reject.
 const REJECT_GRAMMAR: &str = r#"
 Start(reject) ::= 'a'
 
-Int = Bool
+'Int' = 'Bool'
 ---------- (reject)
-Int
+'Int'
 "#;
 
 #[test]

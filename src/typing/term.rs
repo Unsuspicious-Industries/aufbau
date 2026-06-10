@@ -1,22 +1,14 @@
-//! Prototype: first-order unification over type *trees* (§2).
+//! First-order unification over type *trees* (§2) — the typing core.
 //!
-//! The production unifier ([`Pattern`](super::Pattern)) matches a holed pattern
-//! against a flat string by leftmost split. Three limits follow from that flat
-//! model, and all three are artifacts of it (sec:ambiguity):
-//!
-//! 1. capture is leftmost-only — `?A→?B` on `a→b→c` cannot reach `A=a→b, B=c`;
-//! 2. a multi-hole pattern cannot split a non-literal regular *set* (→ `Open`);
-//! 3. two open patterns cannot be aligned (→ `Open`).
-//!
-//! Lifting a type to a *tree* over the grammar signature and unifying it
-//! structurally (Robinson / Martelli-Montanari) removes all three: the parse
-//! fixes the split, variables on both sides bind natively, and the leaves meet
-//! as regular sets via the existing [`Pattern`]. The type grammar is a
-//! sub-grammar of the main grammar, so the same engine produces these trees
-//! ([`Term::from_node`]).
-//!
-//! This is a prototype for investigating the unifier's power; it is not yet
-//! wired into the constraint domain.
+//! A type is a `Term`: a [`Var`](Term::Var) (a hole `?A`), a [`Con`](Term::Con)
+//! (a constructor node labelled by its nonterminal), or a [`Leaf`](Term::Leaf)
+//! (a base type as a regular set, via [`Pattern`](super::Pattern)). Unification
+//! is Robinson / Martelli-Montanari over that tree: variables bind on either
+//! side, constructors match label-and-arity then recurse, and leaves meet as
+//! regular sets. The split a string model would have to guess is fixed by the
+//! parse — the type grammar is a sub-grammar of the main grammar, so the same
+//! engine yields these trees ([`Term::from_node`]). `⊤` and `⊥` are the lattice
+//! ends ([`Term::top`], [`Term::bottom`]).
 
 use super::Pattern;
 use super::pattern::Match;
@@ -87,13 +79,22 @@ impl Term {
         Self::Con(label.into(), kids)
     }
 
-    /// `⊤` — the unknown type. A reserved variable: unifies with anything, and
-    /// is the evidence-store sentinel for "no constraint yet".
+    /// `⊤` — the top type: the unknown, the unit of the meet. Carried as the
+    /// reserved name `Var("⊤")` so it is a recognisable sentinel (the evidence
+    /// store interns it as "no constraint yet", and [`resolve_ref`] reads it as
+    /// unresolved), but [`unify`] gives it the top rule, not the variable rule:
+    /// `⊤ ⊓ t = t` for every `t`, succeeding and binding nothing. Distinct ⊤s are
+    /// therefore never identified.
+    ///
+    /// [`resolve_ref`]: crate::typing::TypingDomain
     #[must_use]
     pub fn top() -> Self {
         Self::Var("⊤".into())
     }
-    /// `⊥` — the empty leaf, which unifies with no other leaf and no `Con`.
+    /// `⊥` — the bottom type: the empty regular leaf `∅`. The unit of the join
+    /// and the absorbing element of the meet: `⊥ ⊓ t = ⊥`, so [`unify`] clashes
+    /// `⊥` against any other leaf and any `Con`. It still instantiates a bare
+    /// variable (`?A ⊓ ⊥ = ⊥`), the one case where `⊥` unifies.
     #[must_use]
     pub fn bottom() -> Self {
         Self::Leaf(Pattern::bottom())
@@ -115,6 +116,28 @@ impl Term {
     #[must_use]
     pub fn is_ground(&self) -> bool {
         !self.has_vars()
+    }
+
+    /// Rename every variable to a globally-fresh one — instantiation (the ∀ of a
+    /// polymorphic scheme made concrete at a use site). Repeated variables stay
+    /// shared; `next` is bumped to keep names unique within an evaluation.
+    #[must_use]
+    pub fn freshen(&self, next: &mut u64) -> Self {
+        fn go(t: &Term, map: &mut HashMap<String, String>, next: &mut u64) -> Term {
+            match t {
+                Term::Var(x) => {
+                    let fresh = map.entry(x.clone()).or_insert_with(|| {
+                        let n = format!("{x}%{next}");
+                        *next += 1;
+                        n
+                    });
+                    Term::Var(fresh.clone())
+                }
+                Term::Con(l, ks) => Term::Con(l.clone(), ks.iter().map(|k| go(k, map, next)).collect()),
+                Term::Leaf(p) => Term::Leaf(p.clone()),
+            }
+        }
+        go(self, &mut HashMap::new(), next)
     }
 
     /// Build a term from a resolved engine subtree. A node whose text is a
@@ -178,6 +201,12 @@ fn occurs(x: &str, t: &Term, s: &Subst) -> bool {
 pub fn unify(a: &Term, b: &Term, s: &mut Subst, occurs_check: bool) -> bool {
     let (a, b) = (walk(a, s), walk(b, s));
     match (&a, &b) {
+        // ⊤ — the top of the lattice — unifies with everything and binds nothing.
+        // It is *not* an ordinary variable: a bare `Var("⊤")` would be identified
+        // across occurrences (and could bind to a concrete type), which can force a
+        // spurious clash. Succeeding without binding keeps each ⊤ independent and
+        // adds no constraint, the textbook top rule.
+        _ if a.is_top() || b.is_top() => true,
         (Term::Var(x), Term::Var(y)) if x == y => true,
         (Term::Var(x), t) | (t, Term::Var(x)) => {
             if occurs_check && occurs(x, t, s) {

@@ -1,42 +1,19 @@
 \documentclass[11pt]{article}
 
 \usepackage[utf8]{inputenc}
-\usepackage{microtype}
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,amsthm}
-\usepackage{mathtools}
-\usepackage[hypertexnames=false,colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
-\usepackage{booktabs}
 \usepackage{xspace}
-\usepackage{enumitem}
-\usepackage{stmaryrd}
-\usepackage{xcolor}
 \usepackage{xparse}
+\usepackage{usi-technical}
 
 \newcommand{\aufbau}{\textsc{Aufbau}\xspace}
 \newcommand{\spg}{\textsc{SPG}\xspace}
 
+
 \title{\aufbau: Semantic Prefix Grammars and a Unified Constraint Model}
 \author{Paul Kronlund-Drouault}
 \date{Working Draft}
-
-\theoremstyle{definition}
-\newtheorem{definition}{Definition}[section]
-\newtheorem{assumption}[definition]{Assumption}
-\newtheorem{property}[definition]{Property}
-\newtheorem{example}[definition]{Example}
-\theoremstyle{plain}
-\newtheorem{lemma}[definition]{Lemma}
-\newtheorem{theorem}[definition]{Theorem}
-\theoremstyle{remark}
-\newtheorem{remark}[definition]{Remark}
-\newcommand{\keywords}[1]{\par\smallskip\noindent\textbf{Keywords: }#1}
-
-\begin{document}
-
-\maketitle
-
-\begin{abstract}
+\setshorttitle{\aufbau: Semantic Prefix Grammars}
+\setabstract{%
   Semantic prefix grammars (\spg) are a declarative framework for parsing
   \emph{prefixes} under context-dependent semantic constraints: a partial input
   is accepted exactly when both its syntax and its semantics can still be
@@ -48,9 +25,13 @@
   grammar's own signature, regular at the leaves. Types are not a separate
   algebra but terms in the same grammar, so context lookup, equality, inclusion,
   and structural matching are all ascriptions. The soundness target is that the
-  parser discards a prefix only when no completion can satisfy its constraints.
-  \keywords{prefix parsing, semantic constraints, unification, constraint graphs, type checking}
-\end{abstract}
+  parser discards a prefix only when no completion can satisfy its constraints.%
+}
+\setkeywords{prefix parsing, semantic constraints, unification, constraint graphs, type checking}
+
+\begin{document}
+
+\maketitle
 
 \section{Introduction}
 \label{sec:introduction}

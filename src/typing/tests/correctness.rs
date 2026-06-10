@@ -1,9 +1,10 @@
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
-use crate::semantics::Verdict;
 use crate::semantics::evidence::EvidenceStore;
+use crate::semantics::Verdict;
 use crate::semantics::{Obligation, Obligations};
 use crate::typing::domain::Trees;
+use crate::typing::ir::compile;
 use crate::typing::rule::TypingRule;
 use crate::typing::{Context, Normalizer, TyExpr, Type, TypingDomain};
 use proptest::prelude::*;
@@ -20,9 +21,10 @@ fn stlc() -> crate::engine::grammar::SPG {
 /// Arrow-shaped expressions need the grammar to recover their structure; a
 /// trivial (leaf/hole/ctx) expression resolves against any grammar.
 fn trees(g: &crate::engine::grammar::SPG, rule: &TypingRule) -> Trees {
+    let bindings = g.rule_bindings(&rule.name);
     rule.type_exprs()
         .into_iter()
-        .filter_map(|te| TyExpr::build(g, te).ok().map(|ty| (te.clone(), ty)))
+        .filter_map(|te| TyExpr::build(g, te, &bindings).ok().map(|ty| (te.clone(), ty)))
         .collect()
 }
 
@@ -38,10 +40,10 @@ fn dom_finalize(
     rule: &TypingRule,
     obs: &Obligations,
 ) -> (Verdict, Option<Type>) {
+    let program = compile(rule, trees);
     let (v, ty, _) = domain.finalize(
-        trees,
+        &program,
         &Normalizer::new(),
-        rule,
         &Context::new(),
         obs,
         &[],
@@ -61,7 +63,7 @@ fn mkob(evidence: &EvidenceStore<Type>, name: &str, ty: Type) -> Obligation {
 }
 
 fn setup() -> (TypingDomain, EvidenceStore<Type>) {
-    let domain = TypingDomain;
+    let domain: TypingDomain = TypingDomain::default();
     let evidence = EvidenceStore::new(Type::top(), Type::bottom());
     (domain, evidence)
 }
@@ -176,10 +178,10 @@ fn context_ext_accepts_open_prefix() {
     let ctx = Context::new()
         .extend("foo".into(), Type::raw("Int"))
         .unwrap();
+    let program = compile(&rule, &trivial_trees(&rule));
     let (v, ty, _) = domain.finalize(
-        &trivial_trees(&rule),
+        &program,
         &Normalizer::new(),
-        &rule,
         &ctx,
         &obs,
         &segs,

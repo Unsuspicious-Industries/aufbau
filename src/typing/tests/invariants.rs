@@ -367,34 +367,42 @@ proptest! {
         prop_assert!(ok);
     }
 
-    #[test]
-    fn prop_generated_stlc_chains_parse_and_resolve(arg_count in 1usize..6) {
-        let grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
-        let input = stlc_chain_input(arg_count);
-        let ctx_pairs = stlc_chain_context(arg_count);
-        let ctx = ctx_from_owned(&grammar, &ctx_pairs);
-        let expected = Type::parse(&grammar, &format!("T{}", arg_count)).unwrap();
+}
 
-        let mut synth = TypingSynth::new(grammar, &input);
+// `arg_count` ranges only over {1..=5}, so a plain loop with one grammar load
+// and one reused synth gives identical coverage to a proptest at a fraction of
+// the cost (a proptest re-loaded the grammar on every one of its ~256 draws).
+#[test]
+fn generated_stlc_chains_parse_and_resolve() {
+    let grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let mut synth = TypingSynth::new(grammar.clone(), "");
+    for arg_count in 1..=5 {
+        let input = stlc_chain_input(arg_count);
+        let ctx = ctx_from_owned(&grammar, &stlc_chain_context(arg_count));
+        let expected = Type::parse(&grammar, &format!("T{}", arg_count)).unwrap();
+        synth.set_input(input.as_str());
         let ast = synth.parse_with(&ctx).unwrap();
         let arena = ast.arena();
         let final_ok = ast.root_ids().iter().any(|&id| {
-            arena.node(id)
+            arena
+                .node(id)
                 .and_then(|node| synth.runtime().evidence_of(node.evidence))
                 == Some(expected.clone())
         });
-        prop_assert!(final_ok);
+        assert!(final_ok, "a {arg_count}-arg chain should resolve to T{arg_count}");
     }
+}
 
-    #[test]
-    fn prop_generated_stlc_chain_prefixes_parse(arg_count in 1usize..6) {
-        let mut grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+#[test]
+fn generated_stlc_chain_prefixes_parse() {
+    let mut grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    for arg_count in 1..=5 {
         let input = stlc_chain_input(arg_count);
-        let ctx_pairs = stlc_chain_context(arg_count);
-        let ctx = ctx_from_owned(&grammar, &ctx_pairs);
-
+        let ctx = ctx_from_owned(&grammar, &stlc_chain_context(arg_count));
         let result = check_all_prefixes_parseable(&mut grammar, &input, &ctx);
-        let ok = matches!(result, crate::validation::parseable::ParseResult::Pass { .. });
-        prop_assert!(ok);
+        assert!(
+            matches!(result, crate::validation::parseable::ParseResult::Pass { .. }),
+            "all prefixes of a {arg_count}-arg chain should parse"
+        );
     }
 }

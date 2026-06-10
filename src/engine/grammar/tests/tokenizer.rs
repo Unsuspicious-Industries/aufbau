@@ -238,11 +238,12 @@ fn fun_identifier_ending_in_keyword_prefix() {
 
 #[test]
 fn fun_identifier_containing_keyword() {
+    // A keyword is a token only at word boundaries: an identifier that merely
+    // *contains* one (`int` ⊃ `in`, `iff` ⊃ `if`) is a single identifier, not a
+    // keyword plus a fragment. (Maximal munch over the identifier alphabet.)
     let mut t = fun_tokenizer();
-    let result = tok(&mut t, "int");
-    assert_eq!(result, vec![("in".into(), false), ("t".into(), true),]);
-    let result = tok(&mut t, "iff");
-    assert_eq!(result, vec![("if".into(), false), ("f".into(), true),]);
+    assert_eq!(tok(&mut t, "int"), vec![("int".into(), false)]);
+    assert_eq!(tok(&mut t, "iff"), vec![("iff".into(), false)]);
 }
 
 #[test]

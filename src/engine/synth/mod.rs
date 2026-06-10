@@ -22,7 +22,7 @@ impl Synthesizer {
     pub fn new(spg: SPG, input: impl Into<String>) -> Self {
         let input = input.into();
         debug_trace!("synth", "new: input='{}'", input);
-        let runtime = TypingRuntime::new(TypingDomain, spg.clone());
+        let runtime = TypingRuntime::new(TypingDomain::default(), spg.clone());
         let parser = TypedParser::new(spg.clone(), runtime.clone());
 
         Self {

@@ -114,3 +114,10 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
 -------------------------------- (while)
 ?T
+
+// Block: a statement sequence carries no value type, so it is unconstrained
+// (⊤). Without a rule a block's type would be its own parse tree, and two
+// structurally distinct branches (the arms of an if/else) could never agree;
+// ∅ is wrong here, as ⊥ unifies with nothing, not even itself.
+-------- (block)
+⊤

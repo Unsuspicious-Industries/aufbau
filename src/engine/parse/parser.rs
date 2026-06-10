@@ -1,10 +1,10 @@
 use crate::debug_trace;
-use crate::engine::grammar::{SPG, Segment, Symbol};
+use crate::engine::grammar::{Segment, Symbol, SPG};
 use crate::regex::PrefixStatus;
 use crate::semantics::{Obligations, TypingRuntime};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::engine::error::{PrefixError, TransitionError};
+use crate::engine::error::PrefixError;
 use crate::engine::structure::ast::{FusionAST, FusionForest};
 
 use crate::engine::parse::arena::{
@@ -287,12 +287,12 @@ impl TypedParser {
                 );
                 Ok(Some(self.arena.push_node(node, packed)))
             }
-            Err(TransitionError::Rejected) => {
+            Err(_) => {
                 #[cfg(test)]
                 debug_trace!(
                     "fusion_parser",
                     "finalize rejected nt={} alt={} status={:?}",
-                    self.grammar.nt(item.prod.0).unwrap_or("<?>"),
+                    self.grammar.nt(item.prod.0).unwrap_or("<?"),
                     item.prod.1,
                     status,
                 );
@@ -429,7 +429,14 @@ impl TypedParser {
                         .descend(item.prod, binding, item.mctx, &item.obligations)
                     {
                         Ok(ctx) => ctx,
-                        Err(TransitionError::Rejected) => return Ok(()),
+                        Err(e) => {
+                            // An unresolvable setting (e.g. obligation not yet
+                            // closed by an earlier sibling) is a soft no-op: the
+                            // parser will re-try once more input arrives. We log
+                            // the diagnostic rather than swallow it.
+                            debug_trace!("fusion_parser", "descend: {e}");
+                            return Ok(());
+                        }
                     };
 
                 self.tables

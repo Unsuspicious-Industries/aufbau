@@ -124,10 +124,13 @@ mod tests {
             for i in (0..n).rev() {
                 f_ty = format!("{}->{}", type_names[i], f_ty);
             }
+            // Parse types against the grammar so arrows are structured trees the
+            // rules unify against, not flat leaves.
+            let g = load_example_grammar("stlc");
             let mut ctx = Context::new();
-            ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
+            ctx.add("f".to_string(), Type::parse(&g, &f_ty).unwrap());
             for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
-                ctx.add(name, Type::parse_raw(&type_names[i]).unwrap());
+                ctx.add(name, Type::parse(&g, &type_names[i]).unwrap());
             }
             let input = std::iter::once("f".to_string())
                 .chain((0..n).map(|i| format!("x{i}")))
@@ -164,6 +167,7 @@ mod tests {
             Ok(segs) => segs.into_iter().map(|s| s.text().to_string()).collect(),
             Err(_) => return false,
         };
+        let mut s = TypingSynth::new(g.clone(), "");
         let mut built = String::new();
         for token in &tokens {
             if built.is_empty() {
@@ -172,7 +176,7 @@ mod tests {
                 built.push(' ');
                 built.push_str(token);
             }
-            let mut s = TypingSynth::new(g.clone(), built.clone());
+            s.set_input(built.as_str());
             if s.parse_with(ctx).is_err() {
                 return false;
             }

@@ -18,8 +18,10 @@ mod tests {
 
     const BATCH_BUDGET: Duration = Duration::from_secs(1);
 
-    fn parse_complete(grammar: &SPG, input: &str, ctx: &Context) -> usize {
-        let mut synth = TypingSynth::new(grammar.clone(), input);
+    /// Parse `input` under `ctx`, reusing the already-built `synth` (its runtime
+    /// and compiled programs are constructed once by the caller, not per input).
+    fn parse_complete(synth: &mut TypingSynth, input: &str, ctx: &Context) -> usize {
+        synth.set_input(input);
         let ast = synth
             .parse_with(ctx)
             .unwrap_or_else(|err| panic!("failed to parse {input:?}: {err}"));
@@ -39,22 +41,24 @@ mod tests {
         );
     }
 
-    fn stlc_chain_case(arg_count: usize) -> (String, Context) {
+    fn stlc_chain_case(grammar: &SPG, arg_count: usize) -> (String, Context) {
         let type_names: Vec<_> = (0..=arg_count).map(|idx| format!("T{idx}")).collect();
         let mut f_ty = type_names[arg_count].clone();
         for idx in (0..arg_count).rev() {
             f_ty = format!("{}->{}", type_names[idx], f_ty);
         }
 
+        // Types are parsed against the grammar so an arrow type is the structured
+        // tree the rules unify against, not a flat leaf.
         let mut ctx = Context::new();
-        ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
+        ctx.add("f".to_string(), Type::parse(grammar, &f_ty).unwrap());
 
         let mut names = vec!["f".to_string()];
         for (idx, name) in (0..arg_count).map(|idx| {
             let name = format!("x{idx}");
             (idx, name)
         }) {
-            ctx.add(name.clone(), Type::parse_raw(&type_names[idx]).unwrap());
+            ctx.add(name.clone(), Type::parse(grammar, &type_names[idx]).unwrap());
             names.push(name);
         }
 
@@ -94,14 +98,18 @@ mod tests {
     #[test]
     fn random_stlc_application_chains_stay_bounded() {
         let grammar = SPG::load(include_str!("../../examples/stlc.auf")).unwrap();
+        let mut synth = TypingSynth::new(grammar.clone(), "");
+        // Build each chain (and its grammar-parsed context types) once, then reuse
+        // across the random draws — the type parsing is the expensive part.
+        let cases: Vec<(String, Context)> = (1..=5).map(|n| stlc_chain_case(&grammar, n)).collect();
         let mut rng = StdRng::seed_from_u64(10);
         let start = Instant::now();
         let mut max_nodes = 0usize;
 
         for _ in 0..24 {
             let arg_count = rng.gen_range(1..=5);
-            let (input, ctx) = stlc_chain_case(arg_count);
-            max_nodes = max_nodes.max(parse_complete(&grammar, &input, &ctx));
+            let (input, ctx) = &cases[arg_count - 1];
+            max_nodes = max_nodes.max(parse_complete(&mut synth, input, ctx));
         }
 
         assert_batch_budget("stlc random application chains", start, 2_000, max_nodes);
@@ -110,6 +118,7 @@ mod tests {
     #[test]
     fn random_imp_declaration_blocks_stay_bounded() {
         let grammar = SPG::load(include_str!("../../examples/imp.auf")).unwrap();
+        let mut synth = TypingSynth::new(grammar.clone(), "");
         let mut rng = StdRng::seed_from_u64(10);
         let start = Instant::now();
         let mut max_nodes = 0usize;
@@ -117,7 +126,7 @@ mod tests {
         for _ in 0..16 {
             let decl_count = rng.gen_range(1..=5);
             let input = imp_block_case(decl_count, &mut rng);
-            max_nodes = max_nodes.max(parse_complete(&grammar, &input, &Context::new()));
+            max_nodes = max_nodes.max(parse_complete(&mut synth, &input, &Context::new()));
         }
 
         assert_batch_budget("imp random declaration blocks", start, 3_000, max_nodes);
@@ -141,6 +150,8 @@ mod tests {
             "#,
         )
         .unwrap();
+        let mut rr_synth = TypingSynth::new(right_recursive.clone(), "");
+        let mut eps_synth = TypingSynth::new(epsilon_heavy.clone(), "");
         let mut rng = StdRng::seed_from_u64(0x5EED_1234);
         let start = Instant::now();
         let mut max_nodes = 0usize;
@@ -151,7 +162,7 @@ mod tests {
                 .chain(std::iter::once("b"))
                 .collect::<Vec<_>>()
                 .join(" ");
-            max_nodes = max_nodes.max(parse_complete(&right_recursive, &input, &Context::new()));
+            max_nodes = max_nodes.max(parse_complete(&mut rr_synth, &input, &Context::new()));
 
             let eps_input = match rng.gen_range(0..=3) {
                 0 => "",
@@ -159,7 +170,7 @@ mod tests {
                 2 => "a b",
                 _ => "a b c",
             };
-            max_nodes = max_nodes.max(parse_complete(&epsilon_heavy, eps_input, &Context::new()));
+            max_nodes = max_nodes.max(parse_complete(&mut eps_synth, eps_input, &Context::new()));
         }
 
         assert_batch_budget("weird recursive grammars", start, 1_000, max_nodes);

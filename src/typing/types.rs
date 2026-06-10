@@ -22,6 +22,9 @@ pub enum Atom {
     Ref(String),
     /// A context lookup `Γ(x)` — the type bound to `x`'s value.
     Ctx(String),
+    /// An instantiating context lookup `inst(x)` — `Γ(x)` with its variables
+    /// freshened, i.e. a polymorphic scheme made concrete at this use.
+    Inst(String),
     /// `⊤`, the unconstrained type.
     Top,
     /// `⊥`, the contradictory type.
@@ -44,6 +47,8 @@ pub enum TyExpr {
     Ref(String),
     /// A context lookup `Γ(x)`.
     Ctx(String),
+    /// An instantiating context lookup `inst(x)` — `Γ(x)` with fresh variables.
+    Inst(String),
     /// `⊤`, the unconstrained type.
     Top,
     /// `∅`, the contradictory type.
@@ -98,6 +103,7 @@ impl fmt::Display for TyExpr {
             TyExpr::Var(n) => write!(f, "?{n}"),
             TyExpr::Ref(n) => write!(f, "{n}"),
             TyExpr::Ctx(v) => write!(f, "Γ({v})"),
+            TyExpr::Inst(v) => write!(f, "inst({v})"),
             TyExpr::Top => write!(f, "⊤"),
             TyExpr::Bot => write!(f, "∅"),
             TyExpr::Lit(s) => write!(f, "'{s}'"),
@@ -132,6 +138,12 @@ impl TypeExpr {
         self.collect(|a| matches!(a, Atom::Ctx(_)))
     }
 
+    /// Instantiating-lookup variables (`inst(x)`).
+    #[must_use]
+    pub fn inst_vars(&self) -> Vec<&str> {
+        self.collect(|a| matches!(a, Atom::Inst(_)))
+    }
+
     fn collect(&self, pred: impl Fn(&Atom) -> bool) -> Vec<&str> {
         self.0
             .iter()
@@ -158,7 +170,9 @@ impl TypeExpr {
 impl Atom {
     fn name(&self) -> Option<&str> {
         match self {
-            Atom::Lit(n) | Atom::Hole(n) | Atom::Ref(n) | Atom::Ctx(n) => Some(n.as_str()),
+            Atom::Lit(n) | Atom::Hole(n) | Atom::Ref(n) | Atom::Ctx(n) | Atom::Inst(n) => {
+                Some(n.as_str())
+            }
             Atom::Top | Atom::Bot => None,
         }
     }
@@ -171,6 +185,7 @@ impl fmt::Display for Atom {
             Atom::Hole(n) => write!(f, "?{n}"),
             Atom::Ref(n) => write!(f, "{n}"),
             Atom::Ctx(v) => write!(f, "Γ({v})"),
+            Atom::Inst(v) => write!(f, "inst({v})"),
             Atom::Top => write!(f, "⊤"),
             Atom::Bot => write!(f, "∅"),
         }

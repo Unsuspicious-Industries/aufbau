@@ -153,6 +153,27 @@ impl SPG {
             .and_then(|name| self.rules.get(name.as_str()))
     }
 
+    /// The binding names the production(s) carrying `rule` declare (their `[x]`
+    /// annotations). In that rule's type-expressions a bare identifier is a
+    /// reference iff it names one of these; any other is object-grammar text (a
+    /// type keyword like `list`), so `list` stays a keyword while `τ` is a ref.
+    #[must_use]
+    pub fn rule_bindings(&self, rule: &str) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        for (nt, label) in &self.nonterminal_rules {
+            if label != rule {
+                continue;
+            }
+            let prods = self.productions.get(nt).into_iter().flatten();
+            for sym in prods.flat_map(|p| p.rhs.iter()) {
+                if let Some(b) = sym.binding() {
+                    out.insert(b.clone());
+                }
+            }
+        }
+        out
+    }
+
     /// Is this production a *transparent* wrapper: rule-less, exactly one
     /// nonterminal child, and no bound terminal? Such a node carries no
     /// semantics of its own, so it is collapsed to its single child. This is
@@ -202,9 +223,10 @@ impl SPG {
     pub fn type_trees(&self) -> Trees {
         let mut trees = Trees::new();
         for rule in self.rules.values() {
+            let bindings = self.rule_bindings(&rule.name);
             for te in rule.type_exprs() {
                 if !trees.contains_key(te)
-                    && let Ok(ty) = TyExpr::build(self, te)
+                    && let Ok(ty) = TyExpr::build(self, te, &bindings)
                 {
                     trees.insert(te.clone(), ty);
                 }

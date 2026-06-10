@@ -1,25 +1,37 @@
 //! Rule-expression parsing — §2.
 //!
 //! A `TypeExpr` is tokenized into atoms: `'lit'` → `Lit`, `?A` → `Hole`,
-//! `typeof(b)` and bare identifiers (`τ`) → `Ref`, `Γ(x)` → `Ctx`, `⊤`/`∅` →
+//! `typeof(b)` and bare identifiers → `Ref`, `Γ(x)` → `Ctx`, `⊤`/`∅` →
 //! `Top`/`Bot`. Everything between (spaces, `->`, …) is literal separator text.
 //! There is no arrow/union/negation grammar: structure is sequencing.
 //!
 //! [`TyExpr::build`] then recovers the *tree* a `TypeExpr` denotes by parsing it
 //! with the grammar: the rule's structure is the grammar's, not a second syntax.
+//! Elaboration is explicit, with no guessing from how an identifier is spelled:
+//!   - a bare identifier is a binding reference exactly when it is one of the
+//!     rule's declared bindings ([`SPG::rule_bindings`]); otherwise it is
+//!     object-grammar text (a type keyword such as `list`);
+//!   - every meta (a hole, a non-keyword ref, `Γ(x)`, `⊤`/`∅`) is replaced by a
+//!     `?…` placeholder the augmented grammar accepts wherever a type atom can
+//!     stand, and the unique complete parse is mapped back;
+//!   - a derivation that swallows a placeholder as an interior keyword (reading
+//!     `?A list` as `fst list`) never reproduces the placeholder as a leaf and is
+//!     discarded, so the metavariable genuinely occupies an atom position.
+//!
+//! [`SPG::rule_bindings`]: crate::engine::grammar::SPG::rule_bindings
 
 use super::{Atom, Term, TyExpr, TypeExpr};
 use crate::engine::grammar::{Symbol, SPG};
 use crate::engine::structure::{FusionChild, FusionNode};
 use crate::regex::Regex;
 use crate::typing::{Context, TypingSynth};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl TyExpr {
     /// Project a type-expression tree to a pure type [`Term`] (the structure a
-    /// rewrite rule rewrites). Only `Var`/`Lit`/`Con` survive; `Ref`/`Ctx`/`⊤`/`∅`
-    /// are *resolution* constructs (look up an obligation or the context), which
-    /// have no meaning in a structural rewrite, so they are refused.
+    /// rewrite rule rewrites). Only `Var`/`Lit`/`Con` survive; `Ref`/`Ctx`/`Inst`/
+    /// `⊤`/`∅` are *resolution* constructs (look up an obligation or the context),
+    /// which have no meaning in a structural rewrite, so they are refused.
     pub fn to_term(&self) -> Result<Term, String> {
         Ok(match self {
             TyExpr::Var(n) => Term::var(n.clone()),
@@ -30,6 +42,7 @@ impl TyExpr {
             ),
             TyExpr::Ref(n) => return Err(format!("rewrite cannot reference a binding '{n}'")),
             TyExpr::Ctx(v) => return Err(format!("rewrite cannot look up a context 'Γ({v})'")),
+            TyExpr::Inst(v) => return Err(format!("rewrite cannot instantiate a context 'inst({v})'")),
             TyExpr::Top => return Err("rewrite cannot use ⊤".into()),
             TyExpr::Bot => return Err("rewrite cannot use ∅".into()),
         })
@@ -111,7 +124,7 @@ impl Term {
     pub fn parse(grammar: &SPG, s: &str) -> Result<Self, String> {
         let (skeleton, metas) = skeletonize_holes(s);
         let g = augment(grammar)?;
-        parse_unique(&g, &skeleton, |root| from_node(root, &metas))
+        parse_unique(&g, &skeleton, &metas, |root| from_node(root, &metas))
             .map_err(|e| format!("type '{s}' {e}"))?
             .to_term()
     }
@@ -120,10 +133,14 @@ impl Term {
 /// Parse `s` with each nonterminal as the start and return the unique complete
 /// derivation, converted by `f`. No designated start: a type-shaped string is
 /// derived only by the type productions, and two distinct results is a real
-/// ambiguity. Shared by concrete-type and rule-pattern building.
+/// ambiguity. A derivation that swallows a placeholder as an interior keyword
+/// (so it never reappears as an atom leaf) is not a materialization of the
+/// metavariable and is discarded via [`all_holes_present`]. Shared by
+/// concrete-type and rule-pattern building.
 fn parse_unique<T: PartialEq>(
     g: &SPG,
     s: &str,
+    metas: &HashMap<String, TyExpr>,
     f: impl Fn(&FusionNode) -> T,
 ) -> Result<T, String> {
     let names: Vec<String> = (0..g.production_count())
@@ -137,7 +154,11 @@ fn parse_unique<T: PartialEq>(
         let Ok(ast) = synth.parse_with(&Context::new()) else {
             continue;
         };
-        for root in ast.roots().filter(FusionNode::is_complete) {
+        for root in ast
+            .roots()
+            .filter(FusionNode::is_complete)
+            .filter(|r| all_holes_present(r, metas))
+        {
             let t = f(&root);
             match &found {
                 None => found = Some(t),
@@ -147,6 +168,33 @@ fn parse_unique<T: PartialEq>(
         }
     }
     found.ok_or_else(|| "has no complete parse".into())
+}
+
+/// Does every skeleton placeholder reappear as an atom leaf in this derivation?
+/// A placeholder occupies a full atom position, so some node's text is exactly
+/// the placeholder; one consumed as an interior keyword (e.g. the `'fst'` of a
+/// `Fst` node) is never reproduced, marking that derivation a misparse.
+fn all_holes_present(node: &FusionNode, metas: &HashMap<String, TyExpr>) -> bool {
+    let mut seen = HashSet::new();
+    collect_placeholders(node, metas, &mut seen);
+    seen.len() == metas.len()
+}
+
+fn collect_placeholders(
+    node: &FusionNode,
+    metas: &HashMap<String, TyExpr>,
+    seen: &mut HashSet<String>,
+) {
+    let text = node.text();
+    if metas.contains_key(text.trim()) {
+        seen.insert(text.trim().to_string());
+        return;
+    }
+    for child in node.children() {
+        if let FusionChild::Node(n) = child {
+            collect_placeholders(&n, metas, seen);
+        }
+    }
 }
 
 impl TypeExpr {
@@ -204,24 +252,27 @@ impl TypeExpr {
 }
 
 impl TyExpr {
-    /// Recover the tree of a `TypeExpr` by parsing it with `grammar`. A type with
-    /// no internal separators is a leaf (handled directly); otherwise the metas
-    /// (`?A`, `τ`, `Γ(x)`, `⊤`/`∅`) are replaced by `?`-placeholders that the
-    /// augmented grammar accepts as a type atom, the unique complete parse gives
-    /// the structure, and the placeholder leaves are mapped back.
-    pub fn build(grammar: &SPG, expr: &TypeExpr) -> Result<Self, String> {
+    /// Recover the tree of a `TypeExpr` by parsing it with `grammar`. `bindings`
+    /// are the rule's declared bindings ([`SPG::rule_bindings`]): a bare
+    /// identifier names a reference (`τ`) when it is one and object-grammar text
+    /// (the keyword `list`) when it is not. A type with no internal separators is
+    /// a leaf or a lone meta (handled directly); otherwise the metas (`?A`, `τ`,
+    /// `Γ(x)`, `⊤`/`∅`) are replaced by `?`-placeholders that the augmented
+    /// grammar accepts as a type atom, the unique complete parse gives the
+    /// structure, and the placeholder leaves are mapped back.
+    pub fn build(grammar: &SPG, expr: &TypeExpr, bindings: &HashSet<String>) -> Result<Self, String> {
         match expr.0.as_slice() {
             [] | [Atom::Top] => return Ok(Self::Top),
             [Atom::Bot] => return Ok(Self::Bot),
             [Atom::Hole(n)] => return Ok(Self::Var(n.clone())),
-            [Atom::Ref(n)] => return Ok(Self::Ref(n.clone())),
+            [Atom::Ref(n)] if bindings.contains(n) => return Ok(Self::Ref(n.clone())),
             [Atom::Ctx(n)] => return Ok(Self::Ctx(n.clone())),
             [Atom::Lit(s)] => return Ok(Self::Lit(s.trim().to_string())),
             _ => {}
         }
-        let (skeleton, metas) = skeletonize(expr);
+        let (skeleton, metas) = skeletonize(expr, bindings);
         let g = augment(grammar)?;
-        parse_unique(&g, &skeleton, |root| from_node(root, &metas))
+        parse_unique(&g, &skeleton, &metas, |root| from_node(root, &metas))
             .map_err(|e| format!("type pattern '{expr}' {e}"))
     }
 }
@@ -239,20 +290,31 @@ fn hole_regex() -> Regex {
 }
 
 /// Emit a placeholder string for the meta atoms and a map back to `TyExpr`
-/// leaves; literal text (separators, quoted types) is copied verbatim.
-fn skeletonize(expr: &TypeExpr) -> (String, HashMap<String, TyExpr>) {
+/// leaves; literal text (separators, quoted types) is copied verbatim. A bare
+/// identifier that is not one of the rule's `bindings` is object-grammar text (a
+/// type keyword like `list`), so it too is copied verbatim for the grammar to
+/// lex, rather than masked behind a metavariable placeholder.
+fn skeletonize(expr: &TypeExpr, bindings: &HashSet<String>) -> (String, HashMap<String, TyExpr>) {
     let mut s = String::new();
     let mut metas = HashMap::new();
     for (i, atom) in expr.0.iter().enumerate() {
-        if let Atom::Lit(t) = atom {
-            s.push_str(t);
-            continue;
+        match atom {
+            Atom::Lit(t) => {
+                s.push_str(t);
+                continue;
+            }
+            Atom::Ref(n) if !bindings.contains(n) => {
+                s.push_str(n);
+                continue;
+            }
+            _ => {}
         }
         let ph = format!("?_m{i}");
         let te = match atom {
             Atom::Hole(n) => TyExpr::Var(n.clone()),
             Atom::Ref(n) => TyExpr::Ref(n.clone()),
             Atom::Ctx(n) => TyExpr::Ctx(n.clone()),
+            Atom::Inst(n) => TyExpr::Inst(n.clone()),
             Atom::Top => TyExpr::Top,
             Atom::Bot => TyExpr::Bot,
             Atom::Lit(_) => unreachable!(),
@@ -284,13 +346,32 @@ fn augment(grammar: &SPG) -> Result<SPG, String> {
         }
     }
     let mut g = grammar.clone();
-    // Skeleton parsing is purely structural; drop the typing rules so spinning up
-    // a runtime over this grammar does not recurse back into `TyExpr::build`.
+    // Skeleton parsing is purely structural; drop the typing *rules* so spinning
+    // up a runtime over this grammar does not recurse back into `TyExpr::build`
+    // (`type_trees` iterates the rules).
+    //
+    // Keep only the labels of *type constructors* — rule-less labelled
+    // productions like `ListType(list)`. Their label is what marks a node as a
+    // constructor rather than a transparent wrapper, so a unary type like
+    // `τ list` keeps its structure instead of collapsing to `τ`. A label that
+    // carries a typing rule (`Variable(var)`, `Application(app)`) is instead an
+    // *expression* constructor, which a type can never contain; dropping its
+    // label lets a spurious expression reading of a type string (`Int` as a
+    // `Variable`) collapse as a transparent wrapper to the same leaf rather than
+    // compete as a distinct tree, which would read as ambiguity.
+    g.nonterminal_rules
+        .retain(|_, label| !grammar.rules.contains_key(label));
     g.rules.clear();
-    g.nonterminal_rules.clear();
     for prods in g.productions.values_mut() {
         for p in prods.iter_mut() {
             for sym in p.rhs.iter_mut() {
+                // Every terminal also admits the hole shape, so a hole can stand
+                // in any atom position — including a keyword-valued one like
+                // `Atom ::= 'Int'`. A hole that is instead *swallowed* as an
+                // interior keyword (the `'fst'` of `'fst' AtomicExpression`, which
+                // would read `?A list` as `fst list`) is rejected downstream by
+                // `parse_unique`: such a derivation never reproduces the
+                // placeholder as a leaf, so it is not a valid materialization.
                 if let Symbol::Terminal { regex, .. } = sym {
                     *regex = Regex::or(regex.clone(), hole.clone());
                 }
@@ -337,6 +418,8 @@ fn call_atom(id: &str, inner: &str) -> Result<Atom, String> {
     }
     if id == "typeof" {
         Ok(Atom::Ref(inner.to_string()))
+    } else if id == "inst" {
+        Ok(Atom::Inst(inner.to_string()))
     } else if is_ctx_name(id) {
         Ok(Atom::Ctx(inner.to_string()))
     } else {

@@ -76,6 +76,10 @@ impl Normalizer {
     /// children.
     #[must_use]
     pub fn normalize(&self, t: &Term) -> Term {
+        // The free theory: nothing to rewrite, so normal form is the term itself.
+        if self.rules.is_empty() {
+            return t.clone();
+        }
         let normalized = match t {
             Term::Con(label, kids) => {
                 Term::Con(label.clone(), kids.iter().map(|k| self.normalize(k)).collect())
@@ -147,6 +151,10 @@ pub fn unify_modulo(
     subst: &mut Subst,
     occurs_check: bool,
 ) -> bool {
+    // Free theory: unify the terms directly, no normal-form clones.
+    if norm.rules().is_empty() {
+        return term::unify(a, b, subst, occurs_check);
+    }
     let a = norm.normalize(a);
     let b = norm.normalize(b);
     term::unify(&a, &b, subst, occurs_check)

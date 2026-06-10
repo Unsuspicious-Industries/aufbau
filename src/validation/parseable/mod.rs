@@ -13,6 +13,7 @@
 pub mod arithmetic;
 pub mod fun;
 pub mod imp;
+pub mod ml;
 pub mod stlc;
 pub mod sums;
 pub mod toy;
@@ -22,7 +23,6 @@ use crate::engine::grammar::SPG;
 use crate::typing::Context;
 use crate::typing::Type;
 use crate::typing::TypingSynth;
-use rayon::prelude::*;
 use std::time::{Duration, Instant};
 
 // ============================================================================
@@ -138,20 +138,14 @@ pub fn check_all_prefixes_parseable(grammar: &mut SPG, input: &str, ctx: &Contex
             .collect()
     };
 
-    let parse_prefix = |prefix: &str| {
-        let mut synth = TypingSynth::new(grammar.clone(), prefix);
-        synth.parse_with(ctx).err()
-    };
-
-    let results: Vec<Option<String>> = prefixes
-        .par_iter()
-        .map(|(_, prefix)| parse_prefix(prefix))
-        .collect();
-
+    // One synth, reused across every prefix: the runtime (type-tree parse,
+    // normalizer, compiled programs) is built once, then `set_input` re-parses.
     let prefix_count = prefixes.len();
-
-    for ((len, prefix), opt_err) in prefixes.into_iter().zip(results.into_iter()) {
-        if let Some(e) = opt_err {
+    let mut synth = TypingSynth::new(grammar.clone(), "");
+    synth.with_ctx(ctx.clone());
+    for (len, prefix) in prefixes {
+        synth.set_input(prefix.clone());
+        if let Err(e) = synth.ast() {
             return ParseResult::Fail {
                 failing_prefix: prefix,
                 error: e,
@@ -195,11 +189,17 @@ pub fn check_parse_fails(grammar: &SPG, input: &str, ctx: &Context) -> ParseResu
     }
 }
 
-/// Build a Context from the test case's context field
-fn build_context(pairs: &[(&str, &str)]) -> Context {
+/// Build a Context from the test case's context field. Types are parsed
+/// *against the grammar* so an arrow type like `A->B` becomes the same
+/// structured tree the typing rules produce (`Con("FunctionType", …)`), not a
+/// flat leaf — otherwise a rule's `?A->?B` would never unify with it.
+fn build_context(grammar: &SPG, pairs: &[(&str, &str)]) -> Context {
     let mut ctx = Context::new();
     for (name, ty_str) in pairs {
-        let ty = Type::parse_raw(ty_str)
+        // Grammars without a type sublanguage (e.g. `weird`) cannot derive the
+        // string; there the flat leaf is the only sensible reading.
+        let ty = Type::parse(grammar, ty_str)
+            .or_else(|_| Type::parse_raw(ty_str))
             .unwrap_or_else(|e| panic!("Failed to parse type '{ty_str}' in test context: {e}"));
         ctx.add(name.to_string(), ty);
     }
@@ -208,7 +208,7 @@ fn build_context(pairs: &[(&str, &str)]) -> Context {
 
 /// Run a single parseability test case
 pub fn run_parse_test(grammar: &mut SPG, case: &ParseTestCase) -> ParseResult {
-    let ctx = build_context(&case.context);
+    let ctx = build_context(grammar, &case.context);
     if case.xfail {
         check_parse_fails(grammar, case.input, &ctx)
     } else {

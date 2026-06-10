@@ -9,6 +9,14 @@ use std::collections::HashSet;
 /// Default delimiters for tokenization (whitespace).
 pub const DEFAULT_DELIMITERS: &[char] = &[' ', '\n', '\t'];
 
+/// A word-constituent character: the ASCII identifier alphabet (`\w`). A keyword
+/// spelled from these (`in`, `let`) is delimited by transitions in and out of the
+/// class, so `in` is the keyword only when not flanked by them; a symbolic
+/// keyword like `λ` lies outside it and tokenizes on its own (`λx` → `λ`, `x`).
+fn is_word_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
 /// A tokenized segment of input with text and position information.
 /// Uses byte-based positions and storage to avoid Unicode issues.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -202,9 +210,18 @@ impl Tokenizer {
     fn match_special(&self, text: &str) -> Option<usize> {
         // Tokens are sorted by descending length, so the first match is the longest.
         for token in &self.sorted_specials {
-            if !token.is_empty() && text.starts_with(token) {
-                return Some(token.len());
+            if token.is_empty() || !text.starts_with(token) {
+                continue;
             }
+            // A word-like keyword (`in`, `match`) is a token only at a right word
+            // boundary: `in` inside `inc` starts a longer identifier. Symbolic
+            // specials (`->`, `::`) end on punctuation, so they always match.
+            let ends_word = token.chars().next_back().is_some_and(is_word_char);
+            let next_is_word = text[token.len()..].chars().next().is_some_and(is_word_char);
+            if ends_word && next_is_word {
+                continue;
+            }
+            return Some(token.len());
         }
         None
     }
@@ -276,7 +293,13 @@ impl Tokenizer {
 
                 let substr = &input[abs_pos..];
                 if self.match_special(substr).is_some() {
-                    break;
+                    // A word-like keyword in the interior of a word (previous char
+                    // is a word char too) belongs to the identifier (`within`), so
+                    // it is no boundary; a symbolic special still breaks the word.
+                    let prev_is_word = prev_char.is_some_and(is_word_char);
+                    if !(is_word_char(c) && prev_is_word) {
+                        break;
+                    }
                 }
 
                 // Only break for a prefix-special if there is a character class

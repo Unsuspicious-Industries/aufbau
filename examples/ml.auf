@@ -1,0 +1,170 @@
+// ML — a featured functional core in the unification model.
+//
+// Over fun.auf (STLC power) this adds: products with fst/snd, lists with
+// nil/cons, an if/then/else conditional, equality, and recursive let. Types are
+// structural terms; every relation is unification, so there is no subtyping and
+// (deliberately) no let-generalization — the type system is monomorphic ML.
+//
+// Type constructors are *labeled* productions. The label marks a node as
+// carrying its own structure, exactly as it does for an expression node, so it
+// is kept rather than collapsed as a transparent wrapper. That is what lets a
+// unary constructor like `list` exist (`(τ)` and `τ list` have the same shape;
+// the label, not the shape, is what distinguishes a constructor from grouping).
+
+// ===================== Identifiers =====================
+Identifier ::= /[a-z_][a-z0-9_]*/
+TypeName ::= /[A-Z][a-z0-9]*/
+
+// ===================== Type annotations =====================
+// Precedence, loosest to tightest:  ->   then  *   then postfix  list.
+AtomicType ::= TypeName | '(' Type ')'
+Factor ::= AtomicType | ListType
+ListType(list) ::= Factor 'list'
+ProductType ::= Factor '*' ProductType | Factor
+FunctionType ::= ProductType '->' Type
+Type ::= FunctionType | ProductType
+
+// ===================== Literals =====================
+Integer(int) ::= /[0-9]+/
+Boolean(bool) ::= 'true' | 'false'
+
+// ===================== Operators =====================
+// `*` is the product connective, so arithmetic keeps `+` and `-` only; otherwise
+// `?A * ?B` would parse ambiguously as a type and as a multiplication.
+IntOp ::= '+' | '-'
+CompOp ::= '==' | '<' | '<=' | '>' | '>='
+
+// ===================== Expressions =====================
+
+Variable(var) ::= Identifier[x]
+
+// Lambda:  (x : Int) => body
+Lambda(lambda) ::= '(' Identifier[param] ':' Type[τ] ')' '=>' Expression[body]
+
+// Pair and the empty list as atoms.
+Pair(pair) ::= '(' Expression[fst] ',' Expression[snd] ')'
+Nil(nil) ::= '[' ']'
+
+Paren ::= '(' Expression ')'
+
+AtomicExpression ::= Variable
+                   | Integer
+                   | Boolean
+                   | Lambda
+                   | Pair
+                   | Nil
+                   | Paren
+
+// Projections.
+Fst(fst) ::= 'fst' AtomicExpression[pair]
+Snd(snd) ::= 'snd' AtomicExpression[pair]
+
+// Application: a function atom applied to an argument.
+Application(app) ::= AtomicExpression[func] '(' Expression[arg] ')'
+                   | Application[func] '(' Expression[arg] ')'
+
+// Cons (right-associative):  head :: tail
+Cons(cons) ::= AtomicExpression[head] '::' Expression[tail]
+
+// Binary integer operation and comparison.
+IntBinary(bin_int) ::= Expression[left] IntOp[op] Expression[right]
+Compare(compare) ::= Expression[left] CompOp[op] Expression[right]
+
+// Conditional:  if c then a else b
+If(if) ::= 'if' Expression[cond] 'then' Expression[then_branch] 'else' Expression[else_branch]
+
+// List elimination:  match xs with [] => e1 | h :: t => e2
+Match(match) ::= 'match' Expression[scrutinee] 'with' '[' ']' '=>' Expression[nil_case] '|' Identifier[head] '::' Identifier[tail] '=>' Expression[cons_case]
+
+// let and recursive let.
+Let(let) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] 'in' Expression[body]
+LetRec(letrec) ::= 'let' 'rec' Identifier[name] ':' Type[τ] '=' Expression[value] 'in' Expression[body]
+
+Expression ::= IntBinary
+             | Compare
+             | Cons
+             | Application
+             | Fst
+             | Snd
+             | If
+             | Match
+             | Let
+             | LetRec
+             | AtomicExpression
+
+
+// ===================== Typing rules =====================
+
+// Variable lookup
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+// Literals
+----------- (int)
+'Int'
+
+----------- (bool)
+'Bool'
+
+// Lambda
+Γ[param:τ] ⊢ body : ?R
+----------------------- (lambda)
+τ -> ?R
+
+// Application
+Γ ⊢ func : ?A -> ?R, Γ ⊢ arg : ?A
+---------------------------------- (app)
+?R
+
+// Pair introduction and projections
+Γ ⊢ fst : ?A, Γ ⊢ snd : ?B
+--------------------------- (pair)
+?A * ?B
+
+Γ ⊢ pair : ?A * ?B
+------------------ (fst)
+?A
+
+Γ ⊢ pair : ?A * ?B
+------------------ (snd)
+?B
+
+// Lists: the empty list is a list of any element type; cons fixes it.
+----------- (nil)
+?A list
+
+Γ ⊢ head : ?A, Γ ⊢ tail : ?A list
+--------------------------------- (cons)
+?A list
+
+// Arithmetic and comparison
+Γ ⊢ left : 'Int', Γ ⊢ right : 'Int'
+----------------------------------- (bin_int)
+'Int'
+
+Γ ⊢ left : 'Int', Γ ⊢ right : 'Int'
+----------------------------------- (compare)
+'Bool'
+
+// Conditional: branches agree, condition is Bool
+Γ ⊢ cond : 'Bool', Γ ⊢ then_branch : ?T, Γ ⊢ else_branch : ?T
+------------------------------------------------------------- (if)
+?T
+
+// match: the scrutinee is a list; both arms produce the same ?T. The cons arm
+// binds the head (?A) and tail (?A list) drawn from the element type, so the
+// element type flows from the scrutinee into the arm by unification.
+Γ ⊢ scrutinee : ?A list, Γ ⊢ nil_case : ?T, Γ[head:?A][tail:?A list] ⊢ cons_case : ?T
+------------------------------------------------------------------------------------- (match)
+?T
+
+// let: bind the value's type for the body
+Γ ⊢ value : τ, Γ[name:τ] ⊢ body : ?R
+------------------------------------- (let)
+?R
+
+// let rec: the name is in scope for its own value and the body
+Γ[name:τ] ⊢ value : τ, Γ[name:τ] ⊢ body : ?R
+--------------------------------------------- (letrec)
+?R

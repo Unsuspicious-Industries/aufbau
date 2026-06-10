@@ -9,17 +9,17 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::engine::Segment;
 use crate::engine::error::TransitionError;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, Lexeme, NodeStatus, ProdId, Span};
-use crate::semantics::SemanticSummary;
+use crate::engine::Segment;
 use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::obligation::Obligations;
-use crate::typing::domain::Trees;
+use crate::semantics::SemanticSummary;
+use crate::typing::ir::{compile, Program};
 use crate::typing::pattern::Pattern;
-use crate::typing::{Context, ContextTransition, Normalizer, Term, Type, TypingDomain, TypingRule};
+use crate::typing::{Context, ContextTransition, Normalizer, Term, Type, TypingDomain};
 
 // ── Generic interner ─────────────────────────────────────────────────────────
 
@@ -58,10 +58,12 @@ impl<T: Hash + Eq + Clone> Interner<T> {
 /// Interning bridge between the typing domain's value-level evaluation and the
 /// parser's id-based interface.
 pub struct TypingRuntime {
-    domain: TypingDomain,
+    domain: TypingDomain<false>,
     spg: SPG,
-    /// Each rule `TypeExpr` parsed into its tree once (the grammar is needed).
-    trees: Rc<Trees>,
+    /// Each rule lowered to its IR `Program` once, keyed by rule name. The
+    /// parser's hot path (`descend`/`finalize`) looks up here instead of
+    /// recompiling per node.
+    programs: Rc<HashMap<String, Program>>,
     /// The grammar's type-rewrite theory; empty ⇒ `normalize` is the identity.
     norm: Rc<Normalizer>,
     evidence: Rc<EvidenceStore<Type>>,
@@ -81,7 +83,7 @@ impl Clone for TypingRuntime {
         Self {
             domain: self.domain.clone(),
             spg: self.spg.clone(),
-            trees: Rc::clone(&self.trees),
+            programs: Rc::clone(&self.programs),
             norm: Rc::clone(&self.norm),
             evidence: Rc::clone(&self.evidence),
             contexts: Rc::clone(&self.contexts),
@@ -92,17 +94,22 @@ impl Clone for TypingRuntime {
 }
 
 impl TypingRuntime {
-    pub fn new(domain: TypingDomain, spg: SPG) -> Self {
+    pub fn new(domain: TypingDomain<false>, spg: SPG) -> Self {
         let evidence = Rc::new(EvidenceStore::new(
-            TypingDomain::top_evidence(),
-            TypingDomain::bottom_evidence(),
+            TypingDomain::<false>::top_evidence(),
+            TypingDomain::<false>::bottom_evidence(),
         ));
         let trees = spg.type_trees();
         let norm = spg.normalizer();
+        let programs = spg
+            .rules
+            .iter()
+            .map(|(name, rule)| (name.clone(), compile(rule, &trees)))
+            .collect();
         let rt = Self {
             domain,
             spg,
-            trees: Rc::new(trees),
+            programs: Rc::new(programs),
             norm: Rc::new(norm),
             evidence,
             contexts: Rc::new(Interner::new()),
@@ -168,9 +175,10 @@ impl TypingRuntime {
         self.effects.get(id)
     }
 
-    fn rule_for_prod(&self, prod: ProdId) -> Option<&TypingRule> {
+    /// The precompiled IR program for `prod`'s rule, if it has one.
+    fn program_for_prod(&self, prod: ProdId) -> Option<&Program> {
         let rule_name = self.spg.nt(prod.0).and_then(|nt| self.spg.nt_rule(nt))?;
-        self.spg.rules.get(rule_name.as_str())
+        self.programs.get(rule_name.as_str())
     }
 
     // ── Parser-facing hooks ───────────────────────────────────────────────────
@@ -183,19 +191,19 @@ impl TypingRuntime {
         ctx: CtxId,
         obligations: &Obligations,
     ) -> Result<CtxId, TransitionError> {
-        let Some(rule) = self.rule_for_prod(prod) else {
+        let Some(program) = self.program_for_prod(prod) else {
             return Ok(ctx);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
         let next = self.domain.descend(
-            &self.trees,
-            rule,
+            program,
+            &self.norm,
             binding,
             &ctx_val,
             obligations,
             &self.segs,
             &self.evidence,
-        );
+        )?;
         Ok(self.intern_context(next))
     }
 
@@ -210,14 +218,13 @@ impl TypingRuntime {
         obligations: &Obligations,
         status: NodeStatus,
     ) -> Result<Option<SemanticSummary>, TransitionError> {
-        let Some(rule) = self.rule_for_prod(prod) else {
+        let Some(program) = self.program_for_prod(prod) else {
             return Ok(None);
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
         let (verdict, evidence, effect) = self.domain.finalize(
-            &self.trees,
+            program,
             &self.norm,
-            rule,
             &ctx_val,
             obligations,
             &self.segs,

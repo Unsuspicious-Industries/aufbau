@@ -173,3 +173,46 @@ fn from_engine_parsed_type() {
     assert_eq!(apply(&Term::var("A"), &s), Term::leaf("Int"));
     assert_eq!(apply(&Term::var("B"), &s), Term::leaf("Bool"));
 }
+
+// ── ⊤ and ⊥ rules (the lattice ends) ────────────────────────────────────────
+
+/// ⊤ unifies with everything — variable, constructor, leaf, and ⊥ — and never
+/// records a binding, so distinct ⊤s are independent (no spurious identity).
+#[test]
+fn top_unifies_with_everything_and_binds_nothing() {
+    let cases = [
+        Term::var("A"),
+        Term::leaf("Int"),
+        arrow(Term::leaf("Int"), Term::leaf("Bool")),
+        Term::bottom(),
+        Term::top(),
+    ];
+    for t in &cases {
+        let s = solve(&Term::top(), t).expect("⊤ unifies");
+        assert!(s.is_empty(), "⊤ must not bind, got {s:?} against {t}");
+        // Symmetric.
+        assert!(solve(t, &Term::top()).is_some());
+    }
+}
+
+/// Two ⊤s ascribed to one hole leave it unconstrained, and a later concrete
+/// type still fits — the bug a shared `Var("⊤")` would cause (false clash).
+#[test]
+fn two_tops_do_not_constrain_a_shared_hole() {
+    let mut s = Subst::new();
+    assert!(unify(&Term::var("T"), &Term::top(), &mut s, true));
+    assert!(unify(&Term::var("T"), &Term::top(), &mut s, true));
+    assert!(unify(&Term::var("T"), &Term::leaf("Int"), &mut s, true));
+    assert_eq!(apply(&Term::var("T"), &s), Term::leaf("Int"));
+}
+
+/// ⊥ is absorbing: it clashes with any other leaf and any constructor, but it
+/// still instantiates a bare variable (`?A ⊓ ⊥ = ⊥`).
+#[test]
+fn bottom_clashes_except_against_a_variable() {
+    assert!(solve(&Term::bottom(), &Term::leaf("Int")).is_none());
+    assert!(solve(&Term::bottom(), &arrow(Term::leaf("a"), Term::leaf("b"))).is_none());
+    assert!(solve(&Term::bottom(), &Term::bottom()).is_none());
+    let s = solve(&Term::var("A"), &Term::bottom()).expect("⊥ instantiates a var");
+    assert_eq!(apply(&Term::var("A"), &s), Term::bottom());
+}

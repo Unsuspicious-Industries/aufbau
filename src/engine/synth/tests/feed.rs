@@ -65,12 +65,13 @@ fn feed_preserves_token_sequence_for_original_input() {
     )
     .unwrap();
     let mut synth = TypingSynth::new(grammar.clone(), "");
-    let expected = ["let", "x", ":", "t", "=", "y"];
-
-    for token in expected {
+    // Adjacent word tokens (`let` then `x`) need a separator: under maximal munch
+    // `letx` is one identifier, so a real token stream is whitespace-delimited.
+    for token in ["let ", "x ", ": ", "t ", "= ", "y"] {
         let _ = synth.feed(token).unwrap();
     }
 
+    let expected = ["let", "x", ":", "t", "=", "y"];
     assert_eq!(token_texts(&grammar, synth.input()), expected);
 }
 
