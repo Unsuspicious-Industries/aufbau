@@ -63,10 +63,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install maturin
-        run: pip install "maturin>=1.4,<2.0" twine
+        run: python -m pip install "maturin>=1.4,<2.0" twine
 
       - name: Build wheel
-        run: maturin build --release --features python-ffi --out dist --interpreter cp${{ matrix.python-version }} --compatibility manylinux2014
+        run: maturin build --release --features python-ffi --out dist --interpreter "cp$(echo ${{ matrix.python-version }} | tr -d '.')" --compatibility manylinux2014
 
       - name: Upload wheel to PyPI
         env:
