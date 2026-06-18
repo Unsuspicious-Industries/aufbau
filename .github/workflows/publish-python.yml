@@ -43,17 +43,7 @@ jobs:
       contents: read
     strategy:
       matrix:
-        include:
-          - python-version: "3.9"
-            py-short: "39"
-          - python-version: "3.10"
-            py-short: "310"
-          - python-version: "3.11"
-            py-short: "311"
-          - python-version: "3.12"
-            py-short: "312"
-          - python-version: "3.13"
-            py-short: "313"
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - name: Checkout repository
@@ -68,7 +58,8 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           command: build
-          args: --release --features python-ffi --out dist --interpreter cp${{ matrix.py-short }}
+          args: --release --features python-ffi --out dist
+          python-version: ${{ matrix.python-version }}
           manylinux: auto
 
       - name: Upload wheel to PyPI
