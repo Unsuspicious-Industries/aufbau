@@ -62,18 +62,14 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Install maturin
+        run: pip install "maturin>=1.4,<2.0" twine
+
       - name: Build wheel
-        uses: PyO3/maturin-action@v1
-        with:
-          command: build
-          args: --release --features python-ffi --out dist
-          python-version: ${{ matrix.python-version }}
-          manylinux: auto
+        run: maturin build --release --features python-ffi --out dist --interpreter cp${{ matrix.python-version }} --compatibility manylinux2014
 
       - name: Upload wheel to PyPI
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.MATURIN_PYPI_TOKEN }}
-        run: |
-          pip install twine
-          twine upload --skip-existing --verbose dist/*.whl
+        run: twine upload --skip-existing --verbose dist/*.whl
