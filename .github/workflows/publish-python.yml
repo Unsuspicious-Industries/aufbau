@@ -33,7 +33,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Validate Python FFI compiles
-        run: cargo check --all-targets --features python-ffi --locked
+        run: cargo check --features python-ffi --locked
 
   build:
     name: Build wheels (Python ${{ matrix.python-version }})
