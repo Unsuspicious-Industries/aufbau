@@ -64,7 +64,7 @@ jobs:
 
       - name: Upload wheel to PyPI
         run: |
-          pip install twine
+          pip install "twine<6"
           twine upload --skip-existing --verbose dist/*.whl
         env:
           TWINE_USERNAME: __token__
