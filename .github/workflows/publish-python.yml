@@ -66,7 +66,7 @@ jobs:
         run: python -m pip install "maturin>=1.4,<2.0"
 
       - name: Build wheel
-        run: python -m maturin build --release --features python-ffi --out dist --compatibility manylinux2014
+        run: python -m maturin build --release --features python-ffi --out dist --compatibility pypi
 
       - name: List wheels
         run: ls -la dist/
