@@ -1,6 +1,6 @@
 [package]
 name = "aufbau"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 authors = ["pkd <pkd@unsuspicious.org>"]
 description = "Generalized prefix parsing for a class of context-dependent languages"
@@ -59,7 +59,7 @@ once_cell = "1.17.1"
 # progress
 indicatif = "0.17"
 atty = "0.2"
-pyo3 = { version = "0.23", optional = true }
+pyo3 = { version = "0.29", optional = true }
 # no `link` feature: OCaml is the host and provides its own runtime; bundling it
 # into the staticlib would multiply-define caml_* symbols at the OCaml link step.
 ocaml = { version = "1.3", optional = true, default-features = false, features = ["derive"] }
