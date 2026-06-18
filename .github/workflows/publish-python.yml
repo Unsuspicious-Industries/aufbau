@@ -36,14 +36,32 @@ jobs:
         run: cargo check --features python-ffi --locked
 
   build:
-    name: Build & upload wheel (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    name: Build & upload (Python ${{ matrix.python-version }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
     needs: validate
     permissions:
       contents: read
     strategy:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        arch: [x86_64]
+        include:
+          - python-version: "3.9"
+            os: ubuntu-24.04-arm
+            arch: aarch64
+          - python-version: "3.10"
+            os: ubuntu-24.04-arm
+            arch: aarch64
+          - python-version: "3.11"
+            os: ubuntu-24.04-arm
+            arch: aarch64
+          - python-version: "3.12"
+            os: ubuntu-24.04-arm
+            arch: aarch64
+          - python-version: "3.13"
+            os: ubuntu-24.04-arm
+            arch: aarch64
 
     steps:
       - name: Checkout repository
