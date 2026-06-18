@@ -94,12 +94,6 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: Build source distribution
-        uses: PyO3/maturin-action@v1
-        with:
-          command: sdist
-          args: --out dist
-
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
