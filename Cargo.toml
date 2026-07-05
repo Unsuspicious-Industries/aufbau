@@ -1,6 +1,6 @@
 [package]
 name = "aufbau"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 authors = ["pkd <pkd@unsuspicious.org>"]
 description = "Generalized prefix parsing for a class of context-dependent languages"
