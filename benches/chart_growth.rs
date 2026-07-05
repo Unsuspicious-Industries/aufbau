@@ -15,16 +15,16 @@ use std::time::Duration;
 
 // ── Input generators ──────────────────────────────────────────────────────────
 
-fn stlc_chain(n: usize) -> (String, Context) {
+fn stlc_chain(grammar: &SPG, n: usize) -> (String, Context) {
     let type_names: Vec<_> = (0..=n).map(|i| format!("T{i}")).collect();
     let mut f_ty = type_names[n].clone();
     for i in (0..n).rev() {
         f_ty = format!("{}->{}", type_names[i], f_ty);
     }
     let mut ctx = Context::new();
-    ctx.add("f".to_string(), Type::raw(&f_ty));
+    ctx.add("f".to_string(), Type::parse(grammar, &f_ty).unwrap());
     for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
-        ctx.add(name, Type::raw(&type_names[i]));
+        ctx.add(name, Type::parse(grammar, &type_names[i]).unwrap());
     }
     let input = std::iter::once("f".to_string())
         .chain((0..n).map(|i| format!("x{i}")))
@@ -73,7 +73,7 @@ fn bench_stlc_chain(c: &mut Criterion) {
     let mut group = c.benchmark_group("stlc/application_chain");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {
-        let (input, ctx) = stlc_chain(n);
+        let (input, ctx) = stlc_chain(&grammar, n);
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
             b.iter(|| parse_with_ctx(&grammar, &input, &ctx))
         });
