@@ -70,3 +70,33 @@ Exported API (stubs in `aufbau.pyi`):
 maturin develop      # install editable Python module
 pip install pytest   # for running Python tests
 ```
+
+## OCaml FFI
+
+The engine is also exposed as native OCaml values (`ocaml/aufbau.mli`), built
+inductively rather than through `.auf` source: type terms, rewrite theories,
+unification, rule-level type expressions, typing rules, grammars, and the
+`Check` module for running programs and prefixes against a grammar. Every
+module and function in `aufbau.mli` carries its own doc comment; that file is
+the authoritative reference.
+
+```bash
+make ocaml       # build the Rust staticlib + OCaml bindings (cargo build --features ocaml-ffi)
+make ocaml-run   # run ocaml/demo.ml
+make test-ocaml  # run ocaml/test.ml + the differential certification below
+```
+
+### Differential certification against OCaml
+
+`ocaml/cert.ml` (with `ocaml/oracle.ml` as the trusted reference, built on
+`compiler-libs`) checks aufbau's `ml` instance (`examples/ml.auf`) against
+OCaml's own typechecker over a corpus that mirrors
+`src/validation/parseable/ml.rs`, so the Rust suite and this harness pin the
+same programs from both sides of the boundary. It certifies two claims:
+
+- **soundness** — every program aufbau accepts, OCaml's compiler also accepts;
+- **agreement** — on the monomorphic corpus, acceptance coincides exactly,
+  except at a documented fragment boundary (OCaml's `let`-generalization of
+  dead match branches) where aufbau is soundly stricter.
+
+Runs as part of `make test-ocaml` / `dune runtest --root ocaml`.

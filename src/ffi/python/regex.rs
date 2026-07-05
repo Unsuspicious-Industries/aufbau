@@ -33,20 +33,24 @@ impl PyRegex {
         self.regex.to_pattern()
     }
 
+    /// Whether `text` is a complete match.
     fn matches(&self, text: &str) -> bool {
         self.regex.matches(text)
     }
 
+    /// Classify `prefix` as a match, a partial prefix, or no match.
     fn prefix_match(&self, prefix: &str) -> PyPrefixStatus {
         PyPrefixStatus::from(self.regex.prefix_match(prefix))
     }
 
+    /// The regex remaining after consuming `text`.
     fn derivative(&self, text: &str) -> Self {
         Self {
             regex: self.regex.derivative(text),
         }
     }
 
+    /// The regex remaining after consuming one character.
     fn deriv(&self, character: &str) -> PyResult<Self> {
         let mut chars = character.chars();
         let c = chars
@@ -62,18 +66,22 @@ impl PyRegex {
         })
     }
 
+    /// Whether this regex matches nothing at all.
     fn is_empty(&self) -> bool {
         self.regex.is_empty()
     }
 
+    /// Whether the empty string is a match.
     fn is_nullable(&self) -> bool {
         self.regex.is_nullable()
     }
 
+    /// Length of the longest prefix of `text` that is a complete match.
     fn match_len(&self, text: &str) -> Option<usize> {
         self.regex.match_len(text)
     }
 
+    /// Render back to source pattern syntax.
     fn to_pattern(&self) -> String {
         self.regex.to_pattern()
     }
@@ -109,18 +117,22 @@ impl PyPrefixStatus {
         }
     }
 
+    /// Whether the prefix is itself a complete or extensible match.
     fn is_complete(&self) -> bool {
         matches!(self.kind.as_str(), "complete" | "extensible")
     }
 
+    /// Whether the prefix could still be completed, but isn't a match yet.
     fn is_prefix(&self) -> bool {
         self.kind == "prefix"
     }
 
+    /// Whether the prefix is a complete match that could also be extended.
     fn is_extensible(&self) -> bool {
         self.kind == "extensible"
     }
 
+    /// Whether the prefix cannot lead to any match.
     fn is_no_match(&self) -> bool {
         self.kind == "no_match"
     }
