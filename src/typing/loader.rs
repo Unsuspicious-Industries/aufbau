@@ -7,7 +7,6 @@ use std::collections::HashMap;
 
 use crate::engine::grammar::SPG;
 use crate::engine::grammar::utils::parse_inference_rule;
-use crate::typing::Conclusion;
 use crate::typing::TypingRule;
 
 /// Parse the rule-body blocks into a `rule-name → TypingRule` table and the list
@@ -45,6 +44,41 @@ pub fn load(
         rules.insert(name, rule);
     }
     Ok((rules, rewrites))
+}
+
+/// The rewrite theory parsed against `g`. Empty ⇒ the normalizer is the
+/// identity. A side that fails to parse is dropped; [`check`] reports it.
+#[must_use]
+pub fn normalizer(g: &SPG) -> crate::typing::Normalizer {
+    let rules = g
+        .rewrites
+        .iter()
+        .filter_map(|(l, r)| {
+            Some(crate::typing::RewriteRule {
+                lhs: crate::typing::Term::parse(g, l).ok()?,
+                rhs: crate::typing::Term::parse(g, r).ok()?,
+            })
+        })
+        .collect();
+    crate::typing::Normalizer::from_rules(rules)
+}
+
+/// Each rule type-expression parsed into its tree once. A pattern that cannot
+/// be built is left out and reads as unresolved; [`check`] reports it.
+#[must_use]
+pub fn type_trees(g: &SPG) -> crate::typing::domain::Trees {
+    let mut trees = crate::typing::domain::Trees::new();
+    for rule in g.rules.values() {
+        let bindings = g.rule_bindings(&rule.name);
+        for te in rule.type_exprs() {
+            if !trees.contains_key(te)
+                && let Ok(ty) = crate::typing::TyExpr::build(g, te, &bindings)
+            {
+                trees.insert(te.clone(), ty);
+            }
+        }
+    }
+    trees
 }
 
 /// Reject a grammar whose type-level declarations cannot mean what they say:
@@ -96,56 +130,14 @@ pub fn save(g: &SPG) -> String {
     rule_list.sort_by_key(|r| &r.name);
 
     for rule in rule_list {
-        out.push_str(&format_premises(&rule.premises));
+        let premises: Vec<String> = rule.premises.iter().map(ToString::to_string).collect();
+        out.push_str(&premises.join(", "));
         out.push('\n');
-        let concl_str = format_conclusion(&rule.conclusion);
+        let concl_str = rule.conclusion.to_string();
         let line = "-".repeat(std::cmp::max(20, concl_str.len() + 5));
         out.push_str(&format!("{} ({})\n", line, rule.name));
         out.push_str(&concl_str);
         out.push_str("\n\n");
     }
     out
-}
-
-/// Helper to format a list of premises as a string
-fn format_premises(premises: &[crate::typing::Premise]) -> String {
-    use crate::typing::TypingJudgment;
-
-    premises
-        .iter()
-        .map(|p| match (&p.setting, &p.judgment) {
-            (Some(setting), Some(TypingJudgment::Ascription((term, ty)))) => {
-                if setting.extensions.is_empty() {
-                    format!("{} ⊢ {} : {}", setting.name, term, ty)
-                } else {
-                    let exts = setting
-                        .extensions
-                        .iter()
-                        .map(|(v, t)| format!("[{v}:{t}]"))
-                        .collect::<String>();
-                    format!("{}{} ⊢ {} : {}", setting.name, exts, term, ty)
-                }
-            }
-            (None, Some(TypingJudgment::Ascription((term, ty)))) => {
-                format!("{term} : {ty}")
-            }
-            (None, Some(TypingJudgment::Membership(var, ctx))) => {
-                format!("{var} ∈ {ctx}")
-            }
-            (Some(_), Some(TypingJudgment::Membership(var, ctx))) => {
-                // Membership with setting doesn't make sense in current design, but handle it
-                format!("{var} ∈ {ctx}")
-            }
-            (_, Some(TypingJudgment::Operation { left, op, right })) => {
-                format!("{left} {op} {right}")
-            }
-            (Some(setting), None) => setting.name.clone(),
-            (None, None) => String::new(),
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn format_conclusion(conclusion: &Conclusion) -> String {
-    format!("{conclusion}")
 }

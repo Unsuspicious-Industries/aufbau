@@ -50,10 +50,6 @@ impl Pattern {
     pub fn raw(s: impl AsRef<str>) -> Self {
         Self::closed(Regex::literal(&clean(s.as_ref())))
     }
-    /// Parse a leaf type. Infallible: any string is a regular set.
-    pub fn parse_raw(s: &str) -> Result<Self, String> {
-        Ok(Self::raw(s))
-    }
     /// `⊥` — the empty set, which intersects nothing.
     #[must_use]
     pub fn bottom() -> Self {

@@ -9,15 +9,15 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
+use crate::engine::Segment;
 use crate::engine::error::TransitionError;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, Lexeme, NodeStatus, ProdId, Span};
-use crate::engine::Segment;
+use crate::semantics::SemanticSummary;
 use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::obligation::Obligations;
-use crate::semantics::SemanticSummary;
-use crate::typing::ir::{compile, Program};
+use crate::typing::ir::{Program, compile};
 use crate::typing::pattern::Pattern;
 use crate::typing::{Context, ContextTransition, Evidence, Normalizer, Term, Type, TypingDomain};
 
@@ -96,8 +96,8 @@ impl Clone for TypingRuntime {
 impl TypingRuntime {
     pub fn new(domain: TypingDomain<false>, spg: SPG) -> Self {
         let evidence = Rc::new(EvidenceStore::new(Evidence::top(), Evidence::bottom()));
-        let trees = spg.type_trees();
-        let norm = spg.normalizer();
+        let trees = crate::typing::loader::type_trees(&spg);
+        let norm = crate::typing::loader::normalizer(&spg);
         let programs = spg
             .rules
             .iter()
@@ -139,7 +139,10 @@ impl TypingRuntime {
             eqs.sort_by(|a, b| a.0.cmp(&b.0));
             eqs.dedup();
             Evidence {
-                term: Term::Con(nt.to_string(), kids.iter().map(|k| k.term.clone()).collect()),
+                term: Term::Con(
+                    nt.to_string(),
+                    kids.iter().map(|k| k.term.clone()).collect(),
+                ),
                 eqs,
             }
         };

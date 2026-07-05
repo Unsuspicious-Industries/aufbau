@@ -103,7 +103,7 @@ mod tests {
         let grammar = SPG::load(TYPED_EXPR).unwrap();
         let base_ctx = Context::new();
         let mut extended = Context::new();
-        extended.add("z".to_string(), Type::parse_raw("int").unwrap());
+        extended.add("z".to_string(), Type::raw("int"));
 
         // Adding bindings should never make a previously-parseable input fail.
         let inputs = ["let x : int = 1 in x", "x", "let x : int = x in x"];
@@ -125,7 +125,7 @@ mod tests {
     fn evidence_narrows_under_prefix_extension() {
         let grammar = SPG::load(CONSTRAINED_EXPR).unwrap();
         let mut ctx = Context::new();
-        ctx.add("x".to_string(), Type::parse_raw("int").unwrap());
+        ctx.add("x".to_string(), Type::raw("int"));
 
         // Test that partially annotated expressions have compatible evidence.
         for (prefix, full) in [("( x :", "( x : int )"), ("(", "( x : int )")] {
@@ -157,7 +157,7 @@ mod tests {
     fn witness_exists_for_partial_annotation() {
         let grammar = SPG::load(CONSTRAINED_EXPR).unwrap();
         let mut ctx = Context::new();
-        ctx.add("x".to_string(), Type::parse_raw("int").unwrap());
+        ctx.add("x".to_string(), Type::raw("int"));
 
         // Parse the partial prefix
         let mut synth = TypingSynth::new(grammar.clone(), "( x :");

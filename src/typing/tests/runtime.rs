@@ -1,15 +1,15 @@
+use crate::engine::Segment;
 use crate::engine::grammar::SPG;
 use crate::engine::parse::arena::{AltRange, ArenaNode, Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
-use crate::engine::Segment;
-use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::Obligations;
 use crate::semantics::Verdict;
+use crate::semantics::evidence::EvidenceStore;
+use crate::typing::Context;
+use crate::typing::Type;
 use crate::typing::domain::Trees;
 use crate::typing::ir::compile;
 use crate::typing::rule::TypingRule;
-use crate::typing::Context;
-use crate::typing::Type;
 use crate::typing::{Evidence, Normalizer, TyExpr, TypingDomain};
 use std::collections::HashMap;
 
@@ -17,7 +17,11 @@ fn trees(g: &SPG, rule: &TypingRule) -> Trees {
     let bindings = g.rule_bindings(&rule.name);
     rule.type_exprs()
         .into_iter()
-        .filter_map(|te| TyExpr::build(g, te, &bindings).ok().map(|ty| (te.clone(), ty)))
+        .filter_map(|te| {
+            TyExpr::build(g, te, &bindings)
+                .ok()
+                .map(|ty| (te.clone(), ty))
+        })
         .collect()
 }
 
@@ -66,7 +70,15 @@ fn descend_extends_context_with_constant_type() {
     // `e` — once `a` (= "x") is already resolved. Entering the binder `a` itself
     // would predate `a`'s own resolution, so it carries no extension.
     let next = domain
-        .descend(&program, &Normalizer::new(), Some("e"), &ctx, &obs, &s, &evidence)
+        .descend(
+            &program,
+            &Normalizer::new(),
+            Some("e"),
+            &ctx,
+            &obs,
+            &s,
+            &evidence,
+        )
         .expect("setting extension should resolve");
     assert!(
         next.lookup("x").is_some(),
@@ -115,7 +127,7 @@ fn finalize_rejects_closed_ascription_mismatch() {
     };
     obs.resolve_nonterminal(2, 0, &type_node);
     let bool_nt = grammar.nt_index("Boolean").unwrap();
-    let bool_ty = evidence.intern(Type::parse_raw("Bool").unwrap().into());
+    let bool_ty = evidence.intern(Type::raw("Bool").into());
     let bool_node = ArenaNode {
         nt: bool_nt,
         span: Span { start: 4, end: 5 },

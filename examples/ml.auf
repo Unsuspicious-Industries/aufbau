@@ -1,19 +1,17 @@
 // ML — a featured functional core in the unification model.
 //
-// Over fun.auf (STLC power) this adds: products with fst/snd, lists with
-// nil/cons, an if/then/else conditional, equality, and recursive let. Types are
-// structural terms; every relation is unification, so there is no subtyping and
-// (deliberately) no let-generalization — the type system is monomorphic ML.
+// Syntax is a strict subset of standard OCaml: fun/(parens)/->  lambdas,
+// lowercase type names (int, bool), = for equality, -> in match arms.
+// This makes the corpus directly parseable by the OCaml typechecker for
+// differential certification without any translation layer.
 //
-// Type constructors are *labeled* productions. The label marks a node as
-// carrying its own structure, exactly as it does for an expression node, so it
-// is kept rather than collapsed as a transparent wrapper. That is what lets a
-// unary constructor like `list` exist (`(τ)` and `τ list` have the same shape;
-// the label, not the shape, is what distinguishes a constructor from grouping).
+// Type constructors are *labeled* productions (e.g. ListType(list)).  The
+// label marks a node as carrying its own structure so a unary constructor
+// like `list` can be distinguished from transparent grouping by shape alone.
 
 // ===================== Identifiers =====================
 Identifier ::= /[a-z_][a-z0-9_]*/
-TypeName ::= /[A-Z][a-z0-9]*/
+TypeName ::= /[a-z][a-z0-9_]*/
 
 // ===================== Type annotations =====================
 // Precedence, loosest to tightest:  ->   then  *   then postfix  list.
@@ -22,28 +20,33 @@ Factor ::= AtomicType | ListType
 ListType(list) ::= Factor 'list'
 ProductType ::= Factor '*' ProductType | Factor
 FunctionType ::= ProductType '->' Type
-Type(*) ::= FunctionType | ProductType
+Type* ::= FunctionType | ProductType
 
 // ===================== Literals =====================
 Integer(int) ::= /[0-9]+/
 Boolean(bool) ::= 'true' | 'false'
 
 // ===================== Operators =====================
-// `*` is the product connective, so arithmetic keeps `+` and `-` only; otherwise
-// `?A * ?B` would parse ambiguously as a type and as a multiplication.
+// `*` is the product connective so arithmetic keeps only `+` and `-`;
+// otherwise `?A * ?B` would parse ambiguously as a type.
 IntOp ::= '+' | '-'
-CompOp ::= '==' | '<' | '<=' | '>' | '>='
+CompOp ::= '=' | '<' | '<=' | '>' | '>='
 
 // ===================== Expressions =====================
 
 Variable(var) ::= Identifier[x]
 
-// Lambda:  (x : Int) => body
-Lambda(lambda) ::= '(' Identifier[param] ':' Type[τ] ')' '=>' Expression[body]
+// Lambda:  fun (x : int) -> body
+Lambda(lambda) ::= 'fun' '(' Identifier[param] ':' Type[τ] ')' '->' Expression[body]
 
 // Pair and the empty list as atoms.
 Pair(pair) ::= '(' Expression[fst] ',' Expression[snd] ')'
 Nil(nil) ::= '[' ']'
+
+// Divergence: assert false inhabits every type. This is the universal
+// inhabitant that puts the grammar in the complete class (every live
+// prefix is realizable) — see Completeness in typing::complete.
+Diverge(diverge) ::= 'assert' 'false'
 
 Paren ::= '(' Expression ')'
 
@@ -53,6 +56,7 @@ AtomicExpression ::= Variable
                    | Lambda
                    | Pair
                    | Nil
+                   | Diverge
                    | Paren
 
 // Projections.
@@ -73,8 +77,8 @@ Compare(compare) ::= Expression[left] CompOp[op] Expression[right]
 // Conditional:  if c then a else b
 If(if) ::= 'if' Expression[cond] 'then' Expression[then_branch] 'else' Expression[else_branch]
 
-// List elimination:  match xs with [] => e1 | h :: t => e2
-Match(match) ::= 'match' Expression[scrutinee] 'with' '[' ']' '=>' Expression[nil_case] '|' Identifier[head] '::' Identifier[tail] '=>' Expression[cons_case]
+// List elimination:  match xs with [] -> e1 | h :: t -> e2
+Match(match) ::= 'match' Expression[scrutinee] 'with' '[' ']' '->' Expression[nil_case] '|' Identifier[head] '::' Identifier[tail] '->' Expression[cons_case]
 
 // let and recursive let.
 Let(let) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] 'in' Expression[body]
@@ -102,10 +106,14 @@ x ∈ Γ
 
 // Literals
 ----------- (int)
-'Int'
+'int'
 
 ----------- (bool)
-'Bool'
+'bool'
+
+// assert false diverges, so it has every type.
+------------------ (diverge)
+?A
 
 // Lambda
 Γ[param:τ] ⊢ body : ?R
@@ -139,16 +147,16 @@ x ∈ Γ
 ?A list
 
 // Arithmetic and comparison
-Γ ⊢ left : 'Int', Γ ⊢ right : 'Int'
+Γ ⊢ left : 'int', Γ ⊢ right : 'int'
 ----------------------------------- (bin_int)
-'Int'
+'int'
 
-Γ ⊢ left : 'Int', Γ ⊢ right : 'Int'
+Γ ⊢ left : 'int', Γ ⊢ right : 'int'
 ----------------------------------- (compare)
-'Bool'
+'bool'
 
-// Conditional: branches agree, condition is Bool
-Γ ⊢ cond : 'Bool', Γ ⊢ then_branch : ?T, Γ ⊢ else_branch : ?T
+// Conditional: branches agree, condition is bool
+Γ ⊢ cond : 'bool', Γ ⊢ then_branch : ?T, Γ ⊢ else_branch : ?T
 ------------------------------------------------------------- (if)
 ?T
 

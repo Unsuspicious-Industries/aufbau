@@ -12,7 +12,7 @@ BaseType ::= TypeName | '(' Type ')'
 // Function types (right-associative)
 AtomicType ::= BaseType | '(' Type ')'
 FunctionType ::= AtomicType '->' Type
-Type(*) ::= AtomicType | FunctionType
+Type* ::= AtomicType | FunctionType
 
 // Lambda abstraction (dot is a literal)
 Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]

@@ -11,9 +11,9 @@ pub fn stlc_chain(n: usize) -> (String, Context) {
         f_ty = format!("{}->{}", type_names[i], f_ty);
     }
     let mut ctx = Context::new();
-    ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
+    ctx.add("f".to_string(), Type::raw(&f_ty));
     for (i, name) in (0..n).map(|i| (i, format!("x{i}"))) {
-        ctx.add(name, Type::parse_raw(&type_names[i]).unwrap());
+        ctx.add(name, Type::raw(&type_names[i]));
     }
     let input = std::iter::once("f".to_string())
         .chain((0..n).map(|i| format!("x{i}")))

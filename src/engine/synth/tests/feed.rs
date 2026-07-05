@@ -89,9 +89,7 @@ fn feed_with_context_uses_latest_bindings() {
         "#,
     )
     .unwrap();
-    let ctx = Context::new()
-        .extend("foo".into(), crate::typing::Type::raw("bool"))
-        .unwrap();
+    let ctx = Context::new().shadow("foo".into(), crate::typing::Type::raw("bool"));
     let mut synth = TypingSynth::new(grammar.clone(), "");
 
     let fed = synth.feed_with("foo", &ctx).unwrap();

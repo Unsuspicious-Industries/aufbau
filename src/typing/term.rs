@@ -124,10 +124,6 @@ impl Term {
     pub fn raw(s: impl AsRef<str>) -> Self {
         Self::Leaf(Pattern::raw(s.as_ref()))
     }
-    /// Parse a leaf type. Infallible: any string is a regular leaf.
-    pub fn parse_raw(s: &str) -> Result<Self, String> {
-        Ok(Self::raw(s))
-    }
     #[must_use]
     pub fn con(label: impl Into<String>, kids: Vec<Term>) -> Self {
         Self::Con(label.into(), kids)
@@ -196,7 +192,9 @@ impl Term {
                     });
                     Term::Var(fresh.clone())
                 }
-                Term::Con(l, ks) => Term::Con(l.clone(), ks.iter().map(|k| go(k, map, next)).collect()),
+                Term::Con(l, ks) => {
+                    Term::Con(l.clone(), ks.iter().map(|k| go(k, map, next)).collect())
+                }
                 Term::Leaf(p) => Term::Leaf(p.clone()),
             }
         }
@@ -221,7 +219,9 @@ impl Term {
         // Transparent wrapper: no construct of its own, collapse to its single
         // child. The test is the grammar's one definition, shared with
         // elaboration ([`crate::engine::grammar::SPG::is_transparent`]).
-        if node.is_transparent() && let Some(child) = child_nodes.next() {
+        if node.is_transparent()
+            && let Some(child) = child_nodes.next()
+        {
             return Self::from_node(&child);
         }
         let kids: Vec<Term> = child_nodes.map(|n| Self::from_node(&n)).collect();

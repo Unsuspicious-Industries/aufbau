@@ -13,7 +13,7 @@ TypeName ::= /[A-Z][a-z]*/
 // `+` is just a binary constructor; a sum has structure, not a magic union.
 AtomicType ::= TypeName | '(' Type ')'
 SumType ::= AtomicType '+' Type
-Type(*) ::= AtomicType | SumType
+Type* ::= AtomicType | SumType
 
 // ===================== Values =====================
 Word ::= 'x' | 'y' | 'z'

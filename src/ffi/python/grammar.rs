@@ -24,6 +24,64 @@ impl PyGrammar {
         Ok(Self { inner: g })
     }
 
+    /// Assemble a grammar structurally, no `.auf` source. A production is
+    /// `(name, rule, alternatives)` where each symbol is a `(kind, value,
+    /// binding)` triple with kind one of `"nt" | "lit" | "re"`; a rule is
+    /// `(name, premises, conclusion)` in the inference notation; `ty` names
+    /// the type fragment (the `Ty*` of the surface syntax). Runs the same
+    /// validation as loading source.
+    #[staticmethod]
+    #[pyo3(signature = (productions, rules=Vec::new(), rewrites=Vec::new(), start=None, ty=None))]
+    fn build(
+        productions: Vec<(
+            String,
+            Option<String>,
+            Vec<Vec<(String, String, Option<String>)>>,
+        )>,
+        rules: Vec<(String, String, String)>,
+        rewrites: Vec<(String, String)>,
+        start: Option<String>,
+        ty: Option<String>,
+    ) -> PyResult<Self> {
+        use crate::engine::grammar::load::{Def, Sym};
+        let defs: Vec<Def> = productions
+            .into_iter()
+            .map(|(name, rule, alts)| {
+                let alts = alts
+                    .into_iter()
+                    .map(|alt| {
+                        alt.into_iter()
+                            .map(|(kind, value, binding)| match kind.as_str() {
+                                "nt" => Ok(Sym::Nt(value, binding)),
+                                "lit" => Ok(Sym::Lit(value, binding)),
+                                "re" => Ok(Sym::Re(value, binding)),
+                                other => Err(PyValueError::new_err(format!(
+                                    "unknown symbol kind '{other}' (nt | lit | re)"
+                                ))),
+                            })
+                            .collect::<PyResult<Vec<_>>>()
+                    })
+                    .collect::<PyResult<Vec<_>>>()?;
+                Ok((name, rule, alts))
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        let rules = rules
+            .into_iter()
+            .map(|(name, premises, conclusion)| {
+                crate::typing::TypingRule::new(premises, conclusion, name)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| PyValueError::new_err(format!("rule error: {e}")))?;
+        SPG::assemble(defs, rules, rewrites, start, ty)
+            .map(|inner| Self { inner })
+            .map_err(|e| PyValueError::new_err(format!("grammar build error: {e}")))
+    }
+
+    /// Render the grammar back to `.auf` source.
+    fn source(&self) -> String {
+        self.inner.to_spec_string()
+    }
+
     #[getter]
     fn start(&self) -> Option<&str> {
         self.inner.start.as_deref()
@@ -49,6 +107,15 @@ impl PyGrammar {
 
     fn rule_names(&self) -> Vec<String> {
         self.inner.rules.keys().cloned().collect()
+    }
+
+    /// Is every production of `nt` a transparent wrapper?
+    fn is_transparent(&self, nt: &str) -> bool {
+        self.inner.nt_index(nt).is_some_and(|i| {
+            self.inner
+                .productions_at(i)
+                .is_some_and(|ps| (0..ps.len()).all(|a| self.inner.is_transparent((i, a))))
+        })
     }
 
     fn specials(&self) -> Vec<String> {
@@ -81,7 +148,7 @@ impl PyGrammar {
     fn normalize(&self, s: &str) -> PyResult<PyTerm> {
         let t = Term::parse(&self.inner, s).map_err(PyValueError::new_err)?;
         Ok(PyTerm {
-            inner: self.inner.normalizer().normalize(&t),
+            inner: crate::typing::loader::normalizer(&self.inner).normalize(&t),
         })
     }
 
@@ -99,6 +166,19 @@ impl PyGrammar {
     /// The declared rewrite theory, as `(lhs, rhs)` source pairs.
     fn rewrites(&self) -> Vec<(String, String)> {
         self.inner.rewrites.clone()
+    }
+
+    /// The realizability class of the grammar, as `(kind, uninhabited)`:
+    /// `("syntactic", [])` — no typing rules, live ⇔ realizable;
+    /// `("inhabited", [])` — every ascribed sort has a universal inhabitant,
+    /// live ⇒ realizable; `("sound", sorts)` — pruning is sound, but a live
+    /// prefix may be uninhabited at the listed sorts.
+    fn completeness(&self) -> (String, Vec<String>) {
+        match crate::typing::completeness(&self.inner) {
+            crate::typing::Completeness::Syntactic => ("syntactic".into(), vec![]),
+            crate::typing::Completeness::Inhabited => ("inhabited".into(), vec![]),
+            crate::typing::Completeness::Sound { uninhabited } => ("sound".into(), uninhabited),
+        }
     }
 
     /// The type signature: every constructor (nonterminal) with an arity it
@@ -129,7 +209,7 @@ impl PyGrammar {
             .rules
             .get(rule)
             .ok_or_else(|| PyValueError::new_err(format!("no rule '{rule}'")))?;
-        Ok(compile(r, &self.inner.type_trees()).to_string())
+        Ok(compile(r, &crate::typing::loader::type_trees(&self.inner)).to_string())
     }
 }
 
@@ -144,7 +224,13 @@ impl PyGrammar {
         let tb = Term::parse(&self.inner, b).map_err(PyValueError::new_err)?;
         let mut s = Subst::new();
         let ok = if modulo {
-            unify_modulo(&self.inner.normalizer(), &ta, &tb, &mut s, true)
+            unify_modulo(
+                &crate::typing::loader::normalizer(&self.inner),
+                &ta,
+                &tb,
+                &mut s,
+                true,
+            )
         } else {
             term::unify(&ta, &tb, &mut s, true)
         };

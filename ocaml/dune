@@ -17,5 +17,14 @@
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
 
+; Differential certification: aufbau's ML instance (examples/ml.auf) against
+; the OCaml typechecker (compiler-libs). Runs with `dune runtest`.
+(test
+ (name cert)
+ (modules cert oracle)
+ (libraries aufbau compiler-libs.common)
+ (link_flags
+  (-cclib -lpthread -cclib -ldl -cclib -lm)))
+
 ; libaufbau.a is the Rust engine, built by `make ocaml` (cargo build
 ; --features ocaml-ffi); kept out of git and linked in via foreign_archives.

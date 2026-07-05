@@ -38,12 +38,12 @@ fn stlc_chain_case(arg_count: usize) -> (String, Context) {
     }
 
     let mut ctx = Context::new();
-    ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
+    ctx.add("f".to_string(), Type::raw(&f_ty));
 
     let mut names = vec!["f".to_string()];
     for idx in 0..arg_count {
         let name = format!("x{idx}");
-        ctx.add(name.clone(), Type::parse_raw(&type_names[idx]).unwrap());
+        ctx.add(name.clone(), Type::raw(&type_names[idx]));
         names.push(name);
     }
 

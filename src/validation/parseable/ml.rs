@@ -1,6 +1,9 @@
 //! ML parseability tests — the featured functional core (`examples/ml.auf`):
 //! products, lists, conditionals, comparison, and recursive let, all checked by
 //! unification.
+//!
+//! Syntax is strict OCaml subset: `fun (x : int) -> e`, lowercase types, `=`
+//! for equality, `->` in match arms.
 
 use super::ParseTestCase;
 #[cfg(test)]
@@ -18,14 +21,14 @@ fn ml_grammar() -> SPG {
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
         // Functions and application.
-        ParseTestCase::valid("identity", "(x : Int) => x"),
-        ParseTestCase::valid("curried const", "(x : Int) => (y : Bool) => x"),
-        ParseTestCase::valid("apply identity", "((x : Int) => x)(5)"),
+        ParseTestCase::valid("identity", "fun (x : int) -> x"),
+        ParseTestCase::valid("curried const", "fun (x : int) -> fun (y : bool) -> x"),
+        ParseTestCase::valid("apply identity", "(fun (x : int) -> x)(5)"),
         // let / arithmetic / comparison.
-        ParseTestCase::valid("let int", "let a : Int = 5 in a"),
-        ParseTestCase::valid("let arith", "let a : Int = 5 in a + 1"),
+        ParseTestCase::valid("let int", "let a : int = 5 in a"),
+        ParseTestCase::valid("let arith", "let a : int = 5 in a + 1"),
         ParseTestCase::valid("compare", "1 < 2"),
-        ParseTestCase::valid("let then compare", "let a : Int = 5 in a < 10"),
+        ParseTestCase::valid("let then compare", "let a : int = 5 in a < 10"),
         // Conditionals.
         ParseTestCase::valid("if literals", "if true then 1 else 2"),
         ParseTestCase::valid("if compare", "if 1 < 2 then 1 else 0"),
@@ -40,11 +43,19 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
         ParseTestCase::valid("singleton", "1 :: []"),
         ParseTestCase::valid("cons chain", "1 :: 2 :: 3 :: []"),
         ParseTestCase::valid("list of pairs", "(1, true) :: []"),
-        ParseTestCase::valid("cons in let", "let xs : Int list = 1 :: [] in xs"),
+        ParseTestCase::valid("cons in let", "let xs : int list = 1 :: [] in xs"),
         // Recursive let.
         ParseTestCase::valid(
             "let rec",
-            "let rec f : Int -> Int = (n : Int) => f(n) in f(0)",
+            "let rec f : int -> int = fun (n : int) -> f(n) in f(0)",
+        ),
+        // Divergence: the universal inhabitant takes any demanded type.
+        ParseTestCase::valid("diverge bare", "assert false"),
+        ParseTestCase::valid("diverge at int", "let a : int = assert false in a"),
+        ParseTestCase::valid("diverge in branch", "if true then 1 else assert false"),
+        ParseTestCase::valid(
+            "diverge as function",
+            "let f : int -> bool = assert false in f(0)",
         ),
     ]
 }
@@ -52,17 +63,20 @@ pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
 #[must_use]
 pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
-        ParseTestCase::invalid("unbound var", "(x : Int) => y"),
+        ParseTestCase::invalid("unbound var", "fun (x : int) -> y"),
         ParseTestCase::invalid("add bool", "1 + true"),
         ParseTestCase::invalid("if non-bool cond", "if 1 then 2 else 3"),
         ParseTestCase::invalid("if branch mismatch", "if true then 1 else false"),
         ParseTestCase::invalid("fst of non-pair", "fst 5"),
-        ParseTestCase::invalid("let type mismatch", "let a : Bool = 5 in a"),
+        ParseTestCase::invalid("let type mismatch", "let a : bool = 5 in a"),
         ParseTestCase::invalid("compare bool", "true < 2"),
         ParseTestCase::invalid("apply non-function", "5(3)"),
         ParseTestCase::invalid("cons mixed elements", "1 :: true :: []"),
         ParseTestCase::invalid("cons onto non-list", "1 :: 2"),
-        ParseTestCase::invalid("list annotation mismatch", "let xs : Bool list = 1 :: [] in xs"),
+        ParseTestCase::invalid(
+            "list annotation mismatch",
+            "let xs : bool list = 1 :: [] in xs",
+        ),
     ]
 }
 
@@ -89,29 +103,29 @@ pub fn valid_programs_cases() -> Vec<ParseTestCase> {
     vec![
         ParseTestCase::valid(
             "length",
-            "let rec length : Int list -> Int = (xs : Int list) => match xs with [] => 0 | h :: t => 1 + length(t) in length(1 :: 2 :: 3 :: [])",
+            "let rec length : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> 1 + length(t) in length(1 :: 2 :: 3 :: [])",
         ),
         ParseTestCase::valid(
             "sum",
-            "let rec sum : Int list -> Int = (xs : Int list) => match xs with [] => 0 | h :: t => h + sum(t) in sum(1 :: 2 :: [])",
+            "let rec sum : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> h + sum(t) in sum(1 :: 2 :: [])",
         ),
         // `inc` deliberately starts with the keyword `in`: maximal-munch tokenizing.
         ParseTestCase::valid(
             "map increment",
-            "let rec inc : Int list -> Int list = (xs : Int list) => match xs with [] => [] | h :: t => (h + 1) :: inc(t) in inc(1 :: 2 :: [])",
+            "let rec inc : int list -> int list = fun (xs : int list) -> match xs with [] -> [] | h :: t -> (h + 1) :: inc(t) in inc(1 :: 2 :: [])",
         ),
         ParseTestCase::valid(
-            "member returns Bool",
-            "let rec member : Int list -> Bool = (xs : Int list) => match xs with [] => false | h :: t => if h == 0 then true else member(t) in member(0 :: 1 :: [])",
+            "member returns bool",
+            "let rec member : int list -> bool = fun (xs : int list) -> match xs with [] -> false | h :: t -> if h = 0 then true else member(t) in member(0 :: 1 :: [])",
         ),
         ParseTestCase::valid(
             "copy via cons",
-            "let rec copy : Int list -> Int list = (xs : Int list) => match xs with [] => [] | h :: t => h :: copy(t) in copy(1 :: 2 :: [])",
+            "let rec copy : int list -> int list = fun (xs : int list) -> match xs with [] -> [] | h :: t -> h :: copy(t) in copy(1 :: 2 :: [])",
         ),
         // A free element type is fine when the uses agree.
         ParseTestCase::valid(
             "match on nil, consistent head",
-            "match [] with [] => 0 | h :: t => h + 1",
+            "match [] with [] -> 0 | h :: t -> h + 1",
         ),
     ]
 }
@@ -120,21 +134,24 @@ pub fn valid_programs_cases() -> Vec<ParseTestCase> {
 #[must_use]
 pub fn invalid_programs_cases() -> Vec<ParseTestCase> {
     vec![
-        // The two match arms disagree (Int vs Bool).
-        ParseTestCase::invalid("match arms disagree", "match 1 :: [] with [] => 0 | h :: t => true"),
+        // The two match arms disagree (int vs bool).
+        ParseTestCase::invalid(
+            "match arms disagree",
+            "match 1 :: [] with [] -> 0 | h :: t -> true",
+        ),
         // Scrutinee is not a list.
-        ParseTestCase::invalid("match on non-list", "match 5 with [] => 0 | h :: t => 1"),
-        // Declared to return Int, but the nil arm returns a list.
+        ParseTestCase::invalid("match on non-list", "match 5 with [] -> 0 | h :: t -> 1"),
+        // Declared to return int, but the nil arm returns a list.
         ParseTestCase::invalid(
             "return type mismatch",
-            "let rec bad : Int list -> Int = (xs : Int list) => match xs with [] => [] | h :: t => 0 in bad([])",
+            "let rec bad : int list -> int = fun (xs : int list) -> match xs with [] -> [] | h :: t -> 0 in bad([])",
         ),
         // Regression: with a free element type (scrutinee `[]`), the head is one
-        // metavariable across its uses, so `h` as Bool and as Int must clash.
+        // metavariable across its uses, so `h` as bool and as int must clash.
         // Accepted before the global metavariable store landed.
         ParseTestCase::invalid(
             "head used at two types",
-            "match [] with [] => 0 | h :: t => if h then 1 else h + 1",
+            "match [] with [] -> 0 | h :: t -> if h then 1 else h + 1",
         ),
     ]
 }
@@ -155,16 +172,16 @@ mod known_limitations {
     #[ignore = "higher-order recursion over lists (map/filter/fold) does not type yet"]
     fn higher_order_map() {
         assert!(type_checks(
-            "let rec map : (Int -> Int) -> Int list -> Int list = (f : Int -> Int) => (xs : Int list) => match xs with [] => [] | h :: t => f(h) :: map(f)(t) in map((n : Int) => n + 1)(1 :: 2 :: [])"
+            "let rec map : (int -> int) -> int list -> int list = fun (f : int -> int) -> fun (xs : int list) -> match xs with [] -> [] | h :: t -> f(h) :: map(f)(t) in map(fun (n : int) -> n + 1)(1 :: 2 :: [])"
         ));
     }
 
     /// Regression: the head's element type is tied to the scrutinee through the
-    /// shared metavariable, so `f(h)` (h:Int) against `Int list` is rejected.
+    /// shared metavariable, so `f(h)` (h:int) against `int list` is rejected.
     #[test]
     fn match_head_element_type_is_tied_to_scrutinee() {
         assert!(!type_checks(
-            "let rec f : Int list -> Int = (xs : Int list) => match xs with [] => 0 | h :: t => f(h) in f(1 :: [])"
+            "let rec f : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> f(h) in f(1 :: [])"
         ));
     }
 
@@ -172,10 +189,10 @@ mod known_limitations {
     #[ignore = "prefix-completeness gap: the full program types, but a mid-construction prefix does not parse"]
     fn nested_list_prefix() {
         // The full program is well-typed (`ast().is_complete()`), yet the prefix
-        // `let xss : Int list list = (1 :: [])` is rejected by the all-prefix
+        // `let xss : int list list = (1 :: [])` is rejected by the all-prefix
         // check, so it is recorded here rather than in `valid_programs_cases`.
         assert!(type_checks(
-            "let xss : Int list list = (1 :: []) :: [] in xss"
+            "let xss : int list list = (1 :: []) :: [] in xss"
         ));
     }
 }

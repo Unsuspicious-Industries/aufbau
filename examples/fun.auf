@@ -8,7 +8,7 @@ TypeName ::= /[A-Z][a-z0-9]*/
 // ===================== Type Annotations =====================
 BaseType ::= TypeName | '(' Type ')'
 FunctionType ::= BaseType '->' Type
-Type(*) ::= BaseType | FunctionType
+Type* ::= BaseType | FunctionType
 
 // ===================== Literals =====================
 Integer(int) ::= /[0-9]+/

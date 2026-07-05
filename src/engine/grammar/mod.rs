@@ -18,8 +18,7 @@ pub type NtId = usize;
 
 pub type ProdId = (NtId, AltId);
 
-use crate::typing::domain::Trees;
-use crate::typing::{Normalizer, RewriteRule, Term, TyExpr, TypingRule};
+use crate::typing::TypingRule;
 use std::collections::HashMap;
 
 /// Syntax-directed Program Grammar `G = (N, T, P, S, Θ, R, B, A)` — `sec:gram-def`.
@@ -68,34 +67,6 @@ impl Clone for SPG {
             tokenizer: self.tokenizer.clone(),
             bindings: self.bindings.clone(),
         }
-    }
-}
-
-impl PartialEq for SPG {
-    fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
-    }
-}
-impl Eq for SPG {}
-
-impl std::hash::Hash for SPG {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        let mut keys: Vec<&String> = self.productions.keys().collect();
-        keys.sort();
-        for k in keys {
-            k.hash(state);
-            if let Some(prods) = self.productions.get(k) {
-                prods.hash(state);
-            }
-        }
-        self.start.hash(state);
-    }
-}
-
-impl Default for SPG {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -205,41 +176,6 @@ impl SPG {
         nts == 1 && !bound_terminal
     }
 
-    /// The rewrite theory parsed against this grammar. Empty ⇒ the normalizer is
-    /// the identity. A side that fails to parse is dropped (no silent mis-rewrite).
-    #[must_use]
-    pub fn normalizer(&self) -> Normalizer {
-        let rules = self
-            .rewrites
-            .iter()
-            .filter_map(|(l, r)| {
-                Some(RewriteRule {
-                    lhs: Term::parse(self, l).ok()?,
-                    rhs: Term::parse(self, r).ok()?,
-                })
-            })
-            .collect();
-        Normalizer::from_rules(rules)
-    }
-
-    /// Each rule type-expression parsed into its tree once. A pattern that cannot
-    /// be built (ambiguous, or no parse) is left out and reads as unresolved.
-    #[must_use]
-    pub fn type_trees(&self) -> Trees {
-        let mut trees = Trees::new();
-        for rule in self.rules.values() {
-            let bindings = self.rule_bindings(&rule.name);
-            for te in rule.type_exprs() {
-                if !trees.contains_key(te)
-                    && let Ok(ty) = TyExpr::build(self, te, &bindings)
-                {
-                    trees.insert(te.clone(), ty);
-                }
-            }
-        }
-        trees
-    }
-
     pub fn add_production(&mut self, nt: String, prod: Production) {
         if !self.productions.contains_key(&nt) {
             self.nonterminals.push(nt.clone());
@@ -269,11 +205,6 @@ impl SPG {
     #[must_use]
     pub fn production_count(&self) -> usize {
         self.nonterminals.len()
-    }
-
-    #[must_use]
-    pub fn production(&self, nt: &str) -> Option<&Vec<Production>> {
-        self.productions.get(nt)
     }
 
     #[must_use]

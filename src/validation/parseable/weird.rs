@@ -120,7 +120,7 @@ const REGEX_HEAVY: &str = r"
     ?T
 ";
 
-/// Scoped context isolation with [Γ].
+/// Scoped context isolation: settings are premise-local.
 const SCOPED: &str = r"
     Identifier ::= /[a-z]+/
     Type ::= 'X' | 'Y'
@@ -178,7 +178,7 @@ const UNION_CHOICE: &str = r"
     Identifier ::= /[a-z]+/
     TyName ::= 'N' | 'B'
     Union ::= TyName '|' Ty
-    Ty(*) ::= TyName | Union
+    Ty* ::= TyName | Union
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
     BoolLit(blit) ::= 'yes' | 'no'

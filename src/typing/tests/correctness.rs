@@ -1,7 +1,7 @@
 use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
 use crate::engine::path::TreePath;
-use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::Verdict;
+use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::{Obligation, Obligations};
 use crate::typing::domain::Trees;
 use crate::typing::ir::compile;
@@ -24,7 +24,11 @@ fn trees(g: &crate::engine::grammar::SPG, rule: &TypingRule) -> Trees {
     let bindings = g.rule_bindings(&rule.name);
     rule.type_exprs()
         .into_iter()
-        .filter_map(|te| TyExpr::build(g, te, &bindings).ok().map(|ty| (te.clone(), ty)))
+        .filter_map(|te| {
+            TyExpr::build(g, te, &bindings)
+                .ok()
+                .map(|ty| (te.clone(), ty))
+        })
         .collect()
 }
 
@@ -175,9 +179,7 @@ fn context_ext_accepts_open_prefix() {
         }],
     );
     let segs = vec![crate::engine::grammar::Segment::from_str("fo", 0, 1)];
-    let ctx = Context::new()
-        .extend("foo".into(), Type::raw("Int"))
-        .unwrap();
+    let ctx = Context::new().shadow("foo".into(), Type::raw("Int"));
     let program = compile(&rule, &trivial_trees(&rule));
     let (v, ev, _) = domain.finalize(
         &program,

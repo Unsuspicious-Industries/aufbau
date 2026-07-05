@@ -61,6 +61,10 @@ docs/
 Thumbs.db
 draft/refs/
 
+# Scratch report (not the paper draft under draft/, not for publishing)
+report.*
+indent.log
+
 # OCaml FFI build artifacts (the source under ocaml/ is tracked)
 ocaml/_build/
 ocaml/*.a

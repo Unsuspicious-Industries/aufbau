@@ -1,5 +1,18 @@
 use super::utils::{ParsedRhs, parse_nonterminal, parse_production, parse_rhs};
-use crate::engine::grammar::{Production, SPG};
+use crate::engine::grammar::{Production, SPG, Symbol};
+use crate::regex::Regex;
+use crate::typing::TypingRule;
+
+/// A symbol description for structural assembly: what one `.auf` RHS token
+/// gives, without `.auf` source. Each optionally binds a name.
+pub enum Sym {
+    Nt(String, Option<String>),
+    Lit(String, Option<String>),
+    Re(String, Option<String>),
+}
+
+/// A nonterminal definition: name, optional rule name, alternatives.
+pub type Def = (String, Option<String>, Vec<Vec<Sym>>);
 
 /// EBNF parsing. Returns the partial grammar (productions only, no rules) and
 /// the non-production text blocks for the rule loader.
@@ -34,6 +47,22 @@ pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
                     let production_str = production_lines.join("\n");
                     let (lhs_str, rhs_str) = parse_production(&production_str.replace('\n', " "))?;
                     let (name, rule_name) = parse_nonterminal(&lhs_str)?;
+                    // `Ty* ::= …` marks the type fragment: Ty has kind `*`
+                    // (`def:term-language`).
+                    let name = match name.strip_suffix('*') {
+                        Some(n) => {
+                            let n = n.trim().to_string();
+                            if grammar.ty.as_ref().is_some_and(|prev| *prev != n) {
+                                return Err(format!(
+                                    "two type fragments: {}, {n}",
+                                    grammar.ty.as_deref().unwrap_or("")
+                                ));
+                            }
+                            grammar.ty = Some(n.clone());
+                            n
+                        }
+                        None => name,
+                    };
                     let ParsedRhs {
                         alternatives,
                         literal_tokens,
@@ -45,14 +74,7 @@ pub fn load_ebnf(source: &str) -> Result<(SPG, Vec<String>), String> {
                     for literal in literal_tokens {
                         grammar.add_special(literal);
                     }
-                    // `Ty(*) ::= …` is a kind annotation, not a rule: it
-                    // designates the type fragment (`def:term-language`).
-                    if rule_name.as_deref() == Some("*") {
-                        if let Some(prev) = &grammar.ty {
-                            return Err(format!("two type fragments: {prev}, {name}"));
-                        }
-                        grammar.ty = Some(name.clone());
-                    } else if let Some(rule_name) = rule_name.clone() {
+                    if let Some(rule_name) = rule_name.clone() {
                         grammar.bind_nt_rule(name.clone(), rule_name)?;
                     }
                     for alt_symbols in alternatives {
@@ -91,5 +113,57 @@ impl SPG {
         crate::typing::loader::check(&grammar)?;
 
         Ok(grammar)
+    }
+
+    /// Assemble a grammar structurally, no `.auf` source: the single entry the
+    /// FFIs share. Runs the same validation as [`SPG::load`]. The start symbol
+    /// defaults to the last definition, as in the surface syntax.
+    pub fn assemble(
+        defs: Vec<Def>,
+        rules: Vec<TypingRule>,
+        rewrites: Vec<(String, String)>,
+        start: Option<String>,
+        ty: Option<String>,
+    ) -> Result<Self, String> {
+        let mut g = SPG::new();
+        let mut last = None;
+        for (name, rule, alts) in defs {
+            for alt in alts {
+                let rhs = alt
+                    .into_iter()
+                    .map(|s| match s {
+                        Sym::Nt(name, binding) => Symbol::Nonterminal { name, binding },
+                        Sym::Lit(t, binding) => {
+                            g.add_special(t.clone());
+                            Symbol::Terminal {
+                                regex: Regex::literal(&t),
+                                binding,
+                            }
+                        }
+                        Sym::Re(p, binding) => Symbol::Terminal {
+                            regex: Regex::from_str(&p).unwrap_or_else(|_| Regex::literal(&p)),
+                            binding,
+                        },
+                    })
+                    .collect();
+                g.add_production(name.clone(), Production { rhs });
+            }
+            if let Some(r) = rule {
+                g.bind_nt_rule(name.clone(), r)?;
+            }
+            last = Some(name);
+        }
+        for rule in rules {
+            g.add_rule(rule.name.clone(), rule);
+        }
+        g.rewrites = rewrites;
+        g.ty = ty;
+        if let Some(s) = start.or(last) {
+            g.with_start(s);
+        }
+        g.build_tokenizer();
+        g.build_bindings();
+        crate::typing::loader::check(&g)?;
+        Ok(g)
     }
 }

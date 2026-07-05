@@ -24,16 +24,8 @@ pub fn parse_nonterminal(nt_str: &str) -> Result<(String, Option<String>), Strin
     {
         let name = nt_str[..open_paren].trim().to_string();
         let rule_name = nt_str[open_paren + 1..close_paren].trim().to_string();
-        return Ok((
-            name,
-            if rule_name.is_empty() {
-                None
-            } else {
-                Some(rule_name)
-            },
-        ));
+        return Ok((name, Some(rule_name).filter(|r| !r.is_empty())));
     }
-    // No rule name
     Ok((nt_str.trim().to_string(), None))
 }
 

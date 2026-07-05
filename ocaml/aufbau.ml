@@ -1,4 +1,5 @@
-(* Internal representations shared with the Rust engine across the FFI. *)
+(* Internal representations shared with the Rust engine across the FFI.
+   Variant order must match the Rust declarations in src/ffi/ocaml/. *)
 type term = Var of string | Con of string * term array | Leaf of string
 
 type gsym =
@@ -7,14 +8,43 @@ type gsym =
   | Re  of string * string option
 
 type gdef = string * string option * gsym array array
-type grule = string * string * string
 
-type ggram = {
-  defs     : gdef array;
-  rules    : grule array;
-  rewrites : (string * string) array;
-  start    : string option;
-}
+module Texpr = struct
+  type atom =
+    | Lit  of string
+    | Hole of string
+    | Ref  of string
+    | Ctx  of string
+    | Inst of string
+    | Top
+    | Bot
+
+  type t = atom list
+
+  let lit s = Lit s
+  let hole s = Hole s
+  let ref_ s = Ref s
+  let ctx s = Ctx s
+  let inst s = Inst s
+  let top = Top
+  let bot = Bot
+end
+
+type gpremise =
+  | PAscribe of (string * Texpr.atom array) array * string * Texpr.atom array
+  | PMember  of string
+  | PEquate  of Texpr.atom array * Texpr.atom array
+
+type grule =
+  | RParsed of string * string * string
+  | RMade   of string * gpremise array * (string * Texpr.atom array) array * Texpr.atom array
+
+type gram
+
+(* built only by the FFI *)
+type built = Built of gram | Invalid of string [@@warning "-37"]
+
+type verdict = Typed of term | Live | Dead of string [@@warning "-37"]
 
 (* The raw boundary: the engine speaks arrays; the modules below speak lists. *)
 module Ffi = struct
@@ -26,9 +56,15 @@ module Ffi = struct
 
   external normalize : (term * term) array -> term -> term = "aufbau_normalize"
 
-  external check :
-    gdef array -> grule array -> (string * string) array -> string option -> string -> string
-    = "aufbau_check"
+  external make :
+    gdef array -> grule array -> (string * string) array
+    -> string option -> string option -> built
+    = "aufbau_grammar"
+
+  external load : string -> built = "aufbau_load"
+  external show : gram -> string = "aufbau_show"
+  external check : gram -> string -> verdict = "aufbau_check"
+  external completeness : gram -> string * string array = "aufbau_completeness"
 end
 
 module Term = struct
@@ -68,6 +104,24 @@ module Unify = struct
     "{" ^ String.concat "; " (List.map (fun (x, t) -> x ^ " = " ^ Term.show t) s) ^ "}"
 end
 
+module Rule = struct
+  type premise = gpremise
+
+  let texpr (t : Texpr.t) = Array.of_list t
+  let pairs ps = Array.of_list (List.map (fun (x, tx) -> (x, texpr tx)) ps)
+
+  let ascribe ?(under = []) b t = PAscribe (pairs under, b, texpr t)
+  let member x = PMember x
+  let equate l r = PEquate (texpr l, texpr r)
+
+  type t = grule
+
+  let make name ?(effects = []) premises conclusion =
+    RMade (name, Array.of_list premises, pairs effects, texpr conclusion)
+
+  let parse name ~premises ~conclusion = RParsed (name, premises, conclusion)
+end
+
 module Grammar = struct
   type symbol = gsym
 
@@ -80,17 +134,48 @@ module Grammar = struct
   let def ?rule name alts : def =
     (name, rule, Array.of_list (List.map Array.of_list alts))
 
-  type rule = grule
+  type t = gram
 
-  let rule name ~premises ~conclusion : rule = (name, premises, conclusion)
+  let result = function Built g -> Ok g | Invalid e -> Error e
 
-  type t = ggram
+  let make ?start ?ty ?(rules = []) ?(rewrites = []) defs =
+    result
+      (Ffi.make (Array.of_list defs) (Array.of_list rules)
+         (Array.of_list rewrites) start ty)
 
-  let make ?start ?(rules = []) ?(rewrites = []) defs =
-    { defs = Array.of_list defs;
-      rules = Array.of_list rules;
-      rewrites = Array.of_list rewrites;
-      start }
+  let load src = result (Ffi.load src)
+  let show = Ffi.show
 
-  let check g program = Ffi.check g.defs g.rules g.rewrites g.start program
+  type completeness =
+    | Syntactic
+    | Inhabited
+    | Sound of string list
+
+  let completeness g =
+    match Ffi.completeness g with
+    | "syntactic", _ -> Syntactic
+    | "inhabited", _ -> Inhabited
+    | _, sorts -> Sound (Array.to_list sorts)
+
+  let complete g = match completeness g with Sound _ -> false | _ -> true
+end
+
+module Check = struct
+  type t = verdict = Typed of term | Live | Dead of string
+
+  let run = Ffi.check
+
+  let typed g program =
+    match run g program with Typed t -> Some t | Live | Dead _ -> None
+
+  let accepts g program =
+    match run g program with Typed _ -> true | Live | Dead _ -> false
+
+  let live g prefix =
+    match run g prefix with Typed _ | Live -> true | Dead _ -> false
+
+  let show = function
+    | Typed t -> "typed: " ^ Term.show t
+    | Live -> "live"
+    | Dead e -> "dead: " ^ e
 end

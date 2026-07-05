@@ -28,16 +28,6 @@ impl Context {
             .map(|(_, v)| v)
     }
 
-    /// Add a binding; fails if `x` is already bound.
-    pub fn extend(&self, x: String, ty: Type) -> Result<Self, String> {
-        if self.bindings.contains_key(&x) {
-            return Err(format!("Context already contains binding for '{x}'"));
-        }
-        let mut new = self.clone();
-        new.bindings.insert(x, ty);
-        Ok(new)
-    }
-
     /// Add or replace a binding.
     #[must_use]
     pub fn shadow(&self, x: String, ty: Type) -> Self {
@@ -71,30 +61,6 @@ impl ContextTransition {
         new_transforms.extend(next.transforms.clone());
         Self {
             transforms: new_transforms,
-        }
-    }
-}
-
-/// Semantic classification of a parsed tree.
-#[derive(Clone, Debug)]
-pub enum TreeStatus {
-    Valid(Type),
-    Partial(Type),
-    Malformed,
-    TooDeep,
-}
-
-impl TreeStatus {
-    #[must_use]
-    pub fn is_ok(&self) -> bool {
-        !matches!(self, TreeStatus::Malformed)
-    }
-
-    #[must_use]
-    pub fn ty(&self) -> Option<&Type> {
-        match self {
-            TreeStatus::Valid(t) | TreeStatus::Partial(t) => Some(t),
-            TreeStatus::Malformed | TreeStatus::TooDeep => None,
         }
     }
 }

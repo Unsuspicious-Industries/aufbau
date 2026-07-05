@@ -1,9 +1,10 @@
-(** Aufbau — the type algebra as native OCaml values.
+(** Aufbau — the engine as native OCaml values.
 
-    A type is a term over a grammar signature, built inductively. Unification is
-    first-order; a rewrite theory gives equality beyond syntax; a grammar is
-    constructed structurally and checks programs. No strings as the medium of
-    construction, no surface `.auf`. *)
+    Everything is built inductively: type terms, rule type expressions,
+    premises, rules, productions, whole grammars. Strings appear only as
+    leaves (names, literal tokens, regexes) or through the optional [.auf]
+    sugar ([Rule.parse], [Grammar.load]). A grammar is a persistent handle:
+    assembled and validated once, checked many times. *)
 
 (** Type terms. *)
 module Term : sig
@@ -33,7 +34,8 @@ module Rewrite : sig
   (** A theory: the equations defining type equality. *)
   type theory = rule list
 
-  val ( => ) : Term.t -> Term.t -> rule    (** an oriented rewrite. *)
+  (** an oriented rewrite. *)
+  val ( => ) : Term.t -> Term.t -> rule
 
   (** [normalize theory t] is the normal form of [t]. *)
   val normalize : theory -> Term.t -> Term.t
@@ -44,25 +46,78 @@ module Unify : sig
   (** A solved substitution. *)
   type subst = (string * Term.t) list
 
-  (** [unify a b] is the most general unifier, or [None] on clash. With [~modulo],
-      equality is taken up to the theory. *)
+  (** [unify a b] is the most general unifier, or [None] on clash. With
+      [~modulo], equality is taken up to the theory. *)
   val unify : ?modulo:Rewrite.theory -> Term.t -> Term.t -> subst option
 
   val show : subst -> string
 end
 
-(** Grammars — built structurally, then used to check programs. *)
+(** Rule-level type expressions: a sequence of atoms. Everything between
+    meta-atoms is literal type syntax, parsed by the grammar's own type
+    fragment; there is no built-in arrow or product. *)
+module Texpr : sig
+  type atom
+  type t = atom list
+
+  (** literal type text: a name or a separator. *)
+  val lit : string -> atom
+
+  (** [?A], a unification variable. *)
+  val hole : string -> atom
+
+  (** [typeof b]: the type of the child bound to [b]. *)
+  val ref_ : string -> atom
+
+  (** [Γ(x)]: the type bound to [x]'s text. *)
+  val ctx : string -> atom
+
+  (** [Γ(x)] with fresh variables (a scheme use). *)
+  val inst : string -> atom
+
+  (** [⊤], the unconstrained type. *)
+  val top : atom
+
+  (** [∅], the contradictory type. *)
+  val bot : atom
+end
+
+(** Typing rules, built structurally or parsed from inference notation. *)
+module Rule : sig
+  type premise
+
+  (** [ascribe ~under b t]: [Γ[under] ⊢ b : t]. The setting [under] is
+      premise-local. *)
+  val ascribe : ?under:(string * Texpr.t) list -> string -> Texpr.t -> premise
+
+  (** [x ∈ Γ]. *)
+  val member : string -> premise
+
+  (** [τ₁ = τ₂]. *)
+  val equate : Texpr.t -> Texpr.t -> premise
+
+  type t
+
+  (** [make name ?effects premises conclusion]. [effects] are right-bound
+      context extensions ([Γ → Γ[x:τ]]), exported to later siblings. *)
+  val make : string -> ?effects:(string * Texpr.t) list -> premise list -> Texpr.t -> t
+
+  (** The inference-notation sugar, exactly the [.auf] surface. *)
+  val parse : string -> premises:string -> conclusion:string -> t
+end
+
+(** Grammars — built structurally, validated on assembly. *)
 module Grammar : sig
   (** A grammar symbol. *)
   type symbol
 
-  (** a nonterminal, optionally binding a name. *)
+  (** a nonterminal. *)
   val nt : ?bind:string -> string -> symbol
 
   (** a literal token. *)
   val lit : string -> symbol
 
-  (** a regex terminal, optionally binding a name. *)
+  (** a regex terminal. *)
   val re : ?bind:string -> string -> symbol
 
   (** A nonterminal definition. *)
@@ -72,23 +127,62 @@ module Grammar : sig
       attaching a typing [rule]. *)
   val def : ?rule:string -> string -> symbol list list -> def
 
-  (** A typing rule. *)
-  type rule
-
-  (** [rule name ~premises ~conclusion] in the inference notation. *)
-  val rule : string -> premises:string -> conclusion:string -> rule
-
-  (** A semantic prefix grammar. *)
+  (** A semantic prefix grammar: a persistent, validated handle. *)
   type t
 
-  (** Assemble a grammar from its definitions, rules, rewrites, and start symbol. *)
+  (** Assemble a grammar. [ty] designates the type fragment (the [Ty*] of the
+      surface syntax); [start] defaults to the last definition. Fails when a
+      rule pattern has no unique parse at the type sort, or a rewrite is
+      ill-formed: the same validation as loading [.auf] source. *)
   val make :
     ?start:string ->
-    ?rules:rule list ->
+    ?ty:string ->
+    ?rules:Rule.t list ->
     ?rewrites:(string * string) list ->
     def list ->
-    t
+    (t, string) result
 
-  (** [check g program] is [program : type], or [error: …]. *)
-  val check : t -> string -> string
+  (** Load from [.auf] source. *)
+  val load : string -> (t, string) result
+
+  (** Render the handle back to [.auf] source. *)
+  val show : t -> string
+
+  (** The realizability class of a grammar. Pruning ([Check.run] returning
+      [Dead]) is sound unconditionally; this classifies the converse, whether
+      every [Live] prefix has a continuation. [Syntactic]: no typing rules,
+      live ⇔ realizable. [Inhabited]: every sort an ascription can constrain
+      has a universal inhabitant (a term typed at a bare hole, OCaml's
+      [assert false]), so live ⇒ realizable. [Sound sorts]: a live prefix may
+      demand an uninhabited type at the listed sorts. The certificate is
+      sufficient, not necessary. *)
+  type completeness =
+    | Syntactic
+    | Inhabited
+    | Sound of string list
+
+  val completeness : t -> completeness
+
+  (** [complete g] iff the certificate guarantees live ⇒ realizable. *)
+  val complete : t -> bool
+end
+
+(** Checking programs and prefixes. *)
+module Check : sig
+  (** [Typed t]: a complete parse with type [t]. [Live]: a completable
+      prefix. [Dead e]: rejected, syntactically or semantically. *)
+  type t = Typed of Term.t | Live | Dead of string
+
+  val run : Grammar.t -> string -> t
+
+  (** the type of a complete, well-typed parse. *)
+  val typed : Grammar.t -> string -> Term.t option
+
+  (** complete and typed. *)
+  val accepts : Grammar.t -> string -> bool
+
+  (** typed or still completable. *)
+  val live : Grammar.t -> string -> bool
+
+  val show : t -> string
 end

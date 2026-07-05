@@ -27,15 +27,35 @@ make help       # Show all available targets
 
 ## Python FFI
 
-Exported API:
+Exported API (stubs in `aufbau.pyi`):
 
-- `SPG(source)` — load and inspect a grammar
+- `SPG(source)` — load a grammar from `.auf` source
+  - `SPG.build(productions, rules=[], rewrites=[], start=None, ty=None)` —
+    assemble structurally: a production is `(name, rule, alternatives)`, a
+    symbol `("nt"|"lit"|"re", value, binding)`, a rule
+    `(name, premises, conclusion)` in inference notation; `ty` names the type
+    fragment (the `Ty*` of the surface syntax)
+  - `source()` — render back to `.auf`
   - `start`, `nonterminals()`, `productions(nt)`, `nt_rule(nt)`, `rule_names()`
   - `tokenize(input)`, `specials()`, `is_transparent(nt)`
+  - `parse_type(s)`, `show(term)`, `normalize(s)`, `unify(a, b)`,
+    `unify_modulo(a, b)`, `rewrites()`, `signature()`
+  - `completeness()` — the realizability certificate as `(kind, sorts)`:
+    `"syntactic"` (no rules: live ⇔ realizable), `"inhabited"` (universal
+    inhabitants everywhere: live ⇒ realizable), or `"sound"` with the sorts
+    where a live prefix may be uninhabited
 - `Synthesizer(spec_source, input="")`
+  - `Synthesizer.from_grammar(spg, input="")` — reuse a built grammar
   - `parse()`, `feed(token)`, `try_feed(token)`, `set_input(input)`, `input()`
+  - `mask(candidates)` — the constrained-generation primitive: one bool per
+    candidate continuation, no state change
+  - `in_scope(expected=None)` — in-scope names whose type unifies with
+    `expected` (the var rule's membership constraint as a type-filtered mask)
+  - `status()` — `"typed" | "live" | "dead"`; `root_type()` — the type `Term`
   - `add_to_ctx(name, type)`, `clear_ctx()`, `is_complete()`, `ast()`
   - `get_rule(name)`, `grammar()`
+- `Term` — a type as a tree: `label()`, `children()`, `is_var()`, `is_leaf()`,
+  `is_con()`, `is_ground()`
 - `Ast` — parse result
   - `roots`, `node_count()`, `is_complete()`, `input`, `type_of(evidence)`
 - `Regex(pattern)`
@@ -43,7 +63,6 @@ Exported API:
   - `is_empty()`, `is_nullable()`, `match_len(text)`, `to_pattern()`
 - `PrefixStatus`
   - `kind`, `regex`, `is_complete()`, `is_prefix()`, `is_extensible()`, `is_no_match()`
-- `version()` → string
 
 ### Development
 

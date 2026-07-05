@@ -14,8 +14,8 @@ Identifier ::= /[A-Za-z_][A-Za-z0-9]*/
 Variable(var) ::= Identifier[x]
 Expression ::= Lambda | Application | Variable
 
-// The type fragment: types are part of the grammar, kind-annotated with (*)
-Type(*) ::= Identifier | Type '->' Type | '(' Type ')'
+// The type fragment: types are part of the grammar; the * sigil is its kind
+Type* ::= Identifier | Type '->' Type | '(' Type ')'
 
 Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]
 Application(app) ::= Expression[l] Expression[r]
@@ -33,7 +33,8 @@ x ∈ Γ
 - `::=` introduces a production. Use `|` for alternatives.
 - `Name[binding]` binds a sub-expression to a name for use in rules.
 - `'literal'` matches a literal token. `/regex/` matches a regex.
-- The parenthesized slot on the LHS is a semantic annotation (see below).
+- The parenthesized slot on the LHS attaches semantics; a `*` sigil on the
+  name (`Type*`) designates the type fragment (see below).
 - A block without `::=` is a typing rule or a rewrite rule.
 - Blank lines separate blocks.
 
@@ -47,14 +48,13 @@ x ∈ Γ
 Nonterminal(annotation) ::= symbol symbol ... | alternative ...
 ```
 
-The LHS is the nonterminal name, optionally followed by one annotation in
-parentheses. The annotation slot has three readings:
+The LHS is the nonterminal name, optionally carrying one of two markers:
 
 | Form | Meaning |
 |------|---------|
 | `Name(rule)` | This node carries the typing rule `rule` |
 | `Name(label)` with no rule `label` | A labeled type constructor: the label keeps the node's structure (e.g. `ListType(list)`) |
-| `Name(*)` | The type fragment: terms of this nonterminal are the types (kind `*`) |
+| `Name*` | The type fragment: terms of this nonterminal are the types (the sigil is the kind `*`) |
 
 The RHS is a sequence of symbols. Multiple alternatives are separated by `|`;
 continuation lines (starting with `|`) are supported.
@@ -85,10 +85,10 @@ with productions is the start symbol (unless explicitly set via
 ### The type fragment
 
 Types are not a separate language: they are terms of the grammar's own type
-fragment, the nonterminal annotated `(*)`. Every type expression appearing in
+fragment, the nonterminal marked `Name*`. Every type expression appearing in
 a rule (`?A -> ?B`, `?A list`, `'Int'`) is parsed by the grammar at that sort,
 so the type constructors are exactly the productions the grammar writes.
-A grammar that declares no `(*)` falls back to trying every nonterminal, which
+A grammar that marks no type fragment falls back to trying every nonterminal, which
 is slower and admits accidental cross-category ambiguity; declare the fragment.
 
 Loading rejects a rule pattern with no unique parse at the type sort, rather
@@ -112,17 +112,20 @@ conclusion line. It must be non-empty and match `^[A-Za-z_][A-Za-z0-9_]*$`.
 
 ### Premises
 
+There are exactly three judgment forms, and one semantic operation behind
+all of them: unification of type terms.
+
 | Form | Judgment | Meaning |
 |------|----------|---------|
 | `x ∈ Γ` | Membership | Binding `x`'s text is in the context |
 | `Γ ⊢ e : τ` | Ascription | `e`'s type unifies with `τ` |
-| `Γ[x:τ] ⊢ e : σ` | Scoped ascription | Same, under `Γ` extended with `x:τ` for `e`'s subtree only |
-| `τ₁ = τ₂` | Equality | The two type expressions unify |
-| `τ₁ ⊆ τ₂` | Inclusion | `τ₁` is an instance of `τ₂` |
+| `τ₁ = τ₂` | Equation | The two type expressions unify |
 
-Multiple extensions on a context (`Γ[x:τ₁][y:τ₂] ⊢ e : σ`) are supported.
-A setting is premise-local: it scopes the descent into that premise's own
-term and never leaks to sibling premises.
+An ascription's context may carry extensions (`Γ[x:τ] ⊢ e : σ`, multiple as
+`Γ[x:τ₁][y:τ₂]`): the judgment holds under `Γ` extended for `e`'s subtree
+only. A setting is premise-local: it never leaks to sibling premises. There
+is exactly one ambient context; `Γ` is notation, not a name. Anything else
+(a fourth judgment form, a subtyping `⊆`) is a load error.
 
 ### Conclusions
 
@@ -187,6 +190,31 @@ sort or whose right side invents a variable absent from the left.
 
 
 
+## Completeness
+
+Pruning is sound unconditionally: a `dead` verdict means no continuation
+exists. The converse — every `live` prefix has a continuation — depends on
+the grammar, and every grammar carries its own certificate
+(`completeness()` in the Python and OCaml surfaces):
+
+| Class | Guarantee |
+|-------|-----------|
+| `syntactic` | No typing rules. Liveness is Earley liveness: live ⇔ realizable. |
+| `inhabited` | Every sort an ascription can constrain has a *universal inhabitant*: live ⇒ realizable. |
+| `sound` | A live prefix may demand a type the language cannot inhabit at the listed sorts. |
+
+A universal inhabitant is a closed derivation whose type is a bare hole, so
+it inhabits every demanded type — OCaml's `assert false`. The certificate is
+a least fixpoint: an axiom concluding `?A` over derivable syntax certifies
+its sort; transparent alternation propagates it; a rule all of whose
+premises are ascriptions of universal children and whose conclusion is a
+bare hole propagates it further. The condition is sufficient, not
+necessary: `sound` grammars may still be complete in fact (STLC's
+`λf:A→B. f(` is the canonical live-but-uninhabited prefix; adding a
+diverging term moves the grammar into `inhabited`).
+
+
+
 ## Transparent Nonterminals
 
 A nonterminal is **transparent** if it carries no rule, has exactly one
@@ -217,7 +245,7 @@ Variable(var) ::= Identifier[x]
 // Types
 AtomicType ::= TypeName | '(' Type ')'
 FunctionType ::= AtomicType '->' Type
-Type(*) ::= AtomicType | FunctionType
+Type* ::= AtomicType | FunctionType
 
 // Terms
 Lambda(lambda) ::= 'λ' Identifier[a] ':' Type[τ] '.' Expression[e]

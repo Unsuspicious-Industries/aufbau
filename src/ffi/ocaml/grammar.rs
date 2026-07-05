@@ -1,15 +1,18 @@
-//! Build an SPG from OCaml values and check programs with it.
-//!
-//! The grammar is constructed structurally — productions over symbols, no `.auf`
-//! source. Typing rules are given in the inference notation (`premises`,
-//! `conclusion`), parsed by the same rule parser the loader uses.
+//! Grammars as OCaml values: structural construction, a persistent handle,
+//! and structured verdicts. No `.auf` source as the medium; productions,
+//! rules, and type expressions are all built inductively. The idiomatic OCaml
+//! surface lives in `ocaml/aufbau.ml`; variant orders here match the OCaml
+//! type declarations.
 
-use crate::engine::grammar::{Production, SPG, Symbol};
-use crate::regex::Regex;
-use crate::typing::{Context, TypingRule, TypingSynth, render};
+use super::term::OTerm;
+use crate::engine::grammar::SPG;
+use crate::engine::grammar::load::{Def, Sym};
+use crate::engine::structure::FusionNode;
+use crate::typing::rule::{Conclusion, Judgment, Premise};
+use crate::typing::{Atom, Context, TypeExpr, TypingRule, TypingSynth};
 
-/// A grammar symbol on the OCaml side: a nonterminal, a literal token, or a regex
-/// terminal — each optionally binding a name. Variant order matches the OCaml type.
+/// A grammar symbol: nonterminal, literal token, or regex terminal, each
+/// optionally binding a name.
 #[derive(ocaml::FromValue)]
 pub enum OSym {
     Nt(String, Option<String>),
@@ -17,26 +20,122 @@ pub enum OSym {
     Re(String, Option<String>),
 }
 
-/// A nonterminal definition: name, optional rule name, alternatives of symbols.
+/// A nonterminal definition: name, optional rule name, alternatives.
 type ODef = (String, Option<String>, Vec<Vec<OSym>>);
 
-/// A typing rule: name, premises, conclusion (inference notation).
-type ORule = (String, String, String);
+/// One atom of a rule type expression (mirrors [`Atom`]). A `Lit` is both
+/// quoted type text (`'Int'`) and separator text (`" -> "`).
+#[derive(ocaml::FromValue)]
+pub enum OAtom {
+    Lit(String),
+    Hole(String),
+    Ref(String),
+    Ctx(String),
+    Inst(String),
+    Top,
+    Bot,
+}
 
-fn symbol(s: OSym, specials: &mut Vec<String>) -> Symbol {
-    match s {
-        OSym::Nt(name, binding) => Symbol::Nonterminal { name, binding },
-        OSym::Lit(t, binding) => {
-            specials.push(t.clone());
-            Symbol::Terminal {
-                regex: Regex::literal(&t),
+/// A premise, structurally: an ascription under premise-local settings, a
+/// context membership, or an equation.
+#[derive(ocaml::FromValue)]
+pub enum OPremise {
+    Ascribe(Vec<(String, Vec<OAtom>)>, String, Vec<OAtom>),
+    Member(String),
+    Equate(Vec<OAtom>, Vec<OAtom>),
+}
+
+/// A typing rule: the inference notation, or built from parts (name,
+/// premises, right-bound effects, conclusion).
+#[derive(ocaml::FromValue)]
+pub enum ORule {
+    Parsed(String, String, String),
+    Made(String, Vec<OPremise>, Vec<(String, Vec<OAtom>)>, Vec<OAtom>),
+}
+
+/// The grammar handle: assembled and validated once, checked many times.
+pub struct Gram(pub SPG);
+ocaml::custom!(Gram);
+
+/// Assembly result; the OCaml surface folds it into a `result`.
+#[derive(ocaml::ToValue)]
+pub enum OBuild {
+    Built(ocaml::Pointer<Gram>),
+    Invalid(String),
+}
+
+/// A checked program: `Typed` when a complete root has a type, `Live` when
+/// the input is a completable prefix, `Dead` with the engine's reason.
+#[derive(ocaml::ToValue)]
+pub enum OVerdict {
+    Typed(OTerm),
+    Live,
+    Dead(String),
+}
+
+fn texpr(atoms: Vec<OAtom>) -> TypeExpr {
+    TypeExpr(
+        atoms
+            .into_iter()
+            .map(|a| match a {
+                OAtom::Lit(s) => Atom::Lit(s),
+                OAtom::Hole(s) => Atom::Hole(s),
+                OAtom::Ref(s) => Atom::Ref(s),
+                OAtom::Ctx(s) => Atom::Ctx(s),
+                OAtom::Inst(s) => Atom::Inst(s),
+                OAtom::Top => Atom::Top,
+                OAtom::Bot => Atom::Bot,
+            })
+            .collect(),
+    )
+}
+
+fn extensions(exts: Vec<(String, Vec<OAtom>)>) -> Vec<(String, TypeExpr)> {
+    exts.into_iter().map(|(x, t)| (x, texpr(t))).collect()
+}
+
+fn premise(p: OPremise) -> Premise {
+    match p {
+        OPremise::Ascribe(under, binding, t) => Premise {
+            extensions: extensions(under),
+            judgment: Judgment::Ascription {
                 binding,
-            }
-        }
-        OSym::Re(p, binding) => Symbol::Terminal {
-            regex: Regex::from_str(&p).unwrap_or_else(|_| Regex::literal(&p)),
-            binding,
+                ty: texpr(t),
+            },
         },
+        OPremise::Member(binding) => Premise {
+            extensions: Vec::new(),
+            judgment: Judgment::Membership { binding },
+        },
+        OPremise::Equate(l, r) => Premise {
+            extensions: Vec::new(),
+            judgment: Judgment::Equation {
+                left: texpr(l),
+                right: texpr(r),
+            },
+        },
+    }
+}
+
+fn rule(r: ORule) -> Result<TypingRule, String> {
+    match r {
+        ORule::Parsed(name, premises, conclusion) => TypingRule::new(premises, conclusion, name),
+        ORule::Made(name, premises, effects, conclusion) => Ok(TypingRule {
+            name,
+            premises: premises.into_iter().map(premise).collect(),
+            conclusion: Conclusion {
+                ty: texpr(conclusion),
+                effects: extensions(effects),
+            },
+        }),
+    }
+}
+
+fn sym(s: OSym) -> Sym {
+    match s {
+        OSym::Nt(n, b) => Sym::Nt(n, b),
+        OSym::Lit(t, b) => Sym::Lit(t, b),
+        OSym::Re(p, b) => Sym::Re(p, b),
     }
 }
 
@@ -45,61 +144,83 @@ fn build(
     rules: Vec<ORule>,
     rewrites: Vec<(String, String)>,
     start: Option<String>,
+    ty: Option<String>,
 ) -> Result<SPG, String> {
-    let mut g = SPG::new();
-    let mut last = None;
-    for (name, rule, alts) in defs {
-        let mut specials = Vec::new();
-        for alt in alts {
-            let rhs = alt.into_iter().map(|s| symbol(s, &mut specials)).collect();
-            g.add_production(name.clone(), Production { rhs });
-        }
-        for sp in specials {
-            g.add_special(sp);
-        }
-        if let Some(r) = rule {
-            g.bind_nt_rule(name.clone(), r)?;
-        }
-        last = Some(name);
-    }
-    for (name, premises, conclusion) in rules {
-        let r = TypingRule::new(premises, conclusion, name.clone())?;
-        g.add_rule(name, r);
-    }
-    g.rewrites = rewrites;
-    if let Some(s) = start.or(last) {
-        g.with_start(s);
-    }
-    g.build_tokenizer();
-    g.build_bindings();
-    Ok(g)
+    let defs: Vec<Def> = defs
+        .into_iter()
+        .map(|(n, r, alts)| {
+            let alts = alts
+                .into_iter()
+                .map(|a| a.into_iter().map(sym).collect())
+                .collect();
+            (n, r, alts)
+        })
+        .collect();
+    let rules = rules.into_iter().map(rule).collect::<Result<_, _>>()?;
+    SPG::assemble(defs, rules, rewrites, start, ty)
 }
 
-/// Build the grammar and type-check `program`, returning `program : type` or
-/// `error: …`.
+fn built(g: Result<SPG, String>) -> OBuild {
+    match g {
+        Ok(g) => OBuild::Built(ocaml::Pointer::alloc_custom(Gram(g))),
+        Err(e) => OBuild::Invalid(e),
+    }
+}
+
+/// Assemble a grammar structurally; the handle is reused across checks.
 #[ocaml::func]
 #[must_use]
-pub fn aufbau_check(
+pub fn aufbau_grammar(
     defs: Vec<ODef>,
     rules: Vec<ORule>,
     rewrites: Vec<(String, String)>,
     start: Option<String>,
-    program: String,
-) -> String {
-    let g = match build(defs, rules, rewrites, start) {
-        Ok(g) => g,
-        Err(e) => return format!("error: {e}"),
-    };
-    let mut synth = TypingSynth::new(g, &program);
+    ty: Option<String>,
+) -> OBuild {
+    built(build(defs, rules, rewrites, start, ty))
+}
+
+/// Load a grammar from `.auf` source.
+#[ocaml::func]
+#[must_use]
+pub fn aufbau_load(source: String) -> OBuild {
+    built(SPG::load(&source))
+}
+
+/// Render a grammar handle back to `.auf` source.
+#[ocaml::func]
+#[must_use]
+pub fn aufbau_show(g: &Gram) -> String {
+    g.0.to_spec_string()
+}
+
+/// The realizability class of the grammar: `("syntactic", [])` (no rules,
+/// live ⇔ realizable), `("inhabited", [])` (every ascribed sort has a
+/// universal inhabitant, live ⇒ realizable), or `("sound", sorts)` (a live
+/// prefix may be uninhabited at the listed sorts).
+#[ocaml::func]
+#[must_use]
+pub fn aufbau_completeness(g: &Gram) -> (String, Vec<String>) {
+    match crate::typing::completeness(&g.0) {
+        crate::typing::Completeness::Syntactic => ("syntactic".into(), vec![]),
+        crate::typing::Completeness::Inhabited => ("inhabited".into(), vec![]),
+        crate::typing::Completeness::Sound { uninhabited } => ("sound".into(), uninhabited),
+    }
+}
+
+/// Check a whole program or a prefix against the grammar.
+#[ocaml::func]
+#[must_use]
+pub fn aufbau_check(g: &Gram, program: String) -> OVerdict {
+    let mut synth = TypingSynth::new(g.0.clone(), &program);
     match synth.parse_with(&Context::new()) {
+        Err(e) => OVerdict::Dead(e),
         Ok(ast) => {
             let rt = synth.runtime().clone();
-            let g = synth.grammar();
             ast.roots()
-                .filter(|r| r.is_complete())
-                .find_map(|r| rt.evidence_of(r.evidence()).map(|t| render(g, &t)))
-                .map_or_else(|| "error: no type".to_string(), |t| format!("{program} : {t}"))
+                .filter(FusionNode::is_complete)
+                .find_map(|r| rt.evidence_of(r.evidence()))
+                .map_or(OVerdict::Live, |t| OVerdict::Typed(OTerm::lift(&t)))
         }
-        Err(e) => format!("error: {e}"),
     }
 }

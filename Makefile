@@ -35,7 +35,7 @@ test-py: dev
 	@echo "Building Python FFI..."
 	@maturin develop -q
 	@echo "Running Python tests..."
-	@python -m pytest src/ffi/test.py -v
+	@python -m pytest src/ffi/python/test.py -v
 	@echo "✓ Python tests passed"
 
 dev: dev-rust
@@ -101,7 +101,8 @@ ocaml:
 	@echo "Building OCaml FFI..."
 	@cargo build --features ocaml-ffi
 	@cp target/debug/libaufbau.a ocaml/libaufbau.a
-	@cp "$$(find target/debug -name libocaml-boxroot.a | head -1)" ocaml/libocaml-boxroot.a
+	@b="$$(find target/debug -name libocaml-boxroot.a | head -1)"; \
+	  [ -z "$$b" ] || cp "$$b" ocaml/libocaml-boxroot.a
 	@dune build --root ocaml
 	@echo "✓ OCaml FFI built"
 

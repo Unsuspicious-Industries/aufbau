@@ -3,7 +3,7 @@ pub mod grammar;
 #[cfg(feature = "python-ffi")]
 pub mod parse;
 #[cfg(feature = "python-ffi")]
-pub mod tests;
+pub mod regex;
 #[cfg(feature = "python-ffi")]
 pub mod typing;
 
@@ -12,7 +12,8 @@ use pyo3::prelude::*;
 
 use self::grammar::{PyGrammar, PyProduction, PySegment, PySymbol};
 use self::parse::{PyAst, PyChild, PyNode};
-use self::typing::{PyPrefixStatus, PyRegex, PySynthesizer, PyTerm, PyTypingRule};
+use self::regex::{PyPrefixStatus, PyRegex};
+use self::typing::{PySynthesizer, PyTerm, PyTypingRule};
 
 #[pymodule]
 fn aufbau(m: &Bound<'_, PyModule>) -> PyResult<()> {

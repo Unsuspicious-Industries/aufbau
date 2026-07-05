@@ -198,9 +198,7 @@ fn build_context(grammar: &SPG, pairs: &[(&str, &str)]) -> Context {
     for (name, ty_str) in pairs {
         // Grammars without a type sublanguage (e.g. `weird`) cannot derive the
         // string; there the flat leaf is the only sensible reading.
-        let ty = Type::parse(grammar, ty_str)
-            .or_else(|_| Type::parse_raw(ty_str))
-            .unwrap_or_else(|e| panic!("Failed to parse type '{ty_str}' in test context: {e}"));
+        let ty = Type::parse(grammar, ty_str).unwrap_or_else(|_| Type::raw(ty_str));
         ctx.add(name.to_string(), ty);
     }
     ctx

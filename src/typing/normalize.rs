@@ -49,7 +49,7 @@ pub struct Normalizer {
 
 /// Cap on rewrite steps at one node. A confluent terminating theory never reaches
 /// it; an ill-formed (looping) one is stopped rather than hung. Termination is the
-/// theory author's obligation 
+/// theory author's obligation
 const MAX_STEPS: usize = 1024;
 
 impl Normalizer {

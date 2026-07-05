@@ -10,7 +10,7 @@ use crate::validation::parseable::load_example_grammar;
 fn ctx_of(pairs: &[(&str, &str)]) -> Context {
     let mut ctx = Context::new();
     for (name, ty) in pairs {
-        ctx.add(name.to_string(), Type::parse_raw(ty).unwrap());
+        ctx.add(name.to_string(), Type::raw(ty));
     }
     ctx
 }
@@ -742,7 +742,7 @@ fn repro_weird_scoped_let() {
     ----------- (letb)
     ?R
 
-    [Γ] ⊢ inner : ?T
+    Γ ⊢ inner : ?T
     ----------- (scoped)
     ?T
     "#,
@@ -770,7 +770,7 @@ fn repro_weird_union_partial() {
     Identifier ::= /[a-z]+/
     TyName ::= 'N' | 'B'
     Union ::= TyName '|' Ty
-    Ty(*) ::= TyName | Union
+    Ty* ::= TyName | Union
     Variable(var) ::= Identifier[x]
     IntLit(ilit) ::= /[0-9]+/
     BoolLit(blit) ::= 'yes' | 'no'

@@ -4,7 +4,6 @@ use pyo3::prelude::*;
 use super::grammar::PyGrammar;
 use super::parse::PyAst;
 use crate::engine::grammar::SPG;
-use crate::regex::{PrefixStatus, Regex};
 use crate::typing::{Context, Term, Type, TypingRule, TypingSynth};
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -101,7 +100,6 @@ impl PyTerm {
 
 #[pyclass(unsendable, name = "Synthesizer")]
 pub struct PySynthesizer {
-    spec_source: String,
     synth: TypingSynth,
     ctx: Context,
 }
@@ -113,20 +111,25 @@ impl PySynthesizer {
     fn new(spec_source: String, input: &str) -> PyResult<Self> {
         let grammar = SPG::load(&spec_source)
             .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {e}")))?;
-        let synth = TypingSynth::new(grammar, input);
         Ok(Self {
-            spec_source,
-            synth,
+            synth: TypingSynth::new(grammar, input),
             ctx: Context::new(),
         })
     }
 
-    /// Re-create the internal synthesizer with new input.
-    fn set_input(&mut self, input: &str) -> PyResult<()> {
-        let grammar = SPG::load(&self.spec_source)
-            .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {e}")))?;
-        self.synth = TypingSynth::new(grammar, input);
-        Ok(())
+    /// A synthesizer over an already-built grammar (no `.auf` re-parse).
+    #[staticmethod]
+    #[pyo3(signature = (grammar, input = ""))]
+    fn from_grammar(grammar: &PyGrammar, input: &str) -> Self {
+        Self {
+            synth: TypingSynth::new(grammar.inner.clone(), input),
+            ctx: Context::new(),
+        }
+    }
+
+    /// Reset the input, keeping the loaded grammar.
+    fn set_input(&mut self, input: &str) {
+        self.synth.set_input(input);
     }
 
     /// Current accumulated input.
@@ -158,6 +161,68 @@ impl PySynthesizer {
             .map_err(PyRuntimeError::new_err)
     }
 
+    /// The constrained-generation mask: for each candidate continuation, can
+    /// the current input still be extended by it? One Rust-side pass over the
+    /// whole candidate set, no state change.
+    fn mask(&mut self, candidates: Vec<String>) -> Vec<bool> {
+        candidates
+            .iter()
+            .map(|t| self.synth.try_feed(t).is_ok())
+            .collect()
+    }
+
+    /// In-scope names whose type unifies with `expected` (every name when
+    /// `expected` is `None`). This is the var rule's membership constraint
+    /// intersected with a type: the type-filtered set of identifiers a
+    /// generator may emit at a hole, the masking signal the var rule denotes.
+    #[pyo3(signature = (expected = None))]
+    fn in_scope(&self, expected: Option<&str>) -> PyResult<Vec<String>> {
+        let g = self.synth.grammar();
+        let want = match expected {
+            Some(s) => Some(
+                Term::parse(g, s)
+                    .map_err(|e| PyValueError::new_err(format!("invalid type '{s}': {e}")))?,
+            ),
+            None => None,
+        };
+        let norm = crate::typing::loader::normalizer(g);
+        let mut names: Vec<String> = self
+            .ctx
+            .bindings
+            .iter()
+            .filter(|(_, ty)| match &want {
+                None => true,
+                Some(w) => {
+                    let mut s = crate::typing::Subst::new();
+                    crate::typing::unify_modulo(&norm, w, ty, &mut s, true)
+                }
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+        names.sort();
+        Ok(names)
+    }
+
+    /// The three-valued verdict on the current input: `"typed"` (a complete,
+    /// well-typed parse), `"live"` (a completable prefix), or `"dead"`.
+    fn status(&mut self) -> &'static str {
+        match self.synth.parse_with(&self.ctx) {
+            Ok(ast) if ast.is_complete() => "typed",
+            Ok(_) => "live",
+            Err(_) => "dead",
+        }
+    }
+
+    /// The type of a complete root, as a term.
+    fn root_type(&mut self) -> Option<PyTerm> {
+        let ast = self.synth.parse_with(&self.ctx).ok()?;
+        let rt = self.synth.runtime().clone();
+        ast.roots()
+            .filter(crate::engine::structure::FusionNode::is_complete)
+            .find_map(|r| rt.evidence_of(r.evidence()))
+            .map(|inner| PyTerm { inner })
+    }
+
     /// Add a variable to the typing context. The type is parsed with the grammar
     /// into its tree, so a structured type (`A -> B`) becomes a constructor, not a
     /// flat leaf.
@@ -171,11 +236,6 @@ impl PySynthesizer {
     /// Clear the typing context.
     fn clear_ctx(&mut self) {
         self.ctx = Context::new();
-    }
-
-    /// Return an AST string if parsing succeeded.
-    fn ast_str(&mut self) -> Option<String> {
-        self.synth.ast().ok().map(|a| a.to_string())
     }
 
     /// Whether the parsed tree is complete.
@@ -211,148 +271,5 @@ impl PySynthesizer {
             .map_err(|e| PyRuntimeError::new_err(format!("parse error: {e}")))?;
         let runtime = self.synth.runtime().clone();
         Ok(PyAst::from_fusion(&fusion, runtime))
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PyRegex
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[pyclass(unsendable, name = "Regex")]
-#[derive(Clone)]
-pub struct PyRegex {
-    regex: Regex,
-}
-
-#[pymethods]
-impl PyRegex {
-    #[new]
-    fn new(pattern: &str) -> PyResult<Self> {
-        let regex = Regex::from_str(pattern)
-            .map_err(|e| PyValueError::new_err(format!("invalid regex: {e}")))?;
-        Ok(Self { regex })
-    }
-
-    fn __repr__(&self) -> String {
-        format!("Regex({})", self.regex.to_pattern())
-    }
-
-    fn __str__(&self) -> String {
-        self.regex.to_pattern()
-    }
-
-    fn matches(&self, text: &str) -> bool {
-        self.regex.matches(text)
-    }
-
-    fn prefix_match(&self, prefix: &str) -> PyPrefixStatus {
-        PyPrefixStatus::from(self.regex.prefix_match(prefix))
-    }
-
-    fn derivative(&self, text: &str) -> Self {
-        Self {
-            regex: self.regex.derivative(text),
-        }
-    }
-
-    fn deriv(&self, character: &str) -> PyResult<Self> {
-        let mut chars = character.chars();
-        let c = chars
-            .next()
-            .ok_or_else(|| PyValueError::new_err("character must be a non-empty string"))?;
-        if chars.next().is_some() {
-            return Err(PyValueError::new_err(
-                "character must be a single Unicode character",
-            ));
-        }
-        Ok(Self {
-            regex: self.regex.deriv(c),
-        })
-    }
-
-    fn is_empty(&self) -> bool {
-        self.regex.is_empty()
-    }
-
-    fn is_nullable(&self) -> bool {
-        self.regex.is_nullable()
-    }
-
-    fn match_len(&self, text: &str) -> Option<usize> {
-        self.regex.match_len(text)
-    }
-
-    fn to_pattern(&self) -> String {
-        self.regex.to_pattern()
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PyPrefixStatus
-// ═══════════════════════════════════════════════════════════════════════════════
-
-#[pyclass(unsendable, name = "PrefixStatus")]
-#[derive(Clone)]
-pub struct PyPrefixStatus {
-    kind: String,
-    regex: Option<PyRegex>,
-}
-
-#[pymethods]
-impl PyPrefixStatus {
-    #[getter]
-    fn kind(&self) -> &str {
-        &self.kind
-    }
-
-    #[getter]
-    fn regex(&self) -> Option<PyRegex> {
-        self.regex.clone()
-    }
-
-    fn __repr__(&self) -> String {
-        match &self.regex {
-            Some(regex) => format!("PrefixStatus.{}({})", self.kind, regex.to_pattern()),
-            None => format!("PrefixStatus.{}", self.kind),
-        }
-    }
-
-    fn is_complete(&self) -> bool {
-        matches!(self.kind.as_str(), "complete" | "extensible")
-    }
-
-    fn is_prefix(&self) -> bool {
-        self.kind == "prefix"
-    }
-
-    fn is_extensible(&self) -> bool {
-        self.kind == "extensible"
-    }
-
-    fn is_no_match(&self) -> bool {
-        self.kind == "no_match"
-    }
-}
-
-impl From<PrefixStatus> for PyPrefixStatus {
-    fn from(status: PrefixStatus) -> Self {
-        match status {
-            PrefixStatus::Extensible(regex) => Self {
-                kind: "extensible".to_string(),
-                regex: Some(PyRegex { regex }),
-            },
-            PrefixStatus::Complete => Self {
-                kind: "complete".to_string(),
-                regex: None,
-            },
-            PrefixStatus::Prefix(regex) => Self {
-                kind: "prefix".to_string(),
-                regex: Some(PyRegex { regex }),
-            },
-            PrefixStatus::NoMatch => Self {
-                kind: "no_match".to_string(),
-                regex: None,
-            },
-        }
     }
 }

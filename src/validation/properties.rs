@@ -231,9 +231,7 @@ mod tests {
             let mut ctx = Context::new();
             for (i, name) in names.into_iter().enumerate() {
                 let ty_str = if i % 2 == 0 { "Int" } else { "Bool" };
-                if let Ok(ty) = Type::parse_raw(ty_str) {
-                    ctx.add(name, ty);
-                }
+                ctx.add(name, Type::raw(ty_str));
             }
             ctx
         }

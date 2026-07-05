@@ -59,44 +59,6 @@ pub enum TyExpr {
     Con(String, Vec<TyExpr>),
 }
 
-impl TyExpr {
-    /// Binding references (`τ`, `typeof(b)`), in order.
-    #[must_use]
-    pub fn refs(&self) -> Vec<&str> {
-        let mut out = Vec::new();
-        self.walk(&mut |t| {
-            if let TyExpr::Ref(n) = t {
-                out.push(n.as_str());
-            }
-        });
-        out
-    }
-    /// Hole names (`?A`), in order.
-    #[must_use]
-    pub fn holes(&self) -> Vec<&str> {
-        let mut out = Vec::new();
-        self.walk(&mut |t| {
-            if let TyExpr::Var(n) = t {
-                out.push(n.as_str());
-            }
-        });
-        out
-    }
-    #[must_use]
-    pub fn has_holes(&self) -> bool {
-        !self.holes().is_empty()
-    }
-
-    fn walk<'a>(&'a self, f: &mut impl FnMut(&'a TyExpr)) {
-        f(self);
-        if let TyExpr::Con(_, kids) = self {
-            for k in kids {
-                k.walk(f);
-            }
-        }
-    }
-}
-
 impl fmt::Display for TyExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -132,17 +94,6 @@ impl TypeExpr {
     pub fn refs(&self) -> Vec<&str> {
         self.collect(|a| matches!(a, Atom::Ref(_)))
     }
-    /// Context-lookup variables (`Γ(x)`).
-    #[must_use]
-    pub fn ctx_vars(&self) -> Vec<&str> {
-        self.collect(|a| matches!(a, Atom::Ctx(_)))
-    }
-
-    /// Instantiating-lookup variables (`inst(x)`).
-    #[must_use]
-    pub fn inst_vars(&self) -> Vec<&str> {
-        self.collect(|a| matches!(a, Atom::Inst(_)))
-    }
 
     fn collect(&self, pred: impl Fn(&Atom) -> bool) -> Vec<&str> {
         self.0
@@ -155,15 +106,6 @@ impl TypeExpr {
     #[must_use]
     pub fn has_holes(&self) -> bool {
         self.0.iter().any(|a| matches!(a, Atom::Hole(_)))
-    }
-
-    /// The single hole `?A`, when that is the whole expression.
-    #[must_use]
-    pub fn as_single_hole(&self) -> Option<&str> {
-        match self.0.as_slice() {
-            [Atom::Hole(n)] => Some(n.as_str()),
-            _ => None,
-        }
     }
 }
 

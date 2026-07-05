@@ -93,9 +93,9 @@ prop_compose! {
             f_ty = format!("{}->{}", type_names[i], f_ty);
         }
         let mut ctx = Context::new();
-        ctx.add("f".to_string(), Type::parse_raw(&f_ty).unwrap());
+        ctx.add("f".to_string(), Type::raw(&f_ty));
         for i in 0..n {
-            ctx.add(format!("x{i}"), Type::parse_raw(&type_names[i]).unwrap());
+            ctx.add(format!("x{i}"), Type::raw(&type_names[i]));
         }
         let input = std::iter::once("f".to_string())
             .chain((0..n).map(|i| format!("x{i}")))
@@ -197,9 +197,7 @@ prop_compose! {
         let mut ctx = Context::new();
         for (i, name) in names.into_iter().enumerate() {
             let ty_str = if i % 2 == 0 { "Int" } else { "Bool" };
-            if let Ok(ty) = Type::parse_raw(ty_str) {
-                ctx.add(name, ty);
-            }
+            ctx.add(name, Type::raw(ty_str));
         }
         ctx
     }

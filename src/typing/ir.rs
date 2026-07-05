@@ -12,7 +12,7 @@
 //! behind an equivalence check, this module is the inspectable compiled form.
 
 use crate::typing::domain::Trees;
-use crate::typing::rule::{Conclusion, Premise, TypingJudgment, TypingRule};
+use crate::typing::rule::{Conclusion, Judgment, Premise, TypingRule};
 use crate::typing::{TyExpr, TypeExpr};
 use std::collections::HashMap;
 use std::fmt;
@@ -64,7 +64,7 @@ impl Program {
     /// The slice of instructions belonging to the premise whose ascription
     /// binds `b`: from the premise's opening `PushScope` through the `Ascribe`
     /// (inclusive). `None` when no premise ascribes `b` — typically because
-    /// the rule's only premise for that name is a `Member` or `Operation`.
+    /// the rule's only premise for that name is a `Member` or `Equation`.
     /// Resolution failures inside the splice are reported by the executor.
     #[must_use]
     pub fn splice(&self, b: &str) -> Option<&[Instr]> {
@@ -116,10 +116,7 @@ impl Compiler<'_> {
     }
 
     fn premise(&mut self, p: &Premise) {
-        let setting_extends = p.setting.as_ref().is_some_and(|s| !s.extensions.is_empty());
-        // A setting extension is premise-local only when the premise also checks a
-        // judgment; a setting-only premise propagates its extension forward.
-        let scoped = setting_extends && p.judgment.is_some();
+        let scoped = !p.extensions.is_empty();
         if scoped {
             self.instrs.push(Instr::PushScope);
         }
@@ -132,45 +129,42 @@ impl Compiler<'_> {
         // not key a splice by an extension's binder name; the only splice is the
         // premise term's, recorded below.
         let setting_start = self.instrs.len();
-        if let Some(setting) = &p.setting {
-            for (name, ext) in &setting.extensions {
-                let r = self.eval(ext);
-                self.instrs.push(Instr::Extend {
-                    binding: name.clone(),
-                    ty: r,
-                });
-            }
+        for (name, ext) in &p.extensions {
+            let r = self.eval(ext);
+            self.instrs.push(Instr::Extend {
+                binding: name.clone(),
+                ty: r,
+            });
         }
         match &p.judgment {
-            Some(TypingJudgment::Ascription((term, expr))) => {
+            Judgment::Ascription { binding, ty } => {
                 let ascribe_eval_start = self.instrs.len();
-                let r = self.eval(expr);
+                let r = self.eval(ty);
                 // The splice is the settings span (which may be empty). The
                 // ascription's type eval and the ascription itself are not
                 // part of the descent — they are the rule's check, applied
                 // during `finalize`.
                 self.splices
-                    .insert(term.clone(), setting_start..ascribe_eval_start);
+                    .insert(binding.clone(), setting_start..ascribe_eval_start);
                 self.instrs.push(Instr::Ascribe {
-                    binding: term.clone(),
+                    binding: binding.clone(),
                     expected: r,
                 });
             }
-            Some(TypingJudgment::Membership(var, _)) => {
+            Judgment::Membership { binding } => {
                 let member_start = self.instrs.len();
                 self.instrs.push(Instr::Member {
-                    binding: var.clone(),
+                    binding: binding.clone(),
                 });
                 self.splices
-                    .insert(var.clone(), setting_start..member_start);
+                    .insert(binding.clone(), setting_start..member_start);
             }
-            Some(TypingJudgment::Operation { left, right, .. }) => {
+            Judgment::Equation { left, right } => {
                 let l = self.eval(left);
                 let r = self.eval(right);
                 self.instrs.push(Instr::Equate { left: l, right: r });
                 // Equate has no single binding; nothing to record.
             }
-            None => {}
         }
         if scoped {
             self.instrs.push(Instr::PopScope);
@@ -178,16 +172,14 @@ impl Compiler<'_> {
     }
 
     fn conclusion(&mut self, c: &Conclusion) {
-        if let Some(out) = &c.context.output {
-            for (var, ty) in &out.extensions {
-                let r = self.eval(ty);
-                self.instrs.push(Instr::Effect {
-                    binding: var.clone(),
-                    ty: r,
-                });
-            }
+        for (var, ty) in &c.effects {
+            let r = self.eval(ty);
+            self.instrs.push(Instr::Effect {
+                binding: var.clone(),
+                ty: r,
+            });
         }
-        let r = self.eval(&c.kind);
+        let r = self.eval(&c.ty);
         self.instrs.push(Instr::Emit { ty: r });
     }
 }
@@ -239,7 +231,11 @@ mod tests {
         let bindings = g.rule_bindings(&rule.name);
         rule.type_exprs()
             .into_iter()
-            .filter_map(|te| TyExpr::build(g, te, &bindings).ok().map(|ty| (te.clone(), ty)))
+            .filter_map(|te| {
+                TyExpr::build(g, te, &bindings)
+                    .ok()
+                    .map(|ty| (te.clone(), ty))
+            })
             .collect()
     }
 
@@ -312,16 +308,18 @@ mod tests {
     fn var_lowers_to_member_and_ctx_emit() {
         let g = stlc();
         let prog = compile_src(&g, "x ∈ Γ", "Γ(x)", "var");
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Member { binding } if binding == "x")));
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Member { binding } if binding == "x"))
+        );
         // The conclusion Γ(x) evaluates a context lookup and emits it.
         assert!(matches!(prog.instrs.last(), Some(Instr::Emit { .. })));
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Eval { expr: TyExpr::Ctx(v), .. } if v == "x")));
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Eval { expr: TyExpr::Ctx(v), .. } if v == "x"))
+        );
     }
 
     #[test]
@@ -345,14 +343,16 @@ mod tests {
         assert!(r.is_empty(), "expected empty splice for `r`, got {r:?}");
         // The ascriptions themselves remain in the program — they are not in
         // either splice, since the splice is for context, not the check.
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "l")));
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "r")));
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "l"))
+        );
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "r"))
+        );
     }
 
     #[test]
@@ -388,12 +388,14 @@ mod tests {
         // A descent into `e` needs the premise's setting extensions (so `a:τ`
         // is in scope) but not the ascription itself (the rule's check).
         let s_e = prog.splice("e").unwrap();
-        assert!(s_e
-            .iter()
-            .any(|i| matches!(i, Instr::Extend { binding, .. } if binding == "a")));
-        assert!(s_e
-            .iter()
-            .all(|i| !matches!(i, Instr::Ascribe { binding, .. } if binding == "e")));
+        assert!(
+            s_e.iter()
+                .any(|i| matches!(i, Instr::Extend { binding, .. } if binding == "a"))
+        );
+        assert!(
+            s_e.iter()
+                .all(|i| !matches!(i, Instr::Ascribe { binding, .. } if binding == "e"))
+        );
         assert!(s_e.iter().all(|i| !matches!(i, Instr::PushScope)));
         assert!(s_e.iter().all(|i| !matches!(i, Instr::PopScope)));
         // The setting binder `a` is not a descent target of its own extension:
@@ -401,10 +403,11 @@ mod tests {
         // there is no splice keyed by the binder name.
         assert!(prog.splice("a").is_none());
         // The ascription of `e` is in the program but not in its splice.
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "e")));
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "e"))
+        );
     }
 
     #[test]
@@ -426,10 +429,11 @@ mod tests {
         assert!(prog.splice("a").is_none());
         assert!(prog.splice("b").is_none());
         // The ascription is in the program but not in the splice.
-        assert!(prog
-            .instrs
-            .iter()
-            .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "e")));
+        assert!(
+            prog.instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Ascribe { binding, .. } if binding == "e"))
+        );
         assert!(s_e.iter().all(|i| !matches!(i, Instr::Ascribe { .. })));
         assert!(s_e.iter().all(|i| !matches!(i, Instr::PushScope)));
         assert!(s_e.iter().all(|i| !matches!(i, Instr::PopScope)));

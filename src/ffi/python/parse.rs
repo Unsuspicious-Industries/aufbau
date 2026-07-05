@@ -95,22 +95,6 @@ pub struct PyNode {
     rhs_len: usize,
 }
 
-impl PyNode {
-    fn empty() -> Self {
-        Self {
-            node_id: 0,
-            evidence: 0,
-            is_complete: false,
-            text: String::new(),
-            nt_name: String::new(),
-            span_start: 0,
-            span_end: 0,
-            children: vec![],
-            rhs_len: 0,
-        }
-    }
-}
-
 #[pymethods]
 impl PyNode {
     #[getter]

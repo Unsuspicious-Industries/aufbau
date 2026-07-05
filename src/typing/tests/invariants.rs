@@ -6,7 +6,7 @@ use proptest::prelude::*;
 fn ctx_of(pairs: &[(&str, &str)]) -> Context {
     let mut ctx = Context::new();
     for (name, ty) in pairs {
-        ctx.add(name.to_string(), Type::parse_raw(ty).unwrap());
+        ctx.add(name.to_string(), Type::raw(ty));
     }
     ctx
 }
@@ -389,7 +389,10 @@ fn generated_stlc_chains_parse_and_resolve() {
                 .and_then(|node| synth.runtime().evidence_of(node.evidence))
                 == Some(expected.clone())
         });
-        assert!(final_ok, "a {arg_count}-arg chain should resolve to T{arg_count}");
+        assert!(
+            final_ok,
+            "a {arg_count}-arg chain should resolve to T{arg_count}"
+        );
     }
 }
 
@@ -401,7 +404,10 @@ fn generated_stlc_chain_prefixes_parse() {
         let ctx = ctx_from_owned(&grammar, &stlc_chain_context(arg_count));
         let result = check_all_prefixes_parseable(&mut grammar, &input, &ctx);
         assert!(
-            matches!(result, crate::validation::parseable::ParseResult::Pass { .. }),
+            matches!(
+                result,
+                crate::validation::parseable::ParseResult::Pass { .. }
+            ),
             "all prefixes of a {arg_count}-arg chain should parse"
         );
     }

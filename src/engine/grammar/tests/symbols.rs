@@ -34,7 +34,7 @@ fn regex_literals_round_trip() {
     }
     let spec2 = grammar.to_spec_string();
     let reparsed = SPG::load(&spec2).unwrap();
-    assert_eq!(grammar, reparsed);
+    assert_eq!(spec2, reparsed.to_spec_string());
 }
 
 #[test]

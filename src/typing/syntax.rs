@@ -21,7 +21,7 @@
 //! [`SPG::rule_bindings`]: crate::engine::grammar::SPG::rule_bindings
 
 use super::{Atom, Term, TyExpr, TypeExpr};
-use crate::engine::grammar::{Symbol, SPG};
+use crate::engine::grammar::{SPG, Symbol};
 use crate::engine::structure::{FusionChild, FusionNode};
 use crate::regex::Regex;
 use crate::typing::{Context, TypingSynth};
@@ -42,7 +42,9 @@ impl TyExpr {
             ),
             TyExpr::Ref(n) => return Err(format!("rewrite cannot reference a binding '{n}'")),
             TyExpr::Ctx(v) => return Err(format!("rewrite cannot look up a context 'Γ({v})'")),
-            TyExpr::Inst(v) => return Err(format!("rewrite cannot instantiate a context 'inst({v})'")),
+            TyExpr::Inst(v) => {
+                return Err(format!("rewrite cannot instantiate a context 'inst({v})'"));
+            }
             TyExpr::Top => return Err("rewrite cannot use ⊤".into()),
             TyExpr::Bot => return Err("rewrite cannot use ∅".into()),
         })
@@ -77,7 +79,9 @@ pub fn render(g: &SPG, t: &Term) -> String {
             let mut out = Vec::new();
             for sym in &prod.rhs {
                 match sym {
-                    Symbol::Terminal { regex, .. } => out.push(regex.to_pattern().replace('\\', "")),
+                    Symbol::Terminal { regex, .. } => {
+                        out.push(regex.to_pattern().replace('\\', ""))
+                    }
                     Symbol::Nonterminal { .. } => {
                         if let Some(k) = kids.next() {
                             out.push(render(g, k));
@@ -270,7 +274,11 @@ impl TyExpr {
     /// `Γ(x)`, `⊤`/`∅`) are replaced by `?`-placeholders that the augmented
     /// grammar accepts as a type atom, the unique complete parse gives the
     /// structure, and the placeholder leaves are mapped back.
-    pub fn build(grammar: &SPG, expr: &TypeExpr, bindings: &HashSet<String>) -> Result<Self, String> {
+    pub fn build(
+        grammar: &SPG,
+        expr: &TypeExpr,
+        bindings: &HashSet<String>,
+    ) -> Result<Self, String> {
         match expr.0.as_slice() {
             [] | [Atom::Top] => return Ok(Self::Top),
             [Atom::Bot] => return Ok(Self::Bot),
@@ -296,7 +304,10 @@ fn hole_regex() -> Regex {
         Regex::Range('0', '9'),
         Regex::Char('_'),
     ]);
-    Regex::cat(Regex::Char('?'), Regex::cat(idchar.clone(), Regex::star(idchar)))
+    Regex::cat(
+        Regex::Char('?'),
+        Regex::cat(idchar.clone(), Regex::star(idchar)),
+    )
 }
 
 /// Emit a placeholder string for the meta atoms and a map back to `TyExpr`
@@ -422,26 +433,20 @@ fn from_node(node: &FusionNode, metas: &HashMap<String, TyExpr>) -> TyExpr {
     TyExpr::Con(node.nt_name().unwrap_or("?").to_string(), kids)
 }
 
+/// The three call forms a type expression admits: `typeof(b)` (a binding
+/// ref), `inst(x)` (an instantiating lookup), and `Γ(x)`/`G(x)` (a context
+/// lookup — there is one ambient context, so only its two spellings name it).
+/// Anything else is an error, not a silent context lookup.
 fn call_atom(id: &str, inner: &str) -> Result<Atom, String> {
     if inner.is_empty() {
         return Err(format!("{id}() requires an argument"));
     }
-    if id == "typeof" {
-        Ok(Atom::Ref(inner.to_string()))
-    } else if id == "inst" {
-        Ok(Atom::Inst(inner.to_string()))
-    } else if is_ctx_name(id) {
-        Ok(Atom::Ctx(inner.to_string()))
-    } else {
-        Err(format!("unknown form {id}(…)"))
+    match id {
+        "typeof" => Ok(Atom::Ref(inner.to_string())),
+        "inst" => Ok(Atom::Inst(inner.to_string())),
+        "Γ" | "G" => Ok(Atom::Ctx(inner.to_string())),
+        _ => Err(format!("unknown form {id}(…)")),
     }
-}
-
-/// A context name: `Γ`, `G`, or other Greek-uppercase context symbols.
-fn is_ctx_name(s: &str) -> bool {
-    !s.is_empty()
-        && s.chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || "ΓΔΘΛΣΦΨΩΞΠ".contains(c))
 }
 
 fn flush(atoms: &mut Vec<Atom>, sep: &mut String) {

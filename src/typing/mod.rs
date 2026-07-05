@@ -24,6 +24,7 @@
 //! ### `eval_impl` = eval (`thm:typing-realizable`-analog)
 //! Status: PROVEN — §3 Theorem (Typing implementation computes ideal evaluator).
 
+pub mod complete;
 pub mod context;
 pub mod domain;
 pub mod ir;
@@ -38,19 +39,17 @@ pub mod types;
 #[cfg(test)]
 mod tests;
 
-pub use context::{Context, ContextTransition, TreeStatus};
+pub use complete::{Completeness, completeness};
+pub use context::{Context, ContextTransition};
 pub use domain::TypingDomain;
 pub use ir::{Instr, Program, compile};
 pub use normalize::{Normalizer, RewriteRule, unify_modulo};
-pub use syntax::render;
 pub use pattern::{Match, Pattern};
+pub use syntax::render;
 pub use term::{Evidence, Subst, Term};
 pub use types::{Atom, TyExpr, Type, TypeExpr};
 
-pub use rule::{
-    Conclusion, ConclusionContext, Premise, PremiseStatus, RuleParser, TypeAscription, TypeSetting,
-    TypingJudgment, TypingRule,
-};
+pub use rule::{Conclusion, Judgment, Premise, PremiseStatus, RuleParser, TypingRule};
 
 pub use crate::engine::synth::Synthesizer as TypingSynth;
 pub use crate::semantics::runtime::TypingRuntime;

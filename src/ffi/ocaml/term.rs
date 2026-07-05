@@ -25,11 +25,12 @@ impl OTerm {
         }
     }
 
-    /// Out of the engine's term; a leaf is rendered as its regular-set surface.
+    /// Out of the engine's term; a leaf is rendered as its regular-set surface,
+    /// and a variable's per-run `#` qualifier is stripped (surface identity).
     #[must_use]
     pub fn lift(t: &Term) -> Self {
         match t {
-            Term::Var(n) => OTerm::Var(n.clone()),
+            Term::Var(n) => OTerm::Var(n.split('#').next().unwrap_or(n).to_string()),
             Term::Con(f, ks) => OTerm::Con(f.clone(), ks.iter().map(OTerm::lift).collect()),
             Term::Leaf(p) => OTerm::Leaf(p.to_string()),
         }

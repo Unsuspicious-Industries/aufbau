@@ -5,7 +5,7 @@
 
 use crate::engine::grammar::SPG;
 use crate::engine::parse::NtId;
-use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId, Span};
+use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId};
 use crate::engine::path::{GrammarPath, TreePath};
 use std::collections::HashSet;
 
@@ -129,32 +129,13 @@ impl Obligations {
     /// Create the obligations induced by a production at `root`.
     #[must_use]
     pub fn create(grammar: &SPG, prod: ProdId, root: TreePath) -> Self {
-        let Some(_) = grammar.prod(prod) else {
-            return Self::new(root, Vec::new());
-        };
-        let Some(rule_name) = grammar.nt(prod.0).and_then(|n| grammar.nt_rule(n)) else {
-            return Self::new(root, Vec::new());
-        };
-        let Some(_binding_map) = &grammar.bindings else {
-            return Self::new(root, Vec::new());
-        };
-        let Some(_rule) = grammar.rules.get(rule_name.as_str()) else {
-            return Self::new(root, Vec::new());
-        };
-        let Some(nt_name) = grammar.nt(prod.0) else {
-            eprintln!("DEBUG obl_create: nt missing for {}", prod.0);
-            return Self::new(root, Vec::new());
-        };
-        let Some(rule_name) = grammar.nt_rule(nt_name) else {
-            eprintln!("DEBUG obl_create: nt_rule missing for {nt_name}");
-            return Self::new(root, Vec::new());
-        };
-        let Some(binding_map) = &grammar.bindings else {
-            eprintln!("DEBUG obl_create: bindings missing for {nt_name} / {rule_name}");
-            return Self::new(root, Vec::new());
-        };
-        let Some(rule) = grammar.rules.get(rule_name.as_str()) else {
-            eprintln!("DEBUG obl_create: rule missing for {nt_name} / {rule_name}");
+        let context = grammar.prod(prod).and_then(|_| {
+            let rule_name = grammar.nt(prod.0).and_then(|n| grammar.nt_rule(n))?;
+            let binding_map = grammar.bindings.as_ref()?;
+            let rule = grammar.rules.get(rule_name.as_str())?;
+            Some((rule_name, binding_map, rule))
+        });
+        let Some((rule_name, binding_map, rule)) = context else {
             return Self::new(root, Vec::new());
         };
 
@@ -261,51 +242,6 @@ impl Obligations {
     pub fn resolve_nonterminal(&mut self, dot: usize, alt: usize, node: &ArenaNode) {
         for obligation in &mut self.items {
             obligation.resolve_from_node(dot, alt, node);
-        }
-    }
-
-    /// Resolve obligations at (dot, alt) with explicit span and evidence.
-    /// Used by the word generator which builds derivations without arena nodes.
-    pub fn resolve_explicit(
-        &mut self,
-        dot: usize,
-        alt: usize,
-        span: Span,
-        complete: bool,
-        open: bool,
-        evidence: EvidenceId,
-    ) {
-        for obligation in &mut self.items {
-            if !obligation.has_matched() && obligation.matches(dot, alt) {
-                obligation.value = Some(Lexeme::new(span, complete, open));
-                obligation.evidence = Some(evidence);
-            }
-        }
-    }
-
-    /// Snapshot obligations at (dot, alt) for backtracking.
-    /// Returns (index, `saved_value`, `saved_evidence`) for each matching obligation.
-    #[must_use]
-    pub fn save_at(
-        &self,
-        dot: usize,
-        alt: usize,
-    ) -> Vec<(usize, Option<Lexeme>, Option<EvidenceId>)> {
-        self.items
-            .iter()
-            .enumerate()
-            .filter(|(_, ob)| !ob.has_matched() && ob.matches(dot, alt))
-            .map(|(i, ob)| (i, ob.value, ob.evidence))
-            .collect()
-    }
-
-    /// Restore obligations from a `save_at` snapshot.
-    pub fn restore_at(&mut self, saved: Vec<(usize, Option<Lexeme>, Option<EvidenceId>)>) {
-        for (i, value, evidence) in saved {
-            if let Some(ob) = self.items.get_mut(i) {
-                ob.value = value;
-                ob.evidence = evidence;
-            }
         }
     }
 
