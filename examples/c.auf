@@ -1,0 +1,320 @@
+// C — a typed C subset in the unification model.
+//
+// Syntax is real, compilable C: function definitions of arbitrary arity, with
+// int/float/char/void base types, pointers (T*, T**, ...), explicit casts,
+// and if/while/for control flow. `cc -fsyntax-only` on the output is a
+// genuine external oracle: a program aufbau accepts is a program a real C
+// compiler accepts too (the C analogue of ml.auf's OCaml differential
+// certification).
+//
+// Two nonterminals carry types. CType is what a program can actually write
+// (base types plus pointer stars) — exactly real C declarator syntax, used
+// everywhere in concrete source. Type is the richer internal sort used only
+// to describe a function's own signature inside typing rules (Fn/FnUnit,
+// never reachable from concrete syntax), so nothing here can make aufbau
+// accept text that isn't valid C.
+//
+// Arity is genuinely unbounded: parameters and arguments are real
+// comma-separated lists (ParamRest/ArgRest), not a fixed enumeration. A
+// parameter list's last entry is fused with the closing ')' and the
+// function's own body in one production (ParamLast) so that each parameter's
+// binding reaches the next one — and ultimately the body — purely through
+// adjacent-sibling propagation, the same mechanism StatementList already
+// relies on to thread a declaration to the statements after it.
+//
+// A program is a list of function definitions (ProgramList), each exporting
+// its own now-fully-resolved signature to whatever comes after it — real
+// forward-reference visibility, not self-recursion. Self-recursion (binding
+// a function's own name to a signature built from a not-yet-resolved
+// metavariable, before its own body is checked) was tried and dropped: a
+// self-recursive call's own argument types can resolve that metavariable
+// before the real parameter list does, letting a wrong-arity or wrong-type
+// self-call through — a genuine unsoundness, not a grammar limitation.
+//
+// Known limitation: `return` is not checked against the function's declared
+// return type in this fragment (a documented gap, in the spirit of the
+// fragment-boundary notes already carried by ml.auf/imp.auf). A `for` loop's
+// init/step must assign an already-declared variable, not introduce a fresh
+// one, sidestepping a scoping question the grammar doesn't need to answer to
+// still be meaningfully type-intensive.
+
+// ===================== Identifiers =====================
+Identifier ::= /[a-z_][A-Za-z0-9_]*/
+
+// ===================== Concrete types (real C declarator syntax) =====================
+CBase ::= 'int' | 'float' | 'char' | 'void' | '(' CType ')'
+CPointer(ptr) ::= CFactor '*'
+CFactor ::= CBase | CPointer
+CType ::= CFactor
+
+// ===================== Internal type sort (rule text only) =====================
+// A function's signature is `<param-types> => <return>`. ParamCons is a
+// right-associative cons-list of parameter types (mirroring ml.auf's own
+// `?A list`), so Fn's parameter side can be any length. FnUnit marks "no
+// parameters" with the keyword `unit`, not `void`: CBase already makes
+// `void` a valid CFactor (it is a real return/pointer-base type), so
+// `void => ?R` would parse two ways — as FnUnit or as Fn with a void
+// parameter — and a rule's type pattern must have a unique parse (see
+// loader::check). The '=>' token never appears in concrete syntax, and
+// CType (not Type) is what every concrete production below actually
+// references, so a program can never spell one of these out.
+ParamCons(pcons) ::= CFactor ',' ParamTypes
+ParamTypes ::= ParamCons | CFactor
+Fn(fn) ::= ParamTypes '=>' Type
+FnUnit(fnunit) ::= 'unit' '=>' Type
+Type* ::= ParamTypes | Fn | FnUnit
+
+// ===================== Literals =====================
+IntLit(int_lit) ::= /[0-9]+/
+FloatLit(float_lit) ::= /[0-9]+\.[0-9]+/
+// A positive enumeration, not `[^'\\]`: a negated class here blows up the
+// rule-augmentation step every typing rule mentioning a pointer type goes
+// through (SPG::load unions this terminal's regex against every other
+// terminal while elaborating `?A *`-shaped rule text), turning grammar load
+// from instant into effectively non-terminating. No space or escapes: a
+// literal space inside a `/…/` pattern splits across two tokens (the .auf
+// loader's per-alternative tokenizer is whitespace-naive), and the input
+// tokenizer's own whitespace-skipping would eat it before matching anyway.
+CharLit(char_lit) ::= /'[a-zA-Z0-9!#%&(),.:;?\[\]_{}+=<>-]'/
+
+// ===================== Expressions =====================
+Variable(var) ::= Identifier[x]
+
+AddrOf(addr) ::= '&' AtomicExpr[e]
+Deref(deref) ::= '*' AtomicExpr[e]
+Cast(cast) ::= '(' CType[τ] ')' AtomicExpr[e]
+Paren ::= '(' Expression ')'
+
+// Arguments are a real comma-separated list: ArgStep peels off one argument
+// and recurses; the base case is a bare Expression (transparent — a
+// one-argument call's ArgRest is just that argument's own type, matching
+// ParamTypes' own bare-CFactor base case so the two unify directly).
+ArgStep(argstep) ::= Expression[hd] ',' ArgRest[tl]
+ArgRest ::= ArgStep | Expression
+Call(call) ::= Identifier[fn] '(' ArgRest[args] ')'
+CallEmpty(call_empty) ::= Identifier[fn] '(' ')'
+
+AtomicExpr ::= Variable
+             | IntLit
+             | FloatLit
+             | CharLit
+             | AddrOf
+             | Deref
+             | Cast
+             | Call
+             | CallEmpty
+             | Paren
+
+ArithOp ::= '+' | '-' | '/'
+CompOp ::= '==' | '!=' | '<' | '<=' | '>' | '>='
+
+// Restricted to AtomicExpr, not the full (self-embedding) Expression: real C
+// allows bare chains like `a + b + c`, but an unconstrained `Expression op
+// Expression` on both sides is ambiguous in a way that, combined with the
+// rest of this grammar's size, makes rule elaboration intractable (see
+// SPG::load's rule-augmentation step). Parenthesizing nested arithmetic
+// (`a + (b + c)`) still parses via AtomicExpr's Paren alternative, so nothing
+// expressible is lost — only the unparenthesized-chain surface form.
+Arith(arith) ::= AtomicExpr[l] ArithOp[op] AtomicExpr[r]
+Compare(compare) ::= AtomicExpr[l] CompOp[op] AtomicExpr[r]
+
+Expression ::= Arith | Compare | AtomicExpr
+
+// ===================== Statements =====================
+Decl(decl) ::= CType[τ] Identifier[name] '=' Expression[value] ';'
+DeclNoInit(decl_no_init) ::= CType[τ] Identifier[name] ';'
+Assign(assign) ::= Identifier[name] '=' Expression[value] ';'
+Return(return) ::= 'return' Expression[e] ';'
+ReturnVoid(return_void) ::= 'return' ';'
+ExprStmt(expr_stmt) ::= Expression[e] ';'
+
+Block ::= '{' StatementList '}'
+StatementList ::= Statement StatementList | Statement
+
+IfStmt(if) ::= 'if' '(' Expression[cond] ')' Block[then_block]
+IfElseStmt(if_else) ::= 'if' '(' Expression[cond] ')' Block[then_block] 'else' Block[else_block]
+WhileStmt(while) ::= 'while' '(' Expression[cond] ')' Block[body]
+
+ForInit(for_init) ::= Identifier[name] '=' Expression[value]
+ForStep(for_step) ::= Identifier[name] '=' Expression[value]
+ForStmt(for) ::= 'for' '(' ForInit[init] ';' Expression[cond] ';' ForStep[step] ')' Block[body]
+
+Statement ::= Decl
+            | DeclNoInit
+            | Assign
+            | Return
+            | ReturnVoid
+            | ExprStmt
+            | IfStmt
+            | IfElseStmt
+            | WhileStmt
+            | ForStmt
+
+// ===================== Top level =====================
+// A parameter list is a real comma-separated list, and its last entry fuses
+// directly with the closing ')' and the body in one production (ParamLast):
+// this keeps every binding step a single-sibling propagation (Param's effect
+// reaches its immediate next sibling — another ParamRest, or Block itself),
+// the same adjacency StatementList already relies on to thread a
+// declaration's binding to the statements after it. A binding introduced
+// this way is never later hidden from a deeper sibling, so it reaches all
+// the way down to a multi-parameter function's body.
+Param(param) ::= CType[τ] Identifier[name]
+ParamStep(pstep) ::= Param[hd] ',' ParamRest[tl]
+ParamRest ::= ParamStep | ParamLast
+ParamLast(plast) ::= Param[hd] ')' Block[body]
+
+FunctionDefN(fndefn) ::= CType[ret] Identifier[name] '(' ParamRest[params]
+FunctionDef0(fndef0) ::= CType[ret] Identifier[name] '(' ')' Block[body]
+FunctionDef ::= FunctionDefN | FunctionDef0
+
+// A translation unit is a real list of function definitions: each one's
+// effect (binding its own name to its now-fully-resolved signature) reaches
+// every definition after it, the same adjacency StatementList uses for
+// declarations. This is genuine forward-reference visibility, not
+// self-recursion — a function cannot call itself, only an earlier one,
+// exactly as real C requires without a forward declaration. Self-recursion
+// was tried and dropped: binding a function's own name to a signature built
+// from a not-yet-resolved metavariable, before its own body is checked,
+// lets a self-recursive call's argument types resolve that metavariable
+// before the real parameter list does — a genuine unsoundness, not a
+// grammar limitation, so it is not worth the risk of carrying it into the
+// benchmark corpus.
+ProgramList ::= FunctionDef ProgramList | FunctionDef
+Program ::= ProgramList
+
+// ===================== Typing rules =====================
+
+// Variable lookup
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+// Literals
+----------- (int_lit)
+'int'
+
+----------- (float_lit)
+'float'
+
+----------- (char_lit)
+'char'
+
+// Pointers
+Γ ⊢ e : ?A
+----------- (addr)
+?A *
+
+Γ ⊢ e : ?A *
+----------- (deref)
+?A
+
+// Cast always succeeds at the ascribed type: matches real C's permissive
+// explicit-cast semantics for scalar types (no premise on e's own type).
+----------- (cast)
+τ
+
+// Arguments: a real list. argstep peels one argument and recurses, emitting
+// a cons-shaped type that matches ParamCons's own shape so it can unify
+// directly against a callee's declared parameter types.
+Γ ⊢ hd : ?H, Γ ⊢ tl : ?T
+-------------------------- (argstep)
+?H, ?T
+
+// Calls: fn is a bare identifier, not a typed sub-expression, so its stored
+// signature comes from a context *lookup* (`Γ(fn)`) unified against the
+// expected shape — not an ascription (`Γ ⊢ fn : …`), which would instead
+// check fn's own recursively-computed type and never see the binding at all.
+fn ∈ Γ, Γ(fn) = ?Ps => ?R, Γ ⊢ args : ?Ps
+------------------------------------------- (call)
+?R
+
+fn ∈ Γ, Γ(fn) = unit => ?R
+----------------------------- (call_empty)
+?R
+
+// Arithmetic and comparison (comparisons yield 'int', matching real C: there
+// is no distinct boolean type here).
+Γ ⊢ l : 'int', Γ ⊢ r : 'int'
+------------------------------ (arith)
+'int'
+
+Γ ⊢ l : 'int', Γ ⊢ r : 'int'
+------------------------------ (compare)
+'int'
+
+// Statements: void, extending Γ where a declaration is in play.
+Γ ⊢ value : τ
+------------------------ (decl)
+Γ → Γ[name:τ] ⊢ 'void'
+
+------------------------ (decl_no_init)
+Γ → Γ[name:τ] ⊢ 'void'
+
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------- (assign)
+'void'
+
+Γ ⊢ e : ?A
+----------- (return)
+'void'
+
+----------- (return_void)
+'void'
+
+Γ ⊢ e : ?A
+----------- (expr_stmt)
+'void'
+
+Γ ⊢ cond : 'int', Γ ⊢ then_block : ?T
+--------------------------------------- (if)
+?T
+
+Γ ⊢ cond : 'int', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
+------------------------------------------------------------- (if_else)
+?T
+
+Γ ⊢ cond : 'int', Γ ⊢ body : ?T
+--------------------------------- (while)
+?T
+
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------- (for_init)
+'void'
+
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------- (for_step)
+'void'
+
+Γ ⊢ init : 'void', Γ ⊢ cond : 'int', Γ ⊢ step : 'void', Γ ⊢ body : ?T
+--------------------------------------------------------------- (for)
+?T
+
+// Parameters: param has no premise of its own — it just binds its name and
+// reports its own type upward. pstep threads that binding to the remaining
+// parameters (and, transitively, the body) and folds the types into a
+// ParamCons-shaped list; plast does the same but for the last parameter,
+// where the immediate next sibling is the body itself, not another
+// parameter.
+------------------------ (param)
+Γ → Γ[name:τ] ⊢ τ
+
+Γ ⊢ hd : ?H, Γ ⊢ tl : ?T
+-------------------------- (pstep)
+?H, ?T
+
+Γ ⊢ hd : ?H, Γ ⊢ body : ⊤
+---------------------------- (plast)
+?H
+
+// Top level: a function definition is checked, not valued (⊤), and exports
+// its own now-fully-resolved signature as an effect for whatever function
+// comes after it (see the ProgramList comment above for why this is a
+// forward-reference list, not self-recursion).
+Γ ⊢ params : ?Ps
+------------------------ (fndefn)
+Γ → Γ[name: ?Ps => ret] ⊢ ⊤
+
+Γ ⊢ body : ⊤
+------------------------ (fndef0)
+Γ → Γ[name: unit => ret] ⊢ ⊤

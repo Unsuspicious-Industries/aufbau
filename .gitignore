@@ -65,6 +65,10 @@ draft/refs/
 report.*
 indent.log
 
+# Paper/planning scratch (not for the public repo)
+lmpl-plan.md
+aufbau-p7-lmpl-plan.md
+
 # OCaml FFI build artifacts (the source under ocaml/ is tracked)
 ocaml/_build/
 ocaml/*.a
