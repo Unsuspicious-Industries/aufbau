@@ -79,7 +79,21 @@ let invalid =
     "let xs : bool list = 1 :: [] in xs";
     "match 1 :: [] with [] -> 0 | h :: t -> true";
     "match 5 with [] -> 0 | h :: t -> 1";
-    "let rec f : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> f(h) in f(1 :: [])" ]
+    "let rec f : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> f(h) in f(1 :: [])";
+    (* Self-recursion soundness probes (see draft discussion of the analogous
+       bug found in examples/c.auf, where binding a function's own name to an
+       *unresolved metavariable* signature before checking its body let a
+       wrong-typed recursive call prematurely resolve that metavariable.
+       letrec's name is instead bound to `τ`, the concrete syntactic
+       annotation — already ground before value/body are checked — so there
+       is no shared open metavariable for a bad recursive call to corrupt.
+       These probes exercise that boundary directly: a wrong-typed argument
+       in the recursive call, and a wrong-typed *non-recursive* branch beside
+       one that recurses correctly. Both aufbau and OCaml must reject all
+       three. *)
+    "let rec f : int -> int = fun (n : int) -> f(true) in f(0)";
+    "let rec f : int -> bool = fun (n : int) -> if n = 0 then 1 else f(n) in f(1)";
+    "let rec f : int -> int = fun (n : int) -> if n = 0 then f(n) else true in f(1)" ]
 
 (* Rejected by monomorphic ML, accepted by OCaml's generalization. *)
 let beyond =
