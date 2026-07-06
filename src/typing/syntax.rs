@@ -346,6 +346,31 @@ fn skeletonize(expr: &TypeExpr, bindings: &HashSet<String>) -> (String, HashMap<
     (s, metas)
 }
 
+/// Nonterminals reachable from `start` by following `Symbol::Nonterminal`
+/// edges in `productions`. A type expression can only ever derive through the
+/// designated type fragment, so anything outside this closure (the object
+/// language's `Expression`/`Statement`/… nonterminals) is inert weight the
+/// augmented parse below would otherwise still have to consider.
+fn reachable(productions: &HashMap<String, Vec<crate::engine::grammar::Production>>, start: &str) -> HashSet<String> {
+    let mut seen = HashSet::new();
+    let mut stack = vec![start.to_string()];
+    while let Some(nt) = stack.pop() {
+        if !seen.insert(nt.clone()) {
+            continue;
+        }
+        for p in productions.get(&nt).into_iter().flatten() {
+            for sym in &p.rhs {
+                if let Symbol::Nonterminal { name, .. } = sym
+                    && !seen.contains(name)
+                {
+                    stack.push(name.clone());
+                }
+            }
+        }
+    }
+    seen
+}
+
 /// Clone `grammar` so a hole atom parses anywhere a type leaf can. Refuse if the
 /// grammar already accepts a `?…` token: the meta marker must be disjoint from
 /// the grammar's own alphabet (the same soundness gate as leaf/separator
@@ -367,6 +392,16 @@ fn augment(grammar: &SPG) -> Result<SPG, String> {
         }
     }
     let mut g = grammar.clone();
+    // Restrict to the type fragment's own reachable closure: the object
+    // language's expression/statement grammar can be arbitrarily large and
+    // ambiguous (real languages are), but a type expression never derives
+    // through it, so dragging it into every rule's parse-unique search below
+    // wastes work proportional to the whole grammar instead of just `Ty(*)`.
+    if let Some(start) = &grammar.ty {
+        let keep = reachable(&grammar.productions, start);
+        g.productions.retain(|nt, _| keep.contains(nt));
+        g.nonterminals.retain(|nt| keep.contains(nt));
+    }
     // Skeleton parsing is purely structural; drop the typing *rules* so spinning
     // up a runtime over this grammar does not recurse back into `TyExpr::build`
     // (`type_trees` iterates the rules).
