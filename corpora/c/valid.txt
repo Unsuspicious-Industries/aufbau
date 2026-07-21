@@ -1,0 +1,5 @@
+int add(int x, int y) { return x + y; }
+int double(int x) { return x * 2; }
+int deref(int* p) { return *p; }
+int addr_deref(int* p) { int* q = p; return *q; }
+int pointer_chain(int* p) { int** pp = &p; return **pp; }

@@ -1,0 +1,5 @@
+int add(int x, int y) { return x - y; }
+int bad_add(int x, int* y) { return x + y; }
+int missing_semi(int x) { return x }
+int no_decl() { return *x; }
+int type_mismatch(int x) { return (int*)x; }

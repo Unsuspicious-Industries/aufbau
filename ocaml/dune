@@ -17,12 +17,28 @@
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
 
-; Differential certification: aufbau's ML instance (examples/ml.auf) against
-; the OCaml typechecker (compiler-libs). Runs with `dune runtest`.
+; Generic differential certification framework
+(library
+ (name certify)
+ (modules certify)
+ (libraries aufbau))
+
+; Language instances for the certification framework
+(library
+ (name lang_ml)
+ (modules lang_ml)
+ (libraries aufbau certify oracle))
+
+(library
+ (name lang_c)
+ (modules lang_c)
+ (libraries aufbau certify))
+
+; Differential certification: all supported languages
 (test
  (name cert)
- (modules cert oracle)
- (libraries aufbau compiler-libs.common)
+ (modules cert certify lang_ml lang_c oracle)
+ (libraries aufbau certify lang_ml lang_c oracle compiler-libs.common)
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
 

@@ -1,220 +1,245 @@
-"""Type stubs for the aufbau native module (pyo3)."""
+"""Type stubs for the aufbau native module (pyo3).
 
-from typing import Optional
+Usage::
 
-Symbol = tuple[str, str, Optional[str]]
-"""A grammar symbol: (kind, value, binding) with kind one of "nt" | "lit" | "re"."""
+    from aufbau import SPG, Synthesizer, Term, Regex, PrefixStatus
+    from aufbau_dsl import G, nt, lit, re_, hole, ctx, ascribe, member
 
-Production = tuple[str, Optional[str], list[list[Symbol]]]
-"""A nonterminal definition: (name, rule, alternatives)."""
+See :mod:`aufbau_dsl` for the idiomatic grammar construction DSL.
+"""
 
-Rule = tuple[str, str, str]
+from typing import Optional, Union
+
+# ── Type aliases for SPG.build() input ───────────────────────────────────
+
+SymbolSpec = tuple[str, str, Optional[str]]
+"""A grammar symbol spec: (kind, value, binding) with kind one of "nt" | "lit" | "re".
+
+This is the *input* format for :meth:`SPG.build`. The :mod:`aufbau_dsl`
+module provides :func:`~aufbau_dsl.nt`, :func:`~aufbau_dsl.lit`, and
+:func:`~aufbau_dsl.re_` constructors.
+
+At runtime, production symbols are returned as :class:`Symbol` objects.
+"""
+
+ProductionSpec = tuple[str, Optional[str], list[list[SymbolSpec]]]
+"""A nonterminal definition specification: (name, rule, alternatives)."""
+
+RuleSpec = tuple[str, str, str]
 """A typing rule in inference notation: (name, premises, conclusion)."""
+
+
+# ── Runtime types ────────────────────────────────────────────────────────
 
 class Term:
     """A type as a tree: a metavariable, a constructor over children, or a base leaf."""
+    def label(self) -> Optional[str]: ...
+    def children(self) -> list[Term]: ...
+    def is_var(self) -> bool: ...
+    def is_leaf(self) -> bool: ...
+    def is_con(self) -> bool: ...
+    def is_ground(self) -> bool: ...
 
-    def label(self) -> Optional[str]:
-        """Constructor label (the nonterminal), or None for a hole or leaf."""
-        ...
-    def children(self) -> list[Term]:
-        """Child terms of a constructor (empty for a hole or leaf)."""
-        ...
-    def is_var(self) -> bool:
-        """Whether this term is an unbound metavariable (a hole)."""
-        ...
-    def is_leaf(self) -> bool:
-        """Whether this term is a base leaf (an atomic type name)."""
-        ...
-    def is_con(self) -> bool:
-        """Whether this term is a constructor applied to children."""
-        ...
-    def is_ground(self) -> bool:
-        """No unification variables: a fully determined type."""
-        ...
+
+class Symbol:
+    """A grammar symbol as returned by :meth:`Production.rhs`.
+
+    Attributes:
+        kind: ``"terminal"`` or ``"nonterminal"``.
+        name: The symbol's text (literal, nonterminal name, or regex pattern).
+        binding: Optional binding name, or None.
+    """
+    kind: str
+    name: str
+    binding: Optional[str]
+
+    def is_terminal(self) -> bool: ...
+    def has_binding(self) -> bool: ...
+
+
+class Production:
+    """A nonterminal production (alternative)."""
+    def rhs(self) -> list[Symbol]: ...
+    def __len__(self) -> int: ...
+
+
+class Segment:
+    """A lexical segment from :meth:`SPG.tokenize`."""
+    text: str
+    start: int
+    end: int
+    index: int
+    len: int
+
+
+class TypingRule:
+    """A typing rule, accessible via :meth:`Synthesizer.get_rule`."""
+    name: str
+    def premise_count(self) -> int: ...
+    def pretty(self, indent: int = 0) -> str: ...
+    def bindings(self) -> list[str]: ...
+
+
+class Ast:
+    """A parse AST, returned by :meth:`Synthesizer.ast`."""
+    roots: list[Node]
+    node_count: int
+    is_complete: bool
+    input: str
+    def type_of(self, evidence) -> Optional[Term]: ...
+
+
+class Node:
+    """A node in the parse AST."""
+    nodeid: int
+    evidence: str
+    is_complete: bool
+    text: str
+    nt_name: str
+    start: int
+    end: int
+    child_count: int
+    rhs: list[Child]
+    def children(self) -> list[Node]: ...
+
+
+class Child:
+    """A child position in a production."""
+    kind: str
+    node: Optional[Node]
+    terminal_text: Optional[str]
+    terminal_complete: bool
+
+
+# ── Core engine classes ──────────────────────────────────────────────────
 
 class SPG:
     """A semantic prefix grammar: syntax plus typing rules, validated on load."""
 
     def __init__(self, source: str) -> None:
-        """Load a grammar from `.auf` source."""
+        """Load a grammar from ``.auf`` source."""
         ...
+
     @staticmethod
     def build(
-        productions: list[Production],
-        rules: list[Rule] = ...,
+        productions: list[ProductionSpec],
+        rules: list[RuleSpec] = ...,
         rewrites: list[tuple[str, str]] = ...,
         start: Optional[str] = ...,
         ty: Optional[str] = ...,
     ) -> SPG:
-        """Assemble a grammar structurally, without `.auf` source. `ty` names the
-        type fragment (the `Ty*` of the surface syntax); `start` defaults to the
-        last production."""
+        """Assemble a grammar structurally, without ``.auf`` source."""
         ...
+
     def source(self) -> str:
-        """Render the grammar back to `.auf` source."""
+        """Render the grammar back to ``.auf`` source."""
         ...
+
     start: Optional[str]
-    """The start nonterminal."""
-    def nonterminals(self) -> list[str]:
-        """All nonterminal names."""
+
+    def nonterminals(self) -> list[str]: ...
+
+    def productions(self, nt: str) -> list[Production]: ...
+
+    def nt_rule(self, nt: str) -> Optional[str]: ...
+
+    def rule_names(self) -> list[str]: ...
+
+    def is_transparent(self, nt: str) -> bool: ...
+
+    def specials(self) -> list[str]: ...
+
+    def ir(self, rule: str) -> str:
+        """Internal representation of a typing rule (debug/diagnostics)."""
         ...
-    def productions(self, nt: str) -> list:
-        """The alternatives defining nonterminal `nt`."""
-        ...
-    def nt_rule(self, nt: str) -> Optional[str]:
-        """Rule name attached to a nonterminal, if any."""
-        ...
-    def rule_names(self) -> list[str]:
-        """Names of all typing rules."""
-        ...
-    def is_transparent(self, nt: str) -> bool:
-        """Is every production of `nt` a transparent wrapper?"""
-        ...
-    def specials(self) -> list[str]:
-        """Literal tokens requiring no separating whitespace from neighbors."""
-        ...
-    def tokenize(self, input: str) -> list:
-        """Split `input` into lexical segments using the grammar's own tokenizer."""
-        ...
-    def parse_type(self, s: str) -> Term:
-        """Parse a type string into its term (tree), using the grammar's structure."""
-        ...
-    def show(self, t: Term) -> str:
-        """Render a term back to the grammar's surface syntax."""
-        ...
-    def normalize(self, s: str) -> Term:
-        """Normal form of a type under the grammar's rewrite theory."""
-        ...
-    def unify(self, a: str, b: str) -> Optional[dict[str, str]]:
-        """Free (syntactic) unification of two types, or None on clash."""
-        ...
-    def unify_modulo(self, a: str, b: str) -> Optional[dict[str, str]]:
-        """Unify two types modulo the rewrite theory (normalize, then unify)."""
-        ...
-    def rewrites(self) -> list[tuple[str, str]]:
-        """The declared rewrite theory, as (lhs, rhs) source pairs."""
-        ...
-    def signature(self) -> list[tuple[str, int]]:
-        """Constructor names with the arity they appear at, sorted."""
-        ...
-    def completeness(self) -> tuple[str, list[str]]:
-        """The realizability certificate as (kind, sorts): "syntactic" (no rules:
-        live <=> realizable), "inhabited" (universal inhabitants everywhere: live
-        => realizable), or "sound" with the sorts where a live prefix may be
-        uninhabited."""
-        ...
+
+    def tokenize(self, input: str) -> list[Segment]: ...
+
+    def parse_type(self, s: str) -> Term: ...
+
+    def show(self, t: Term) -> str: ...
+
+    def normalize(self, s: str) -> Term: ...
+
+    def unify(self, a: str, b: str) -> Optional[dict[str, str]]: ...
+
+    def unify_modulo(self, a: str, b: str) -> Optional[dict[str, str]]: ...
+
+    def rewrites(self) -> list[tuple[str, str]]: ...
+
+    def signature(self) -> list[tuple[str, int]]: ...
+
+    def completeness(self) -> tuple[str, list[str]]: ...
+
 
 class Synthesizer:
     """Incremental parser / type checker over one grammar and input."""
 
-    def __init__(self, spec_source: str, input: str = "") -> None:
-        """Load a grammar from `.auf` source and start it on `input`."""
-        ...
+    def __init__(self, spec_source: str, input: str = "") -> None: ...
+
     @staticmethod
-    def from_grammar(grammar: SPG, input: str = "") -> Synthesizer:
-        """A synthesizer over an already-built grammar (no `.auf` re-parse)."""
-        ...
-    def set_input(self, input: str) -> None:
-        """Reset the input, keeping the loaded grammar."""
-        ...
-    def input(self) -> str:
-        """Current accumulated input."""
-        ...
-    def parse(self) -> str:
-        """Parse, returning an AST string."""
-        ...
-    def feed(self, token: str) -> str:
-        """Feed one token (state-altering)."""
-        ...
-    def try_feed(self, token: str) -> str:
-        """Try feeding one token without altering state."""
-        ...
-    def mask(self, candidates: list[str]) -> list[bool]:
-        """The constrained-generation mask: for each candidate continuation, can
-        the current input still be extended by it? One pass over the whole
-        candidate set, no state change."""
-        ...
-    def in_scope(self, expected: Optional[str] = ...) -> list[str]:
-        """In-scope names whose type unifies with `expected` (every name when
-        `expected` is None) -- the var rule's membership constraint intersected
-        with a type."""
-        ...
-    def status(self) -> str:
-        """The three-valued verdict on the current input: "typed" (a complete,
-        well-typed parse), "live" (a completable prefix), or "dead"."""
-        ...
-    def root_type(self) -> Optional[Term]:
-        """The type of a complete root, as a term."""
-        ...
-    def add_to_ctx(self, name: str, ty: str) -> None:
-        """Add a variable to the typing context. The type is parsed with the
-        grammar into its tree, so a structured type becomes a constructor, not a
-        flat leaf."""
-        ...
-    def clear_ctx(self) -> None:
-        """Clear the typing context."""
-        ...
-    def is_complete(self) -> bool:
-        """Whether the parsed tree is complete."""
-        ...
-    def grammar(self) -> SPG:
-        """Expose the grammar for inspection."""
-        ...
-    def get_rule(self, name: str):
-        """Get a specific typing rule by name."""
-        ...
-    def ast(self):
-        """Return the current AST as a structured object."""
-        ...
+    def from_grammar(grammar: SPG, input: str = "") -> Synthesizer: ...
+
+    def set_input(self, input: str) -> None: ...
+
+    def input(self) -> str: ...
+
+    def parse(self) -> str: ...
+
+    def feed(self, token: str) -> str: ...
+
+    def try_feed(self, token: str) -> str: ...
+
+    def mask(self, candidates: list[str]) -> list[bool]: ...
+
+    def in_scope(self, expected: Optional[str] = ...) -> list[str]: ...
+
+    def status(self) -> str: ...
+
+    def root_type(self) -> Optional[Term]: ...
+
+    def add_to_ctx(self, name: str, ty: str) -> None: ...
+
+    def clear_ctx(self) -> None: ...
+
+    def is_complete(self) -> bool: ...
+
+    def grammar(self) -> SPG: ...
+
+    def get_rule(self, name: str) -> TypingRule: ...
+
+    def ast(self) -> Ast: ...
+
 
 class Regex:
-    """A regular expression over the derivative construction (Brzozowski), used
-    for terminal matching and prefix-status queries."""
+    """A regular expression over Brzozowski derivatives."""
 
-    def __init__(self, pattern: str) -> None:
-        """Parse a regex pattern."""
-        ...
-    def matches(self, text: str) -> bool:
-        """Whether `text` is a complete match."""
-        ...
-    def prefix_match(self, prefix: str) -> PrefixStatus:
-        """Classify `prefix` as a match, a partial prefix, or no match."""
-        ...
-    def derivative(self, text: str) -> Regex:
-        """The regex remaining after consuming `text`."""
-        ...
-    def deriv(self, character: str) -> Regex:
-        """The regex remaining after consuming one character."""
-        ...
-    def is_empty(self) -> bool:
-        """Whether this regex matches nothing at all."""
-        ...
-    def is_nullable(self) -> bool:
-        """Whether the empty string is a match."""
-        ...
-    def match_len(self, text: str) -> Optional[int]:
-        """Length of the longest prefix of `text` that is a complete match."""
-        ...
-    def to_pattern(self) -> str:
-        """Render back to source pattern syntax."""
-        ...
+    def __init__(self, pattern: str) -> None: ...
+
+    def matches(self, text: str) -> bool: ...
+
+    def prefix_match(self, prefix: str) -> PrefixStatus: ...
+
+    def derivative(self, text: str) -> Regex: ...
+
+    def deriv(self, character: str) -> Regex: ...
+
+    def is_empty(self) -> bool: ...
+
+    def is_nullable(self) -> bool: ...
+
+    def match_len(self, text: str) -> Optional[int]: ...
+
+    def to_pattern(self) -> str: ...
+
 
 class PrefixStatus:
-    """The result of matching a prefix against a Regex: complete, extensible,
-    a bare prefix, or no match at all."""
+    """Result of matching a prefix against a Regex."""
 
     kind: str
     regex: Optional[Regex]
-    def is_complete(self) -> bool:
-        """Whether the prefix is itself a complete or extensible match."""
-        ...
-    def is_prefix(self) -> bool:
-        """Whether the prefix could still be completed, but isn't a match yet."""
-        ...
-    def is_extensible(self) -> bool:
-        """Whether the prefix is a complete match that could also be extended."""
-        ...
-    def is_no_match(self) -> bool:
-        """Whether the prefix cannot lead to any match."""
-        ...
+
+    def is_complete(self) -> bool: ...
+    def is_prefix(self) -> bool: ...
+    def is_extensible(self) -> bool: ...
+    def is_no_match(self) -> bool: ...

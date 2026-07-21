@@ -1,0 +1,16 @@
+fun (x : int) -> y
+1 + true
+if 1 then 2 else 3
+if true then 1 else false
+fst 5
+let a : bool = 5 in a
+true < 2
+1 :: true :: []
+1 :: 2
+let xs : bool list = 1 :: [] in xs
+match 1 :: [] with [] -> 0 | h :: t -> true
+match 5 with [] -> 0 | h :: t -> 1
+let rec f : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> f(h) in f(1 :: [])
+let rec f : int -> int = fun (n : int) -> f(true) in f(0)
+let rec f : int -> bool = fun (n : int) -> if n = 0 then 1 else f(n) in f(1)
+let rec f : int -> int = fun (n : int) -> if n = 0 then f(n) else true in f(1)

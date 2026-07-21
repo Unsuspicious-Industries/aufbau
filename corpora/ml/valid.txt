@@ -1,0 +1,25 @@
+fun (x : int) -> x
+fun (x : int) -> fun (y : bool) -> x
+(fun (x : int) -> x)(5)
+let a : int = 5 in a
+let a : int = 5 in a + 1
+1 < 2
+if true then 1 else 2
+if 1 < 2 then 1 else 0
+(1, true)
+fst (1, true)
+snd (1, true)
+1 :: []
+1 :: 2 :: 3 :: []
+(1, true) :: []
+let xs : int list = 1 :: [] in xs
+let rec f : int -> int = fun (n : int) -> f(n) in f(0)
+assert false
+let a : int = assert false in a
+if true then 1 else assert false
+let f : int -> bool = assert false in f(0)
+match [] with [] -> 0 | h :: t -> h + 1
+let rec length : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> 1 + length(t) in length(1 :: 2 :: 3 :: [])
+let rec sum : int list -> int = fun (xs : int list) -> match xs with [] -> 0 | h :: t -> h + sum(t) in sum(1 :: 2 :: [])
+let rec member : int list -> bool = fun (xs : int list) -> match xs with [] -> false | h :: t -> if h = 0 then true else member(t) in member(0 :: 1 :: [])
+let rec copy : int list -> int list = fun (xs : int list) -> match xs with [] -> [] | h :: t -> h :: copy(t) in copy(1 :: 2 :: [])
