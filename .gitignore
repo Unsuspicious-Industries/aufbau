@@ -52,7 +52,7 @@ __pycache__/
 dist/
 build/
 *.egg
-docs/
+docs/build/
 # Rust
 **/*.rs.bk
 

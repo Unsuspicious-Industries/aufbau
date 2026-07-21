@@ -1,0 +1,24 @@
+# Loadpath mappings.
+#   - `. AufbauVerif`       lets the compiler (and vsrocq) assign the right
+#                           logical name to source .v files in this directory.
+#   - `.build AufbauVerif`  is where `make build` puts compiled artifacts;
+#                           dependent compilations and vsrocq resolve
+#                           `From AufbauVerif Require Import …` through here.
+-Q . AufbauVerif
+-Q .build AufbauVerif
+
+# Compile order (the Makefile feeds these to `rocq compile` sequentially):
+#
+#   core         — shared syntactic types
+#   domain       — ConstraintDomain interface
+#   gen_domain   — GenDomain interface (extends ConstraintDomain)
+#   generation   — Generation functor (the algorithm)
+#   trivial      — trivial instantiation, smoke test
+#   sanity       — independent toolchain smoke test
+
+core.v
+domain.v
+gen_domain.v
+generation.v
+trivial.v
+sanity.v
