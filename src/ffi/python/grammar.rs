@@ -3,7 +3,7 @@ use pyo3::prelude::*;
 use std::collections::HashMap;
 
 use super::typing::PyTerm;
-use crate::engine::grammar::{Production, SPG, Segment, Symbol};
+use crate::grammar::{Production, SPG, Segment, Symbol};
 use crate::typing::{Subst, Term, compile, render, term, unify_modulo};
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -22,59 +22,6 @@ impl PyGrammar {
         let g = SPG::load(source)
             .map_err(|e| PyValueError::new_err(format!("grammar load error: {e}")))?;
         Ok(Self { inner: g })
-    }
-
-    /// Assemble a grammar structurally, no `.auf` source. A production is
-    /// `(name, rule, alternatives)` where each symbol is a `(kind, value,
-    /// binding)` triple with kind one of `"nt" | "lit" | "re"`; a rule is
-    /// `(name, premises, conclusion)` in the inference notation; `ty` names
-    /// the type fragment (the `Ty*` of the surface syntax). Runs the same
-    /// validation as loading source.
-    #[staticmethod]
-    #[pyo3(signature = (productions, rules=Vec::new(), rewrites=Vec::new(), start=None, ty=None))]
-    fn build(
-        productions: Vec<(
-            String,
-            Option<String>,
-            Vec<Vec<(String, String, Option<String>)>>,
-        )>,
-        rules: Vec<(String, String, String)>,
-        rewrites: Vec<(String, String)>,
-        start: Option<String>,
-        ty: Option<String>,
-    ) -> PyResult<Self> {
-        use crate::engine::grammar::load::{Def, Sym};
-        let defs: Vec<Def> = productions
-            .into_iter()
-            .map(|(name, rule, alts)| {
-                let alts = alts
-                    .into_iter()
-                    .map(|alt| {
-                        alt.into_iter()
-                            .map(|(kind, value, binding)| match kind.as_str() {
-                                "nt" => Ok(Sym::Nt(value, binding)),
-                                "lit" => Ok(Sym::Lit(value, binding)),
-                                "re" => Ok(Sym::Re(value, binding)),
-                                other => Err(PyValueError::new_err(format!(
-                                    "unknown symbol kind '{other}' (nt | lit | re)"
-                                ))),
-                            })
-                            .collect::<PyResult<Vec<_>>>()
-                    })
-                    .collect::<PyResult<Vec<_>>>()?;
-                Ok((name, rule, alts))
-            })
-            .collect::<PyResult<Vec<_>>>()?;
-        let rules = rules
-            .into_iter()
-            .map(|(name, premises, conclusion)| {
-                crate::typing::TypingRule::new(premises, conclusion, name)
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| PyValueError::new_err(format!("rule error: {e}")))?;
-        SPG::assemble(defs, rules, rewrites, start, ty)
-            .map(|inner| Self { inner })
-            .map_err(|e| PyValueError::new_err(format!("grammar build error: {e}")))
     }
 
     /// Render the grammar back to `.auf` source.
@@ -271,9 +218,14 @@ impl PyProduction {
         self.symbols.clone()
     }
 
-    /// Number of symbols on the RHS.
+    /// Number of symbols on the RHS. `len(production)` is the Python spelling;
+    /// the `len` getter predates it and is kept for compatibility.
     #[getter]
     fn len(&self) -> usize {
+        self.symbols.len()
+    }
+
+    fn __len__(&self) -> usize {
         self.symbols.len()
     }
 

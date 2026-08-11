@@ -1,9 +1,11 @@
 use pyo3::prelude::*;
 
-use crate::engine::grammar::{SPG, Segment};
-use crate::engine::parse::arena::{ChildRef, ParseArena};
-use crate::engine::structure::ast::FusionAST;
+use crate::ast::ast::FusionAST;
+use crate::grammar::{SPG, Segment};
+use crate::parse::arena::{ChildRef, ParseArena};
 use crate::typing::TypingRuntime;
+
+use super::typing::PyTerm;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PyAst — Owned parse tree with type resolution
@@ -60,11 +62,11 @@ impl PyAst {
         &self.input
     }
 
-    /// Resolve an evidence ID to a type string.
-    fn type_of(&self, evidence: usize) -> Option<String> {
+    /// Resolve an evidence ID to a type term.
+    fn type_of(&self, evidence: usize) -> Option<PyTerm> {
         self.runtime
             .evidence_of(evidence)
-            .map(|ty| format!("{}", ty))
+            .map(|inner| PyTerm { inner })
     }
 
     fn __repr__(&self) -> String {

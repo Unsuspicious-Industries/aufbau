@@ -116,6 +116,25 @@ class TestGrammar:
         assert g.nt_rule("Variable") == "var"
         assert g.nt_rule("Lambda") == "lambda"
 
+    def test_ir_renders_every_rule(self):
+        """The IR debug view must work for every rule of a real grammar, not
+        just the well-shaped ones. `var` is Member-only; `Program` also carries
+        its splices, so they are part of the view."""
+        g = _ml_grammar()
+        for name in g.rule_names():
+            text = g.ir(name)
+            assert text.startswith(f"{name}:\n"), f"{name}: bad header\n{text}"
+
+        g = aufbau.SPG(STLC)
+        assert "member x" in g.ir("var")
+        lam = g.ir("lambda")
+        assert "push_scope" in lam and "pop_scope" in lam
+        assert "splice body = [" in lam
+
+    def test_ir_unknown_rule(self):
+        with pytest.raises(ValueError):
+            aufbau.SPG(STLC).ir("no_such_rule")
+
     def test_transparent(self):
         g = aufbau.SPG(ARITH)
         # Primary is transparent: every production has exactly one
@@ -250,55 +269,66 @@ class TestSymbolProduction:
         assert any(s.has_binding() for s in rhs)
 
 
-class TestStructuralBuild:
-    """SPG.build: grammars as values, no .auf source."""
+class TestDslBuild:
+    """`aufbau.dsl` is the programmatic builder: grammars as values, no .auf
+    source written by hand."""
 
     def stlc(self):
-        return aufbau.SPG.build(
-            productions=[
-                ("Identifier", None, [[("re", "[a-z]+", None)]]),
-                ("TypeName", None, [[("re", "[A-Z][a-zA-Z0-9]*", None)]]),
-                ("TAtom", None, [[("nt", "TypeName", None)],
-                                 [("lit", "(", None), ("nt", "Type", None), ("lit", ")", None)]]),
-                ("Type", None, [[("nt", "TAtom", None)],
-                                [("nt", "TAtom", None), ("lit", "->", None), ("nt", "Type", None)]]),
-                ("Variable", "var", [[("nt", "Identifier", "x")]]),
-                ("Lambda", "lambda", [[("lit", "λ", None), ("nt", "Identifier", "a"),
-                                       ("lit", ":", None), ("nt", "Type", "τ"),
-                                       ("lit", ".", None), ("nt", "Expr", "e")]]),
-                ("AtomE", None, [[("nt", "Variable", None)],
-                                 [("lit", "(", None), ("nt", "Expr", None), ("lit", ")", None)]]),
-                ("Application", "app", [[("nt", "Expr", "l"), ("nt", "AtomE", "r")]]),
-                ("Expr", None, [[("nt", "AtomE", None)], [("nt", "Lambda", None)],
-                                [("nt", "Application", None)]]),
-            ],
-            rules=[
-                ("var", "x ∈ Γ", "Γ(x)"),
-                ("lambda", "Γ[a:τ] ⊢ e : ?B", "τ -> ?B"),
-                ("app", "Γ ⊢ l : ?A -> ?B, Γ ⊢ r : ?A", "?B"),
-            ],
-            start="Expr",
-            ty="Type",
+        from aufbau.dsl import G, nt, lit, re_
+
+        return (
+            G("Expr", ty="Type")
+            .prod("Identifier", re_("[a-z]+"))
+            .prod("TypeName", re_("[A-Z][a-zA-Z0-9]*"))
+            .prod("TAtom", nt("TypeName") | lit("(") ^ nt("Type") ^ lit(")"))
+            .prod("Type", nt("TAtom") | nt("TAtom") ^ lit("->") ^ nt("Type"))
+            .prod("Variable", nt("Identifier", bind="x"), rule="var")
+            .prod(
+                "Lambda",
+                lit("\u03bb") ^ nt("Identifier", bind="a") ^ lit(":")
+                ^ nt("Type", bind="\u03c4") ^ lit(".") ^ nt("Expr", bind="e"),
+                rule="lambda",
+            )
+            .prod("AtomE", nt("Variable") | lit("(") ^ nt("Expr") ^ lit(")"))
+            .prod("Application", nt("Expr", bind="l") ^ nt("AtomE", bind="r"), rule="app")
+            .prod("Expr", nt("AtomE") | nt("Lambda") | nt("Application"))
+            .rule("var", "x \u2208 \u0393", "\u0393(x)")
+            .rule("lambda", "\u0393[a:\u03c4] \u22a2 e : ?B", "\u03c4 -> ?B")
+            .rule("app", "\u0393 \u22a2 l : ?A -> ?B, \u0393 \u22a2 r : ?A", "?B")
+            .build()
         )
 
     def test_build_and_check(self):
         g = self.stlc()
-        s = aufbau.Synthesizer.from_grammar(g, "λx:A.x")
+        s = aufbau.Synthesizer.from_grammar(g, "\u03bbx:A.x")
         assert s.status() == "typed"
-        assert str(s.root_type()) == "Type(A, A)"
+        assert g.show(s.root_type()) == "A -> A"
 
     def test_build_rejects_bad_rule_pattern(self):
+        from aufbau.dsl import G, re_
+
         with pytest.raises(ValueError):
-            aufbau.SPG.build(
-                productions=[("W", "w", [[("re", "[a-z]+", "x")]])],
-                rules=[("w", "Γ ⊢ x : ?A | ?B", "?A")],
-            )
+            (G("W")
+             .prod("W", re_("[a-z]+", bind="x"), rule="w")
+             .rule("w", "\u0393 \u22a2 x : ?A | ?B", "?A")
+             .build())
 
     def test_source_round_trip(self):
         g = self.stlc()
         g2 = aufbau.SPG(g.source())
-        s = aufbau.Synthesizer.from_grammar(g2, "λx:A.x")
+        s = aufbau.Synthesizer.from_grammar(g2, "\u03bbx:A.x")
         assert s.status() == "typed"
+
+    def test_start_is_emitted_last(self):
+        """The loader reads the last declared nonterminal as the start symbol,
+        so `source()` must place it there whatever order prod() was called in."""
+        from aufbau.dsl import G, nt, re_
+
+        g = (G("Top")
+             .prod("Top", nt("Leaf"))
+             .prod("Leaf", re_("[a-z]+"))
+             .build())
+        assert g.start == "Top"
 
 
 class TestGeneration:
@@ -330,7 +360,7 @@ class TestGeneration:
         assert s.status() == "typed"
         s.set_input("λy:B.y")
         assert s.status() == "typed"
-        assert str(s.root_type()) == "Type(B, B)"
+        assert s.grammar().show(s.root_type()) == "B -> B"
 
 
 class TestDifferential:
@@ -427,3 +457,205 @@ class TestInScope:
         assert s.in_scope("int -> int") == ["f"]
         # a hole expectation admits every name (everything unifies with a var)
         assert s.in_scope("?T") == ["b", "f", "n"]
+
+
+class TestDslRoundTrip:
+    """`aufbau.dsl` emits `.auf` source, so its output has to satisfy aufbau's
+    own parser — not merely resemble it.
+
+    The published DSL rendered premises space-separated, settings as
+    `Γ[a=?A] ▸ …`, and `inst(x)` as `Γ[x]`; none of those parse. Building a
+    grammar, rendering it with `source()`, and reloading is what holds the DSL
+    and `src/typing/rule.rs` to the same syntax.
+    """
+
+    def stlc(self):
+        from aufbau.dsl import G, nt, lit, re_, hole, ctx, ref_, member, ascribe
+
+        return (
+            G("Expr", ty="Type")
+            .prod("Identifier", re_("[a-z]+"))
+            .prod("TypeName", re_("[A-Z][a-zA-Z0-9]*"))
+            .prod("TAtom", nt("TypeName") | lit("(") ^ nt("Type") ^ lit(")"))
+            .prod("Type", nt("TAtom") | nt("TAtom") ^ lit("->") ^ nt("Type"))
+            .prod("Variable", nt("Identifier", bind="x"), rule="var")
+            .prod(
+                "Lambda",
+                lit("λ") ^ nt("Identifier", bind="a") ^ lit(":")
+                ^ nt("Type", bind="τ") ^ lit(".") ^ nt("Expr", bind="e"),
+                rule="lambda",
+            )
+            .prod("AtomE", nt("Variable") | lit("(") ^ nt("Expr") ^ lit(")"))
+            .prod("Application", nt("Expr", bind="l") ^ nt("AtomE", bind="r"), rule="app")
+            .prod("Expr", nt("AtomE") | nt("Lambda") | nt("Application"))
+            .rule("var", [member("x")], ctx("x"))
+            .rule("lambda", [ascribe("e", hole("B"), under=[("a", ref_("τ"))])],
+                  ref_("τ") ^ "->" ^ hole("B"))
+            .rule("app", [ascribe("l", hole("A") ^ "->" ^ hole("B")),
+                          ascribe("r", hole("A"))], hole("B"))
+            .build()
+        )
+
+    def test_builds(self):
+        g = self.stlc()
+        assert set(g.rule_names()) == {"var", "lambda", "app"}
+
+    def test_source_reparses(self):
+        """The whole point: what the DSL renders must load again."""
+        g = self.stlc()
+        src = g.source()
+        again = aufbau.SPG(src)
+        assert set(again.rule_names()) == set(g.rule_names())
+
+    def test_rules_survive_round_trip(self):
+        """Reloading must preserve each rule's compiled IR, not just its name."""
+        g = self.stlc()
+        again = aufbau.SPG(g.source())
+        for name in sorted(g.rule_names()):
+            assert again.ir(name) == g.ir(name), f"{name} changed:\n{g.source()}"
+
+    def test_premises_are_comma_separated(self):
+        g = self.stlc()
+        # `app` has two premises; space-joined they parse as one malformed premise.
+        assert g.ir("app").count("ascribe") == 2
+
+    def test_setting_renders_as_scoped_extension(self):
+        g = self.stlc()
+        lam = g.ir("lambda")
+        assert "push_scope" in lam and "extend a" in lam
+
+    def test_inst_renders_as_call(self):
+        from aufbau.dsl import inst
+
+        assert inst("x")._to_auf() == "inst(x)"
+
+    def test_literal_type_is_quoted(self):
+        """A bare `Int` re-parses as a binding reference, and the rule then
+        fails to build with "type pattern 'Int' has no complete parse".
+        Separators must stay bare or `?A -> ?B` becomes unreadable."""
+        from aufbau.dsl import lit_atom, hole, ref_
+
+        assert lit_atom("Int")._to_auf() == "'Int'"
+        assert (ref_("τ") ^ "->" ^ hole("B"))._to_auf() == "τ -> ?B"
+
+    def test_literal_type_builds_and_round_trips(self):
+        from aufbau.dsl import G, nt, re_, lit_atom
+
+        g = (G("E")
+             .prod("N", re_("[0-9]+"))
+             .prod("Num", nt("N", bind="d"), rule="num")
+             .prod("E", nt("Num"))
+             .rule("num", [], lit_atom("Int"))
+             .build())
+        assert aufbau.SPG(g.source()).ir("num") == g.ir("num")
+
+    def test_typed_parse_still_works(self):
+        """A round-tripped grammar must still type-check input."""
+        g = self.stlc()
+        again = aufbau.SPG(g.source())
+        for grammar in (g, again):
+            s = aufbau.Synthesizer.from_grammar(grammar)
+            s.add_to_ctx("y", "A")
+            assert s.feed("y") is not None
+            assert s.is_complete()
+
+
+class TestEngineApiV1:
+    """The Engine API v1 contract: one identifier, one authoritative context,
+    a transactional feed, and all-root verification."""
+
+    def test_module_identity(self):
+        assert aufbau.ENGINE_API == "aufbau.engine/v1"
+        assert isinstance(aufbau.__version__, str) and aufbau.__version__
+
+    def test_set_context_replaces_wholesale(self):
+        s = aufbau.Synthesizer(STLC, "x")
+        s.set_context({"x": "A", "y": "B"})
+        assert s.in_scope() == ["x", "y"]
+        s.set_context({"z": "C"})
+        assert s.in_scope() == ["z"]
+
+    def test_set_context_is_atomic_on_failure(self):
+        """An invalid binding must leave the previous context untouched, not a
+        half-applied one."""
+        s = aufbau.Synthesizer(STLC, "x")
+        s.set_context({"x": "A"})
+        with pytest.raises(ValueError):
+            s.set_context({"good": "A", "bad": "!!!"})
+        assert s.in_scope() == ["x"]
+
+    def test_context_change_is_visible_immediately(self):
+        """The regression behind `add_to_ctx` then `mask`: a second copy of the
+        context meant one operation could see a mutation another did not."""
+        s = aufbau.Synthesizer(STLC, "")
+        assert s.mask(["x"]) == [False]
+        s.set_context({"x": "A"})
+        assert s.mask(["x"]) == [True]
+        assert s.status() != "dead"
+
+    def test_failed_feed_leaves_state_unchanged(self):
+        """feed() used to install the input before parsing it, so a rejected
+        token stayed in `input` and poisoned every later call."""
+        s = aufbau.Synthesizer("start ::= 'a' 'b'", "a")
+        before = s.input()
+        with pytest.raises(Exception):
+            s.feed("ZZZ")
+        assert s.input() == before
+        assert s.status() != "dead"
+        s.feed(" b")
+        assert s.is_complete()
+
+    def test_masked_candidate_feeds(self):
+        """A candidate accepted by mask must be accepted by feed from the same
+        state; otherwise the generation mask is not a usable signal."""
+        s = aufbau.Synthesizer(STLC, "")
+        s.set_context({"x": "A"})
+        candidates = ["x", "λ", "!!!"]
+        allowed = s.mask(candidates)
+        for cand, ok in zip(candidates, allowed):
+            probe = aufbau.Synthesizer(STLC, "")
+            probe.set_context({"x": "A"})
+            fed = True
+            try:
+                probe.feed(cand)
+            except Exception:
+                fed = False
+            assert fed == ok, f"mask said {ok} for {cand!r}, feed said {fed}"
+
+    def test_verify_reports_root_types(self):
+        s = aufbau.Synthesizer(STLC, "λx:A.x")
+        v = s.verify()
+        assert v.status == "typed"
+        assert len(v.root_types) == 1
+        assert not v.is_ambiguous()
+        assert v.goal_satisfied is None
+
+    def test_verify_checks_goal(self):
+        s = aufbau.Synthesizer(STLC, "λx:A.x")
+        assert s.verify("A → A").goal_satisfied is True
+        assert s.verify("B → B").goal_satisfied is False
+
+    def test_verify_on_incomplete_and_dead(self):
+        live = aufbau.Synthesizer(STLC, "λx:A.")
+        assert live.verify().status == "live"
+        assert live.verify().root_types == []
+        assert live.verify("?T").goal_satisfied is False
+
+        dead = aufbau.Synthesizer(STLC, "!!!")
+        assert dead.verify().status == "dead"
+        assert dead.verify("?T").goal_satisfied is False
+
+    def test_verify_is_state_free(self):
+        s = aufbau.Synthesizer(STLC, "λx:A.x")
+        before = s.input()
+        first = s.verify("A → A")
+        second = s.verify("A → A")
+        assert (first.status, first.root_types) == (second.status, second.root_types)
+        assert s.input() == before
+
+    def test_compat_wrappers_still_work(self):
+        s = aufbau.Synthesizer(STLC, "x")
+        s.add_to_ctx("x", "A")
+        assert s.in_scope() == ["x"]
+        s.clear_ctx()
+        assert s.in_scope() == []

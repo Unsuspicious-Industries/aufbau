@@ -105,11 +105,8 @@ pub struct PyTerm {
 
 #[pymethods]
 impl PyTerm {
-    fn __repr__(&self) -> String {
-        format!("Term({})", self.inner)
-    }
-    fn __str__(&self) -> String {
-        self.inner.to_string()
+    fn __repr__(&self) -> &'static str {
+        "Term(...)"
     }
     /// Constructor label (the nonterminal), or `None` for a hole or leaf.
     fn label(&self) -> Option<String> {
