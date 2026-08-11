@@ -1,10 +1,56 @@
+use std::collections::HashMap;
+
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use super::grammar::PyGrammar;
 use super::parse::PyAst;
-use crate::engine::grammar::SPG;
-use crate::typing::{Context, Term, Type, TypingRule, TypingSynth};
+use crate::grammar::SPG;
+use crate::synth::verification::Verification;
+use crate::typing::{Context, Term, Type, TypingRule, TypingSynth, render};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PyVerification — the result of Synthesizer.verify()
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#[pyclass(unsendable, name = "Verification")]
+pub struct PyVerification {
+    pub(crate) inner: Verification,
+}
+
+#[pymethods]
+impl PyVerification {
+    /// `"typed"` | `"live"` | `"dead"`.
+    #[getter]
+    fn status(&self) -> &str {
+        self.inner.status
+    }
+
+    /// Every distinct complete-root type, normalized and rendered. More than
+    /// one entry means the complete roots disagree.
+    #[getter]
+    fn root_types(&self) -> Vec<String> {
+        self.inner.root_types.clone()
+    }
+
+    /// Whether the goal type was met, or `None` when no goal was given.
+    #[getter]
+    fn goal_satisfied(&self) -> Option<bool> {
+        self.inner.goal_satisfied
+    }
+
+    /// Whether the complete roots disagree on the type.
+    fn is_ambiguous(&self) -> bool {
+        self.inner.is_ambiguous()
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "Verification(status={:?}, root_types={:?}, goal_satisfied={:?})",
+            self.inner.status, self.inner.root_types, self.inner.goal_satisfied
+        )
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PyTypingRule — Read-only view of a typing rule
@@ -100,8 +146,11 @@ impl PyTerm {
 
 #[pyclass(unsendable, name = "Synthesizer")]
 pub struct PySynthesizer {
+    /// The one authoritative context lives inside `synth`. Keeping a second
+    /// copy here and passing it back on every call meant a mutation could be
+    /// visible to one operation and not another, and it dropped the cached
+    /// parse tree on every call because re-installing a context invalidates it.
     synth: TypingSynth,
-    ctx: Context,
 }
 
 #[pymethods]
@@ -113,7 +162,6 @@ impl PySynthesizer {
             .map_err(|e| PyValueError::new_err(format!("failed to load grammar: {e}")))?;
         Ok(Self {
             synth: TypingSynth::new(grammar, input),
-            ctx: Context::new(),
         })
     }
 
@@ -123,7 +171,6 @@ impl PySynthesizer {
     fn from_grammar(grammar: &PyGrammar, input: &str) -> Self {
         Self {
             synth: TypingSynth::new(grammar.inner.clone(), input),
-            ctx: Context::new(),
         }
     }
 
@@ -140,7 +187,7 @@ impl PySynthesizer {
     /// Parse, returning an AST string.
     fn parse(&mut self) -> PyResult<String> {
         self.synth
-            .parse_with(&self.ctx)
+            .ast()
             .map(|ast| ast.to_string())
             .map_err(PyRuntimeError::new_err)
     }
@@ -148,7 +195,7 @@ impl PySynthesizer {
     /// Feed one token (state-altering).
     fn feed(&mut self, token: &str) -> PyResult<String> {
         self.synth
-            .feed_with(token, &self.ctx)
+            .feed(token)
             .map(|ast| ast.to_string())
             .map_err(PyRuntimeError::new_err)
     }
@@ -187,7 +234,8 @@ impl PySynthesizer {
         };
         let norm = crate::typing::loader::normalizer(g);
         let mut names: Vec<String> = self
-            .ctx
+            .synth
+            .ctx()
             .bindings
             .iter()
             .filter(|(_, ty)| match &want {
@@ -206,7 +254,7 @@ impl PySynthesizer {
     /// The three-valued verdict on the current input: `"typed"` (a complete,
     /// well-typed parse), `"live"` (a completable prefix), or `"dead"`.
     fn status(&mut self) -> &'static str {
-        match self.synth.parse_with(&self.ctx) {
+        match self.synth.ast() {
             Ok(ast) if ast.is_complete() => "typed",
             Ok(_) => "live",
             Err(_) => "dead",
@@ -215,32 +263,86 @@ impl PySynthesizer {
 
     /// The type of a complete root, as a term.
     fn root_type(&mut self) -> Option<PyTerm> {
-        let ast = self.synth.parse_with(&self.ctx).ok()?;
+        let ast = self.synth.ast().ok()?;
         let rt = self.synth.runtime().clone();
         ast.roots()
-            .filter(crate::engine::structure::FusionNode::is_complete)
+            .filter(crate::ast::FusionNode::is_complete)
             .find_map(|r| rt.evidence_of(r.evidence()))
             .map(|inner| PyTerm { inner })
     }
 
-    /// Add a variable to the typing context. The type is parsed with the grammar
-    /// into its tree, so a structured type (`A -> B`) becomes a constructor, not a
-    /// flat leaf.
-    fn add_to_ctx(&mut self, name: &str, ty: &str) -> PyResult<()> {
-        let ty = Type::parse(self.synth.grammar(), ty)
-            .map_err(|e| PyValueError::new_err(format!("invalid type '{ty}': {e}")))?;
-        self.ctx.add(name.to_string(), ty);
+    /// Replace the entire typing context.
+    ///
+    /// Every type is parsed with the active grammar *before* anything is
+    /// mutated, so the replacement either happens whole or not at all: if any
+    /// binding fails to parse, the previous context still stands. Every
+    /// subsequent operation — `mask`, `feed`, `parse`, `status`, `verify`,
+    /// `ast`, `in_scope` — observes the new bindings immediately.
+    ///
+    /// A type is any term the grammar derives. Nothing here interprets names or
+    /// dispatches on the shape of a type string.
+    fn set_context(&mut self, bindings: HashMap<String, String>) -> PyResult<()> {
+        let g = self.synth.grammar();
+        let mut next = Context::new();
+        // Sorted so a failure reports the same binding every run.
+        let mut pairs: Vec<_> = bindings.iter().collect();
+        pairs.sort();
+        for (name, ty) in pairs {
+            let parsed = Type::parse(g, ty).map_err(|e| {
+                PyValueError::new_err(format!("invalid type '{ty}' for '{name}': {e}"))
+            })?;
+            next.add(name.clone(), parsed);
+        }
+        self.synth.set_context(next);
         Ok(())
     }
 
-    /// Clear the typing context.
+    /// The accumulated typing context, rendered by the active grammar. This
+    /// round-trips through `set_context` so callers carry the engine's
+    /// authoritative context forward without reimplementing effect application.
+    fn context(&self) -> Vec<(String, String)> {
+        let g = self.synth.grammar();
+        let mut bindings: Vec<_> = self
+            .synth
+            .ctx()
+            .bindings
+            .iter()
+            .map(|(name, ty)| (name.clone(), render(g, ty)))
+            .collect();
+        bindings.sort_by(|(left, _), (right, _)| left.cmp(right));
+        bindings
+    }
+
+    /// Add one binding. Compatibility wrapper over `set_context`.
+    fn add_to_ctx(&mut self, name: &str, ty: &str) -> PyResult<()> {
+        let parsed = Type::parse(self.synth.grammar(), ty)
+            .map_err(|e| PyValueError::new_err(format!("invalid type '{ty}': {e}")))?;
+        let mut next = self.synth.ctx().clone();
+        next.add(name.to_string(), parsed);
+        self.synth.set_context(next);
+        Ok(())
+    }
+
+    /// Clear the typing context. Compatibility wrapper over `set_context`.
     fn clear_ctx(&mut self) {
-        self.ctx = Context::new();
+        self.synth.set_context(Context::new());
+    }
+
+    /// Verify the current input, optionally against a goal type.
+    ///
+    /// Unlike `root_type()`, which returns whichever complete root comes first,
+    /// this reports *every* complete-root type. More than one entry in
+    /// `root_types` means the roots genuinely disagree. State-free.
+    #[pyo3(signature = (expected_type = None))]
+    fn verify(&mut self, expected_type: Option<&str>) -> PyResult<PyVerification> {
+        crate::synth::verification::verify(&mut self.synth, expected_type)
+            .map(|inner| PyVerification { inner })
+            .map_err(PyValueError::new_err)
     }
 
     /// Whether the parsed tree is complete.
     fn is_complete(&mut self) -> bool {
-        match self.synth.parse_with(&self.ctx) {
+        match self.synth.ast() {
             Ok(ast) => ast.is_complete(),
             Err(_) => false,
         }
@@ -267,9 +369,96 @@ impl PySynthesizer {
     fn ast(&mut self) -> PyResult<PyAst> {
         let fusion = self
             .synth
-            .parse_with(&self.ctx)
+            .ast()
             .map_err(|e| PyRuntimeError::new_err(format!("parse error: {e}")))?;
         let runtime = self.synth.runtime().clone();
         Ok(PyAst::from_fusion(&fusion, runtime))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use std::sync::OnceLock;
+
+    fn ml() -> SPG {
+        static GRAMMAR: OnceLock<SPG> = OnceLock::new();
+        GRAMMAR
+            .get_or_init(|| {
+                SPG::load(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/ml.auf")))
+                    .unwrap()
+            })
+            .clone()
+    }
+
+    fn type_source() -> impl Strategy<Value = String> {
+        prop::sample::select(vec![
+            "int".to_string(),
+            "bool".to_string(),
+            "int list".to_string(),
+        ])
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(16))]
+
+        #[test]
+        fn context_round_trips_binding_sets(
+            bindings in prop::collection::hash_map("[a-z][a-z0-9_]{0,5}", type_source(), 0..4),
+        ) {
+            let grammar = ml();
+            let mut synth = PySynthesizer {
+                synth: TypingSynth::new(grammar.clone(), ""),
+            };
+            synth.set_context(bindings.clone()).unwrap();
+            let original = synth.synth.ctx().bindings.clone();
+
+            let recovered = synth.context();
+            prop_assert!(recovered.windows(2).all(|pair| pair[0].0 < pair[1].0));
+            let mut expected_names: Vec<_> = bindings.keys().collect();
+            expected_names.sort();
+            prop_assert_eq!(
+                recovered.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+                expected_names,
+            );
+
+            let normalizer = crate::typing::loader::normalizer(&grammar);
+            synth.set_context(recovered.clone().into_iter().collect()).unwrap();
+            for (name, rendered) in &recovered {
+                let reparsed = &synth.synth.ctx().bindings[name];
+                let mut subst = crate::typing::Subst::new();
+                prop_assert!(crate::typing::unify_modulo(
+                    &normalizer,
+                    &original[name],
+                    reparsed,
+                    &mut subst,
+                    true,
+                ));
+                prop_assert_eq!(render(&grammar, reparsed), rendered.as_str());
+            }
+
+            prop_assert_eq!(synth.context(), recovered);
+        }
+    }
+
+    #[test]
+    fn context_empty() {
+        let mut synth = PySynthesizer {
+            synth: TypingSynth::new(ml(), ""),
+        };
+        synth.set_context(HashMap::new()).unwrap();
+        assert!(synth.context().is_empty());
+    }
+
+    #[test]
+    fn context_renders_applied_type() {
+        let mut synth = PySynthesizer {
+            synth: TypingSynth::new(ml(), ""),
+        };
+        synth
+            .set_context(HashMap::from([(String::from("paths"), String::from("int list"))]))
+            .unwrap();
+        assert_eq!(synth.context(), vec![(String::from("paths"), String::from("int list"))]);
     }
 }

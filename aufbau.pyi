@@ -3,31 +3,23 @@
 Usage::
 
     from aufbau import SPG, Synthesizer, Term, Regex, PrefixStatus
-    from aufbau_dsl import G, nt, lit, re_, hole, ctx, ascribe, member
+    from aufbau.dsl import G, nt, lit, re_, hole, ctx, ascribe, member
 
-See :mod:`aufbau_dsl` for the idiomatic grammar construction DSL.
+A grammar is built either from ``.auf`` source with ``SPG(source)``, or
+programmatically with :mod:`aufbau.dsl`. There is no structural
+constructor: the DSL renders ``.auf`` and hands it to the same parser, so
+the surface syntax has exactly one definition.
 """
 
-from typing import Optional, Union
+from typing import Mapping, Optional, Union
 
-# ── Type aliases for SPG.build() input ───────────────────────────────────
+#: Semantic version of the native module.
+__version__: str
 
-SymbolSpec = tuple[str, str, Optional[str]]
-"""A grammar symbol spec: (kind, value, binding) with kind one of "nt" | "lit" | "re".
-
-This is the *input* format for :meth:`SPG.build`. The :mod:`aufbau_dsl`
-module provides :func:`~aufbau_dsl.nt`, :func:`~aufbau_dsl.lit`, and
-:func:`~aufbau_dsl.re_` constructors.
-
-At runtime, production symbols are returned as :class:`Symbol` objects.
-"""
-
-ProductionSpec = tuple[str, Optional[str], list[list[SymbolSpec]]]
-"""A nonterminal definition specification: (name, rule, alternatives)."""
-
-RuleSpec = tuple[str, str, str]
-"""A typing rule in inference notation: (name, premises, conclusion)."""
-
+#: The Engine API this build implements. A consumer checks this one string at
+#: startup: it names the whole v1 contract (atomic `set_context`, transactional
+#: `feed`, all-root `verify`), so there is nothing else to probe for.
+ENGINE_API: str
 
 # ── Runtime types ────────────────────────────────────────────────────────
 
@@ -59,7 +51,9 @@ class Symbol:
 
 class Production:
     """A nonterminal production (alternative)."""
-    def rhs(self) -> list[Symbol]: ...
+    rhs: list[Symbol]
+    #: Legacy spelling of ``len(production)``.
+    len: int
     def __len__(self) -> int: ...
 
 
@@ -83,9 +77,9 @@ class TypingRule:
 class Ast:
     """A parse AST, returned by :meth:`Synthesizer.ast`."""
     roots: list[Node]
-    node_count: int
-    is_complete: bool
     input: str
+    def node_count(self) -> int: ...
+    def is_complete(self) -> bool: ...
     def type_of(self, evidence) -> Optional[Term]: ...
 
 
@@ -93,22 +87,24 @@ class Node:
     """A node in the parse AST."""
     nodeid: int
     evidence: str
-    is_complete: bool
     text: str
-    nt_name: str
     start: int
     end: int
-    child_count: int
-    rhs: list[Child]
-    def children(self) -> list[Node]: ...
+    #: Arity of the production this node matched, which for an incomplete node
+    #: exceeds ``len(children)``.
+    rhs: int
+    children: list[Child]
+    def is_complete(self) -> bool: ...
+    def nt_name(self) -> str: ...
+    def child_count(self) -> int: ...
 
 
 class Child:
     """A child position in a production."""
     kind: str
     node: Optional[Node]
-    terminal_text: Optional[str]
-    terminal_complete: bool
+    def terminal_text(self) -> Optional[str]: ...
+    def terminal_complete(self) -> Optional[bool]: ...
 
 
 # ── Core engine classes ──────────────────────────────────────────────────
@@ -118,17 +114,6 @@ class SPG:
 
     def __init__(self, source: str) -> None:
         """Load a grammar from ``.auf`` source."""
-        ...
-
-    @staticmethod
-    def build(
-        productions: list[ProductionSpec],
-        rules: list[RuleSpec] = ...,
-        rewrites: list[tuple[str, str]] = ...,
-        start: Optional[str] = ...,
-        ty: Optional[str] = ...,
-    ) -> SPG:
-        """Assemble a grammar structurally, without ``.auf`` source."""
         ...
 
     def source(self) -> str:
@@ -196,11 +181,40 @@ class Synthesizer:
 
     def status(self) -> str: ...
 
-    def root_type(self) -> Optional[Term]: ...
+    def root_type(self) -> Optional[Term]:
+        """The type of *a* complete root. Prefer :meth:`verify`, which reports
+        every complete root and so cannot hide a conflict."""
+        ...
 
-    def add_to_ctx(self, name: str, ty: str) -> None: ...
+    def set_context(self, bindings: Mapping[str, str]) -> None:
+        """Replace the entire typing context.
 
-    def clear_ctx(self) -> None: ...
+        Every type is parsed before anything is mutated: the replacement happens
+        whole or not at all, and an invalid binding leaves the old context in
+        place. All later calls see the new bindings immediately.
+        """
+        ...
+
+    def context(self) -> list[tuple[str, str]]:
+        """The accumulated typing context, rendered by the active grammar.
+
+        This round-trips through :meth:`set_context` so callers carry the
+        engine's authoritative context forward without reimplementing effect
+        application.
+        """
+        ...
+
+    def verify(self, expected_type: Optional[str] = ...) -> Verification:
+        """Verify the current input, optionally against a goal type. State-free."""
+        ...
+
+    def add_to_ctx(self, name: str, ty: str) -> None:
+        """Add one binding. Compatibility wrapper over :meth:`set_context`."""
+        ...
+
+    def clear_ctx(self) -> None:
+        """Clear the context. Compatibility wrapper over :meth:`set_context`."""
+        ...
 
     def is_complete(self) -> bool: ...
 
@@ -209,6 +223,20 @@ class Synthesizer:
     def get_rule(self, name: str) -> TypingRule: ...
 
     def ast(self) -> Ast: ...
+
+
+class Verification:
+    """The result of :meth:`Synthesizer.verify`."""
+
+    #: ``"typed"`` | ``"live"`` | ``"dead"``.
+    status: str
+    #: Every distinct complete-root type, normalized and rendered. More than one
+    #: entry means the complete roots disagree.
+    root_types: list[str]
+    #: Whether the goal was met, or ``None`` when no goal was given.
+    goal_satisfied: Optional[bool]
+
+    def is_ambiguous(self) -> bool: ...
 
 
 class Regex:
