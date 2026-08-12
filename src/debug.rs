@@ -85,7 +85,7 @@ pub fn is_debug_enabled(level: DebugLevel, module: &str) -> bool {
 #[macro_export]
 macro_rules! debug {
     ($level:expr, $module:expr, $($arg:tt)*) => {
-        if $crate::engine::debug::is_debug_enabled($level, $module) {
+        if $crate::debug::is_debug_enabled($level, $module) {
             println!("[{}:{}] {}", $level, $module, format!($($arg)*));
         }
     };
@@ -94,34 +94,34 @@ macro_rules! debug {
 #[macro_export]
 macro_rules! debug_error {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::engine::debug::DebugLevel::Error, $module, $($arg)*);
+        $crate::debug!($crate::debug::DebugLevel::Error, $module, $($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! debug_warn {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::engine::debug::DebugLevel::Warn, $module, $($arg)*);
+        $crate::debug!($crate::debug::DebugLevel::Warn, $module, $($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! debug_info {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::engine::debug::DebugLevel::Info, $module, $($arg)*)
+        $crate::debug!($crate::debug::DebugLevel::Info, $module, $($arg)*)
     };
 }
 
 #[macro_export]
 macro_rules! debug_debug {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::engine::debug::DebugLevel::Debug, $module, $($arg)*);
+        $crate::debug!($crate::debug::DebugLevel::Debug, $module, $($arg)*);
     };
 }
 
 #[macro_export]
 macro_rules! debug_trace {
     ($module:expr, $($arg:tt)*) => {
-        $crate::debug!($crate::engine::debug::DebugLevel::Trace, $module, $($arg)*);
+        $crate::debug!($crate::debug::DebugLevel::Trace, $module, $($arg)*);
     };
 }

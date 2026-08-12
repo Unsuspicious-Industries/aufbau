@@ -1,5 +1,13 @@
-int add(int x, int y) { return x - y; }
+# Programs the certified C fragment must reject.
+# `#` comments and blank lines are skipped by the corpus loader.
 int bad_add(int x, int* y) { return x + y; }
 int missing_semi(int x) { return x }
 int no_decl() { return *x; }
+# Return type vs declared type. These are checked through the ambient key
+# `'return'` that a function definition publishes over its body; before that
+# existed the fragment typed every one of them.
 int type_mismatch(int x) { return (int*)x; }
+int wrong_cast(int x) { return (float*)x; }
+int needs_value() { return; }
+int two_params(int a, int b) { return (int*)a; }
+float wrong_base(int* x) { return x; }

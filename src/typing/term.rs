@@ -12,7 +12,7 @@
 
 use super::Pattern;
 use super::pattern::Match;
-use crate::engine::structure::{FusionChild, FusionNode};
+use crate::ast::{FusionChild, FusionNode};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -218,7 +218,7 @@ impl Term {
         });
         // Transparent wrapper: no construct of its own, collapse to its single
         // child. The test is the grammar's one definition, shared with
-        // elaboration ([`crate::engine::grammar::SPG::is_transparent`]).
+        // elaboration ([`crate::grammar::SPG::is_transparent`]).
         if node.is_transparent()
             && let Some(child) = child_nodes.next()
         {

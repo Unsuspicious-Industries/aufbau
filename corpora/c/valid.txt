@@ -1,5 +1,14 @@
+# Programs inside the certified C fragment that must type.
+# `#` comments and blank lines are skipped by the corpus loader.
 int add(int x, int y) { return x + y; }
-int double(int x) { return x * 2; }
+int sub(int x, int y) { return x - y; }
+int halve(int x) { return x / 2; }
 int deref(int* p) { return *p; }
 int addr_deref(int* p) { int* q = p; return *q; }
 int pointer_chain(int* p) { int** pp = &p; return **pp; }
+# The returned type matches the declared one, including through pointers,
+# non-int base types, and multi-parameter definitions.
+int* ptr_ok(int* p) { return p; }
+float scale(float x) { return x; }
+int third(int a, int b, int c) { return c; }
+void nothing() { return; }

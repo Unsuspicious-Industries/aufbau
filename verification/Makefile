@@ -20,7 +20,7 @@ LOAD_FLAGS  := -Q . AufbauVerif -Q $(BUILD_DIR) AufbauVerif
 
 VFILES := $(shell awk '/^[^-#]/ && /\.v$$/ {print $$1}' $(COQPROJECT))
 
-.PHONY: all build check clean watch print-files
+.PHONY: all build check obligations clean watch print-files
 
 all: build
 
@@ -44,6 +44,11 @@ check: clean build
 	  echo "  → rocq check $$vo"; \
 	  $(ROCQ) check $(LOAD_FLAGS) "$$vo" || exit 1; \
 	done
+
+# Every `Admitted` must be declared in OBLIGATIONS.md. Fails on drift in
+# either direction: a new assumption, or a listed one that is now proven.
+obligations:
+	@./obligations.sh
 
 # Watch loop. Requires entr (in nixpkgs) or falls back to a poll loop.
 watch:

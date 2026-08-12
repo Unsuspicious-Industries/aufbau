@@ -31,12 +31,18 @@
 // before the real parameter list does, letting a wrong-arity or wrong-type
 // self-call through — a genuine unsoundness, not a grammar limitation.
 //
-// Known limitation: `return` is not checked against the function's declared
-// return type in this fragment (a documented gap, in the spirit of the
-// fragment-boundary notes already carried by ml.auf/imp.auf). A `for` loop's
-// init/step must assign an already-declared variable, not introduce a fresh
-// one, sidestepping a scoping question the grammar doesn't need to answer to
-// still be meaningfully type-intensive.
+// The declared return type reaches every `return` in the body through the
+// ambient key `'return'`. A function definition publishes `Γ['return': ret]`
+// over its body; each `return e;` reads it back with `Γ('return')`. The two
+// rules share no token, so no binding-derived key could connect them — a
+// literal key is a name fixed by the grammar rather than read off the input,
+// which is what lets a constraint span a subtree at all. Nothing about the
+// mechanism is C-specific: it is how any grammar hands data down to rules that
+// cannot see where it came from.
+//
+// A `for` loop's init/step must assign an already-declared variable, not
+// introduce a fresh one, sidestepping a scoping question the grammar doesn't
+// need to answer to still be meaningfully type-intensive.
 
 // ===================== Identifiers =====================
 Identifier ::= /[a-z_][A-Za-z0-9_]*/
@@ -255,11 +261,17 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 ------------------------------- (assign)
 'void'
 
-Γ ⊢ e : ?A
------------ (return)
+// The returned expression must match the enclosing function's declared return
+// type, read from the ambient key its definition set. This is the constraint
+// that makes `int f(int x) { return (int*)x; }` fail — and it fails at the
+// offending expression, not at the closing brace.
+Γ ⊢ e : Γ('return')
+--------------------- (return)
 'void'
 
------------ (return_void)
+// A bare `return;` is only well-typed where the declared return type is void.
+Γ('return') = 'void'
+----------------------- (return_void)
 'void'
 
 Γ ⊢ e : ?A
@@ -311,10 +323,14 @@ name ∈ Γ, Γ ⊢ value : Γ(name)
 // its own now-fully-resolved signature as an effect for whatever function
 // comes after it (see the ProgramList comment above for why this is a
 // forward-reference list, not self-recursion).
-Γ ⊢ params : ?Ps
+// `Γ['return': ret]` scopes over the whole parameter list, and so over the
+// body it ends in: the setting rides the ordinary descent, so every node under
+// it inherits the entry, and a nested definition shadows it rather than
+// clashing.
+Γ['return': ret] ⊢ params : ?Ps
 ------------------------ (fndefn)
 Γ → Γ[name: ?Ps => ret] ⊢ ⊤
 
-Γ ⊢ body : ⊤
+Γ['return': ret] ⊢ body : ⊤
 ------------------------ (fndef0)
 Γ → Γ[name: unit => ret] ⊢ ⊤

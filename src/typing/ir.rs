@@ -2,18 +2,26 @@
 //!
 //! [`compile`] lowers a [`TypingRule`] to a flat instruction stream. Each
 //! instruction is one call to a `domain` primitive (`eval_ty`, `unify_modulo`,
-//! context ops), so the IR adds no logic of its own — it only fixes the *schedule*
-//! of those calls. The control flow the tree-walk did implicitly (premise-local
-//! context scoping) is made explicit here as `PushScope`/`PopScope`, so the
-//! executor is a flat fold and the compiler holds the structure once.
+//! context ops), so at compile time the IR adds no logic of its own: it fixes the
+//! *schedule* of those calls. Premise-local context scoping, implicit in the old
+//! tree-walk, is explicit here as `PushScope`/`PopScope`, so the executor is a flat
+//! fold and the compiler holds the structure once.
 //!
-//! Execution (the fold over these instructions, threading substitution, context,
-//! and a three-valued verdict) replaces `domain::eval_rule`; until that swap lands
-//! behind an equivalence check, this module is the inspectable compiled form.
+//! `compile` is the cut, and safety lives *before* it. Constraints are introduced
+//! by the grammar and the surface rule; a new safety check belongs there, not in the
+//! executor. Downstream only discharges: `domain`'s `run` folds the stream to a
+//! [`RuleResult`], `descend` replays the prefix before a binding's splice. `descend`
+//! adds semantics of its own (replay, splice application), but neither it nor `run`
+//! can invent an obligation the `Program` does not carry; they satisfy, leave
+//! `Unknown`, or prune. So a `Program` is the stable artifact between the halves,
+//! and a new backend consumes it rather than changing the engine.
+//! See `docs/architecture.md`.
+//!
+//! [`RuleResult`]: crate::typing::rule::RuleResult
 
 use crate::typing::domain::Trees;
 use crate::typing::rule::{Conclusion, Judgment, Premise, TypingRule};
-use crate::typing::{TyExpr, TypeExpr};
+use crate::typing::{Key, TyExpr, TypeExpr};
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
@@ -31,18 +39,19 @@ pub enum Instr {
     Ascribe { binding: String, expected: Reg },
     /// `equate ra = rb` — a type operation; unify two evaluated terms, hard-fail.
     Equate { left: Reg, right: Reg },
-    /// `member b` — context membership of binding `b`'s value.
-    Member { binding: String },
+    /// `member k` — context membership of key `k` (a binding's value, or a
+    /// fixed name).
+    Member { key: Key },
     /// Begin a premise-local context scope (a setting extension that must not leak).
     PushScope,
     /// End the innermost context scope.
     PopScope,
-    /// `extend b := r` — bind `b`'s value to register `r` in the current scope.
-    Extend { binding: String, ty: Reg },
+    /// `extend k := r` — bind key `k` to register `r` in the current scope.
+    Extend { key: Key, ty: Reg },
     /// `emit r` — the conclusion type.
     Emit { ty: Reg },
-    /// `effect b := r` — a context transition exported to siblings.
-    Effect { binding: String, ty: Reg },
+    /// `effect k := r` — a context transition exported to siblings.
+    Effect { key: Key, ty: Reg },
 }
 
 /// A compiled typing rule: its name and instruction stream.
@@ -129,10 +138,10 @@ impl Compiler<'_> {
         // not key a splice by an extension's binder name; the only splice is the
         // premise term's, recorded below.
         let setting_start = self.instrs.len();
-        for (name, ext) in &p.extensions {
+        for (key, ext) in &p.extensions {
             let r = self.eval(ext);
             self.instrs.push(Instr::Extend {
-                binding: name.clone(),
+                key: key.clone(),
                 ty: r,
             });
         }
@@ -151,13 +160,16 @@ impl Compiler<'_> {
                     expected: r,
                 });
             }
-            Judgment::Membership { binding } => {
+            Judgment::Membership { key } => {
                 let member_start = self.instrs.len();
-                self.instrs.push(Instr::Member {
-                    binding: binding.clone(),
-                });
-                self.splices
-                    .insert(binding.clone(), setting_start..member_start);
+                self.instrs.push(Instr::Member { key: key.clone() });
+                // A splice is a descent target, and only a binding names a
+                // child to descend into. A literal-keyed membership asks about
+                // the ambient context, so it has no subtree and no splice.
+                if let Some(b) = key.binding() {
+                    self.splices
+                        .insert(b.to_string(), setting_start..member_start);
+                }
             }
             Judgment::Equation { left, right } => {
                 let l = self.eval(left);
@@ -172,10 +184,10 @@ impl Compiler<'_> {
     }
 
     fn conclusion(&mut self, c: &Conclusion) {
-        for (var, ty) in &c.effects {
+        for (key, ty) in &c.effects {
             let r = self.eval(ty);
             self.instrs.push(Instr::Effect {
-                binding: var.clone(),
+                key: key.clone(),
                 ty: r,
             });
         }
@@ -190,17 +202,20 @@ impl fmt::Display for Instr {
             Instr::Eval { dst, expr } => write!(f, "r{dst} = {expr}"),
             Instr::Ascribe { binding, expected } => write!(f, "ascribe {binding} : r{expected}"),
             Instr::Equate { left, right } => write!(f, "equate r{left} = r{right}"),
-            Instr::Member { binding } => write!(f, "member {binding}"),
+            Instr::Member { key } => write!(f, "member {key}"),
             Instr::PushScope => write!(f, "push_scope"),
             Instr::PopScope => write!(f, "pop_scope"),
-            Instr::Extend { binding, ty } => write!(f, "extend {binding} := r{ty}"),
+            Instr::Extend { key, ty } => write!(f, "extend {key} := r{ty}"),
             Instr::Emit { ty } => write!(f, "emit r{ty}"),
-            Instr::Effect { binding, ty } => write!(f, "effect {binding} := r{ty}"),
+            Instr::Effect { key, ty } => write!(f, "effect {key} := r{ty}"),
         }
     }
 }
 
 impl fmt::Display for Program {
+    /// The whole program, including `splices`. A `Program` has exactly two
+    /// fields beyond its name, and both are printed: the debug view must not
+    /// hide state the executor reads.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "{}:", self.name)?;
         let mut indent = 1usize;
@@ -213,6 +228,11 @@ impl fmt::Display for Program {
                 indent += 1;
             }
         }
+        let mut spliced: Vec<_> = self.splices.iter().collect();
+        spliced.sort_by(|a, b| a.0.cmp(b.0));
+        for (binding, r) in spliced {
+            writeln!(f, "  splice {binding} = [{}..{}]", r.start, r.end)?;
+        }
         Ok(())
     }
 }
@@ -220,11 +240,15 @@ impl fmt::Display for Program {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::grammar::SPG;
+    use crate::grammar::SPG;
     use crate::typing::TypingRule;
 
     fn stlc() -> SPG {
-        SPG::load(include_str!("../../examples/stlc.auf")).unwrap()
+        SPG::load(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/stlc.auf"
+        )))
+        .unwrap()
     }
 
     fn trees(g: &SPG, rule: &TypingRule) -> Trees {
@@ -242,6 +266,232 @@ mod tests {
     fn compile_src(g: &SPG, premises: &str, conclusion: &str, name: &str) -> Program {
         let rule = TypingRule::new(premises.into(), conclusion.into(), name.into()).unwrap();
         compile(&rule, &trees(g, &rule))
+    }
+
+    /// Every `.auf` under `examples/`, discovered at run time rather than listed.
+    /// A hand-maintained list would let a newly added grammar escape the freeze,
+    /// and these tests exist precisely to hold for grammars nobody wrote them for.
+    fn example_sources() -> Vec<(String, String)> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/examples");
+        let mut out: Vec<(String, String)> = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("{dir}: {e}"))
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|x| x == "auf"))
+            .map(|p| {
+                let name = p.file_name().unwrap().to_string_lossy().into_owned();
+                (name, std::fs::read_to_string(&p).unwrap())
+            })
+            .collect();
+        assert!(!out.is_empty(), "no grammars found in {dir}");
+        out.sort();
+        out
+    }
+
+    /// Every rule of every example grammar, compiled, in a deterministic order.
+    /// Loading the grammars dominates these tests, so it happens once.
+    fn all_programs() -> &'static [(String, Program)] {
+        static ALL: std::sync::LazyLock<Vec<(String, Program)>> = std::sync::LazyLock::new(|| {
+            let mut out = Vec::new();
+            for (file, src) in example_sources() {
+                let g = SPG::load(&src).unwrap_or_else(|e| panic!("{file}: {e}"));
+                let ts = crate::typing::loader::type_trees(&g);
+                let mut names: Vec<_> = g.rules.keys().cloned().collect();
+                names.sort();
+                for name in names {
+                    out.push((file.clone(), compile(&g.rules[&name], &ts)));
+                }
+            }
+            out
+        });
+        &ALL
+    }
+
+    /// The IR text of every rule of every example grammar, frozen. `Program` is
+    /// the artifact the executor and any future backend consume, so a change to
+    /// it is a change to the compilation interface and must be deliberate.
+    ///
+    /// Regenerate with `UPDATE_GOLDEN=1 cargo test ir_golden`.
+    #[test]
+    fn ir_golden() {
+        let mut got = String::new();
+        for (file, prog) in all_programs() {
+            got.push_str(&format!("# {file}\n{prog}\n"));
+        }
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/typing/ir.golden");
+        if std::env::var_os("UPDATE_GOLDEN").is_some() {
+            std::fs::write(path, &got).unwrap();
+            return;
+        }
+        let want = std::fs::read_to_string(path).unwrap_or_default();
+        assert_eq!(
+            want, got,
+            "IR changed. If deliberate: UPDATE_GOLDEN=1 cargo test ir_golden"
+        );
+    }
+
+    /// Scopes are balanced in every compiled rule, and never close below zero.
+    /// `descend` slices `instrs` by splice range, so an unbalanced program would
+    /// give a premise the wrong context.
+    #[test]
+    fn scopes_are_balanced() {
+        for (file, prog) in all_programs() {
+            let mut depth = 0i32;
+            for instr in &prog.instrs {
+                match instr {
+                    Instr::PushScope => depth += 1,
+                    Instr::PopScope => depth -= 1,
+                    _ => {}
+                }
+                assert!(depth >= 0, "{file}/{}: pop below zero", prog.name);
+            }
+            assert_eq!(depth, 0, "{file}/{}: unbalanced scopes", prog.name);
+        }
+    }
+
+    /// Splices are in-bounds, non-empty-or-empty but well-formed, and disjoint.
+    /// Two premises sharing instructions would let one premise's setting leak
+    /// into another's descent.
+    #[test]
+    fn splices_are_disjoint_subranges() {
+        for (file, prog) in all_programs() {
+            let mut ranges: Vec<_> = prog.splices.values().cloned().collect();
+            ranges.sort_by_key(|r| (r.start, r.end));
+            for r in &ranges {
+                assert!(
+                    r.start <= r.end && r.end <= prog.instrs.len(),
+                    "{file}/{}: bad range {r:?} over {} instrs",
+                    prog.name,
+                    prog.instrs.len()
+                );
+            }
+            for w in ranges.windows(2) {
+                assert!(
+                    w[0].end <= w[1].start,
+                    "{file}/{}: overlapping splices {:?} and {:?}",
+                    prog.name,
+                    w[0],
+                    w[1]
+                );
+            }
+        }
+    }
+
+    /// A splice contains only what a descent needs: `Eval`s and the `Extend`s of
+    /// that premise's setting. Never an `Ascribe`/`Member` (the rule's own check,
+    /// discharged by `run`, not by descending) and never a scope marker.
+    #[test]
+    fn splices_contain_only_setting_instructions() {
+        for (file, prog) in all_programs() {
+            for binding in prog.splices.keys() {
+                for instr in prog.splice(binding).unwrap() {
+                    assert!(
+                        matches!(instr, Instr::Eval { .. } | Instr::Extend { .. }),
+                        "{file}/{}: splice {binding} holds {instr}",
+                        prog.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// Behaviour is a function of the compiled `Program`, not of the rule text it
+    /// came from. Rendering a grammar back to `.auf` and reloading must yield
+    /// identical programs: if it does not, either `to_spec_string` loses
+    /// information or `compile` reads something outside the rule.
+    #[test]
+    fn program_survives_source_round_trip() {
+        for (file, src) in example_sources() {
+            let g = SPG::load(&src).unwrap_or_else(|e| panic!("{file}: {e}"));
+            let rendered = g.to_spec_string();
+            let g2 = SPG::load(&rendered).unwrap_or_else(|e| panic!("{file} reload: {e}"));
+
+            let mut names: Vec<_> = g.rules.keys().cloned().collect();
+            let mut names2: Vec<_> = g2.rules.keys().cloned().collect();
+            names.sort();
+            names2.sort();
+            assert_eq!(names, names2, "{file}: rule set changed across round trip");
+
+            let (ts, ts2) = (
+                crate::typing::loader::type_trees(&g),
+                crate::typing::loader::type_trees(&g2),
+            );
+            for name in names {
+                let (p1, p2) = (
+                    compile(&g.rules[&name], &ts),
+                    compile(&g2.rules[&name], &ts2),
+                );
+                assert_eq!(
+                    p1, p2,
+                    "{file}/{name}: program changed across round trip\n--- before\n{p1}--- after\n{p2}"
+                );
+            }
+        }
+    }
+
+    /// The other half of the same claim, from the executor's side: a grammar and
+    /// its round-tripped twin must agree on every curated input. Equal programs
+    /// should imply equal `descend`/`finalize` outcomes; this checks it end to end
+    /// rather than trusting the implication.
+    #[test]
+    fn parse_outcomes_survive_source_round_trip() {
+        use crate::typing::TypingSynth;
+        use crate::validation::parseable::{all_suites, build_context};
+
+        for (suite, g, valid, invalid) in all_suites() {
+            let g2 =
+                SPG::load(&g.to_spec_string()).unwrap_or_else(|e| panic!("{suite} reload: {e}"));
+            for case in valid.iter().chain(invalid.iter()) {
+                let ctx = build_context(&g, &case.context);
+                let before = TypingSynth::new(g.clone(), case.input)
+                    .parse_with(&ctx)
+                    .is_ok();
+                let after = TypingSynth::new(g2.clone(), case.input)
+                    .parse_with(&ctx)
+                    .is_ok();
+                assert_eq!(
+                    before, after,
+                    "{suite}: {} ({:?}) disagrees across round trip",
+                    case.description, case.input
+                );
+            }
+        }
+    }
+
+    /// `SPG.ir(rule)` is the FFI debug view, and it must work for *every* rule,
+    /// including the degenerate shapes: no premises at all, and a rule whose only
+    /// judgment is `Member`.
+    #[test]
+    fn every_rule_renders() {
+        let (mut saw_no_premise, mut saw_member_only) = (false, false);
+        for (file, prog) in all_programs() {
+            let s = prog.to_string();
+            assert!(
+                s.starts_with(&format!("{}:\n", prog.name)),
+                "{file}: bad header for {}",
+                prog.name
+            );
+            let judgments = prog
+                .instrs
+                .iter()
+                .filter(|i| matches!(i, Instr::Ascribe { .. } | Instr::Member { .. }))
+                .count();
+            if judgments == 0 {
+                saw_no_premise = true;
+            }
+            if prog
+                .instrs
+                .iter()
+                .any(|i| matches!(i, Instr::Member { .. }))
+                && !prog
+                    .instrs
+                    .iter()
+                    .any(|i| matches!(i, Instr::Ascribe { .. }))
+            {
+                saw_member_only = true;
+            }
+        }
+        assert!(saw_no_premise, "no premise-less rule in the corpus");
+        assert!(saw_member_only, "no Member-only rule in the corpus");
     }
 
     #[test]
@@ -311,15 +561,13 @@ mod tests {
         assert!(
             prog.instrs
                 .iter()
-                .any(|i| matches!(i, Instr::Member { binding } if binding == "x"))
+                .any(|i| matches!(i, Instr::Member { key } if key.binding() == Some("x")))
         );
         // The conclusion Γ(x) evaluates a context lookup and emits it.
         assert!(matches!(prog.instrs.last(), Some(Instr::Emit { .. })));
-        assert!(
-            prog.instrs
-                .iter()
-                .any(|i| matches!(i, Instr::Eval { expr: TyExpr::Ctx(v), .. } if v == "x"))
-        );
+        assert!(prog.instrs.iter().any(
+            |i| matches!(i, Instr::Eval { expr: TyExpr::Ctx(k), .. } if k.binding() == Some("x"))
+        ));
     }
 
     #[test]
@@ -367,14 +615,14 @@ mod tests {
         assert!(
             l_splice
                 .iter()
-                .any(|i| matches!(i, Instr::Extend { binding, .. } if binding == "a")),
+                .any(|i| matches!(i, Instr::Extend { key, .. } if key.binding() == Some("a"))),
             "splice for `l` should include setting extension `a`, got {l_splice:?}"
         );
         let r_splice = prog.splice("r").unwrap();
         assert!(
             r_splice
                 .iter()
-                .all(|i| !matches!(i, Instr::Extend { binding, .. } if binding == "a")),
+                .all(|i| !matches!(i, Instr::Extend { key, .. } if key.binding() == Some("a"))),
             "splice for `r` must not include sibling setting `a`, got {r_splice:?}"
         );
         // The binder `a` itself is not a descent target.
@@ -390,7 +638,7 @@ mod tests {
         let s_e = prog.splice("e").unwrap();
         assert!(
             s_e.iter()
-                .any(|i| matches!(i, Instr::Extend { binding, .. } if binding == "a"))
+                .any(|i| matches!(i, Instr::Extend { key, .. } if key.binding() == Some("a")))
         );
         assert!(
             s_e.iter()

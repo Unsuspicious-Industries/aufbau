@@ -1,11 +1,11 @@
 //! Arena-backed typed structural views over parser output.
 
 use crate::debug_trace;
-use crate::engine::grammar::{SPG, Segment};
-use crate::engine::parse::arena::Lexeme;
+use crate::grammar::{SPG, Segment};
+use crate::parse::arena::Lexeme;
 use std::collections::BTreeSet;
 
-use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
+use crate::parse::arena::{ChildRef, NodeId, ParseArena, Span};
 
 // ============================================================================
 // FusionAST — owns arena, computes everything on-demand
@@ -235,7 +235,7 @@ impl<'a> FusionNode<'a> {
     }
 
     #[must_use]
-    pub fn evidence(&self) -> crate::engine::parse::arena::EvidenceId {
+    pub fn evidence(&self) -> crate::parse::arena::EvidenceId {
         self.ast.arena.node(self.node_id).map_or(0, |n| n.evidence)
     }
 
@@ -451,7 +451,7 @@ fn collect_bound_texts_rec(
     };
 
     for status in node.binding_map.values() {
-        if let crate::engine::parse::arena::BindingStatus::Resolved {
+        if let crate::parse::arena::BindingStatus::Resolved {
             span,
             complete: _,
             open: _,

@@ -16,7 +16,7 @@ fn ctx_of(pairs: &[(&str, &str)]) -> Context {
 }
 
 fn parse(grammar: &str, input: &str, ctx: &Context) -> Result<String, String> {
-    let g = crate::engine::grammar::SPG::load(grammar).expect("bad grammar");
+    let g = crate::grammar::SPG::load(grammar).expect("bad grammar");
     let mut synth = TypingSynth::new(g, input);
     match synth.parse_with(ctx) {
         Ok(ast) => Ok(format!(
@@ -465,7 +465,7 @@ fn trace_transparent_unary_propagation() {
     crate::add_module_filter("fusion_parser");
     crate::add_module_filter("fusion_typing");
 
-    let grammar = crate::engine::grammar::SPG::load(
+    let grammar = crate::grammar::SPG::load(
         r#"
         Identifier ::= /[a-z]+/
         Variable(var) ::= Identifier[x]

@@ -1,10 +1,10 @@
 //! Tests for deduplication invariants in the agenda parser.
 
 use super::*;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::Item;
-use crate::engine::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
-use crate::engine::parse::parser::Completion;
+use crate::grammar::SPG;
+use crate::parse::Item;
+use crate::parse::arena::{AltRange, ArenaNode, NodeId, NodeStatus, Span};
+use crate::parse::parser::Completion;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 

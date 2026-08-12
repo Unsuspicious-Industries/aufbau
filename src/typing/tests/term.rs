@@ -2,7 +2,7 @@
 //! core Robinson laws, and the engine bridge. Compare `unify_props.rs`, whose
 //! envelope tests pin exactly the limits this module removes.
 
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 use crate::typing::pattern::Pattern;
 use crate::typing::term::{Subst, Term, apply, unify};
 use crate::typing::{Context, TypingSynth};
@@ -235,7 +235,10 @@ fn rewrite_theory_failure_on_open_term_is_not_stable() {
     use crate::typing::normalize::{Normalizer, RewriteRule, failure_is_stable, unify_modulo};
     // fst(Pair(?A, ?B)) ⇝ ?A
     let proj = RewriteRule {
-        lhs: Term::con("fst", vec![Term::con("Pair", vec![Term::var("A"), Term::var("B")])]),
+        lhs: Term::con(
+            "fst",
+            vec![Term::con("Pair", vec![Term::var("A"), Term::var("B")])],
+        ),
         rhs: Term::var("A"),
     };
     let norm = Normalizer::from_rules(vec![proj]);
@@ -247,7 +250,10 @@ fn rewrite_theory_failure_on_open_term_is_not_stable() {
     assert!(!unify_modulo(&norm, &open, &int, &mut s, true));
     assert!(!failure_is_stable(&norm, &open, &int));
     // The repaired instance unifies modulo the theory.
-    let repaired = Term::con("fst", vec![Term::con("Pair", vec![int.clone(), Term::leaf("Y")])]);
+    let repaired = Term::con(
+        "fst",
+        vec![Term::con("Pair", vec![int.clone(), Term::leaf("Y")])],
+    );
     let mut s2 = Subst::new();
     assert!(unify_modulo(&norm, &repaired, &int, &mut s2, true));
     // Ground failures stay prunable even with the theory loaded.

@@ -1,7 +1,7 @@
 use super::ParseTestCase;
 #[cfg(test)]
 use super::run_parse_batch;
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 
 pub const ARITHMETIC_GRAMMAR: &str = r"
     Number ::= /[0-9]+/

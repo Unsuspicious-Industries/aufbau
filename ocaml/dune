@@ -3,9 +3,14 @@
  (modules aufbau)
  (foreign_archives aufbau ocaml-boxroot))
 
+; The engine is linked from static archives only (libaufbau.a), and dune wants
+; a matching dll*.so to build bytecode. Executables and tests are therefore
+; native-only; without this `dune build` fails with "No rule found for
+; dllaufbau.so".
 (executable
  (name demo)
  (modules demo)
+ (modes exe)
  (libraries aufbau)
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
@@ -13,32 +18,46 @@
 (test
  (name test)
  (modules test)
+ (modes exe)
  (libraries aufbau)
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
 
-; Generic differential certification framework
+; ── Structural SPG builder ──────────────────────────────────────────────────
+(library
+ (name spg)
+ (modules spg)
+ (libraries aufbau))
+
+; ── Generic differential certification framework ────────────────────────────
 (library
  (name certify)
  (modules certify)
- (libraries aufbau))
+ (libraries aufbau spg))
+
+; OCaml type-checker oracle
+(library
+ (name oracle)
+ (modules oracle)
+ (libraries compiler-libs.common))
 
 ; Language instances for the certification framework
 (library
  (name lang_ml)
  (modules lang_ml)
- (libraries aufbau certify oracle))
+ (libraries aufbau certify oracle spg))
 
 (library
  (name lang_c)
  (modules lang_c)
- (libraries aufbau certify))
+ (libraries aufbau certify spg))
 
-; Differential certification: all supported languages
+; Differential certification harness: all supported languages
 (test
  (name cert)
- (modules cert certify lang_ml lang_c oracle)
- (libraries aufbau certify lang_ml lang_c oracle compiler-libs.common)
+ (modules cert)
+ (modes exe)
+ (libraries aufbau certify lang_ml lang_c oracle spg)
  (link_flags
   (-cclib -lpthread -cclib -ldl -cclib -lm)))
 

@@ -1,7 +1,7 @@
 //! `TyExpr::build` recovers a rule type-expression's tree by parsing it with the
 //! grammar (§2): the rule's structure is the grammar's own.
 
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 use crate::typing::{TyExpr, TypeExpr};
 use std::collections::HashSet;
 
@@ -48,7 +48,10 @@ fn arrow_of_holes_is_a_constructor() {
     // `?A -> ?B` parses to the `Fun` production over two hole leaves.
     assert_eq!(
         build(&grammar(), "?A -> ?B"),
-        con("Fun", vec![TyExpr::Var("A".into()), TyExpr::Var("B".into())]),
+        con(
+            "Fun",
+            vec![TyExpr::Var("A".into()), TyExpr::Var("B".into())]
+        ),
     );
 }
 
@@ -56,7 +59,10 @@ fn arrow_of_holes_is_a_constructor() {
 fn ref_and_hole_mixed() {
     assert_eq!(
         build(&grammar(), "τ -> ?B"),
-        con("Fun", vec![TyExpr::Ref("τ".into()), TyExpr::Var("B".into())]),
+        con(
+            "Fun",
+            vec![TyExpr::Ref("τ".into()), TyExpr::Var("B".into())]
+        ),
     );
 }
 
@@ -69,7 +75,10 @@ fn arrow_is_right_associative_from_the_grammar() {
             "Fun",
             vec![
                 TyExpr::Var("A".into()),
-                con("Fun", vec![TyExpr::Var("B".into()), TyExpr::Var("C".into())]),
+                con(
+                    "Fun",
+                    vec![TyExpr::Var("B".into()), TyExpr::Var("C".into())]
+                ),
             ],
         ),
     );
@@ -79,7 +88,10 @@ fn arrow_is_right_associative_from_the_grammar() {
 fn literal_atom_in_structure() {
     assert_eq!(
         build(&grammar(), "'Int' -> ?B"),
-        con("Fun", vec![TyExpr::Lit("Int".into()), TyExpr::Var("B".into())]),
+        con(
+            "Fun",
+            vec![TyExpr::Lit("Int".into()), TyExpr::Var("B".into())]
+        ),
     );
 }
 

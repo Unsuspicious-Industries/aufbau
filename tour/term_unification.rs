@@ -45,7 +45,11 @@ fn main() {
     );
 
     // A genuine mismatch is rejected.
-    unify("clash", &arrow(int.clone(), bool_.clone()), &arrow(int, unit.clone()));
+    unify(
+        "clash",
+        &arrow(int.clone(), bool_.clone()),
+        &arrow(int, unit.clone()),
+    );
 
     // Unification modulo a theory: Bool ⇝ Unit + Unit makes the two equal.
     let theory = Normalizer::from_rules(vec![RewriteRule {

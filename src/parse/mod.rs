@@ -12,7 +12,7 @@ mod testing;
 #[cfg(test)]
 mod tests;
 
-pub use crate::engine::error::PrefixError;
+pub use crate::error::PrefixError;
 pub use arena::{
     AltId, BindingMap, BindingStatus, ChildRef, CtxId, EffectId, EvidenceId, NodeId, NodeStatus,
     NtId, ParseArena, ProdId, Span, TypeId,

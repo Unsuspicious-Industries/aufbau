@@ -4,5 +4,6 @@
 //! `thm:completability-soundness` and `thm:prefix-monotonicity`.
 //! `properties` houses proptest-based property tests.
 
+pub mod corpus;
 pub mod parseable;
 pub mod properties;

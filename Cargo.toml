@@ -1,6 +1,6 @@
 [package]
 name = "aufbau"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 authors = ["pkd <pkd@unsuspicious.org>"]
 description = "Generalized prefix parsing for a class of context-dependent languages"
@@ -81,4 +81,7 @@ harness = false
 [features]
 default = []
 python-ffi = ["dep:pyo3", "pyo3/extension-module"]
+# Record IR execution for debugging. Compiled out by default: `trace!` puts the
+# whole call, arguments included, behind this cfg, so `run` is unchanged without it.
+trace = []
 ocaml-ffi = ["dep:ocaml"]

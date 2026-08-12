@@ -1,4 +1,4 @@
-use crate::engine::grammar::{SPG, Symbol};
+use crate::grammar::{SPG, Symbol};
 use crate::regex::Regex;
 
 fn literal_regex(pattern: &str) -> Regex {

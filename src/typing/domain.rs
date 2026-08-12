@@ -14,18 +14,18 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::engine::error::{TransitionError, UnresolvedKind};
-use crate::engine::parse::arena::{Lexeme, NodeStatus};
-use crate::engine::Segment;
+use crate::error::{TransitionError, UnresolvedKind};
+use crate::grammar::Segment;
+use crate::parse::arena::{Lexeme, NodeStatus};
+use crate::semantics::Obligations;
 use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
-use crate::semantics::Obligations;
 use crate::typing::ir::{Instr, Program};
-use crate::typing::normalize::{failure_is_stable, unify_modulo, Normalizer};
+use crate::typing::normalize::{Normalizer, failure_is_stable, unify_modulo};
 use crate::typing::pattern::Pattern;
 use crate::typing::rule::{PremiseStatus, RuleResult};
-use crate::typing::term::{apply, Evidence, Term};
-use crate::typing::{Context, ContextTransition, Subst, TyExpr, TypeExpr};
+use crate::typing::term::{Evidence, Term, apply};
+use crate::typing::{Context, ContextTransition, Key, Slot, Subst, TyExpr, TypeExpr};
 
 /// A rule's flat `TypeExpr`s mapped to their parsed trees. Precomputed by the
 /// runtime, which holds the grammar.
@@ -110,6 +110,17 @@ impl StatsSnap {
 #[derive(Clone, Debug, Default)]
 pub struct TypingDomain<const TRACK: bool = false> {
     stats: Stats,
+    /// Dynamic execution trace. Zero-sized and unreachable without the
+    /// `trace` feature; see [`crate::typing::trace`].
+    trace: crate::typing::Trace,
+}
+
+impl<const TRACK: bool> TypingDomain<TRACK> {
+    /// The execution trace buffer. Empty unless built with `--features trace`.
+    #[must_use]
+    pub fn trace(&self) -> &crate::typing::Trace {
+        &self.trace
+    }
 }
 
 impl<const TRACK: bool> TypingDomain<TRACK> {
@@ -152,6 +163,18 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             .iter()
             .find(|o| o.name == name)
             .and_then(|o| o.value.as_ref())
+    }
+
+    /// What a key currently names, for the trace: a literal names itself, a
+    /// binding names whatever text has arrived for it.
+    #[cfg(feature = "trace")]
+    fn key_text(obligations: &Obligations, key: &Key, segs: &[Segment]) -> String {
+        match key {
+            Key::Literal(s) => format!("'{s}'"),
+            Key::Binding(b) => Self::ob_resolve(obligations, b)
+                .and_then(|l| l.value(segs))
+                .map_or_else(|| "UNRESOLVED".to_string(), |v| format!("{v:?}")),
+        }
     }
 
     fn ob_type(obligations: &Obligations, name: &str) -> Option<usize> {
@@ -205,14 +228,22 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         (!ev.is_top()).then_some(ev.term)
     }
 
-    /// `Γ(v)`: the type bound to `v`'s value in the context, identity shared.
+    /// `Γ(k)`: the type the context binds at key `k`, identity shared.
+    ///
+    /// A literal key resolves without consulting the input at all, so it is
+    /// answerable the moment the entry exists. A binding key must first read
+    /// the bound token's text, and is unresolvable until that token arrives.
     fn resolve_ctx(
         obligations: &Obligations,
         ctx: &Context,
         segs: &[Segment],
-        v: &str,
+        key: &Key,
     ) -> Option<Term> {
-        let lex = Self::ob_resolve(obligations, v)?;
+        let name = match key {
+            Key::Literal(s) => return ctx.lookup_ambient(s).cloned(),
+            Key::Binding(b) => b,
+        };
+        let lex = Self::ob_resolve(obligations, name)?;
         let text = lex.value(segs).unwrap_or_default();
         if let Some(t) = ctx.lookup(&text) {
             return Some(t.clone());
@@ -298,8 +329,8 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
 
     // ── Context helpers ─────────────────────────────────────────────────────
 
-    fn extend(ctx: &Context, value: &str, resolved: Term) -> Context {
-        ctx.shadow(value.to_string(), resolved)
+    fn extend(ctx: &Context, slot: &Slot, resolved: Term) -> Context {
+        ctx.shadow_at(slot, resolved)
     }
 
     /// Top of the premise-local context stack (never empty).
@@ -347,15 +378,23 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
     fn extend_inputs(
         obligations: &Obligations,
         regs: &[Option<Term>],
-        binding: &str,
+        key: &Key,
         ty: usize,
         segs: &[Segment],
-    ) -> Result<(String, Term), UnresolvedKind> {
-        let value = Self::ob_resolve(obligations, binding)
-            .and_then(|lex| lex.value(segs))
-            .ok_or(UnresolvedKind::Value)?;
+    ) -> Result<(Slot, Term), UnresolvedKind> {
+        // A literal key is known at compile time, so it can never be the
+        // missing half. Only the type register can block, which is what lets a
+        // literal-keyed setting reach a descent earlier than a binding-keyed one.
+        let slot = match key {
+            Key::Literal(s) => Slot::Ambient(s.clone()),
+            Key::Binding(b) => Slot::Binding(
+                Self::ob_resolve(obligations, b)
+                    .and_then(|lex| lex.value(segs))
+                    .ok_or(UnresolvedKind::Value)?,
+            ),
+        };
         let r = Self::reg(regs, ty).ok_or(UnresolvedKind::Type)?;
-        Ok((value, r))
+        Ok((slot, r))
     }
 
     // ── IR execution ─────────────────────────────────────────────────────────
@@ -407,10 +446,22 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         &self,
         obligations: &Obligations,
         ctx: &Context,
-        binding: &str,
+        key: &Key,
         segs: &[Segment],
     ) -> PremiseStatus {
         Self::tick(&self.stats.member);
+        // A literal key is decided outright: the ambient entry is there or it
+        // is not, and no further input can change that.
+        let binding = match key {
+            Key::Literal(s) => {
+                return if ctx.lookup_ambient(s).is_some() {
+                    PremiseStatus::Satisfied
+                } else {
+                    PremiseStatus::Contradiction
+                };
+            }
+            Key::Binding(b) => b,
+        };
         let Some(lex) = Self::ob_resolve(obligations, binding) else {
             return PremiseStatus::Unknown;
         };
@@ -446,7 +497,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         let mut ctxs = vec![ctx];
         let mut satisfied = true;
         let mut output: Option<Term> = None;
-        let mut effects: Vec<(String, Term)> = Vec::new();
+        let mut effects: Vec<(Slot, Term)> = Vec::new();
 
         // A premise status folds into the running verdict; a contradiction ends it.
         macro_rules! combine {
@@ -461,23 +512,78 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
 
         combine!(self.merge_eqs(norm, evidence, obligations, &mut subst));
 
-        for instr in &program.instrs {
+        crate::trace!(
+            self.trace,
+            crate::typing::Step::Enter {
+                rule: program.name.clone(),
+                node: format!("{status:?}"),
+            }
+        );
+
+        // A step's outcome, recorded only when the `trace` feature is on. The
+        // `$outcome` expression is inside the macro, so it is not evaluated
+        // (and `regs` is not formatted) in a normal build.
+        macro_rules! step {
+            ($pc:expr, $instr:expr, $outcome:expr) => {
+                crate::trace!(
+                    self.trace,
+                    crate::typing::Step::Instr {
+                        scope: ctxs.len() - 1,
+                        pc: $pc,
+                        instr: $instr.to_string(),
+                        outcome: $outcome,
+                    }
+                );
+            };
+        }
+
+        // `pc` feeds the trace only; without that feature it is unused.
+        for (pc, instr) in program.instrs.iter().enumerate() {
+            let _ = pc;
             match instr {
                 Instr::Eval { dst, expr } => {
                     let top = Self::top(&ctxs).clone();
-                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &top, segs, run);
+                    self.eval_to_reg(
+                        &mut regs,
+                        *dst,
+                        expr,
+                        evidence,
+                        obligations,
+                        &top,
+                        segs,
+                        run,
+                    );
+                    step!(
+                        pc,
+                        instr,
+                        match Self::reg(&regs, *dst) {
+                            Some(t) => format!("= {t}"),
+                            None => "UNRESOLVED".to_string(),
+                        }
+                    );
                 }
                 Instr::Ascribe { binding, expected } => {
                     let exp = Self::reg(&regs, *expected);
-                    combine!(self.run_ascribe(
+                    let st = self.run_ascribe(
                         norm,
                         evidence,
                         obligations,
                         binding,
-                        exp,
+                        exp.clone(),
                         &mut subst,
-                        allow_missing
-                    ));
+                        allow_missing,
+                    );
+                    step!(
+                        pc,
+                        instr,
+                        format!(
+                            "{st:?} (expected {}, actual {})",
+                            exp.map_or("UNRESOLVED".to_string(), |t| t.to_string()),
+                            Self::resolve_ref(evidence, obligations, binding)
+                                .map_or("UNRESOLVED".to_string(), |t| t.to_string())
+                        )
+                    );
+                    combine!(st);
                 }
                 Instr::Equate { left, right } => {
                     Self::tick(&self.stats.equate);
@@ -500,44 +606,75 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                         }
                         _ => PremiseStatus::Unknown,
                     };
+                    step!(pc, instr, format!("{st:?}"));
                     combine!(st);
                 }
-                Instr::Member { binding } => {
-                    combine!(self.run_member(obligations, Self::top(&ctxs), binding, segs));
+                Instr::Member { key } => {
+                    let st = self.run_member(obligations, Self::top(&ctxs), key, segs);
+                    step!(
+                        pc,
+                        instr,
+                        format!("{st:?} (key {})", Self::key_text(obligations, key, segs))
+                    );
+                    combine!(st);
                 }
                 Instr::PushScope => {
                     Self::tick(&self.stats.push_scope);
                     let t = Self::top(&ctxs).clone();
                     ctxs.push(t);
+                    step!(pc, instr, "scope opened".to_string());
                 }
                 Instr::PopScope => {
                     Self::tick(&self.stats.pop_scope);
                     if ctxs.len() > 1 {
                         ctxs.pop();
                     }
+                    step!(pc, instr, "scope closed".to_string());
                 }
-                Instr::Extend { binding, ty } => {
+                Instr::Extend { key, ty } => {
                     Self::tick(&self.stats.extend);
-                    match Self::extend_inputs(obligations, &regs, binding, *ty, segs) {
-                        Ok((v, r)) => {
+                    match Self::extend_inputs(obligations, &regs, key, *ty, segs) {
+                        Ok((slot, r)) => {
                             let top = ctxs.last_mut().expect("context stack is never empty");
-                            *top = top.shadow(v, r);
+                            *top = top.shadow_at(&slot, r.clone());
+                            step!(pc, instr, format!("Γ[{slot:?} : {r}]"));
                         }
                         // A setting that cannot resolve leaves the rule unsatisfied.
-                        Err(_) => satisfied = false,
+                        Err(kind) => {
+                            let _ = &kind;
+                            satisfied = false;
+                            step!(pc, instr, format!("UNRESOLVED {kind:?}"));
+                        }
                     }
                 }
                 Instr::Emit { ty } => {
                     Self::tick(&self.stats.emit);
                     output = Self::reg(&regs, *ty);
+                    step!(
+                        pc,
+                        instr,
+                        match &output {
+                            Some(t) => format!("-> {t}"),
+                            None => "UNRESOLVED".to_string(),
+                        }
+                    );
                 }
-                Instr::Effect { binding, ty } => {
+                Instr::Effect { key, ty } => {
                     Self::tick(&self.stats.effect);
-                    let name = Self::ob_resolve(obligations, binding)
-                        .and_then(|lex| lex.value(segs))
-                        .unwrap_or_else(|| binding.clone());
-                    if let Some(r) = Self::reg(&regs, *ty) {
-                        effects.push((name, r));
+                    // No fallback to the binder's own spelling: an effect whose
+                    // binding has not resolved has no key yet, and silently
+                    // keying by the literal name of the binder would export an
+                    // entry nobody asked for. Say it with `Key::Literal` or say
+                    // nothing.
+                    match Self::extend_inputs(obligations, &regs, key, *ty, segs) {
+                        Ok((slot, r)) => {
+                            step!(pc, instr, format!("Γ' [{slot:?} : {r}]"));
+                            effects.push((slot, r));
+                        }
+                        Err(kind) => {
+                            let _ = &kind;
+                            step!(pc, instr, format!("UNRESOLVED {kind:?}"));
+                        }
                     }
                 }
             }
@@ -596,6 +733,14 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             return Ok(ctx.clone());
         };
         let Some(range) = program.splices.get(b).cloned() else {
+            crate::trace!(
+                self.trace,
+                crate::typing::Step::Descend {
+                    rule: program.name.clone(),
+                    binding: b.to_string(),
+                    outcome: "no splice, context unchanged".to_string(),
+                }
+            );
             return Ok(ctx.clone());
         };
         let run = rid();
@@ -618,7 +763,8 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                     }
                 }
                 Instr::Equate { left, right } => {
-                    if let (Some(l), Some(r)) = (Self::reg(&regs, *left), Self::reg(&regs, *right)) {
+                    if let (Some(l), Some(r)) = (Self::reg(&regs, *left), Self::reg(&regs, *right))
+                    {
                         let _ = unify_modulo(norm, &l, &r, &mut subst, true);
                     }
                 }
@@ -630,18 +776,46 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         for instr in &program.instrs[range] {
             match instr {
                 Instr::Eval { dst, expr } => {
-                    self.eval_to_reg(&mut regs, *dst, expr, evidence, obligations, &out, segs, run);
+                    self.eval_to_reg(
+                        &mut regs,
+                        *dst,
+                        expr,
+                        evidence,
+                        obligations,
+                        &out,
+                        segs,
+                        run,
+                    );
                 }
-                Instr::Extend { binding, ty } => {
+                Instr::Extend { key, ty } => {
                     Self::tick(&self.stats.extend);
-                    let (value, r) = Self::extend_inputs(obligations, &regs, binding, *ty, segs)
-                        .map_err(|kind| TransitionError::Unresolved {
+                    let (slot, r) = Self::extend_inputs(obligations, &regs, key, *ty, segs)
+                        .map_err(|kind| {
+                            crate::trace!(
+                                self.trace,
+                                crate::typing::Step::Descend {
+                                    rule: program.name.clone(),
+                                    binding: b.to_string(),
+                                    outcome: format!("UNRESOLVED setting {key}: {kind:?}"),
+                                }
+                            );
+                            TransitionError::Unresolved {
+                                rule: program.name.clone(),
+                                binding: b.to_string(),
+                                setting: key.to_string(),
+                                kind,
+                            }
+                        })?;
+                    let applied = apply(&r, &subst);
+                    crate::trace!(
+                        self.trace,
+                        crate::typing::Step::Descend {
                             rule: program.name.clone(),
                             binding: b.to_string(),
-                            setting: binding.clone(),
-                            kind,
-                        })?;
-                    out = out.shadow(value, apply(&r, &subst));
+                            outcome: format!("Γ[{slot:?} : {applied}]"),
+                        }
+                    );
+                    out = out.shadow_at(&slot, applied);
                 }
                 _ => {}
             }
@@ -661,7 +835,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         status: NodeStatus,
         evidence: &EvidenceStore<Evidence>,
     ) -> (Verdict, Evidence, Option<ContextTransition>) {
-        match self.run(
+        let result = self.run(
             program,
             norm,
             evidence,
@@ -669,7 +843,24 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             ctx.clone(),
             status,
             segs,
-        ) {
+        );
+        crate::trace!(
+            self.trace,
+            crate::typing::Step::Leave {
+                rule: program.name.clone(),
+                verdict: match &result {
+                    RuleResult::Contradiction => "Lost".to_string(),
+                    RuleResult::Partial(_) =>
+                        if status.open() {
+                            "Live".to_string()
+                        } else {
+                            "Lost (incomplete)".to_string()
+                        },
+                    RuleResult::Success(_) => "Satisfied".to_string(),
+                },
+            }
+        );
+        match result {
             RuleResult::Contradiction => (Verdict::Lost, Evidence::top(), None),
             RuleResult::Partial(ev) => {
                 if status.open() {
@@ -694,7 +885,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         effect
             .transforms
             .iter()
-            .fold(ctx, |acc, (var, ty)| Self::extend(&acc, var, ty.clone()))
+            .fold(ctx, |acc, (slot, ty)| Self::extend(&acc, slot, ty.clone()))
     }
 
     /// Left-to-right composition of effects for transparent productions.

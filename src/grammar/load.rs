@@ -1,5 +1,5 @@
 use super::utils::{ParsedRhs, parse_nonterminal, parse_production, parse_rhs};
-use crate::engine::grammar::{Production, SPG, Symbol};
+use crate::grammar::{Production, SPG, Symbol};
 use crate::regex::Regex;
 use crate::typing::TypingRule;
 

@@ -24,32 +24,47 @@
 //! ### `eval_impl` = eval (`thm:typing-realizable`-analog)
 //! Status: PROVEN — §3 Theorem (Typing implementation computes ideal evaluator).
 
-pub mod complete;
-pub mod context;
-pub mod domain;
-pub mod ir;
+// Grouped by pipeline stage. These are *not* separate directories on purpose:
+// they reference each other densely (`domain` → `ir` → `rule` → `types`), so a
+// directory per stage would add a path level and lengthen every import without
+// isolating anything. The cut itself is documented in `docs/architecture.md`.
+
+// Before the cut — what a rule says, and how `.auf` text becomes one.
 pub mod loader;
-pub mod normalize;
-pub mod pattern;
 pub mod rule;
 pub mod syntax;
-pub mod term;
 pub mod types;
+
+// At the cut — lowering to a schedule, and the static analysis that guards it.
+pub mod check;
+pub mod ir;
+
+// After the cut — executing the schedule.
+pub mod context;
+pub mod domain;
+pub mod trace;
+
+// Substrate shared by all three: terms, unification, normalization.
+pub mod complete;
+pub mod normalize;
+pub mod pattern;
+pub mod term;
 
 #[cfg(test)]
 mod tests;
 
 pub use complete::{Completeness, completeness};
-pub use context::{Context, ContextTransition};
+pub use context::{Context, ContextTransition, Slot};
 pub use domain::TypingDomain;
 pub use ir::{Instr, Program, compile};
 pub use normalize::{Normalizer, RewriteRule, unify_modulo};
 pub use pattern::{Match, Pattern};
 pub use syntax::render;
 pub use term::{Evidence, Subst, Term};
-pub use types::{Atom, TyExpr, Type, TypeExpr};
+pub use trace::{Step, Trace};
+pub use types::{Atom, Key, TyExpr, Type, TypeExpr};
 
 pub use rule::{Conclusion, Judgment, Premise, PremiseStatus, RuleParser, TypingRule};
 
-pub use crate::engine::synth::Synthesizer as TypingSynth;
 pub use crate::semantics::runtime::TypingRuntime;
+pub use crate::synth::Synthesizer as TypingSynth;

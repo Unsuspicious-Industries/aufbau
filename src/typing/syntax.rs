@@ -18,11 +18,11 @@
 //!     `?A list` as `fst list`) never reproduces the placeholder as a leaf and is
 //!     discarded, so the metavariable genuinely occupies an atom position.
 //!
-//! [`SPG::rule_bindings`]: crate::engine::grammar::SPG::rule_bindings
+//! [`SPG::rule_bindings`]: crate::grammar::SPG::rule_bindings
 
-use super::{Atom, Term, TyExpr, TypeExpr};
-use crate::engine::grammar::{SPG, Symbol};
-use crate::engine::structure::{FusionChild, FusionNode};
+use super::{Atom, Key, Term, TyExpr, TypeExpr};
+use crate::ast::{FusionChild, FusionNode};
+use crate::grammar::{SPG, Symbol};
 use crate::regex::Regex;
 use crate::typing::{Context, TypingSynth};
 use std::collections::{HashMap, HashSet};
@@ -284,7 +284,8 @@ impl TyExpr {
             [Atom::Bot] => return Ok(Self::Bot),
             [Atom::Hole(n)] => return Ok(Self::Var(n.clone())),
             [Atom::Ref(n)] if bindings.contains(n) => return Ok(Self::Ref(n.clone())),
-            [Atom::Ctx(n)] => return Ok(Self::Ctx(n.clone())),
+            [Atom::Ctx(k)] => return Ok(Self::Ctx(k.clone())),
+            [Atom::Inst(k)] => return Ok(Self::Inst(k.clone())),
             [Atom::Lit(s)] => return Ok(Self::Lit(s.trim().to_string())),
             _ => {}
         }
@@ -351,7 +352,10 @@ fn skeletonize(expr: &TypeExpr, bindings: &HashSet<String>) -> (String, HashMap<
 /// designated type fragment, so anything outside this closure (the object
 /// language's `Expression`/`Statement`/… nonterminals) is inert weight the
 /// augmented parse below would otherwise still have to consider.
-fn reachable(productions: &HashMap<String, Vec<crate::engine::grammar::Production>>, start: &str) -> HashSet<String> {
+fn reachable(
+    productions: &HashMap<String, Vec<crate::grammar::Production>>,
+    start: &str,
+) -> HashSet<String> {
     let mut seen = HashSet::new();
     let mut stack = vec![start.to_string()];
     while let Some(nt) = stack.pop() {
@@ -478,8 +482,8 @@ fn call_atom(id: &str, inner: &str) -> Result<Atom, String> {
     }
     match id {
         "typeof" => Ok(Atom::Ref(inner.to_string())),
-        "inst" => Ok(Atom::Inst(inner.to_string())),
-        "Γ" | "G" => Ok(Atom::Ctx(inner.to_string())),
+        "inst" => Ok(Atom::Inst(Key::parse(inner))),
+        "Γ" | "G" => Ok(Atom::Ctx(Key::parse(inner))),
         _ => Err(format!("unknown form {id}(…)")),
     }
 }
@@ -567,5 +571,40 @@ mod tests {
     fn top_and_bot() {
         assert_eq!(parse("⊤"), vec![Atom::Top]);
         assert_eq!(parse("∅"), vec![Atom::Bot]);
+    }
+
+    /// `Atom::Lit` holds both a quoted type (`'Int'`) and the separator text
+    /// between atoms (`" -> "`). Rendering both bare made a type literal come
+    /// back as an `Atom::Ref`, so a grammar could not survive `source()` and a
+    /// reload. Whatever a `TypeExpr` renders to must re-parse to the same atoms.
+    #[test]
+    fn display_round_trips() {
+        for src in [
+            "'Int'",
+            "?A",
+            "τ",
+            "Γ(x)",
+            "inst(x)",
+            "⊤",
+            "∅",
+            "?A -> ?B",
+            "τ -> ?R",
+            "'A' -> 'B'",
+            "'Num'",
+            "?A list",
+            "Γ(x) -> ?B",
+        ] {
+            let once = TypeExpr::parse(src).unwrap();
+            let twice = TypeExpr::parse(&once.to_string()).unwrap();
+            assert_eq!(once, twice, "{src:?} rendered to {:?}", once.to_string());
+        }
+    }
+
+    /// Separators stay unquoted so rendered types remain readable; only text a
+    /// bare reading would misinterpret gets its quotes back.
+    #[test]
+    fn display_quotes_only_when_needed() {
+        assert_eq!(TypeExpr::parse("τ -> ?R").unwrap().to_string(), "τ -> ?R");
+        assert_eq!(TypeExpr::parse("'Num'").unwrap().to_string(), "'Num'");
     }
 }

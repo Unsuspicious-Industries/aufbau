@@ -1,5 +1,5 @@
-use crate::engine::binding;
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
+use crate::grammar::binding;
 
 fn steps(path: &binding::GrammarPath) -> Vec<(usize, usize)> {
     path.steps().iter().map(|s| (s.i, s.a)).collect()
@@ -7,7 +7,7 @@ fn steps(path: &binding::GrammarPath) -> Vec<(usize, usize)> {
 
 #[test]
 fn stlc_abs_binding_paths_match_spec() {
-    let spec = include_str!("../../../../examples/stlc.auf");
+    let spec = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/stlc.auf"));
     let grammar = SPG::load(spec).expect("load stlc");
 
     let assert_path = |binding: &str, rule: &str, expected: Vec<Vec<(usize, usize)>>| {

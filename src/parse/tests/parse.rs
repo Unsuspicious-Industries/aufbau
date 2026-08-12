@@ -6,7 +6,7 @@
 //! in the arena carries a concrete type.
 
 use super::*;
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 
 // ---------------------------------------------------------------------------
 // Basic terminal matching

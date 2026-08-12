@@ -8,7 +8,7 @@
 //! are notation, not data. Every judgment is discharged by the same elementary
 //! operation: unification of type terms.
 
-use super::TypeExpr;
+use super::{Key, TypeExpr};
 use crate::typing::ContextTransition;
 use crate::typing::term::Evidence;
 use std::fmt;
@@ -22,8 +22,9 @@ use std::fmt;
 pub enum Judgment {
     /// `Γ ⊢ b : τ` — the type of the child bound to `b` unifies with `τ`.
     Ascription { binding: String, ty: TypeExpr },
-    /// `x ∈ Γ` — `x`'s text is bound in the context.
-    Membership { binding: String },
+    /// `x ∈ Γ` — `x`'s text is bound in the context. A literal key
+    /// (`'return' ∈ Γ`) asks whether the ambient entry exists at all.
+    Membership { key: Key },
     /// `τ₁ = τ₂` — the two type expressions unify.
     Equation { left: TypeExpr, right: TypeExpr },
 }
@@ -32,12 +33,13 @@ pub enum Judgment {
 /// (`Γ[x:τ₁][y:τ₂] ⊢ …`). Extensions scope over this premise only.
 #[derive(Debug, Clone)]
 pub struct Premise {
-    pub extensions: Vec<(String, TypeExpr)>,
+    pub extensions: Vec<(Key, TypeExpr)>,
     pub judgment: Judgment,
 }
 
 /// Verdict after premise evaluation.
 /// Lattice structure: Contradiction < Unknown < Satisfied
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PremiseStatus {
     Satisfied,
     Unknown,
@@ -50,7 +52,7 @@ pub enum PremiseStatus {
 #[derive(Debug, Clone)]
 pub struct Conclusion {
     pub ty: TypeExpr,
-    pub effects: Vec<(String, TypeExpr)>,
+    pub effects: Vec<(Key, TypeExpr)>,
 }
 
 /// A complete typing rule with premises and conclusion.
@@ -95,14 +97,16 @@ impl TypingRule {
         out
     }
 
-    /// Get the set of binding names referenced by this rule.
+    /// Get the set of binding names referenced by this rule. A literal key
+    /// names no binding, so it contributes nothing here — that is the whole
+    /// point of it, and it keeps `check` from demanding a production for it.
     #[must_use]
     pub fn used_bindings(&self) -> std::collections::HashSet<&str> {
         let mut bindings = std::collections::HashSet::new();
 
         for premise in &self.premises {
-            for (var, ty) in &premise.extensions {
-                bindings.insert(var.as_str());
+            for (key, ty) in &premise.extensions {
+                bindings.extend(key.binding());
                 bindings.extend(ty.refs());
             }
             match &premise.judgment {
@@ -110,8 +114,8 @@ impl TypingRule {
                     bindings.extend(ty.refs());
                     bindings.insert(binding.as_str());
                 }
-                Judgment::Membership { binding } => {
-                    bindings.insert(binding.as_str());
+                Judgment::Membership { key } => {
+                    bindings.extend(key.binding());
                 }
                 Judgment::Equation { left, right } => {
                     bindings.extend(left.refs());
@@ -120,8 +124,8 @@ impl TypingRule {
             }
         }
 
-        for (var, ty) in &self.conclusion.effects {
-            bindings.insert(var.as_str());
+        for (key, ty) in &self.conclusion.effects {
+            bindings.extend(key.binding());
             bindings.extend(ty.refs());
         }
         bindings.extend(self.conclusion.ty.refs());
@@ -227,7 +231,9 @@ impl RuleParser {
             }
             return Ok(Premise {
                 extensions: Vec::new(),
-                judgment: Judgment::Membership { binding: var },
+                judgment: Judgment::Membership {
+                    key: Key::parse(&var),
+                },
             });
         }
 
@@ -266,7 +272,7 @@ impl RuleParser {
     /// Parse a context with extensions, `Γ[x:τ₁][y:τ₂]…`, into the extension
     /// list. The context name is notation for the one ambient context and is
     /// not kept; the whole string must be consumed.
-    pub fn parse_extensions(s: &str) -> Result<Vec<(String, TypeExpr)>, String> {
+    pub fn parse_extensions(s: &str) -> Result<Vec<(Key, TypeExpr)>, String> {
         let s = s.trim();
         let Some(first_bracket) = s.find('[') else {
             if s.is_empty() {
@@ -288,17 +294,37 @@ impl RuleParser {
                 .and_then(|r| r.split_once(']'))
                 .ok_or_else(|| format!("invalid setting '{s}': malformed extension '{rest}'"))?;
             let (ext, tail) = inner;
-            let (key, val) = ext
-                .split_once(':')
+            // Split on the first `:` *outside* quotes, so a literal key may
+            // contain one (`Γ['schema:v2' : τ]`).
+            let (key, val) = Self::split_binder(ext)
                 .ok_or_else(|| format!("invalid setting '{s}': extension '{ext}' has no ':'"))?;
             let key = key.trim();
             if key.is_empty() {
                 return Err(format!("invalid setting '{s}': empty binder in '{ext}'"));
             }
-            extensions.push((key.to_string(), TypeExpr::parse(val.trim())?));
+            let key = Key::parse(key);
+            if key.literal().is_some_and(str::is_empty) {
+                return Err(format!(
+                    "invalid setting '{s}': empty literal key in '{ext}'"
+                ));
+            }
+            extensions.push((key, TypeExpr::parse(val.trim())?));
             rest = tail.trim();
         }
         Ok(extensions)
+    }
+
+    /// Split `key : τ` at the first `:` outside a quoted key.
+    fn split_binder(ext: &str) -> Option<(&str, &str)> {
+        let mut quoted = false;
+        for (i, c) in ext.char_indices() {
+            match c {
+                '\'' => quoted = !quoted,
+                ':' if !quoted => return Some((&ext[..i], &ext[i + 1..])),
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Parse a type ascription: `b : τ`
@@ -321,10 +347,10 @@ impl TypingRule {
 // DISPLAY
 // =============================================================================
 
-fn write_extensions(f: &mut fmt::Formatter<'_>, extensions: &[(String, TypeExpr)]) -> fmt::Result {
+fn write_extensions(f: &mut fmt::Formatter<'_>, extensions: &[(Key, TypeExpr)]) -> fmt::Result {
     write!(f, "Γ")?;
-    for (x, ty) in extensions {
-        write!(f, "[{x}:{ty}]")?;
+    for (key, ty) in extensions {
+        write!(f, "[{key}:{ty}]")?;
     }
     Ok(())
 }
@@ -333,7 +359,7 @@ impl fmt::Display for Judgment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Judgment::Ascription { binding, ty } => write!(f, "{binding} : {ty}"),
-            Judgment::Membership { binding } => write!(f, "{binding} ∈ Γ"),
+            Judgment::Membership { key } => write!(f, "{key} ∈ Γ"),
             Judgment::Equation { left, right } => write!(f, "{left} = {right}"),
         }
     }
@@ -421,7 +447,7 @@ mod tests {
         )
         .unwrap();
         let exts = &rule.premises[0].extensions;
-        assert_eq!(exts[0].0, "a");
+        assert_eq!(exts[0].0, Key::from("a"));
         assert_eq!(exts[0].1.0, vec![Atom::Lit("A".into())]);
     }
 
@@ -434,7 +460,7 @@ mod tests {
         )
         .unwrap();
         let effects = &rule.conclusion.effects;
-        assert_eq!(effects[0].0, "name");
+        assert_eq!(effects[0].0, Key::from("name"));
         assert_eq!(effects[0].1.0, vec![Atom::Hole("T".into())]);
         assert_eq!(rule.conclusion.ty.0, vec![Atom::Lit("Unit".into())]);
     }

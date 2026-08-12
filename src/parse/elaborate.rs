@@ -14,12 +14,10 @@
 //! prevent.
 
 use super::parser::Item;
-use crate::engine::error::PrefixError;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::TypedParser;
-use crate::engine::parse::arena::{
-    ArenaNode, ChildRef, EffectId, EvidenceId, NodeStatus, Span, TOP,
-};
+use crate::error::PrefixError;
+use crate::grammar::SPG;
+use crate::parse::TypedParser;
+use crate::parse::arena::{ArenaNode, ChildRef, EffectId, EvidenceId, NodeStatus, Span, TOP};
 use crate::semantics::SemanticSummary;
 
 /// How a finished node's stored evidence and effect are derived, by shape alone.
@@ -79,8 +77,9 @@ impl TypedParser {
                 };
                 Ok((self.typing.structural_evidence(nt, &kids, span), None))
             }
-            Elaboration::Opaque => Ok(summary
-                .map_or((TOP, None), |s| (s.evidence, if exact { s.effect } else { None }))),
+            Elaboration::Opaque => Ok(summary.map_or((TOP, None), |s| {
+                (s.evidence, if exact { s.effect } else { None })
+            })),
             Elaboration::Transparent => {
                 let evidence = self
                     .first_child_node(item)

@@ -34,6 +34,13 @@ jobs:
       - name: Check Python FFI targets
         run: cargo check --all-targets --features python-ffi --locked
 
+      # Neither is reachable from --all-targets, so both rot silently.
+      - name: Check OCaml FFI targets
+        run: cargo check --features ocaml-ffi --locked
+
+      - name: Check trace feature
+        run: cargo check --all-targets --features trace --locked
+
       - name: Run tests
         run: cargo test --all-targets --locked
 
@@ -61,3 +68,42 @@ jobs:
         with:
           name: validation-reports-check
           path: src/validation/reports/*.txt
+
+  # The formal half of the gate. Rocq and OCaml both come from the flake, so the
+  # toolchain is pinned by flake.lock rather than by whatever the runner ships.
+  verification:
+    name: Rocq verification and OCaml certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Report pinned toolchain
+        run: |
+          nix develop --command rocq --version
+          nix develop --command ocaml -version
+          nix develop --command dune --version
+
+      # rocqchk re-validates every compiled module from a clean build, so a
+      # stale .vo cannot make an unproven module look checked.
+      - name: Rocq build and rocqchk
+        run: nix develop --command make verif-check
+
+      # Fails if a .v grew an `Admitted` that is not declared in
+      # verification/OBLIGATIONS.md. An assumption nobody wrote down is
+      # indistinguishable from a theorem.
+      - name: Admitted-obligation manifest
+        run: nix develop --command make verif-obligations
+
+      # Differential certification: the same corpora/ files the Rust suite
+      # checks, run against a real type checker as the oracle.
+      - name: OCaml differential certification
+        run: nix develop --command make test-ocaml

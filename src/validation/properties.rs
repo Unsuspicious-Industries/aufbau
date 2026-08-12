@@ -32,7 +32,7 @@
 mod tests {
     use proptest::prelude::*;
 
-    use crate::engine::grammar::SPG;
+    use crate::grammar::SPG;
     use crate::typing::TypingSynth;
     use crate::typing::{Context, Type};
     use crate::validation::parseable::{

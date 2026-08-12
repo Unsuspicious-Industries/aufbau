@@ -1,7 +1,7 @@
 use super::*;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::{ChildRef, Lexeme};
-use crate::engine::structure::ast::FusionAST;
+use crate::ast::ast::FusionAST;
+use crate::grammar::SPG;
+use crate::parse::arena::{ChildRef, Lexeme};
 use crate::typing::Context;
 use crate::typing::TypingSynth;
 

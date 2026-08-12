@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod debug_tests {
-    use crate::engine::grammar::SPG;
+    use crate::grammar::SPG;
     use crate::typing::{Context, Type, TypingSynth};
 
     fn load_stlc() -> SPG {
-        let src = include_str!("../../../examples/stlc.auf");
+        let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/stlc.auf"));
         SPG::load(src).unwrap()
     }
 

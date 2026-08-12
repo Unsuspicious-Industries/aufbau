@@ -1,7 +1,7 @@
 use crate::DebugLevel;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::NodeStatus;
-use crate::engine::parse::arena::ProdId;
+use crate::grammar::SPG;
+use crate::parse::NodeStatus;
+use crate::parse::arena::ProdId;
 use crate::set_debug_level;
 
 use super::*;

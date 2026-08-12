@@ -1,8 +1,8 @@
 //! Tests for frontier items and partial parse behavior.
 
 use super::*;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::Task;
+use crate::grammar::SPG;
+use crate::parse::Task;
 
 #[test]
 fn items_at_eof_go_to_frontier() {
@@ -84,7 +84,7 @@ fn partial_node_has_partial_status() {
     let arena = ast.arena();
     for &root_id in ast.root_ids() {
         let node = arena.node(root_id).unwrap();
-        assert_eq!(node.status, crate::engine::parse::NodeStatus::Prefix);
+        assert_eq!(node.status, crate::parse::NodeStatus::Prefix);
     }
 }
 
@@ -134,6 +134,6 @@ fn partial_node_has_concrete_type() {
     let arena = ast.arena();
     for &root_id in ast.root_ids() {
         let node = arena.node(root_id).unwrap();
-        assert_eq!(node.status, crate::engine::parse::NodeStatus::Prefix);
+        assert_eq!(node.status, crate::parse::NodeStatus::Prefix);
     }
 }

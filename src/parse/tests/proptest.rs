@@ -5,9 +5,9 @@
 //! status propagation, and obligation correctness.
 
 use super::utils::*;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::Task;
-use crate::engine::parse::arena::ChildRef;
+use crate::grammar::SPG;
+use crate::parse::Task;
+use crate::parse::arena::ChildRef;
 use proptest::prelude::*;
 use proptest::proptest;
 

@@ -34,7 +34,7 @@
 //! conclusion mentioning structure (`τ -> ?B`) pins the shape and never
 //! inhabits an atom.
 
-use crate::engine::grammar::{Production, SPG, Symbol};
+use crate::grammar::{Production, SPG, Symbol};
 use crate::typing::rule::Judgment;
 use crate::typing::{Atom, TypingRule};
 use std::collections::HashSet;

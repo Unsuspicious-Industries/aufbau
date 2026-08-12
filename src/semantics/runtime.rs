@@ -9,10 +9,10 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::rc::Rc;
 
-use crate::engine::Segment;
-use crate::engine::error::TransitionError;
-use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::{CtxId, EffectId, EvidenceId, Lexeme, NodeStatus, ProdId, Span};
+use crate::error::TransitionError;
+use crate::grammar::SPG;
+use crate::grammar::Segment;
+use crate::parse::arena::{CtxId, EffectId, EvidenceId, Lexeme, NodeStatus, ProdId, Span};
 use crate::semantics::SemanticSummary;
 use crate::semantics::domain::Verdict;
 use crate::semantics::evidence::EvidenceStore;
@@ -62,7 +62,8 @@ pub struct TypingRuntime {
     spg: SPG,
     /// Each rule lowered to its IR `Program` once, keyed by rule name. The
     /// parser's hot path (`descend`/`finalize`) looks up here instead of
-    /// recompiling per node.
+    /// recompiling per node; `TypingDomain::run` in `typing::domain` is the
+    /// fold that executes a looked-up `Program`.
     programs: Rc<HashMap<String, Program>>,
     /// The grammar's type-rewrite theory; empty ⇒ `normalize` is the identity.
     norm: Rc<Normalizer>,
@@ -157,6 +158,11 @@ impl TypingRuntime {
 
     pub fn grammar(&self) -> &SPG {
         &self.spg
+    }
+
+    /// The IR execution trace. Empty unless built with `--features trace`.
+    pub fn trace(&self) -> &crate::typing::Trace {
+        self.domain.trace()
     }
 
     pub fn intern_context(&self, ctx: Context) -> CtxId {

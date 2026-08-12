@@ -7,7 +7,7 @@
 //!
 //! HTML reports land in target/criterion/.
 
-use aufbau::engine::grammar::SPG;
+use aufbau::grammar::SPG;
 use aufbau::typing::{Context, Type, TypingSynth};
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -69,7 +69,11 @@ fn parse_with_ctx(grammar: &SPG, input: &str, ctx: &Context) -> usize {
 }
 
 fn bench_stlc_chain(c: &mut Criterion) {
-    let grammar = SPG::load(include_str!("../examples/stlc.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap();
     let mut group = c.benchmark_group("stlc/application_chain");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {
@@ -82,7 +86,11 @@ fn bench_stlc_chain(c: &mut Criterion) {
 }
 
 fn bench_imp_block(c: &mut Criterion) {
-    let grammar = SPG::load(include_str!("../examples/imp.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/imp.auf"
+    )))
+    .unwrap();
     let mut group = c.benchmark_group("imp/declaration_block");
     group.measurement_time(Duration::from_secs(8));
     for n in 1..=8usize {

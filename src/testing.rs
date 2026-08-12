@@ -4,7 +4,7 @@
 //! across test modules. It includes grammar loading, parsing assertions,
 //! type checking assertions, and tree comparison utilities.
 
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 use std::path::Path;
 
 // ============================================================================

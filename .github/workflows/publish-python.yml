@@ -7,6 +7,12 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Pinned, and identical on x86_64 and aarch64. The 0.2.1 aarch64 wheel shipped
+  # without `Synthesizer.from_grammar`/`mask`/`status`/`root_type`/`in_scope`
+  # while x86_64 was fine; none of those are cfg-gated, so the suspect is the
+  # PyO3 0.29 macro expansion under a floating `stable` that resolved
+  # differently per runner. Bump deliberately, together, never implicitly.
+  RUST_TOOLCHAIN: "1.90.0"
 
 jobs:
   validate:
@@ -20,9 +26,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -68,9 +74,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -84,10 +90,27 @@ jobs:
         run: python -m pip install "maturin>=1.4,<2.0"
 
       - name: Build wheel
-        run: python -m maturin build --release --features python-ffi --out dist --compatibility pypi
+        # Explicit interpreter: never infer the ABI from whatever `python` the
+        # runner happens to expose.
+        run: |
+          python -m maturin build --release --features python-ffi \
+            --interpreter python${{ matrix.python-version }} \
+            --out dist --compatibility pypi
 
       - name: List wheels
         run: ls -la dist/
+
+      # The regression that let the 0.2.1 aarch64 wheel ship without half of
+      # Synthesizer: nothing ever compared the built artifact against its stub.
+      # Install what we are about to publish, into a clean venv, and check it.
+      - name: Smoke test built wheel
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/python -m pip install --quiet --upgrade pip
+          /tmp/smoke/bin/python -m pip install --quiet dist/*.whl
+          cd /tmp  # import the installed wheel, never the source tree
+          /tmp/smoke/bin/python -c "import aufbau, aufbau.dsl; print(aufbau.__file__, aufbau.ENGINE_API)"
+          /tmp/smoke/bin/python "$GITHUB_WORKSPACE/scripts/check_wheel_api.py"
 
       - name: Upload wheel to PyPI
         run: pipx run twine upload --skip-existing --verbose dist/*.whl

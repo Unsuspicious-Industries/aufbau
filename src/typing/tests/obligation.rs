@@ -1,6 +1,6 @@
-use crate::engine::grammar::SPG;
-use crate::engine::parse::arena::{AltRange, ArenaNode, NodeStatus, Span};
-use crate::engine::path::TreePath;
+use crate::grammar::SPG;
+use crate::parse::arena::{AltRange, ArenaNode, NodeStatus, Span};
+use crate::path::TreePath;
 use crate::semantics::Obligations;
 use std::collections::HashMap;
 

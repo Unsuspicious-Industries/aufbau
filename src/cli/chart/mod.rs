@@ -3,7 +3,7 @@ use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
-use aufbau::engine::grammar::SPG;
+use aufbau::grammar::SPG;
 use aufbau::typing::{Context, TypingSynth};
 use aufbau::validation::parseable::arithmetic::ARITHMETIC_GRAMMAR;
 
@@ -111,7 +111,11 @@ pub fn run(cmd: &ChartCmd) {
 
     // STLC application chains
     eprint!("stlc application chains ");
-    let stlc = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let stlc = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap();
     for n in 1..=max_n {
         let (input, ctx) = inputs::stlc_chain(n);
         let toks = token_count(&stlc, &input);
@@ -123,7 +127,11 @@ pub fn run(cmd: &ChartCmd) {
 
     // IMP declaration blocks
     eprint!("imp declaration blocks  ");
-    let imp = SPG::load(include_str!("../../../examples/imp.auf")).unwrap();
+    let imp = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/imp.auf"
+    )))
+    .unwrap();
     for n in 1..=max_n {
         let input = inputs::imp_block(n);
         let toks = token_count(&imp, &input);

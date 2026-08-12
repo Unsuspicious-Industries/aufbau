@@ -19,7 +19,7 @@ pub mod sums;
 pub mod toy;
 pub mod weird;
 
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 use crate::typing::Context;
 use crate::typing::Type;
 use crate::typing::TypingSynth;
@@ -193,7 +193,7 @@ pub fn check_parse_fails(grammar: &SPG, input: &str, ctx: &Context) -> ParseResu
 /// *against the grammar* so an arrow type like `A->B` becomes the same
 /// structured tree the typing rules produce (`Con("FunctionType", …)`), not a
 /// flat leaf — otherwise a rule's `?A->?B` would never unify with it.
-fn build_context(grammar: &SPG, pairs: &[(&str, &str)]) -> Context {
+pub fn build_context(grammar: &SPG, pairs: &[(&str, &str)]) -> Context {
     let mut ctx = Context::new();
     for (name, ty_str) in pairs {
         // Grammars without a type sublanguage (e.g. `weird`) cannot derive the

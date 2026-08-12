@@ -3,10 +3,10 @@
 //! Obligations are intentionally domain-neutral: they route child evidence and
 //! lexemes according to binding positions, but do not interpret the evidence.
 
-use crate::engine::grammar::SPG;
-use crate::engine::parse::NtId;
-use crate::engine::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId};
-use crate::engine::path::{GrammarPath, TreePath};
+use crate::grammar::SPG;
+use crate::parse::NtId;
+use crate::parse::arena::{ArenaNode, BindingStatus, EvidenceId, Lexeme, ProdId};
+use crate::path::{GrammarPath, TreePath};
 use std::collections::HashSet;
 
 /// Deferred semantic requirement induced by a semantic rule.

@@ -85,9 +85,9 @@ Rules that aren't negotiable:
 - **`clippy::pedantic` on, `-D warnings` in CI.** If clippy fights you, the code is wrong.
 - **No `unwrap` / `expect` outside `#[cfg(test)]` and `main.rs`.** In tests, `unwrap` is fine and shorter than `?`. In library code, an `unwrap` is a panic the type system told you was possible.
 - **No `unsafe` without two things directly above it:** (a) a `// SAFETY:` block stating the invariant, (b) the name of the `proptest` that establishes it. If you can't name one, you can't write the `unsafe`.
-- **One crate-level `Error` enum**, `thiserror`-derived, in `src/engine/error.rs` (it's already there — extend it, don't add siblings). `anyhow` is fine in `main.rs` and tests, banned in library code.
+- **One crate-level `Error` enum**, `thiserror`-derived, in `src/error.rs` (it's already there — extend it, don't add siblings). `anyhow` is fine in `main.rs` and tests, banned in library code.
 - **`#[must_use]` on every constructor and every `try_*` function.** Discarding a `try_feed` result is always a bug.
-- **No re-exports that hide where things live.** `pub use engine::parse::Parser` at the crate root is fine; chains of three `pub use` are not.
+- **No re-exports that hide where things live.** `pub use parse::Parser` at the crate root is fine; chains of three `pub use` are not.
 
 ### Comment density
 
@@ -112,7 +112,7 @@ k += 1;
 
 ## 4. Property testing : enforcing the theory
 
-The paper proves Theorem 2 (Completability Soundness) and Theorem 3 (Prefix Monotonicity). Those are not abstract, they correspond to functions in `src/engine/parse/parser.rs` and `src/domains/typing/`. Every paper lemma should be:
+The paper proves Theorem 2 (Completability Soundness) and Theorem 3 (Prefix Monotonicity). Those are not abstract, they correspond to functions in `src/parse/parser.rs` and `src/domains/typing/`. Every paper lemma should be:
 
 1. Covered by a property test in the corresponding `tests/` directory, or
 2. Marked `// PAPER ONLY: stated, not mechanized` with a clear todo
@@ -202,8 +202,8 @@ The paper claims things. Tests check them. Mismatches between the two are the hi
 ### What goes where
 
 ```
-src/engine/parse/tests/        // unit + property tests for parser
-src/engine/grammar/tests/      // grammar loading, tokenization
+src/parse/tests/        // unit + property tests for parser
+src/grammar/tests/      // grammar loading, tokenization
 src/domains/typing/tests/      // CSP solver, obligation store
   realizability.rs             // ← directly tests §3 Realizability claim
   correctness.rs               // ← Theorem 1 (impl = ideal evaluator)

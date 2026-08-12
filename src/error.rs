@@ -62,7 +62,12 @@ impl std::fmt::Display for TransitionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TransitionError::Rejected => write!(f, "transition rejected"),
-            TransitionError::Unresolved { rule, binding, setting, kind } => write!(
+            TransitionError::Unresolved {
+                rule,
+                binding,
+                setting,
+                kind,
+            } => write!(
                 f,
                 "in rule '{rule}', descending into '{binding}': setting extension '{setting}' has no resolvable {kind}"
             ),

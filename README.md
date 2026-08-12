@@ -29,12 +29,8 @@ make help       # Show all available targets
 
 Exported API (stubs in `aufbau.pyi`):
 
-- `SPG(source)` — load a grammar from `.auf` source
-  - `SPG.build(productions, rules=[], rewrites=[], start=None, ty=None)` —
-    assemble structurally: a production is `(name, rule, alternatives)`, a
-    symbol `("nt"|"lit"|"re", value, binding)`, a rule
-    `(name, premises, conclusion)` in inference notation; `ty` names the type
-    fragment (the `Ty*` of the surface syntax)
+- `SPG(source)` — load a grammar from `.auf` source. To build one from Python,
+  use `aufbau.dsl` (below) rather than assembling it structurally
   - `source()` — render back to `.auf`
   - `start`, `nonterminals()`, `productions(nt)`, `nt_rule(nt)`, `rule_names()`
   - `tokenize(input)`, `specials()`, `is_transparent(nt)`
@@ -63,6 +59,34 @@ Exported API (stubs in `aufbau.pyi`):
   - `is_empty()`, `is_nullable()`, `match_len(text)`, `to_pattern()`
 - `PrefixStatus`
   - `kind`, `regex`, `is_complete()`, `is_prefix()`, `is_extensible()`, `is_no_match()`
+
+### Building grammars from Python
+
+`aufbau.dsl` is the programmatic builder. It renders `.auf` and hands it to the
+same parser `SPG(source)` uses, so there is one definition of the surface
+syntax and a generated grammar is inspectable as text via `G.source()`.
+
+```python
+from aufbau.dsl import G, nt, lit, re_, hole, ctx, ref_, member, ascribe
+
+g = (G("Expr", ty="Type")
+     .prod("Identifier", re_("[a-z]+"))
+     .prod("Type", nt("TAtom") | nt("TAtom") ^ lit("->") ^ nt("Type"))
+     .prod("Variable", nt("Identifier", bind="x"), rule="var")
+     .prod("Expr", nt("Variable") | nt("Application"))
+     .rule("var", [member("x")], ctx("x"))
+     .rule("app", [ascribe("l", hole("A") ^ "->" ^ hole("B")),
+                   ascribe("r", hole("A"))], hole("B"))
+     .build())
+```
+
+A plain `str` is raw `.auf` wherever a type is expected, so a premise or
+conclusion can be written out directly when that reads better; `lit_atom("Int")`
+is the explicit literal type `'Int'`.
+
+Because a type is any term the grammar derives, this is also how you generate a
+grammar from a schema and use it to constrain output to that schema. See
+[`docs/architecture.md`](docs/architecture.md).
 
 ### Development
 

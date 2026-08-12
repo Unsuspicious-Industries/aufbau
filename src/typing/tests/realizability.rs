@@ -19,7 +19,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::engine::grammar::SPG;
+    use crate::grammar::SPG;
     use crate::typing::{Context, Type, TypingSynth};
 
     const TYPED_EXPR: &str = r#"

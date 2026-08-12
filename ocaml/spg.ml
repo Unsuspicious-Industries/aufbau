@@ -40,13 +40,16 @@ type builder = {
   mutable rules : Rule.t list;
 }
 
+let build b =
+  Grammar.make ?start:b.start ?ty:b.ty ~rules:b.rules b.prods
+
 let grammar ?start ?ty f =
   let b = { start; ty; prods = []; rules = [] } in
   let _ = f b in
   build b
 
 let prod ?rule name alts b =
-  let def = Grammar.def ?rule name (List.map (fun alt -> alt) alts) in
+  let def = Grammar.def ?rule name alts in
   b.prods <- b.prods @ [def];
   b
 
@@ -54,9 +57,6 @@ let rule name premises conclusion b =
   let r = Rule.make name premises conclusion in
   b.rules <- b.rules @ [r];
   b
-
-let build b =
-  Grammar.make ?start:b.start ?ty:b.ty ~rules:b.rules b.prods
 
 let run ?start ?ty f =
   match grammar ?start ?ty f with

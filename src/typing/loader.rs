@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-use crate::engine::grammar::SPG;
-use crate::engine::grammar::utils::parse_inference_rule;
+use crate::grammar::SPG;
+use crate::grammar::utils::parse_inference_rule;
 use crate::typing::TypingRule;
 
 /// Parse the rule-body blocks into a `rule-name → TypingRule` table and the list
@@ -86,12 +86,32 @@ pub fn type_trees(g: &SPG) -> crate::typing::domain::Trees {
 /// rewrite that does not parse or invents variables on its right side (which
 /// would let normalization un-ground a ground term).
 pub fn check(g: &SPG) -> Result<(), String> {
-    for rule in g.rules.values() {
+    let trees = type_trees(g);
+    // Compile once, up front: a literal context key is a channel *between*
+    // rules, so whether a read is legal is a whole-grammar question — no single
+    // rule can answer it.
+    let programs: Vec<_> = g
+        .rules
+        .values()
+        .map(|rule| (rule, crate::typing::compile(rule, &trees)))
+        .collect();
+    let ambient: std::collections::HashSet<String> = programs
+        .iter()
+        .flat_map(|(_, p)| crate::typing::check::writes(p))
+        .map(str::to_string)
+        .collect();
+
+    for (rule, program) in &programs {
         let bindings = g.rule_bindings(&rule.name);
         for te in rule.type_exprs() {
             crate::typing::TyExpr::build(g, te, &bindings)
                 .map_err(|e| format!("rule '{}': {e}", rule.name))?;
         }
+        // Static analysis of the compiled schedule. A malformed program fails
+        // silently at runtime (an unresolvable register is reported as "not
+        // known yet"), so it is rejected here instead — before the cut.
+        crate::typing::check::check(program, &bindings, &ambient)
+            .map_err(|errs| format!("rule '{}': {}", rule.name, errs.join("; ")))?;
     }
     for (l, r) in &g.rewrites {
         let (lhs, rhs) = (

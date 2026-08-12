@@ -4,8 +4,8 @@ use clap::Args;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
-use aufbau::engine::grammar::SPG;
-use aufbau::engine::structure::FusionNode;
+use aufbau::ast::FusionNode;
+use aufbau::grammar::SPG;
 use aufbau::typing::Context;
 use aufbau::typing::TypingSynth;
 
@@ -65,7 +65,7 @@ pub fn run(args: &CheckCmd) {
     let runtime = synth.runtime().clone();
     let complete_roots: Vec<_> = typed
         .roots()
-        .filter(aufbau::engine::structure::FusionNode::is_complete)
+        .filter(aufbau::ast::FusionNode::is_complete)
         .collect();
     let partial_roots: Vec<_> = typed.roots().filter(|r| !r.is_complete()).collect();
 

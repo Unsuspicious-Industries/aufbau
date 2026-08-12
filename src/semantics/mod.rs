@@ -11,7 +11,7 @@ pub mod evidence;
 pub mod obligation;
 pub mod runtime;
 
-use crate::engine::parse::arena::{EffectId, EvidenceId};
+use crate::parse::arena::{EffectId, EvidenceId};
 
 pub use domain::Verdict;
 pub use evidence::EvidenceStore;

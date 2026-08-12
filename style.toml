@@ -3,15 +3,15 @@
 # Paths ending with `/` are directory budgets; others are single‑file budgets.
 
 [budgets]
-"src/engine/parse/"             = 1200
-"src/engine/grammar/"           = 1000
+"src/parse/"             = 1200
+"src/grammar/"           = 1000
 "src/typing/"           = 2800
 "src/regex/"                    = 1500
 "src/typing/domain.rs"   = 600
 "src/typing/rule.rs"     = 750
 "src/typing/syntax.rs"   = 500
-"src/engine/parse/parser.rs"      = 750
-"src/engine/structure/ast.rs"    = 500
+"src/parse/parser.rs"      = 750
+"src/ast/ast.rs"    = 500
 "src/ffi/python.rs"              = 700
 
 [limits]

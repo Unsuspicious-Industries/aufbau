@@ -1,5 +1,5 @@
 use super::{Item, TypedParser};
-use crate::engine::error::PrefixError;
+use crate::error::PrefixError;
 use crate::semantics::Obligations;
 
 #[cfg(test)]

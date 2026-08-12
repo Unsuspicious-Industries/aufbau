@@ -16,9 +16,9 @@ pub const MAX_REPETITION_ITERATIONS: usize = 1000;
 
 use std::cell::RefCell;
 
-use crate::{debug_trace, engine::grammar::Segment};
+use crate::{debug_trace, grammar::Segment};
 
-pub use crate::engine::grammar::{AltId, NtId, ProdId};
+pub use crate::grammar::{AltId, NtId, ProdId};
 
 pub type NodeId = usize;
 pub type CtxId = usize;
@@ -79,7 +79,7 @@ impl Lexeme {
             Some(
                 s[self.matched.start as usize..self.matched.end as usize]
                     .iter()
-                    .map(super::super::grammar::tokenizer::Segment::as_str)
+                    .map(crate::grammar::tokenizer::Segment::as_str)
                     .collect::<Vec<&str>>()
                     .join(" "),
             )

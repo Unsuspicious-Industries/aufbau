@@ -1,13 +1,13 @@
 use crate::debug_trace;
-use crate::engine::grammar::{Segment, Symbol, SPG};
+use crate::grammar::{SPG, Segment, Symbol};
 use crate::regex::PrefixStatus;
 use crate::semantics::{Obligations, TypingRuntime};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::engine::error::PrefixError;
-use crate::engine::structure::ast::{FusionAST, FusionForest};
+use crate::ast::ast::{FusionAST, FusionForest};
+use crate::error::PrefixError;
 
-use crate::engine::parse::arena::{
+use crate::parse::arena::{
     AltRange, ArenaNode, BindingMap, ChildRef, CtxId, EvidenceId, Lexeme, NodeId, NodeStatus, NtId,
     PackedAlt, ParseArena, ProdId, Span,
 };

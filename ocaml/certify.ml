@@ -7,9 +7,9 @@ module type LANGUAGE = sig
   val grammar : Grammar.t
   val oracle : string -> bool
   val corpora :
-    valid : string list ->
-    invalid : string list ->
-    beyond : string list ->
+    valid : (string list -> unit) ->
+    invalid : (string list -> unit) ->
+    beyond : (string list -> unit) ->
     unit
 end
 
@@ -48,7 +48,7 @@ let check oracle grammar program =
   let oracle_ok = oracle program in
   (aufbau_ok, oracle_ok)
 
-let rec run_cases oracle grammar programs kind =
+let run_cases oracle grammar programs kind =
   let failed = ref [] in
   let ok = ref 0 in
   List.iter

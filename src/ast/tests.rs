@@ -1,5 +1,5 @@
-use crate::engine::grammar::SPG;
-use crate::engine::parse::{ParseArena, State};
+use crate::grammar::SPG;
+use crate::parse::{ParseArena, State};
 
 use super::ast::FusionAST;
 

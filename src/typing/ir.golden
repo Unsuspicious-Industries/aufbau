@@ -1,0 +1,710 @@
+# c.auf
+addr:
+  r0 = ?A
+  ascribe e : r0
+  r1 = CPointer(?A)
+  emit r1
+  splice e = [0..0]
+
+# c.auf
+argstep:
+  r0 = ?H
+  ascribe hd : r0
+  r1 = ?T
+  ascribe tl : r1
+  r2 = ParamCons(?H, ?T)
+  emit r2
+  splice hd = [0..0]
+  splice tl = [2..2]
+
+# c.auf
+arith:
+  r0 = 'int'
+  ascribe l : r0
+  r1 = 'int'
+  ascribe r : r1
+  r2 = 'int'
+  emit r2
+  splice l = [0..0]
+  splice r = [2..2]
+
+# c.auf
+assign:
+  member name
+  r0 = Γ(name)
+  ascribe value : r0
+  r1 = 'void'
+  emit r1
+  splice name = [0..0]
+  splice value = [1..1]
+
+# c.auf
+call:
+  member fn
+  r0 = Γ(fn)
+  r1 = Fn(?Ps, ?R)
+  equate r0 = r1
+  r2 = ?Ps
+  ascribe args : r2
+  r3 = ?R
+  emit r3
+  splice args = [4..4]
+  splice fn = [0..0]
+
+# c.auf
+call_empty:
+  member fn
+  r0 = Γ(fn)
+  r1 = FnUnit(?R)
+  equate r0 = r1
+  r2 = ?R
+  emit r2
+  splice fn = [0..0]
+
+# c.auf
+cast:
+  r0 = τ
+  emit r0
+
+# c.auf
+char_lit:
+  r0 = 'char'
+  emit r0
+
+# c.auf
+compare:
+  r0 = 'int'
+  ascribe l : r0
+  r1 = 'int'
+  ascribe r : r1
+  r2 = 'int'
+  emit r2
+  splice l = [0..0]
+  splice r = [2..2]
+
+# c.auf
+decl:
+  r0 = τ
+  ascribe value : r0
+  r1 = τ
+  effect name := r1
+  r2 = 'void'
+  emit r2
+  splice value = [0..0]
+
+# c.auf
+decl_no_init:
+  r0 = τ
+  effect name := r0
+  r1 = 'void'
+  emit r1
+
+# c.auf
+deref:
+  r0 = CPointer(?A)
+  ascribe e : r0
+  r1 = ?A
+  emit r1
+  splice e = [0..0]
+
+# c.auf
+expr_stmt:
+  r0 = ?A
+  ascribe e : r0
+  r1 = 'void'
+  emit r1
+  splice e = [0..0]
+
+# c.auf
+float_lit:
+  r0 = 'float'
+  emit r0
+
+# c.auf
+fndef0:
+  push_scope
+    r0 = ret
+    extend 'return' := r0
+    r1 = ⊤
+    ascribe body : r1
+  pop_scope
+  r2 = FnUnit(ret)
+  effect name := r2
+  r3 = ⊤
+  emit r3
+  splice body = [1..3]
+
+# c.auf
+fndefn:
+  push_scope
+    r0 = ret
+    extend 'return' := r0
+    r1 = ?Ps
+    ascribe params : r1
+  pop_scope
+  r2 = Fn(?Ps, ret)
+  effect name := r2
+  r3 = ⊤
+  emit r3
+  splice params = [1..3]
+
+# c.auf
+for:
+  r0 = 'void'
+  ascribe init : r0
+  r1 = 'int'
+  ascribe cond : r1
+  r2 = 'void'
+  ascribe step : r2
+  r3 = ?T
+  ascribe body : r3
+  r4 = ?T
+  emit r4
+  splice body = [6..6]
+  splice cond = [2..2]
+  splice init = [0..0]
+  splice step = [4..4]
+
+# c.auf
+for_init:
+  member name
+  r0 = Γ(name)
+  ascribe value : r0
+  r1 = 'void'
+  emit r1
+  splice name = [0..0]
+  splice value = [1..1]
+
+# c.auf
+for_step:
+  member name
+  r0 = Γ(name)
+  ascribe value : r0
+  r1 = 'void'
+  emit r1
+  splice name = [0..0]
+  splice value = [1..1]
+
+# c.auf
+if:
+  r0 = 'int'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe then_block : r1
+  r2 = ?T
+  emit r2
+  splice cond = [0..0]
+  splice then_block = [2..2]
+
+# c.auf
+if_else:
+  r0 = 'int'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe then_block : r1
+  r2 = ?T
+  ascribe else_block : r2
+  r3 = ?T
+  emit r3
+  splice cond = [0..0]
+  splice else_block = [4..4]
+  splice then_block = [2..2]
+
+# c.auf
+int_lit:
+  r0 = 'int'
+  emit r0
+
+# c.auf
+param:
+  r0 = τ
+  effect name := r0
+  r1 = τ
+  emit r1
+
+# c.auf
+plast:
+  r0 = ?H
+  ascribe hd : r0
+  r1 = ⊤
+  ascribe body : r1
+  r2 = ?H
+  emit r2
+  splice body = [2..2]
+  splice hd = [0..0]
+
+# c.auf
+pstep:
+  r0 = ?H
+  ascribe hd : r0
+  r1 = ?T
+  ascribe tl : r1
+  r2 = ParamCons(?H, ?T)
+  emit r2
+  splice hd = [0..0]
+  splice tl = [2..2]
+
+# c.auf
+return:
+  r0 = Γ('return')
+  ascribe e : r0
+  r1 = 'void'
+  emit r1
+  splice e = [0..0]
+
+# c.auf
+return_void:
+  r0 = Γ('return')
+  r1 = 'void'
+  equate r0 = r1
+  r2 = 'void'
+  emit r2
+
+# c.auf
+var:
+  member x
+  r0 = Γ(x)
+  emit r0
+  splice x = [0..0]
+
+# c.auf
+while:
+  r0 = 'int'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe body : r1
+  r2 = ?T
+  emit r2
+  splice body = [2..2]
+  splice cond = [0..0]
+
+# fun.auf
+app:
+  r0 = FunctionType(?A, ?R)
+  ascribe func : r0
+  r1 = ?A
+  ascribe arg : r1
+  r2 = ?R
+  emit r2
+  splice arg = [2..2]
+  splice func = [0..0]
+
+# fun.auf
+bin_float:
+  r0 = 'Float'
+  ascribe left : r0
+  r1 = 'Float'
+  ascribe right : r1
+  r2 = 'Float'
+  emit r2
+  splice left = [0..0]
+  splice right = [2..2]
+
+# fun.auf
+bin_int:
+  r0 = 'Int'
+  ascribe left : r0
+  r1 = 'Int'
+  ascribe right : r1
+  r2 = 'Int'
+  emit r2
+  splice left = [0..0]
+  splice right = [2..2]
+
+# fun.auf
+bool:
+  r0 = 'Bool'
+  emit r0
+
+# fun.auf
+float:
+  r0 = 'Float'
+  emit r0
+
+# fun.auf
+int:
+  r0 = 'Int'
+  emit r0
+
+# fun.auf
+lambda:
+  push_scope
+    r0 = τ
+    extend param := r0
+    r1 = ?R
+    ascribe body : r1
+  pop_scope
+  r2 = FunctionType(τ, ?R)
+  emit r2
+  splice body = [1..3]
+
+# fun.auf
+let:
+  r0 = τ
+  ascribe value : r0
+  push_scope
+    r1 = τ
+    extend name := r1
+    r2 = ?R
+    ascribe body : r2
+  pop_scope
+  r3 = ?R
+  emit r3
+  splice body = [3..5]
+  splice value = [0..0]
+
+# fun.auf
+var:
+  member x
+  r0 = Γ(x)
+  emit r0
+  splice x = [0..0]
+
+# imp.auf
+arith_op:
+  r0 = 'Int'
+  ascribe lhs : r0
+  r1 = 'Int'
+  ascribe rhs : r1
+  r2 = 'Int'
+  emit r2
+  splice lhs = [0..0]
+  splice rhs = [2..2]
+
+# imp.auf
+assign:
+  member name
+  r0 = Γ(name)
+  ascribe value : r0
+  r1 = ∅
+  emit r1
+  splice name = [0..0]
+  splice value = [1..1]
+
+# imp.auf
+block:
+  r0 = ⊤
+  emit r0
+
+# imp.auf
+bool_lit:
+  r0 = 'Bool'
+  emit r0
+
+# imp.auf
+comp_op:
+  r0 = 'Int'
+  ascribe lhs : r0
+  r1 = 'Int'
+  ascribe rhs : r1
+  r2 = 'Bool'
+  emit r2
+  splice lhs = [0..0]
+  splice rhs = [2..2]
+
+# imp.auf
+decl:
+  r0 = τ
+  ascribe value : r0
+  r1 = τ
+  effect name := r1
+  r2 = ∅
+  emit r2
+  splice value = [0..0]
+
+# imp.auf
+if:
+  r0 = 'Bool'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe then_block : r1
+  r2 = ?T
+  emit r2
+  splice cond = [0..0]
+  splice then_block = [2..2]
+
+# imp.auf
+if_else:
+  r0 = 'Bool'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe then_block : r1
+  r2 = ?T
+  ascribe else_block : r2
+  r3 = ?T
+  emit r3
+  splice cond = [0..0]
+  splice else_block = [4..4]
+  splice then_block = [2..2]
+
+# imp.auf
+int_lit:
+  r0 = 'Int'
+  emit r0
+
+# imp.auf
+var:
+  member x
+  r0 = Γ(x)
+  emit r0
+  splice x = [0..0]
+
+# imp.auf
+while:
+  r0 = 'Bool'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe body : r1
+  r2 = ?T
+  emit r2
+  splice body = [2..2]
+  splice cond = [0..0]
+
+# ml.auf
+app:
+  r0 = FunctionType(?A, ?R)
+  ascribe func : r0
+  r1 = ?A
+  ascribe arg : r1
+  r2 = ?R
+  emit r2
+  splice arg = [2..2]
+  splice func = [0..0]
+
+# ml.auf
+bin_int:
+  r0 = 'int'
+  ascribe left : r0
+  r1 = 'int'
+  ascribe right : r1
+  r2 = 'int'
+  emit r2
+  splice left = [0..0]
+  splice right = [2..2]
+
+# ml.auf
+bool:
+  r0 = 'bool'
+  emit r0
+
+# ml.auf
+compare:
+  r0 = 'int'
+  ascribe left : r0
+  r1 = 'int'
+  ascribe right : r1
+  r2 = 'bool'
+  emit r2
+  splice left = [0..0]
+  splice right = [2..2]
+
+# ml.auf
+cons:
+  r0 = ?A
+  ascribe head : r0
+  r1 = ListType(?A)
+  ascribe tail : r1
+  r2 = ListType(?A)
+  emit r2
+  splice head = [0..0]
+  splice tail = [2..2]
+
+# ml.auf
+diverge:
+  r0 = ?A
+  emit r0
+
+# ml.auf
+fst:
+  r0 = ProductType(?A, ?B)
+  ascribe pair : r0
+  r1 = ?A
+  emit r1
+  splice pair = [0..0]
+
+# ml.auf
+if:
+  r0 = 'bool'
+  ascribe cond : r0
+  r1 = ?T
+  ascribe then_branch : r1
+  r2 = ?T
+  ascribe else_branch : r2
+  r3 = ?T
+  emit r3
+  splice cond = [0..0]
+  splice else_branch = [4..4]
+  splice then_branch = [2..2]
+
+# ml.auf
+int:
+  r0 = 'int'
+  emit r0
+
+# ml.auf
+lambda:
+  push_scope
+    r0 = τ
+    extend param := r0
+    r1 = ?R
+    ascribe body : r1
+  pop_scope
+  r2 = FunctionType(τ, ?R)
+  emit r2
+  splice body = [1..3]
+
+# ml.auf
+let:
+  r0 = τ
+  ascribe value : r0
+  push_scope
+    r1 = τ
+    extend name := r1
+    r2 = ?R
+    ascribe body : r2
+  pop_scope
+  r3 = ?R
+  emit r3
+  splice body = [3..5]
+  splice value = [0..0]
+
+# ml.auf
+letrec:
+  push_scope
+    r0 = τ
+    extend name := r0
+    r1 = τ
+    ascribe value : r1
+  pop_scope
+  push_scope
+    r2 = τ
+    extend name := r2
+    r3 = ?R
+    ascribe body : r3
+  pop_scope
+  r4 = ?R
+  emit r4
+  splice body = [7..9]
+  splice value = [1..3]
+
+# ml.auf
+match:
+  r0 = ListType(?A)
+  ascribe scrutinee : r0
+  r1 = ?T
+  ascribe nil_case : r1
+  push_scope
+    r2 = ?A
+    extend head := r2
+    r3 = ListType(?A)
+    extend tail := r3
+    r4 = ?T
+    ascribe cons_case : r4
+  pop_scope
+  r5 = ?T
+  emit r5
+  splice cons_case = [5..9]
+  splice nil_case = [2..2]
+  splice scrutinee = [0..0]
+
+# ml.auf
+nil:
+  r0 = ListType(?A)
+  emit r0
+
+# ml.auf
+pair:
+  r0 = ?A
+  ascribe fst : r0
+  r1 = ?B
+  ascribe snd : r1
+  r2 = ProductType(?A, ?B)
+  emit r2
+  splice fst = [0..0]
+  splice snd = [2..2]
+
+# ml.auf
+snd:
+  r0 = ProductType(?A, ?B)
+  ascribe pair : r0
+  r1 = ?B
+  emit r1
+  splice pair = [0..0]
+
+# ml.auf
+var:
+  member x
+  r0 = Γ(x)
+  emit r0
+  splice x = [0..0]
+
+# stlc.auf
+app:
+  r0 = FunctionType(?A, ?B)
+  ascribe l : r0
+  r1 = ?A
+  ascribe r : r1
+  r2 = ?B
+  emit r2
+  splice l = [0..0]
+  splice r = [2..2]
+
+# stlc.auf
+lambda:
+  push_scope
+    r0 = τ
+    extend a := r0
+    r1 = ?B
+    ascribe e : r1
+  pop_scope
+  r2 = FunctionType(τ, ?B)
+  emit r2
+  splice e = [1..3]
+
+# stlc.auf
+var:
+  member x
+  r0 = Γ(x)
+  emit r0
+  splice x = [0..0]
+
+# sums.auf
+annot:
+  r0 = τ
+  emit r0
+
+# sums.auf
+same:
+  r0 = ?T
+  ascribe a : r0
+  r1 = ?T
+  ascribe b : r1
+  r2 = ?T
+  emit r2
+  splice a = [0..0]
+  splice b = [2..2]
+
+# toy.auf
+cat:
+  r0 = ?A
+  ascribe l : r0
+  r1 = ?A
+  ascribe r : r1
+  r2 = ?A
+  emit r2
+  splice l = [0..0]
+  splice r = [2..2]
+
+# toy.auf
+echo:
+  r0 = ?A
+  ascribe e : r0
+  r1 = ?A
+  emit r1
+  splice e = [0..0]
+
+# toy.auf
+tv:
+  r0 = τ
+  emit r0
+

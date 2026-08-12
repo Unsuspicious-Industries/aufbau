@@ -12,7 +12,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};
 
-    use crate::engine::grammar::SPG;
+    use crate::grammar::SPG;
     use crate::typing::Type;
     use crate::typing::{Context, TypingSynth};
 
@@ -58,7 +58,10 @@ mod tests {
             let name = format!("x{idx}");
             (idx, name)
         }) {
-            ctx.add(name.clone(), Type::parse(grammar, &type_names[idx]).unwrap());
+            ctx.add(
+                name.clone(),
+                Type::parse(grammar, &type_names[idx]).unwrap(),
+            );
             names.push(name);
         }
 
@@ -97,7 +100,11 @@ mod tests {
 
     #[test]
     fn random_stlc_application_chains_stay_bounded() {
-        let grammar = SPG::load(include_str!("../../examples/stlc.auf")).unwrap();
+        let grammar = SPG::load(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/stlc.auf"
+        )))
+        .unwrap();
         let mut synth = TypingSynth::new(grammar.clone(), "");
         // Build each chain (and its grammar-parsed context types) once, then reuse
         // across the random draws — the type parsing is the expensive part.
@@ -117,7 +124,11 @@ mod tests {
 
     #[test]
     fn random_imp_declaration_blocks_stay_bounded() {
-        let grammar = SPG::load(include_str!("../../examples/imp.auf")).unwrap();
+        let grammar = SPG::load(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/imp.auf"
+        )))
+        .unwrap();
         let mut synth = TypingSynth::new(grammar.clone(), "");
         let mut rng = StdRng::seed_from_u64(10);
         let start = Instant::now();

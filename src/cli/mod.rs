@@ -2,7 +2,7 @@ pub mod chart;
 pub mod check;
 pub mod validate;
 
-use aufbau::engine::debug::{DebugLevel, add_module_filter, set_debug_level};
+use aufbau::debug::{DebugLevel, add_module_filter, set_debug_level};
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]

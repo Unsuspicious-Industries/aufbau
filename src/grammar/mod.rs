@@ -1,3 +1,4 @@
+pub mod binding;
 pub mod load;
 pub mod production;
 pub mod save;
@@ -5,7 +6,7 @@ pub mod symbol;
 pub mod tokenizer;
 pub mod utils;
 
-use crate::engine::binding::{self, BindingMap};
+use crate::grammar::binding::BindingMap;
 pub use production::Production;
 pub use symbol::Symbol;
 pub use tokenizer::{Segment, Tokenizer};
@@ -169,15 +170,24 @@ impl SPG {
             .iter()
             .filter(|s| matches!(s, Symbol::Nonterminal { .. }))
             .count();
-        let bound_terminal = p
-            .rhs
-            .iter()
-            .any(|s| matches!(s, Symbol::Terminal { binding: Some(_), .. }));
+        let bound_terminal = p.rhs.iter().any(|s| {
+            matches!(
+                s,
+                Symbol::Terminal {
+                    binding: Some(_),
+                    ..
+                }
+            )
+        });
         nts == 1 && !bound_terminal
     }
 
     pub fn add_production(&mut self, nt: String, prod: Production) {
-        if !self.productions.contains_key(&nt) {
+        // `set_nonterminal_rule` also registers a name here, before it has any
+        // productions, so guard on `nonterminals` and not only on `productions`:
+        // otherwise every nonterminal carrying a typing rule is listed twice,
+        // which doubles its `nt_index`/`nt_count` and its rendered productions.
+        if !self.nonterminals.contains(&nt) {
             self.nonterminals.push(nt.clone());
         }
         self.productions.entry(nt.clone()).or_default().push(prod);

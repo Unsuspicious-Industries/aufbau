@@ -1,9 +1,9 @@
-use crate::engine::grammar::Segment;
-use crate::engine::parse::arena::EvidenceId;
-use crate::engine::parse::arena::Lexeme;
+use crate::grammar::Segment;
+use crate::parse::arena::EvidenceId;
+use crate::parse::arena::Lexeme;
 
-use crate::engine::parse::arena::{ChildRef, NodeId, ParseArena, Span};
-use crate::engine::parse::{State, TypedParser};
+use crate::parse::arena::{ChildRef, NodeId, ParseArena, Span};
+use crate::parse::{State, TypedParser};
 
 pub fn render_node_text(parser: &TypedParser, node_id: NodeId, segments: &[Segment]) -> String {
     let Some(alts) = parser.arena().alts_for(node_id) else {

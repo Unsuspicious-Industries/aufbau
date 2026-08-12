@@ -5,11 +5,11 @@
 //! type declarations.
 
 use super::term::OTerm;
-use crate::engine::grammar::SPG;
-use crate::engine::grammar::load::{Def, Sym};
-use crate::engine::structure::FusionNode;
+use crate::ast::FusionNode;
+use crate::grammar::SPG;
+use crate::grammar::load::{Def, Sym};
 use crate::typing::rule::{Conclusion, Judgment, Premise};
-use crate::typing::{Atom, Context, TypeExpr, TypingRule, TypingSynth};
+use crate::typing::{Atom, Context, Key, TypeExpr, TypingRule, TypingSynth};
 
 /// A grammar symbol: nonterminal, literal token, or regex terminal, each
 /// optionally binding a name.
@@ -81,8 +81,8 @@ fn texpr(atoms: Vec<OAtom>) -> TypeExpr {
                 OAtom::Lit(s) => Atom::Lit(s),
                 OAtom::Hole(s) => Atom::Hole(s),
                 OAtom::Ref(s) => Atom::Ref(s),
-                OAtom::Ctx(s) => Atom::Ctx(s),
-                OAtom::Inst(s) => Atom::Inst(s),
+                OAtom::Ctx(s) => Atom::Ctx(Key::parse(&s)),
+                OAtom::Inst(s) => Atom::Inst(Key::parse(&s)),
                 OAtom::Top => Atom::Top,
                 OAtom::Bot => Atom::Bot,
             })
@@ -90,8 +90,12 @@ fn texpr(atoms: Vec<OAtom>) -> TypeExpr {
     )
 }
 
-fn extensions(exts: Vec<(String, Vec<OAtom>)>) -> Vec<(String, TypeExpr)> {
-    exts.into_iter().map(|(x, t)| (x, texpr(t))).collect()
+/// Keys arrive as surface spellings, so `'k'` is an ambient key and a bare name
+/// is a binding — the same rule the `.auf` parser applies.
+fn extensions(exts: Vec<(String, Vec<OAtom>)>) -> Vec<(Key, TypeExpr)> {
+    exts.into_iter()
+        .map(|(x, t)| (Key::parse(&x), texpr(t)))
+        .collect()
 }
 
 fn premise(p: OPremise) -> Premise {
@@ -105,7 +109,9 @@ fn premise(p: OPremise) -> Premise {
         },
         OPremise::Member(binding) => Premise {
             extensions: Vec::new(),
-            judgment: Judgment::Membership { binding },
+            judgment: Judgment::Membership {
+                key: Key::parse(&binding),
+            },
         },
         OPremise::Equate(l, r) => Premise {
             extensions: Vec::new(),

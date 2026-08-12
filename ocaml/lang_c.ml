@@ -17,6 +17,8 @@ let find_grammar () =
   close_in ic;
   match Grammar.load src with Ok g -> g | Error e -> failwith e
 
+let name = "C"
+
 let grammar = find_grammar ()
 
 (** The oracle: compile with [cc -fsyntax-only]. *)

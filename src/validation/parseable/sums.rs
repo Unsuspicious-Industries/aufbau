@@ -10,7 +10,7 @@ use super::ParseTestCase;
 #[cfg(test)]
 use {
     super::{load_example_grammar, run_parse_batch},
-    crate::engine::grammar::SPG,
+    crate::grammar::SPG,
 };
 
 #[cfg(test)]
@@ -74,7 +74,10 @@ fn valid_expressions_sums() {
     println!("\n=== Sums Valid Expressions ({} cases) ===", cases.len());
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
-    println!("✓ All {} cases passed in {:?}\n", res.passed, res.total_duration);
+    println!(
+        "✓ All {} cases passed in {:?}\n",
+        res.passed, res.total_duration
+    );
 }
 
 #[test]
@@ -84,5 +87,8 @@ fn invalid_expressions_sums() {
     println!("\n=== Sums Invalid Expressions ({} cases) ===", cases.len());
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
-    println!("✓ All {} cases passed in {:?}\n", res.passed, res.total_duration);
+    println!(
+        "✓ All {} cases passed in {:?}\n",
+        res.passed, res.total_duration
+    );
 }

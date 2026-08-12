@@ -1,4 +1,4 @@
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 
 mod feed;
 

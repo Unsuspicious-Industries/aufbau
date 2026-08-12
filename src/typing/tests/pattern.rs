@@ -10,7 +10,10 @@ use proptest::prelude::*;
 
 #[test]
 fn meet_equal_is_solved() {
-    assert_eq!(Pattern::lit("Int").unify(&Pattern::lit("Int")), Match::Solved);
+    assert_eq!(
+        Pattern::lit("Int").unify(&Pattern::lit("Int")),
+        Match::Solved
+    );
 }
 
 #[test]

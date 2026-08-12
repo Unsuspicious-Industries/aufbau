@@ -5,7 +5,6 @@ open Aufbau
 (** Find [examples/ml.auf] by walking up from CWD. *)
 let find_grammar () =
   let rec up dir =
-    let candidate = Filename.concat dir "corpora/ml/invalid.txt" in
     (* walk up until corpora/ is found, then resolve from repo root *)
     let repo_candidate = Filename.concat dir "examples/ml.auf" in
     if Sys.file_exists repo_candidate then repo_candidate
@@ -18,6 +17,8 @@ let find_grammar () =
   let src = really_input_string ic (in_channel_length ic) in
   close_in ic;
   match Grammar.load src with Ok g -> g | Error e -> failwith e
+
+let name = "ML"
 
 let grammar = find_grammar ()
 

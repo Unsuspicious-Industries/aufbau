@@ -81,9 +81,10 @@ impl Normalizer {
             return t.clone();
         }
         let normalized = match t {
-            Term::Con(label, kids) => {
-                Term::Con(label.clone(), kids.iter().map(|k| self.normalize(k)).collect())
-            }
+            Term::Con(label, kids) => Term::Con(
+                label.clone(),
+                kids.iter().map(|k| self.normalize(k)).collect(),
+            ),
             other => other.clone(),
         };
         let mut t = normalized;
@@ -131,7 +132,9 @@ fn match_into(pat: &Term, t: &Term, subst: &mut Subst) -> bool {
             }
         },
         (Term::Con(f, ps), Term::Con(g, ts)) => {
-            f == g && ps.len() == ts.len() && ps.iter().zip(ts).all(|(p, t)| match_into(p, t, subst))
+            f == g
+                && ps.len() == ts.len()
+                && ps.iter().zip(ts).all(|(p, t)| match_into(p, t, subst))
         }
         // A concrete pattern leaf matches only the same leaf; set-valued rewrite
         // LHS leaves are a later refinement.
@@ -245,11 +248,17 @@ mod tests {
     fn rewrite_projection_with_metavars() {
         // fst(Pair(?A, ?B)) ⇝ ?A
         let rule = RewriteRule {
-            lhs: con("fst", vec![con("Pair", vec![Term::var("A"), Term::var("B")])]),
+            lhs: con(
+                "fst",
+                vec![con("Pair", vec![Term::var("A"), Term::var("B")])],
+            ),
             rhs: Term::var("A"),
         };
         let norm = Normalizer::from_rules(vec![rule]);
-        let t = con("fst", vec![con("Pair", vec![Term::leaf("X"), Term::leaf("Y")])]);
+        let t = con(
+            "fst",
+            vec![con("Pair", vec![Term::leaf("X"), Term::leaf("Y")])],
+        );
         assert_eq!(norm.normalize(&t), Term::leaf("X"));
     }
 
@@ -263,7 +272,13 @@ mod tests {
         let norm = Normalizer::from_rules(vec![rule]);
         let expanded = con("Sum", vec![Term::leaf("Unit"), Term::leaf("Unit")]);
         let mut s = Subst::new();
-        assert!(unify_modulo(&norm, &Term::leaf("Bool"), &expanded, &mut s, true));
+        assert!(unify_modulo(
+            &norm,
+            &Term::leaf("Bool"),
+            &expanded,
+            &mut s,
+            true
+        ));
         // Free unification alone would not.
         let mut s2 = Subst::new();
         assert!(!term::unify(&Term::leaf("Bool"), &expanded, &mut s2, true));

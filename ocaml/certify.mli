@@ -24,13 +24,14 @@ module type LANGUAGE = sig
       rejects but the oracle accepts, use {!beyond}. *)
 
   val corpora :
-    valid : string list ->
-    invalid : string list ->
-    beyond : string list ->
+    valid : (string list -> unit) ->
+    invalid : (string list -> unit) ->
+    beyond : (string list -> unit) ->
     unit
-  (** Load corpora: feeds the program lists back, so the implementer
-      can load them from files or embed them inline.  The three
-      categories are:
+  (** Load corpora: accepts three callbacks for the valid, invalid,
+      and beyond categories.  The implementor loads each corpus
+      (from files or inline) and passes the program list to the
+      corresponding callback.  The three categories are:
 
       - {e valid}: programs aufbau and the oracle agree are well-typed.
       - {e invalid}: both agree are rejected.

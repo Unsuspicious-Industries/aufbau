@@ -1,5 +1,5 @@
-use crate::engine::grammar::SPG;
-use crate::typing::{Context, Type, TypingSynth};
+use crate::grammar::SPG;
+use crate::typing::{Context, Type, TypingSynth, render, unify_modulo};
 use crate::validation::parseable::check_all_prefixes_parseable;
 use proptest::prelude::*;
 
@@ -259,7 +259,11 @@ fn transparent_delimited_wrapper_inherits_child_type() {
 
 #[test]
 fn unresolved_meta_is_not_exported_as_final_chain_type() {
-    let grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap();
     let ctx = ctx_from_owned(
         &grammar,
         &[
@@ -301,14 +305,22 @@ fn empty_variable_prefix_is_accepted_as_unknown_not_contradiction() {
 
 #[test]
 fn closed_int_left_operand_does_not_reopen_for_float_operator() {
-    let grammar = SPG::load(include_str!("../../../examples/fun.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/fun.auf"
+    )))
+    .unwrap();
     let mut synth = TypingSynth::new(grammar, "10 /. 2.0");
     assert!(synth.parse_with(&Context::new()).is_err());
 }
 
 #[test]
 fn closed_parenthesized_int_expr_does_not_reopen_for_float_operator() {
-    let grammar = SPG::load(include_str!("../../../examples/fun.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/fun.auf"
+    )))
+    .unwrap();
     let mut synth = TypingSynth::new(grammar, "((1 + 2) * (3 + 4)) /. 2.0");
     assert!(synth.parse_with(&Context::new()).is_err());
 }
@@ -367,6 +379,32 @@ proptest! {
         prop_assert!(ok);
     }
 
+    #[test]
+    fn prop_rendered_applied_types_reparse_and_unify(
+        leaves in prop::collection::vec(prop::sample::select(vec!["Text", "IoError"]), 2),
+    ) {
+        let grammar = SPG::load(r#"
+            TypeName ::= 'Text' | 'IoError'
+            Atom ::= TypeName
+            ResultType(result) ::= 'Result' '[' Type ',' Type ']'
+            Type ::= Atom | ResultType
+            Type* ::= Type
+        "#).unwrap();
+        let source = format!("Result [ {} , {} ]", leaves[0], leaves[1]);
+
+        let original = Type::parse(&grammar, &source).unwrap();
+        let rendered = render(&grammar, &original);
+        let reparsed = Type::parse(&grammar, &rendered).unwrap();
+        let mut subst = crate::typing::Subst::new();
+        prop_assert!(unify_modulo(
+            &crate::typing::loader::normalizer(&grammar),
+            &original,
+            &reparsed,
+            &mut subst,
+            true,
+        ));
+    }
+
 }
 
 // `arg_count` ranges only over {1..=5}, so a plain loop with one grammar load
@@ -374,7 +412,11 @@ proptest! {
 // the cost (a proptest re-loaded the grammar on every one of its ~256 draws).
 #[test]
 fn generated_stlc_chains_parse_and_resolve() {
-    let grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap();
     let mut synth = TypingSynth::new(grammar.clone(), "");
     for arg_count in 1..=5 {
         let input = stlc_chain_input(arg_count);
@@ -398,7 +440,11 @@ fn generated_stlc_chains_parse_and_resolve() {
 
 #[test]
 fn generated_stlc_chain_prefixes_parse() {
-    let mut grammar = SPG::load(include_str!("../../../examples/stlc.auf")).unwrap();
+    let mut grammar = SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap();
     for arg_count in 1..=5 {
         let input = stlc_chain_input(arg_count);
         let ctx = ctx_from_owned(&grammar, &stlc_chain_context(arg_count));

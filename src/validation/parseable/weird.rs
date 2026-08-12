@@ -1,7 +1,7 @@
 use super::ParseTestCase;
 #[cfg(test)]
 use super::run_parse_batch;
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 
 // Small subset of pathological grammars adapted for parseability checks.
 

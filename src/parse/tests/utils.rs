@@ -1,5 +1,5 @@
-use crate::engine::grammar::SPG;
-use crate::engine::parse::TypedParser;
+use crate::grammar::SPG;
+use crate::parse::TypedParser;
 use crate::semantics::TypingRuntime;
 use crate::typing::TypingDomain;
 

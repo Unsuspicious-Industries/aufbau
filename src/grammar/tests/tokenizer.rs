@@ -1,4 +1,4 @@
-use crate::engine::grammar::tokenizer::Tokenizer;
+use crate::grammar::tokenizer::Tokenizer;
 
 #[test]
 fn test_tokenize_with_special_tokens() {

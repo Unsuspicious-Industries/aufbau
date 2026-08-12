@@ -1,7 +1,7 @@
 //! Tests for obligation-based pruning and seeding.
 
 use super::*;
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 
 #[test]
 fn seed_with_no_obligations_enqueues_all_alternatives() {
@@ -43,7 +43,7 @@ fn prune_does_not_introduce_alternatives_not_in_grammar() {
     parser.seed_for_test(a_nt, 0, 0);
 
     for task in &parser.tables.agenda {
-        if let crate::engine::parse::Task::Process(item) = task {
+        if let crate::parse::Task::Process(item) = task {
             assert!(item.prod.1 < num_alts);
         }
     }

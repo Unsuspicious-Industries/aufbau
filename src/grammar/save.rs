@@ -13,7 +13,11 @@ impl SPG {
             .iter()
             .filter(|nt| self.productions.contains_key(*nt) && self.start.as_ref() != Some(nt))
             .collect();
-        nt_list.extend(self.start.iter().filter(|s| self.productions.contains_key(*s)));
+        nt_list.extend(
+            self.start
+                .iter()
+                .filter(|s| self.productions.contains_key(*s)),
+        );
 
         // ---------- Productions ----------
         out.push_str("// --- Productions ---\n");
@@ -29,12 +33,18 @@ impl SPG {
                         nt.clone()
                     };
 
-                    let rhs = prod
-                        .rhs
-                        .iter()
-                        .map(|s| self.format_symbol(s))
-                        .collect::<Vec<_>>()
-                        .join(" ");
+                    // An empty rhs is an epsilon alternative and must render as
+                    // `ε`: the loader drops blank alternatives, so emitting
+                    // nothing would silently delete the production on reload.
+                    let rhs = if prod.rhs.is_empty() {
+                        "ε".to_string()
+                    } else {
+                        prod.rhs
+                            .iter()
+                            .map(|s| self.format_symbol(s))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    };
 
                     if first {
                         out.push_str(&format!("{lhs} ::= {rhs}"));

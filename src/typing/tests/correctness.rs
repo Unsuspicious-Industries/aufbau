@@ -1,5 +1,5 @@
-use crate::engine::parse::arena::{Lexeme, NodeStatus, Span};
-use crate::engine::path::TreePath;
+use crate::parse::arena::{Lexeme, NodeStatus, Span};
+use crate::path::TreePath;
 use crate::semantics::Verdict;
 use crate::semantics::evidence::EvidenceStore;
 use crate::semantics::{Obligation, Obligations};
@@ -13,14 +13,18 @@ fn parse_rule(p: &str, c: &str, n: &str) -> TypingRule {
     TypingRule::new(p.into(), c.into(), n.into()).unwrap()
 }
 
-fn stlc() -> crate::engine::grammar::SPG {
-    crate::engine::grammar::SPG::load(include_str!("../../../examples/stlc.auf")).unwrap()
+fn stlc() -> crate::grammar::SPG {
+    crate::grammar::SPG::load(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/examples/stlc.auf"
+    )))
+    .unwrap()
 }
 
 /// Build the type trees for a rule by parsing each type-expression with `g`.
 /// Arrow-shaped expressions need the grammar to recover their structure; a
 /// trivial (leaf/hole/ctx) expression resolves against any grammar.
-fn trees(g: &crate::engine::grammar::SPG, rule: &TypingRule) -> Trees {
+fn trees(g: &crate::grammar::SPG, rule: &TypingRule) -> Trees {
     let bindings = g.rule_bindings(&rule.name);
     rule.type_exprs()
         .into_iter()
@@ -34,7 +38,7 @@ fn trees(g: &crate::engine::grammar::SPG, rule: &TypingRule) -> Trees {
 
 /// Trees for a rule whose type-expressions are all trivial (no grammar needed).
 fn trivial_trees(rule: &TypingRule) -> Trees {
-    trees(&crate::engine::grammar::SPG::new(), rule)
+    trees(&crate::grammar::SPG::new(), rule)
 }
 
 fn dom_finalize(
@@ -178,7 +182,7 @@ fn context_ext_accepts_open_prefix() {
             evidence: None,
         }],
     );
-    let segs = vec![crate::engine::grammar::Segment::from_str("fo", 0, 1)];
+    let segs = vec![crate::grammar::Segment::from_str("fo", 0, 1)];
     let ctx = Context::new().shadow("foo".into(), Type::raw("Int"));
     let program = compile(&rule, &trivial_trees(&rule));
     let (v, ev, _) = domain.finalize(

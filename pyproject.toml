@@ -20,4 +20,12 @@ features = ["python-ffi", "pyo3/extension-module"]
 module-name = "aufbau"
 bindings = "pyo3"
 target-version = "3.11"
+# Mixed layout: `python/aufbau/` holds the pure-Python half (the `dsl` submodule
+# and the type stub), maturin drops the compiled extension in beside it.  The DSL
+# ships as `aufbau.dsl`, so it needs no `python-packages` entry and adds no
+# second top-level name.
+#
+# A mixed layout also stops maturin auto-generating the stub from the repo-root
+# `aufbau.pyi`, hence `python/aufbau/__init__.pyi` symlinks to it (one source of
+# truth) with `py.typed` beside it.
 python-source = "python"

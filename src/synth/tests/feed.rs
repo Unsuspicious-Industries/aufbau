@@ -1,4 +1,4 @@
-use crate::engine::grammar::SPG;
+use crate::grammar::SPG;
 use crate::typing::Context;
 use crate::typing::TypingSynth;
 
@@ -102,13 +102,40 @@ fn feed_with_context_uses_latest_bindings() {
     assert_same_parse_shape(&mut synth, &mut fresh);
 }
 
+/// A rejected feed is a no-op. This previously asserted the opposite — that the
+/// extended input stayed visible as `"xy"` — because `feed` installed the input
+/// before parsing it. That left the synthesizer holding text it had already
+/// rejected, with its tree dropped, so every later call worked off broken state.
 #[test]
-fn feed_error_leaves_extended_input_visible() {
+fn feed_error_leaves_state_unchanged() {
     let grammar = SPG::load("Start ::= 'x'").unwrap();
     let mut synth = TypingSynth::new(grammar, "x");
 
     let err = synth.feed("y").unwrap_err();
 
     assert!(err.starts_with("Parse error:"));
-    assert_eq!(synth.input(), "xy");
+    assert_eq!(synth.input(), "x", "rejected token must not be installed");
+    // The prior parse is still available, so the failure cost nothing.
+    let ast = synth.ast().expect("state survives a rejected feed");
+    assert!(ast.is_complete());
+}
+
+/// Whatever `try_feed` accepts, `feed` accepts from the same state, and whatever
+/// it rejects, `feed` rejects. `mask` is built on `try_feed`, so a divergence
+/// here would make the generation mask unusable.
+#[test]
+fn try_feed_agrees_with_feed() {
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    for token in [" y", " z", "", "y"] {
+        let mut probe = TypingSynth::new(grammar.clone(), "x");
+        let predicted = probe.try_feed(token).is_ok();
+        assert_eq!(probe.input(), "x", "try_feed must not mutate");
+
+        let mut committed = TypingSynth::new(grammar.clone(), "x");
+        assert_eq!(
+            committed.feed(token).is_ok(),
+            predicted,
+            "try_feed and feed disagree on {token:?}"
+        );
+    }
 }
