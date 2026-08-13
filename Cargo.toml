@@ -80,7 +80,11 @@ harness = false
 
 [features]
 default = []
-python-ffi = ["dep:pyo3", "pyo3/extension-module"]
+python-ffi = ["dep:pyo3"]
+# `extension-module` splits from `python-ffi` because pyo3's extension-module
+# feature suppresses the link directive for libpython — right for a wheel the
+# interpreter loads, fatal for a test binary, which must link libpython itself.
+extension-module = ["python-ffi", "pyo3/extension-module"]
 # Record IR execution for debugging. Compiled out by default: `trace!` puts the
 # whole call, arguments included, behind this cfg, so `run` is unchanged without it.
 trace = []

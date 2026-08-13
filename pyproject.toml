@@ -16,7 +16,7 @@ Homepage = "https://github.com/Unsuspicious-Industries/aufbau"
 Repository = "https://github.com/Unsuspicious-Industries/aufbau"
 
 [tool.maturin]
-features = ["python-ffi", "pyo3/extension-module"]
+features = ["extension-module"]
 module-name = "aufbau"
 bindings = "pyo3"
 target-version = "3.11"

@@ -93,7 +93,7 @@ jobs:
         # Explicit interpreter: never infer the ABI from whatever `python` the
         # runner happens to expose.
         run: |
-          python -m maturin build --release --features python-ffi \
+          python -m maturin build --release --features extension-module \
             --interpreter python${{ matrix.python-version }} \
             --out dist --compatibility pypi
 
