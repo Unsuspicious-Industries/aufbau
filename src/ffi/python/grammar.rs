@@ -128,6 +128,113 @@ impl PyGrammar {
         }
     }
 
+    /// Diagnostics about the already-loaded grammar, as `(severity, code,
+    /// message)` sorted by code then message. `error` means the grammar cannot
+    /// derive a string; `warning` means it works but is probably not what was
+    /// meant. Codes are a stable UI contract and must not change once chosen.
+    fn diagnostics(&self) -> Vec<(String, String, String)> {
+        use crate::typing::complete::productive_sorts;
+        use std::collections::HashSet;
+
+        let g = &self.inner;
+        let mut out: Vec<(String, String, String)> = Vec::new();
+        if g.productions.is_empty() {
+            out.push((
+                "error".to_string(),
+                "no-start-symbol".to_string(),
+                "the grammar has no productions, so it can never derive a string".to_string(),
+            ));
+            return out;
+        }
+
+        // The engine's own productivity fixpoint: a nonterminal is productive
+        // iff it derives at least one complete string, ignoring types.
+        let productive = productive_sorts(g);
+
+        let mut undefined: Vec<&str> = Vec::new();
+        for prods in g.productions.values() {
+            for p in prods {
+                for s in &p.rhs {
+                    if let Symbol::Nonterminal { name, .. } = s {
+                        if !g.productions.contains_key(name) && !undefined.contains(&name.as_str())
+                        {
+                            undefined.push(name.as_str());
+                        }
+                    }
+                }
+            }
+        }
+        undefined.sort_unstable();
+        for name in undefined {
+            out.push((
+                "error".to_string(),
+                "undefined-nonterminal".to_string(),
+                format!("{name} is used but has no productions of its own"),
+            ));
+        }
+
+        let mut unproductive: Vec<&str> = g
+            .productions
+            .keys()
+            .map(String::as_str)
+            .filter(|nt| !productive.contains(*nt))
+            .collect();
+        unproductive.sort_unstable();
+        for name in unproductive {
+            out.push((
+                "error".to_string(),
+                "unproductive-nonterminal".to_string(),
+                format!("{name} derives no complete string"),
+            ));
+        }
+
+        if let Some(start) = g.start.as_deref() {
+            let mut reachable: HashSet<&str> = HashSet::new();
+            let mut frontier: Vec<&str> = vec![start];
+            while let Some(nt) = frontier.pop() {
+                if !reachable.insert(nt) {
+                    continue;
+                }
+                if let Some(prods) = g.productions.get(nt) {
+                    for p in prods {
+                        for s in &p.rhs {
+                            if let Symbol::Nonterminal { name, .. } = s
+                                && g.productions.contains_key(name)
+                            {
+                                frontier.push(name.as_str());
+                            }
+                        }
+                    }
+                }
+            }
+            let mut unreachable: Vec<&str> = g
+                .productions
+                .keys()
+                .map(String::as_str)
+                .filter(|nt| productive.contains(*nt) && !reachable.contains(*nt))
+                .collect();
+            unreachable.sort_unstable();
+            for name in unreachable {
+                out.push((
+                    "warning".to_string(),
+                    "unreachable-nonterminal".to_string(),
+                    format!("{name} is defined but unreachable from the start symbol"),
+                ));
+            }
+        }
+
+        if g.rules.is_empty() {
+            out.push((
+                "warning".to_string(),
+                "no-typing-rules".to_string(),
+                "the grammar has no typing rules, so every verdict is purely syntactic".to_string(),
+            ));
+        }
+
+        out.sort_by(|a, b| (&a.1, &a.2).cmp(&(&b.1, &b.2)));
+        out
+    }
+
     /// The type signature: every constructor (nonterminal) with an arity it
     /// appears at, sorted.
     fn signature(&self) -> Vec<(String, usize)> {
