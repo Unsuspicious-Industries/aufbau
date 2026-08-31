@@ -96,6 +96,30 @@ Expression ::= IntBinary
              | LetRec
              | AtomicExpression
 
+// ===================== Top level =====================
+// Real OCaml source is a list of structure items, not a bare expression. The
+// grader compiles this text and then calls `solve` from a driver appended
+// after it, so a program has to *bind* a name that outlives its own
+// right-hand side. `Let` and `LetRec` cannot: both require `in`, which keeps
+// the binding local to the expression it scopes over.
+//
+// Without this section the last nonterminal was `Expression`, so by the
+// last-NT-is-start convention the start symbol was an expression and a
+// constrained generation could only ever be a term. It showed up exactly that
+// way in the corpus: complete generations of `1` and `[ ]`, every one of them
+// rejected by the compiler because `solve` was never defined.
+//
+// The parameter and the result are annotated because that is what fixes the
+// binding's type without inference, and because it is ordinary OCaml -- the
+// task prompts already ask for `let solve (xs : int list) : int = ...`.
+//
+// Self-recursion is deliberately absent here, exactly as in the C grammar and
+// for the same soundness reason: a definition sees the ones before it, not
+// itself. Recursion remains available inside a body through `LetRec`, whose
+// rule does bind the name in its own value.
+Define(define) ::= 'let' Identifier[name] '(' Identifier[param] ':' Type[τ] ')' ':' Type[ret] '=' Expression[body]
+ProgramList ::= Define ProgramList | Define
+Program ::= ProgramList
 
 // ===================== Typing rules =====================
 
@@ -176,3 +200,9 @@ x ∈ Γ
 Γ[name:τ] ⊢ value : τ, Γ[name:τ] ⊢ body : ?R
 --------------------------------------------- (letrec)
 ?R
+
+// Top level: a definition is checked rather than valued (⊤), and exports its
+// own signature as an effect for whatever definition comes after it.
+Γ[param:τ] ⊢ body : ret
+-------------------------- (define)
+Γ → Γ[name: τ -> ret] ⊢ ⊤

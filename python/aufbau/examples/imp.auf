@@ -1,0 +1,123 @@
+// Imp — an imperative language with modern syntax
+// Statements for control flow, expressions for computation
+
+// ===================== Identifiers =====================
+Identifier ::= /[a-z][a-z0-9_]*/
+TypeName ::= 'Int' | 'Bool' 
+
+// ===================== Types =====================
+BaseType ::= TypeName | '(' Type ')'
+Type* ::= BaseType
+
+// ===================== Literals =====================
+Integer(int_lit) ::= /[0-9]+/
+Boolean(bool_lit) ::= 'true' | 'false'
+
+// ===================== Expressions =====================
+// Expressions compute values, no side effects
+
+Variable(var) ::= Identifier[x]
+
+Group ::= '(' Expression ')'
+
+// Atomic expressions
+AtomicExpr ::= Variable | Integer | Boolean | Group
+
+
+// We build up precedence by having expression reference the next level
+ArithOp(arith_op) ::= Expression[lhs] ArithOperator[op] Expression[rhs]
+
+ArithOperator ::= '+' | '-' | '*' | '/' 
+
+CompOp(comp_op) ::= AtomicExpr[lhs] CompOperator[op] AtomicExpr[rhs]
+CompOperator ::= '==' | '!=' | '<' | '<=' | '>' | '>='
+
+// Top level expression
+Expression ::= ArithOp | CompOp | AtomicExpr
+
+// ===================== Statements =====================
+// Statements perform actions, modify state
+
+// Variable declaration: let x: Int = 5;
+Declaration(decl) ::= 'let' Identifier[name] ':' Type[τ] '=' Expression[value] ';'
+
+// Assignment (to existing variable): x = 10;
+Assignment(assign) ::= Identifier[name] '=' Expression[value] ';'
+
+// If statement with optional else
+IfStmt(if) ::= 'if' '(' Expression[cond] ')' Block[then_block]
+IfElseStmt(if_else) ::= 'if' '(' Expression[cond] ')' Block[then_block] 'else' Block[else_block]
+
+// While loop
+WhileStmt(while) ::= 'while' '(' Expression[cond] ')' Block[body]
+
+// Block: { statements }
+Block(block) ::= '{' StatementList[stmts] '}'
+
+// Statement list
+Statement ::= Declaration | Assignment | IfStmt | IfElseStmt | WhileStmt
+
+StatementList ::= Statement StatementList | Statement
+
+// Top-level program is a block
+Program(program) ::= Block[main]
+
+// ===================== Typing Rules =====================
+
+// ---------- Expressions (produce values) ----------
+
+// Variable lookup
+x ∈ Γ
+----------- (var)
+Γ(x)
+
+// Integer literal
+----------- (int_lit)
+'Int'
+
+// Boolean literal
+----------- (bool_lit)
+'Bool'
+
+// Binary operation
+Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
+------------------------------------------------- (arith_op)
+'Int'
+
+Γ ⊢ lhs : 'Int', Γ ⊢ rhs : 'Int'
+------------------------------------------------- (comp_op)
+'Bool'
+
+// ---------- Statements (produce void type ∅) ----------
+
+// Declaration: extend context, check value type
+Γ ⊢ value : τ
+----------------------- (decl)
+Γ → Γ[name:τ] ⊢ ∅
+
+// Assignment: variable must exist and types must match
+name ∈ Γ, Γ ⊢ value : Γ(name)
+------------------------------ (assign)
+∅
+
+// If statement: condition is Bool, body produces ?T 
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T
+--------------------------------------- (if)
+?T
+
+// If-else: both branches produce same type
+Γ ⊢ cond : 'Bool', Γ ⊢ then_block : ?T, Γ ⊢ else_block : ?T
+------------------------------------------------------------ (if_else)
+?T
+
+// While: condition is Bool, body produces ?T
+Γ ⊢ cond : 'Bool', Γ ⊢ body : ?T
+-------------------------------- (while)
+?T
+
+// Block: a statement sequence carries no value type, so it is unconstrained
+// (⊤). Without a rule a block's type would be its own parse tree, and two
+// structurally distinct branches (the arms of an if/else) could never agree;
+// ∅ is wrong here, as ⊥ unifies with nothing, not even itself.
+-------- (block)
+⊤
