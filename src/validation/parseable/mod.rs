@@ -17,6 +17,8 @@ pub mod ml;
 pub mod stlc;
 pub mod sums;
 pub mod toy;
+#[cfg(test)]
+mod verdicts;
 pub mod weird;
 
 use crate::grammar::SPG;
