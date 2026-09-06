@@ -1,6 +1,6 @@
 [package]
 name = "aufbau"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 authors = ["pkd <pkd@unsuspicious.org>"]
 description = "Generalized prefix parsing for a class of context-dependent languages"
@@ -84,7 +84,12 @@ python-ffi = ["dep:pyo3"]
 # `extension-module` splits from `python-ffi` because pyo3's extension-module
 # feature suppresses the link directive for libpython — right for a wheel the
 # interpreter loads, fatal for a test binary, which must link libpython itself.
-extension-module = ["python-ffi", "pyo3/extension-module"]
+#
+# `abi3-py311` builds against the stable ABI, so one wheel per platform serves
+# 3.11 and every later interpreter. Without it pyo3 emits a version-specific
+# wheel and publishing means a build per Python minor. It pairs with
+# `[tool.maturin] target-version`, which is only consulted for abi3 builds.
+extension-module = ["python-ffi", "pyo3/extension-module", "pyo3/abi3-py311"]
 # Record IR execution for debugging. Compiled out by default: `trace!` puts the
 # whole call, arguments included, behind this cfg, so `run` is unchanged without it.
 trace = []

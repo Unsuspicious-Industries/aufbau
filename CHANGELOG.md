@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.5.2 — Demand-driven prediction
+
+First release published to PyPI since 0.3.1. 0.5.0 and 0.5.1 were intermediate
+versions that were never uploaded, so a consumer moving from 0.3.1 gets
+everything in all three sections below.
+
+### Added
+
+- **Demand-driven prediction.** The type a parent premise ascribes to a child is
+  now carried as an inherited attribute, and a production whose conclusion
+  pattern cannot meet it is refused at prediction rather than after it consumes
+  input. A production with no rule of its own passes the demand through
+  unchanged, so a chain like `Expression -> AtomicExpression -> Integer` keeps
+  it. The demand is part of the item key, and is canonicalised first, or the
+  chart would grow without bound as each rule evaluation minted fresh holes.
+- **Freshness premises** are enforced during descent as well as at finalisation,
+  so a rebinding is refused where it is written.
+
+### Changed
+
+- **Ascription refutes as soon as the failure is stable**, rather than waiting
+  for the production to complete. Unification failure survives instantiation, so
+  only a node that can be replaced wholesale has to wait. `let x : Bool = 1` is
+  now dead at the `1`.
+- `Completeness::Sound` carries `blockers`, not `uninhabited`. The FFI tuple
+  shape is unchanged; the list can now name a reason (`"freshness"`) as well as
+  a sort.
+- `examples/c.auf` gains `*` and `%`; `examples/ml.auf` gains `*`, `/` and
+  `mod`. This changes what those grammars accept, so benchmark numbers taken
+  against 0.3.1 grammars are not comparable.
+
+### Known failing
+
+`validation::parseable::verdicts::no_false_prunes` fails on four ml prefixes
+that are completable and are rejected, which contradicts the unconditional
+soundness of `dead`. The bug predates this release: the same four fail at
+0.5.1. It is documented in `PLAN.md` W1a with the failing list as its
+specification. A consumer should know that a live prefix can be pruned in a
+grammar with type-directed list construction.
+
+## 0.5.0 — Python term evidence and freshness-aware completion
+
+### Breaking
+
+- **Python `Ast.type_of()` now returns `Term`, not rendered text.** The old
+  0.4.0 wheel returned `str`; the current FFI returns the structured term used
+  by the engine. This incompatible correction is why the release is 0.5.0,
+  rather than an indistinguishable rebuild of 0.4.0. Consumers must publish and
+  install 0.5 wheels together with `proposition7>=0.3`.
+
+### Added
+
+- **Freshness premises** (`x ∉ Γ`) reject completed rebinding while retaining an
+  extensible identifier prefix that can still become fresh. Freshness is
+  binding-only and validated at grammar load.
+- The completeness classifier now accounts for freshness: an infinite binder
+  preserves `inhabited`; a finite, exhaustible binder reports the explicit
+  `freshness` blocker under `sound`.
+- `TypingSynth.mask(candidates)` evaluates a candidate set without mutating the
+  synthesizer, matching constrained-decoder use.
+- `engine_perf` emits the canonical `aufbau.engine-perf/v2` raw-sample report.
+
 ## 0.4.0 — Engine API v1
 
 Adds `aufbau.engine/v1`: a stable identifier naming the whole contract below, so

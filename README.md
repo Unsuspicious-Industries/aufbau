@@ -25,6 +25,25 @@ make clean      # Remove all build artifacts
 make help       # Show all available targets
 ```
 
+## Engine performance report
+
+Run the fixed, engine-side corpus benchmark in a release build:
+
+```bash
+cargo run --release --bin engine_perf > engine-perf.json
+```
+
+The command emits JSON (`aufbau.engine-perf/v2`) containing fixed corpus and
+configuration identity hashes, warmup/sample counts, an explicit non-applicable
+seed, raw nanosecond samples, floating-point mean and median, sample standard
+deviation, standard error, and min/max for grammar loading, parse/typecheck,
+mask/feed, context growth, and completeness. It also records hostname, kernel,
+CPU model/count, rustc/cargo versions, profile/features, and Git HEAD/dirty/diff
+identity. Inputs and configuration are constants in `src/bin/engine_perf.rs`;
+timings are observations and are not used in unit-test assertions. Metadata
+collection runs outside measured loops. Do not compare reports across builds
+without checking the recorded metadata.
+
 ## Python FFI
 
 Exported API (stubs in `aufbau.pyi`):
