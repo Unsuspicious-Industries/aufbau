@@ -33,6 +33,7 @@ fn test_item(prod: ProdId, pos: usize) -> Item {
         dot: 0,
         start: pos,
         pos,
+        demand: None,
         ctx: 0,
         mctx: 0,
         obligations: Obligations::empty(),

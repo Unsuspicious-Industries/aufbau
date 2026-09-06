@@ -11,3 +11,9 @@ int wrong_cast(int x) { return (float*)x; }
 int needs_value() { return; }
 int two_params(int a, int b) { return (int*)a; }
 float wrong_base(int* x) { return x; }
+# `for` loops: the init is type-checked, the declared binding is scoped to the
+# loop, and the assigning form still requires an existing declaration.
+int loop_bad_init(int n) { for (int i = (float)0; i < n; i = i + 1) { n = i; } return n; }
+int loop_escape(int n) { for (int i = 0; i < n; i = i + 1) { n = i; } return i; }
+int loop_undeclared(int n) { for (j = 0; j < n; j = j + 1) { n = j; } return n; }
+int loop_bad_step(int n) { for (int i = 0; i < n; i = (float)0) { n = i; } return n; }

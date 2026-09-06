@@ -1,5 +1,5 @@
 use crate::grammar::SPG;
-use crate::typing::{Context, Type, TypingSynth, render, unify_modulo};
+use crate::typing::{Completeness, Context, Type, TypingSynth, completeness, render, unify_modulo};
 use crate::validation::parseable::check_all_prefixes_parseable;
 use proptest::prelude::*;
 
@@ -123,6 +123,61 @@ fn context_membership_accepts_open_prefix_with_possible_binding() {
     .unwrap();
     let mut synth = TypingSynth::new(grammar, "fo");
     assert!(synth.parse_with(&ctx_of(&[("foo", "number")])).is_ok());
+}
+
+#[test]
+fn freshness_keeps_an_extensible_duplicate_live() {
+    let grammar = SPG::load(
+        r#"
+        Identifier ::= /[a-z]+/
+        Declaration(fresh) ::= Identifier[x] ';'
+        Start ::= Declaration
+
+        x ∉ Γ
+        ----------- (fresh)
+        'unit'
+        "#,
+    )
+    .unwrap();
+    let ctx = ctx_of(&[("x", "unit")]);
+
+    let mut prefix = TypingSynth::new(grammar.clone(), "x");
+    assert!(prefix.parse_with(&ctx).is_ok(), "x can still extend to a fresh name");
+
+    let mut duplicate = TypingSynth::new(grammar.clone(), "x;");
+    assert!(duplicate.parse_with(&ctx).is_err(), "closed duplicate must remain dead");
+
+    let mut fresh = TypingSynth::new(grammar, "xy;");
+    assert!(fresh.parse_with(&ctx).is_ok(), "a fresh continuation must typecheck");
+}
+
+#[test]
+fn freshness_marks_context_blocked_prefixes_sound_only() {
+    let grammar = SPG::load(
+        r#"
+        Identifier ::= 'taken'
+        Declaration(fresh) ::= 'let' Identifier[x]
+        Start ::= Declaration
+
+        x ∉ Γ
+        ----------- (fresh)
+        ?A
+        "#,
+    )
+    .unwrap();
+    assert_eq!(
+        completeness(&grammar),
+        Completeness::Sound {
+            blockers: vec!["freshness".into()]
+        }
+    );
+
+    let ctx = ctx_of(&[("taken", "unit")]);
+    let mut prefix = TypingSynth::new(grammar.clone(), "let");
+    assert!(prefix.parse_with(&ctx).is_ok(), "unbound identifier is still pending");
+
+    let mut blocked = TypingSynth::new(grammar, "let taken");
+    assert!(blocked.parse_with(&ctx).is_err(), "the only completion is a duplicate");
 }
 
 #[test]
@@ -326,6 +381,32 @@ fn closed_parenthesized_int_expr_does_not_reopen_for_float_operator() {
 }
 
 proptest! {
+    #[test]
+    fn prop_extensible_duplicate_can_grow_fresh(suffix in "[a-z]{1,6}") {
+        let grammar = SPG::load(
+            r#"
+            Identifier ::= /[a-z]+/
+            Declaration(fresh) ::= Identifier[x] ';'
+            Start ::= Declaration
+
+            x ∉ Γ
+            ----------- (fresh)
+            'unit'
+            "#,
+        ).unwrap();
+        let ctx = ctx_of(&[("x", "unit")]);
+
+        let mut prefix = TypingSynth::new(grammar.clone(), "x");
+        prop_assert!(prefix.parse_with(&ctx).is_ok());
+
+        let mut duplicate = TypingSynth::new(grammar.clone(), "x;");
+        prop_assert!(duplicate.parse_with(&ctx).is_err());
+
+        let fresh = format!("x{suffix};");
+        let mut continued = TypingSynth::new(grammar, &fresh);
+        prop_assert!(continued.parse_with(&ctx).is_ok());
+    }
+
     #[test]
     fn prop_transparent_wrapper_inherits_child_type(name in "[a-z]{1,6}") {
         let grammar = SPG::load(

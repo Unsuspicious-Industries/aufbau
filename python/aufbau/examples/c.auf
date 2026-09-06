@@ -118,7 +118,7 @@ AtomicExpr ::= Variable
              | CallEmpty
              | Paren
 
-ArithOp ::= '+' | '-' | '/'
+ArithOp ::= '+' | '-' | '*' | '/' | '%'
 CompOp ::= '==' | '!=' | '<' | '<=' | '>' | '>='
 
 // Restricted to AtomicExpr, not the full (self-embedding) Expression: real C

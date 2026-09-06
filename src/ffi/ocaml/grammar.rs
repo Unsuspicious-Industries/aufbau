@@ -201,16 +201,17 @@ pub fn aufbau_show(g: &Gram) -> String {
 }
 
 /// The realizability class of the grammar: `("syntactic", [])` (no rules,
-/// live ⇔ realizable), `("inhabited", [])` (every ascribed sort has a
-/// universal inhabitant, live ⇒ realizable), or `("sound", sorts)` (a live
-/// prefix may be uninhabited at the listed sorts).
+/// live ⇔ realizable), `("inhabited", [])` (every required sort has a universal
+/// inhabitant and freshness cannot block all completions), or `("sound", blockers)`
+/// (a live prefix may be
+/// unrealizable for a listed reason).
 #[ocaml::func]
 #[must_use]
 pub fn aufbau_completeness(g: &Gram) -> (String, Vec<String>) {
     match crate::typing::completeness(&g.0) {
         crate::typing::Completeness::Syntactic => ("syntactic".into(), vec![]),
         crate::typing::Completeness::Inhabited => ("inhabited".into(), vec![]),
-        crate::typing::Completeness::Sound { uninhabited } => ("sound".into(), uninhabited),
+        crate::typing::Completeness::Sound { blockers } => ("sound".into(), blockers),
     }
 }
 

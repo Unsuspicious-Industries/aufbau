@@ -216,7 +216,14 @@ proptest! {
 
             // Every Process item in the agenda must be tracked in seen_process.
             if let Task::Process(ref item) = task {
-                let key = (item.prod, item.dot, item.start, item.pos, item.ctx);
+                let key = (
+                    item.prod,
+                    item.dot,
+                    item.start,
+                    item.pos,
+                    item.ctx,
+                    item.demand.clone(),
+                );
                 prop_assert!(
                     parser.tables.seen_process.contains(&key),
                     "agenda item not in seen_process: prod={:?} dot={} start={} pos={} ctx={}",

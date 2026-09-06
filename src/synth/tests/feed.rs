@@ -139,3 +139,14 @@ fn try_feed_agrees_with_feed() {
         );
     }
 }
+
+#[test]
+fn mask_is_state_free_and_matches_candidate_acceptance() {
+    let grammar = SPG::load("Start ::= 'x' 'y'").unwrap();
+    let candidates = [" y".to_string(), " z".to_string()];
+    let mut synth = TypingSynth::new(grammar, "x");
+
+    assert_eq!(synth.mask(&candidates), vec![true, false]);
+    assert_eq!(synth.input(), "x");
+    assert!(!synth.ast().unwrap().is_complete());
+}

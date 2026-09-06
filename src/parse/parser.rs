@@ -13,6 +13,31 @@ use crate::parse::arena::{
 };
 
 use super::TypedParser;
+use crate::typing::{Term, Type};
+
+/// Rename a demand's holes to positional names.
+///
+/// Every evaluation of a rule mints its holes fresh, so the same demand reached
+/// twice is two unequal terms. Left alone that makes the process key miss every
+/// time and the chart grows without bound; canonicalizing collapses them. The
+/// demand is only ever a filter and a key -- it is never fed back into the
+/// constraint graph -- so renaming it changes no verdict.
+fn canonical_demand(t: Type) -> Type {
+    fn go(t: &Term, names: &mut HashMap<String, usize>) -> Term {
+        match t {
+            Term::Var(n) => {
+                let next = names.len();
+                let i = *names.entry(n.clone()).or_insert(next);
+                Term::Var(format!("d{i}"))
+            }
+            Term::Con(label, kids) => {
+                Term::Con(label.clone(), kids.iter().map(|k| go(k, names)).collect())
+            }
+            Term::Leaf(p) => Term::Leaf(p.clone()),
+        }
+    }
+    go(&t, &mut HashMap::new())
+}
 
 // ── Data structures ──────────────────────────────────────────────────────────
 
@@ -33,6 +58,17 @@ pub struct Item {
     pub mctx: CtxId,
     pub obligations: Obligations,
     pub children: Vec<ChildRef>,
+    /// What this occurrence is *for*: the type its parent's premise ascribes to
+    /// it, canonicalized. Inherited unchanged through a production with no rule
+    /// of its own, since such a production's type is its child's.
+    ///
+    /// This is an inherited attribute, and it has to be carried rather than
+    /// recomputed from a finished child: the node that currently spans an
+    /// occurrence need not be the one that ends up filling it, so comparing a
+    /// demand against that node refutes readings the input can still reach.
+    /// It is part of the process key for the same reason — two occurrences that
+    /// differ only in what they demand must not share one item's filtering.
+    pub demand: Option<Type>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -63,7 +99,7 @@ pub struct Tables {
     pub agenda: VecDeque<Task>,
 
     // Dedup with: prod, dot, start, pos, ctx
-    pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId)>,
+    pub seen_process: HashSet<(ProdId, usize, usize, usize, CtxId, Option<Type>)>,
     pub results: HashMap<(NtId, usize, CtxId), Vec<usize>>,
     pub completed_nodes: HashMap<(NtId, usize, usize, CtxId), Vec<NodeId>>,
     // (NT, start)
@@ -90,7 +126,14 @@ pub struct Tables {
 
 impl TypedParser {
     pub(super) fn enqueue_process(&mut self, item: Item) {
-        let key = (item.prod, item.dot, item.start, item.pos, item.mctx);
+        let key = (
+            item.prod,
+            item.dot,
+            item.start,
+            item.pos,
+            item.mctx,
+            item.demand.clone(),
+        );
         if self.tables.seen_process.insert(key) {
             self.tables.agenda.push_back(Task::Process(item));
         }
@@ -100,14 +143,30 @@ impl TypedParser {
         self.tables.agenda.push_back(Task::Complete(completion));
     }
 
+    /// Predict `prods` at `pos`. A production whose conclusion cannot meet
+    /// `demand` is not predicted at all: the production is fixed here, so no
+    /// longer phrase can take its place, and by the conclusion-pattern argument
+    /// no derivation of it can satisfy the demand either.
     pub(super) fn seed(
         &mut self,
         prods: &[ProdId],
         pos: usize,
         ctx: CtxId,
         parent_obs: &Obligations,
+        demand: Option<Type>,
     ) {
         for &prod in prods {
+            if let Some(d) = demand.as_ref()
+                && !self.typing.admits(prod, d)
+            {
+                debug_trace!(
+                    "fusion_parser",
+                    "predict refused nt={} alt={} demand={d}",
+                    self.grammar.nt(prod.0).unwrap_or("<?>"),
+                    prod.1
+                );
+                continue;
+            }
             let parent_obligations = parent_obs.for_seed(prod.1);
             let mut obligations =
                 Obligations::create(&self.grammar, prod, parent_obligations.root().clone());
@@ -121,6 +180,7 @@ impl TypedParser {
                 mctx: ctx,
                 obligations,
                 children: Vec::new(),
+                demand: demand.clone(),
             });
         }
     }
@@ -423,12 +483,12 @@ impl TypedParser {
                 })?;
                 let binding = symbol.binding().map(String::as_str);
 
-                let child_ctx =
+                let (child_ctx, ascribed) =
                     match self
                         .typing
                         .descend(item.prod, binding, item.mctx, &item.obligations)
                     {
-                        Ok(ctx) => ctx,
+                        Ok(pair) => pair,
                         Err(e) => {
                             // An unresolvable setting (e.g. obligation not yet
                             // closed by an earlier sibling) is a soft no-op: the
@@ -469,10 +529,27 @@ impl TypedParser {
                     }
                 }
 
+                // A production with a rule of its own states what it wants of
+                // each bound child; one without a rule has nothing to say, so
+                // its own demand passes through to the child unchanged. That
+                // chain matters: `Expression -> AtomicExpression -> Integer`
+                // has no premise anywhere along it to re-derive a demand from.
+                let child_demand = if self.typing.has_rule(item.prod) {
+                    ascribed.map(canonical_demand)
+                } else {
+                    item.demand.clone()
+                };
+
                 // Seed child productions with stepped obligations for pruning
                 let stepped = item.obligations.step(item.dot, item.prod.1);
                 let prods = stepped.prune(nt, &self.grammar);
-                self.seed(&prods, item.pos, child_ctx, &stepped.at_child(item.dot));
+                self.seed(
+                    &prods,
+                    item.pos,
+                    child_ctx,
+                    &stepped.at_child(item.dot),
+                    child_demand,
+                );
                 Ok(())
             }
         }
@@ -689,7 +766,7 @@ impl TypedParser {
             .productions_at(start)
             .map(|prods| (0..prods.len()).map(|idx| (start, idx)).collect())
             .unwrap_or_default();
-        self.seed(&start_prods, 0, ctx, &Obligations::empty());
+        self.seed(&start_prods, 0, ctx, &Obligations::empty(), None);
 
         // Main loop
         while let Some(task) = self.tables.agenda.pop_front() {

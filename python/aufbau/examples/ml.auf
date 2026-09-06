@@ -27,9 +27,11 @@ Integer(int) ::= /[0-9]+/
 Boolean(bool) ::= 'true' | 'false'
 
 // ===================== Operators =====================
-// `*` is the product connective so arithmetic keeps only `+` and `-`;
+// `*` is also the product connective in types; it is admitted here as
+// multiplication too because the corpus needs it, and type and expression
+// positions are distinct nonterminals so the two uses do not collide.
 // otherwise `?A * ?B` would parse ambiguously as a type.
-IntOp ::= '+' | '-'
+IntOp ::= '+' | '-' | '*' | '/' | 'mod'
 CompOp ::= '=' | '<' | '<=' | '>' | '>='
 
 // ===================== Expressions =====================

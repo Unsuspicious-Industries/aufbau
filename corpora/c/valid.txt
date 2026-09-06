@@ -12,3 +12,10 @@ int* ptr_ok(int* p) { return p; }
 float scale(float x) { return x; }
 int third(int a, int b, int c) { return c; }
 void nothing() { return; }
+# `for` loops, both init forms. The declaring form is what keeps the prefix
+# `for (` completable under an empty context; the assigning form still works
+# when an enclosing declaration supplies the binding.
+int loop_decl(int n) { int s = 0; for (int i = 0; i < n; i = i + 1) { s = s + i; } return s; }
+int loop_assign(int n) { int i = 0; int s = 0; for (i = 0; i < n; i = i + 1) { s = s + i; } return s; }
+void loop_void(int n) { for (int i = 0; i < n; i = i + 1) { return; } }
+int loop_ptr(int* p, int n) { for (int i = 0; i < n; i = i + 1) { n = *p; } return n; }

@@ -198,19 +198,20 @@ impl TypingRuntime {
 
     // ── Parser-facing hooks ───────────────────────────────────────────────────
 
-    /// Context selected before entering the child at the current dot.
+    /// Context selected before entering the child at the current dot, together
+    /// with the demand the parent's premise places on that child, if any.
     pub fn descend(
         &self,
         prod: ProdId,
         binding: Option<&str>,
         ctx: CtxId,
         obligations: &Obligations,
-    ) -> Result<CtxId, TransitionError> {
+    ) -> Result<(CtxId, Option<Type>), TransitionError> {
         let Some(program) = self.program_for_prod(prod) else {
-            return Ok(ctx);
+            return Ok((ctx, None));
         };
         let ctx_val = self.context(ctx).ok_or(TransitionError::Rejected)?;
-        let next = self.domain.descend(
+        let (next, demand) = self.domain.descend(
             program,
             &self.norm,
             binding,
@@ -219,7 +220,23 @@ impl TypingRuntime {
             &self.segs,
             &self.evidence,
         )?;
-        Ok(self.intern_context(next))
+        Ok((self.intern_context(next), demand))
+    }
+
+    /// Does `prod` carry a typing rule of its own? A production that does not
+    /// contributes no conclusion, so it passes a demand through unchanged.
+    #[must_use]
+    pub fn has_rule(&self, prod: ProdId) -> bool {
+        self.program_for_prod(prod).is_some()
+    }
+
+    /// Could a derivation of `prod` meet `demand`? `false` refutes `prod` at
+    /// prediction, before it has consumed anything. A production with no rule
+    /// always admits: its type is its child's, and the child is checked in turn.
+    #[must_use]
+    pub fn admits(&self, prod: ProdId, demand: &Type) -> bool {
+        self.program_for_prod(prod)
+            .is_none_or(|program| self.domain.admits(program, &self.norm, demand))
     }
 
     /// Evaluate the typing rule of a closed or prefix parser item. `None` means

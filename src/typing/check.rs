@@ -89,7 +89,7 @@ fn registers_written_before_read(p: &Program, errs: &mut Vec<String>) {
             Instr::Extend { ty, .. } | Instr::Emit { ty } | Instr::Effect { ty, .. } => {
                 read(*ty, errs);
             }
-            Instr::Member { .. } | Instr::PushScope | Instr::PopScope => {}
+            Instr::Member { .. } | Instr::Fresh { .. } | Instr::PushScope | Instr::PopScope => {}
         }
     }
 }
@@ -169,6 +169,16 @@ fn bindings_declared(
                     continue;
                 }
                 Key::Binding(b) => (b.as_str(), "membership"),
+            },
+            Instr::Fresh { key } => match key {
+                Key::Literal(s) => {
+                    errs.push(format!(
+                        "{}: freshness names ambient key '{s}', but freshness is binding-only",
+                        p.name
+                    ));
+                    continue;
+                }
+                Key::Binding(b) => (b.as_str(), "freshness"),
             },
             Instr::Extend { key, .. } => match key.binding() {
                 Some(b) => (b, "setting"),

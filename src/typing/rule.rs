@@ -25,6 +25,8 @@ pub enum Judgment {
     /// `x ∈ Γ` — `x`'s text is bound in the context. A literal key
     /// (`'return' ∈ Γ`) asks whether the ambient entry exists at all.
     Membership { key: Key },
+    /// `x ∉ Γ` — the binding's complete text is not already in the context.
+    Freshness { key: Key },
     /// `τ₁ = τ₂` — the two type expressions unify.
     Equation { left: TypeExpr, right: TypeExpr },
 }
@@ -89,7 +91,7 @@ impl TypingRule {
                     out.push(left);
                     out.push(right);
                 }
-                Judgment::Membership { .. } => {}
+                Judgment::Membership { .. } | Judgment::Freshness { .. } => {}
             }
         }
         out.extend(self.conclusion.effects.iter().map(|(_, t)| t));
@@ -115,6 +117,9 @@ impl TypingRule {
                     bindings.insert(binding.as_str());
                 }
                 Judgment::Membership { key } => {
+                    bindings.extend(key.binding());
+                }
+                Judgment::Freshness { key } => {
                     bindings.extend(key.binding());
                 }
                 Judgment::Equation { left, right } => {
@@ -218,7 +223,7 @@ impl RuleParser {
         Ok(Conclusion { ty, effects })
     }
 
-    /// Parse a premise: `x ∈ Γ` | `Γ[x:τ]… ⊢ b : σ` | `τ₁ = τ₂`.
+    /// Parse a premise: `x ∈ Γ` | `x ∉ Γ` | `Γ[x:τ]… ⊢ b : σ` | `τ₁ = τ₂`.
     /// Anything else is an error: there is no fourth judgment form.
     pub fn parse_premise(s: &str) -> Result<Premise, String> {
         let s = s.trim();
@@ -234,6 +239,22 @@ impl RuleParser {
                 judgment: Judgment::Membership {
                     key: Key::parse(&var),
                 },
+            });
+        }
+
+        // Freshness: x ∉ Γ
+        if let Some((var, ctx)) = s.split_once('∉') {
+            let var = var.trim().to_string();
+            if var.is_empty() || ctx.trim().is_empty() {
+                return Err(format!("invalid freshness premise: '{s}'"));
+            }
+            let key = Key::parse(&var);
+            if key.literal().is_some() {
+                return Err(format!("freshness must name a binding: '{s}'"));
+            }
+            return Ok(Premise {
+                extensions: Vec::new(),
+                judgment: Judgment::Freshness { key },
             });
         }
 
@@ -265,7 +286,7 @@ impl RuleParser {
         }
 
         Err(format!(
-            "unrecognized premise '{s}': expected 'x ∈ Γ', 'Γ ⊢ b : τ', or 'τ₁ = τ₂'"
+            "unrecognized premise '{s}': expected 'x ∈ Γ', 'x ∉ Γ', 'Γ ⊢ b : τ', or 'τ₁ = τ₂'"
         ))
     }
 
@@ -360,6 +381,7 @@ impl fmt::Display for Judgment {
         match self {
             Judgment::Ascription { binding, ty } => write!(f, "{binding} : {ty}"),
             Judgment::Membership { key } => write!(f, "{key} ∈ Γ"),
+            Judgment::Freshness { key } => write!(f, "{key} ∉ Γ"),
             Judgment::Equation { left, right } => write!(f, "{left} = {right}"),
         }
     }
@@ -492,6 +514,19 @@ mod tests {
             rule.premises[0].judgment,
             Judgment::Equation { .. }
         ));
+    }
+
+    #[test]
+    fn freshness_premise_parses_and_displays() {
+        let premise = RuleParser::parse_premise("x ∉ Γ").unwrap();
+        assert!(matches!(&premise.judgment, Judgment::Freshness { key } if *key == Key::from("x")));
+        assert_eq!(premise.to_string(), "x ∉ Γ");
+    }
+
+    #[test]
+    fn freshness_rejects_literal_keys() {
+        let err = RuleParser::parse_premise("'x' ∉ Γ").unwrap_err();
+        assert!(err.contains("binding"), "got: {err}");
     }
 
     #[test]

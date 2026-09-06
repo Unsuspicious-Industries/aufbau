@@ -10,11 +10,14 @@
 //!   liveness, which is exact: live ⇔ realizable.
 //! - [`Completeness::Inhabited`]: every sort an ascription can constrain has a
 //!   *universal inhabitant* — a closed derivation whose type is a fresh hole,
-//!   inhabiting every demanded type (OCaml's `assert false`). Then any pending
-//!   ascription is dischargeable, so live ⇒ realizable.
+//!   inhabiting every demanded type (OCaml's `assert false`), and every
+//!   freshness binder ranges over an infinite language. A finite Γ cannot
+//!   exhaust such a binder, so every pending premise is dischargeable and live
+//!   ⇒ realizable.
 //! - [`Completeness::Sound`]: neither certificate applies. Pruning is still
-//!   sound, but a live prefix may demand a type the language cannot inhabit
-//!   (the STLC prefix `λf:A→B. f(` with `A`, `B` distinct atoms).
+//!   sound, but a live prefix may demand a type the language cannot inhabit or
+//!   be blocked by a context-sensitive premise (the STLC prefix `λf:A→B. f(`
+//!   with `A`, `B` distinct atoms).
 //!
 //! The certificate is sufficient, not necessary: a `Sound` grammar may in fact
 //! be complete; an `Inhabited` or `Syntactic` one is guaranteed complete.
@@ -25,9 +28,10 @@
 //! - a rule-less alternative of `N` with exactly one nonterminal child `M`
 //!   and no bound terminal (a transparent wrapper) where `universal(M)`;
 //! - an alternative of `N` carrying rule `R` where the conclusion is a bare
-//!   hole (`?A`) or `⊤` with no exported effects, every premise is an
+//!   hole (`?A`) or `⊤` with no exported effects, every premise is either an
 //!   ascription whose subject is bound in this alternative to a universal
-//!   nonterminal, and every other nonterminal child is productive.
+//!   nonterminal or freshness over an infinite binder, and every other
+//!   nonterminal child is productive.
 //!
 //! The base case is an axiom concluding `?A` over derivable syntax. Membership
 //! and equation premises never certify (they reach outside the node); a
@@ -35,8 +39,9 @@
 //! inhabits an atom.
 
 use crate::grammar::{Production, SPG, Symbol};
+use crate::regex::Regex;
 use crate::typing::rule::Judgment;
-use crate::typing::{Atom, TypingRule};
+use crate::typing::{Atom, Key, TypingRule};
 use std::collections::HashSet;
 
 /// The realizability class of a grammar: for which inputs does `live`
@@ -47,9 +52,10 @@ pub enum Completeness {
     Syntactic,
     /// Every ascribed sort has a universal inhabitant: live ⇒ realizable.
     Inhabited,
-    /// Pruning is sound, but a live prefix may be uninhabited at the listed
-    /// sorts (ascription positions with no universal inhabitant).
-    Sound { uninhabited: Vec<String> },
+    /// Pruning is sound, but a live prefix may be unrealizable for one of the
+    /// listed reasons: a sort without a universal inhabitant or a
+    /// context-sensitive premise.
+    Sound { blockers: Vec<String> },
 }
 
 impl Completeness {
@@ -65,12 +71,8 @@ impl std::fmt::Display for Completeness {
         match self {
             Completeness::Syntactic => write!(f, "syntactic"),
             Completeness::Inhabited => write!(f, "inhabited"),
-            Completeness::Sound { uninhabited } => {
-                write!(
-                    f,
-                    "sound (live may be uninhabited at: {})",
-                    uninhabited.join(", ")
-                )
+            Completeness::Sound { blockers } => {
+                write!(f, "sound (live may be unrealizable because: {})", blockers.join(", "))
             }
         }
     }
@@ -82,16 +84,23 @@ pub fn completeness(g: &SPG) -> Completeness {
     if g.rules.is_empty() {
         return Completeness::Syntactic;
     }
-    let universal = universal_sorts(g);
-    let mut uninhabited: Vec<String> = ascribed_sorts(g)
+    let infinite = infinite_sorts(g);
+    let universal = universal_sorts_with_infinite(g, &infinite);
+    let mut blockers: Vec<String> = ascribed_sorts(g)
         .into_iter()
         .filter(|s| !universal.contains(s))
         .collect();
-    uninhabited.sort();
-    if uninhabited.is_empty() {
+    if has_finite_freshness_binder(g, &infinite) {
+        // Γ can exhaust a finite binder language. An infinite binder always
+        // has a fresh spelling because Γ itself is finite.
+        blockers.push("freshness".into());
+    }
+    blockers.sort();
+    blockers.dedup();
+    if blockers.is_empty() {
         Completeness::Inhabited
     } else {
-        Completeness::Sound { uninhabited }
+        Completeness::Sound { blockers }
     }
 }
 
@@ -112,6 +121,10 @@ pub fn productive_sorts(g: &SPG) -> HashSet<String> {
 /// module docs.
 #[must_use]
 pub fn universal_sorts(g: &SPG) -> HashSet<String> {
+    universal_sorts_with_infinite(g, &infinite_sorts(g))
+}
+
+fn universal_sorts_with_infinite(g: &SPG, infinite: &HashSet<String>) -> HashSet<String> {
     let productive = productive_sorts(g);
     let mut universal = HashSet::new();
     loop {
@@ -129,7 +142,7 @@ pub fn universal_sorts(g: &SPG) -> HashSet<String> {
                             |s| matches!(s, Symbol::Nonterminal { name, .. } if universal.contains(name)),
                         )
                 }
-                Some(r) => universal_via(r, p, &universal, &productive),
+                Some(r) => universal_via(r, p, &universal, &productive, infinite),
             });
             if ok {
                 universal.insert(nt.clone());
@@ -148,6 +161,7 @@ fn universal_via(
     p: &Production,
     universal: &HashSet<String>,
     productive: &HashSet<String>,
+    infinite: &HashSet<String>,
 ) -> bool {
     // The conclusion must be a bare hole or ⊤ — anything structural pins the
     // shape — and must export nothing.
@@ -171,6 +185,7 @@ fn universal_via(
     };
     let premises_ok = r.premises.iter().all(|pr| match &pr.judgment {
         Judgment::Ascription { binding, .. } => subject_universal(binding),
+        Judgment::Freshness { key } => freshness_binder_is_infinite(p, key, infinite),
         Judgment::Membership { .. } | Judgment::Equation { .. } => false,
     });
     if !premises_ok {
@@ -180,6 +195,81 @@ fn universal_via(
     p.rhs.iter().all(|s| match s {
         Symbol::Terminal { .. } => true,
         Symbol::Nonterminal { name, .. } => universal.contains(name) || productive.contains(name),
+    })
+}
+
+/// Sorts whose language is provably infinite. This sufficient fixpoint covers
+/// direct unbounded terminals and their productive wrappers.
+fn infinite_sorts(g: &SPG) -> HashSet<String> {
+    let productive = productive_sorts(g);
+    fixpoint(g, |prod, infinite| {
+        prod.rhs.iter().all(|s| match s {
+            Symbol::Terminal { .. } => true,
+            Symbol::Nonterminal { name, .. } => productive.contains(name),
+        }) && prod.rhs.iter().any(|s| match s {
+            Symbol::Terminal { regex, .. } => regex_is_infinite(regex),
+            Symbol::Nonterminal { name, .. } => infinite.contains(name),
+        })
+    })
+}
+
+fn regex_is_infinite(regex: &Regex) -> bool {
+    match regex {
+        Regex::Empty | Regex::Epsilon | Regex::Char(_) | Regex::Range(_, _) => false,
+        Regex::Concat(left, right) => {
+            (regex_is_infinite(left) && !right.is_empty())
+                || (regex_is_infinite(right) && !left.is_empty())
+        }
+        Regex::Union(left, right) => regex_is_infinite(left) || regex_is_infinite(right),
+        Regex::Star(inner) => regex_has_nonempty_match(inner),
+    }
+}
+
+fn regex_has_nonempty_match(regex: &Regex) -> bool {
+    match regex {
+        Regex::Empty | Regex::Epsilon => false,
+        Regex::Char(_) | Regex::Range(_, _) => true,
+        Regex::Concat(left, right) => {
+            (regex_has_nonempty_match(left) && !right.is_empty())
+                || (regex_has_nonempty_match(right) && !left.is_empty())
+        }
+        Regex::Union(left, right) => {
+            regex_has_nonempty_match(left) || regex_has_nonempty_match(right)
+        }
+        Regex::Star(inner) => regex_has_nonempty_match(inner),
+    }
+}
+
+fn freshness_binder_is_infinite(
+    p: &Production,
+    key: &Key,
+    infinite: &HashSet<String>,
+) -> bool {
+    let Key::Binding(binding) = key else {
+        return false;
+    };
+    p.rhs.iter().any(|s| match s {
+        Symbol::Terminal { regex, binding: Some(name) } => {
+            name == binding && regex_is_infinite(regex)
+        }
+        Symbol::Nonterminal { name, binding: Some(bound) } => {
+            bound == binding && infinite.contains(name)
+        }
+        _ => false,
+    })
+}
+
+fn has_finite_freshness_binder(g: &SPG, infinite: &HashSet<String>) -> bool {
+    g.productions.iter().any(|(nt, prods)| {
+        let Some(rule) = g.nt_rule(nt).and_then(|name| g.rules.get(name)) else {
+            return false;
+        };
+        prods.iter().any(|p| {
+            rule.premises.iter().any(|premise| {
+                matches!(&premise.judgment, Judgment::Freshness { key }
+                    if !freshness_binder_is_infinite(p, key, infinite))
+            })
+        })
     })
 }
 
@@ -317,5 +407,42 @@ mod tests {
             assert!(u.contains(nt), "{nt} should be universal: {u:?}");
         }
         assert_eq!(completeness(&g), Completeness::Inhabited);
+    }
+
+    #[test]
+    fn infinite_freshness_preserves_the_inhabited_certificate() {
+        let g = SPG::load(
+            "Identifier ::= /[a-z]+/\n\
+             Diverge(d) ::= 'loop' Identifier[x]\n\
+             Expression ::= Diverge\n\
+             \n\
+             x ∉ Γ\n\
+             ----------- (d)\n\
+             ?A\n",
+        )
+        .unwrap();
+        assert_eq!(completeness(&g), Completeness::Inhabited);
+        assert!(universal_sorts(&g).contains("Diverge"));
+    }
+
+    #[test]
+    fn finite_freshness_blocks_the_inhabited_certificate() {
+        let g = SPG::load(
+            "Identifier ::= 'taken'\n\
+             Diverge(d) ::= 'loop' Identifier[x]\n\
+             Expression ::= Diverge\n\
+             \n\
+             x ∉ Γ\n\
+             ----------- (d)\n\
+             ?A\n",
+        )
+        .unwrap();
+        assert_eq!(
+            completeness(&g),
+            Completeness::Sound {
+                blockers: vec!["freshness".into()]
+            }
+        );
+        assert!(!universal_sorts(&g).contains("Diverge"));
     }
 }

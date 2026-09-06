@@ -165,4 +165,10 @@ impl Synthesizer {
             Err(err) => Err(format!("try_feed failed: {err}")),
         }
     }
+
+    /// Test a complete candidate set without changing the synthesizer state.
+    /// This is the engine-side operation used by constrained decoders.
+    pub fn mask(&mut self, candidates: &[String]) -> Vec<bool> {
+        candidates.iter().map(|token| self.try_feed(token).is_ok()).collect()
+    }
 }

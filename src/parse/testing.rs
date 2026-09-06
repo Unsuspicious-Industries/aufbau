@@ -14,7 +14,7 @@ impl TypedParser {
             .productions_at(nt)
             .map(|p| (0..p.len()).map(|i| (nt, i)).collect())
             .unwrap_or_default();
-        self.seed(&prods, pos, ctx, &Obligations::empty());
+        self.seed(&prods, pos, ctx, &Obligations::empty(), None);
     }
 
     pub(crate) fn process_for_test(&mut self, item: Item) -> Result<(), PrefixError> {

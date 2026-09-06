@@ -401,6 +401,33 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(16))]
 
         #[test]
+        fn renderer_parse_unify_round_trips_type_source(
+            source in prop::sample::select(vec![
+                "PathSet".to_string(),
+                "IoError".to_string(),
+                "Result [ PathSet , IoError ]".to_string(),
+                "Result [ Result [ PathSet , IoError ] , PathSet ]".to_string(),
+            ]),
+        ) {
+            let grammar = SPG::load(
+                "Type* ::= Atom | ResultType\n\
+                 Atom ::= 'PathSet' | 'IoError'\n\
+                 ResultType(result) ::= 'Result' '[' Type ',' Type ']'\n",
+            ).unwrap();
+            let parsed = Type::parse(&grammar, &source).unwrap();
+            let rendered = render(&grammar, &parsed);
+            let reparsed = Type::parse(&grammar, &rendered).unwrap();
+            let mut subst = crate::typing::Subst::new();
+            prop_assert!(crate::typing::unify_modulo(
+                &crate::typing::loader::normalizer(&grammar),
+                &parsed,
+                &reparsed,
+                &mut subst,
+                true,
+            ));
+        }
+
+        #[test]
         fn context_round_trips_binding_sets(
             bindings in prop::collection::hash_map("[a-z][a-z0-9_]{0,5}", type_source(), 0..4),
         ) {

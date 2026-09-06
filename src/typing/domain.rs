@@ -260,6 +260,19 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
     /// Success binds holes into `subst` and is `Satisfied`; a failure is
     /// `Contradiction` only when stable under instantiation
     /// ([`failure_is_stable`]) and the node can no longer grow.
+    /// Ascribe `actual` against `expected`.
+    ///
+    /// On failure the question is whether the failure is *stable*: does it
+    /// survive every way the input can be extended? Two things can change.
+    /// Holes in either term can be instantiated — and unification failure is
+    /// preserved under instantiation, so that is not a reason to wait. Or the
+    /// actual term can be *replaced* wholesale, which is what `provisional`
+    /// marks; there we must wait.
+    ///
+    /// Gating on the child's mere openness instead — which is what this did —
+    /// defers every refutation to production completion, and is why
+    /// `let x : Bool = 1` stayed live in `fun.auf` even though the integer
+    /// rule's conclusion is the constant `Int` whatever digits follow.
     fn ascribe(
         &self,
         norm: &Normalizer,
@@ -475,6 +488,40 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         }
     }
 
+    /// Check a binder's complete spelling against Γ. A partial spelling that
+    /// could still become an existing name remains live rather than dead.
+    fn run_fresh(
+        &self,
+        obligations: &Obligations,
+        ctx: &Context,
+        key: &Key,
+        segs: &[Segment],
+    ) -> PremiseStatus {
+        let Key::Binding(binding) = key else {
+            return PremiseStatus::Contradiction;
+        };
+        let Some(lex) = Self::ob_resolve(obligations, binding) else {
+            return PremiseStatus::Unknown;
+        };
+        let text = lex.value(segs).unwrap_or_default();
+        if text.is_empty() {
+            return PremiseStatus::Unknown;
+        }
+        if ctx.lookup(&text).is_some() {
+            // A complete regex match can still be extensible at EOF. Keep that
+            // duplicate live: more identifier text may make it fresh.
+            return if lex.open {
+                PremiseStatus::Unknown
+            } else {
+                PremiseStatus::Contradiction
+            };
+        }
+        if !lex.complete && ctx.lookup_starts_with(&text).is_some() {
+            return PremiseStatus::Unknown;
+        }
+        PremiseStatus::Satisfied
+    }
+
     /// Execute a compiled rule program: a flat fold over the instruction stream
     /// threading a substitution and a stack of premise-local contexts. The control
     /// flow the tree-walk did implicitly (premise scoping) is the `Push`/`Pop`
@@ -618,6 +665,15 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                     );
                     combine!(st);
                 }
+                Instr::Fresh { key } => {
+                    let st = self.run_fresh(obligations, Self::top(&ctxs), key, segs);
+                    step!(
+                        pc,
+                        instr,
+                        format!("{st:?} (key {})", Self::key_text(obligations, key, segs))
+                    );
+                    combine!(st);
+                }
                 Instr::PushScope => {
                     Self::tick(&self.stats.push_scope);
                     let t = Self::top(&ctxs).clone();
@@ -681,6 +737,8 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         }
 
         let eqs = Self::export(&subst, run);
+
+
         let Some(ty) = output else {
             return RuleResult::Partial(Evidence {
                 term: Term::top(),
@@ -728,11 +786,12 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
         obligations: &Obligations,
         segs: &[Segment],
         evidence: &EvidenceStore<Evidence>,
-    ) -> Result<Context, TransitionError> {
+    ) -> Result<(Context, Option<Term>), TransitionError> {
         let Some(b) = binding else {
-            return Ok(ctx.clone());
+            return Ok((ctx.clone(), None));
         };
         let Some(range) = program.splices.get(b).cloned() else {
+            // no splice: nothing to apply, and no premise to read a demand from
             crate::trace!(
                 self.trace,
                 crate::typing::Step::Descend {
@@ -741,9 +800,10 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                     outcome: "no splice, context unchanged".to_string(),
                 }
             );
-            return Ok(ctx.clone());
+            return Ok((ctx.clone(), None));
         };
         let run = rid();
+        let mut demand: Option<Term> = None;
         let mut regs: Vec<Option<Term>> = Vec::new();
         let mut subst = Subst::new();
         let _ = self.merge_eqs(norm, evidence, obligations, &mut subst);
@@ -772,6 +832,7 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
             }
         }
         // Apply `b`'s own setting, now that the substitution is known.
+        let tail = range.end;
         let mut out = ctx.clone();
         for instr in &program.instrs[range] {
             match instr {
@@ -817,10 +878,89 @@ impl<const TRACK: bool> TypingDomain<TRACK> {
                     );
                     out = out.shadow_at(&slot, applied);
                 }
+                Instr::Fresh { key } => {
+                    if self.run_fresh(obligations, &out, key, segs)
+                        == PremiseStatus::Contradiction
+                    {
+                        return Err(TransitionError::Rejected);
+                    }
+                }
                 _ => {}
             }
         }
-        Ok(out)
+
+        // The premise that ascribes `b` says what this occurrence is *for*, and
+        // under (F) it is fixed before the occurrence is entered -- which is
+        // what makes it usable at prediction. It sits just past the splice: the
+        // splice is the premise's settings, and the check itself is deliberately
+        // not part of the descent, so read it here rather than widening the
+        // splice and changing what `descend` applies to the context.
+        for instr in &program.instrs[tail..] {
+            match instr {
+                Instr::Eval { dst, expr } => {
+                    self.eval_to_reg(
+                        &mut regs, *dst, expr, evidence, obligations, &out, segs, run,
+                    );
+                }
+                Instr::Ascribe { binding, expected } if binding == b => {
+                    demand = Self::reg(&regs, *expected).map(|t| apply(&t, &subst));
+                    break;
+                }
+                _ => {}
+            }
+        }
+        Ok((out, demand))
+    }
+
+    /// The conclusion of `program` as a *pattern*: the rule's own structure,
+    /// with every part that depends on the input -- a binding reference, a
+    /// context lookup -- standing as its own fresh hole.
+    ///
+    /// Distinct holes, not one shared hole: forcing two unresolved positions
+    /// equal would be a stronger claim than the rule makes, and could refute a
+    /// production the input can still satisfy.
+    #[must_use]
+    pub fn conclusion_pattern(program: &Program) -> Option<Term> {
+        let Some(Instr::Emit { ty }) = program.instrs.last() else {
+            return None;
+        };
+        let expr = program.instrs.iter().find_map(|i| match i {
+            Instr::Eval { dst, expr } if dst == ty => Some(expr),
+            _ => None,
+        })?;
+        let run = rid();
+        let mut next = 0u32;
+        Some(Self::skeleton(expr, run, &mut next))
+    }
+
+    fn skeleton(ty: &TyExpr, run: u64, next: &mut u32) -> Term {
+        match ty {
+            TyExpr::Top => Term::top(),
+            TyExpr::Bot => Term::bottom(),
+            TyExpr::Lit(s) => Term::Leaf(Pattern::raw(s)),
+            TyExpr::Var(n) => Term::Var(format!("{n}#{run}")),
+            TyExpr::Con(label, kids) => Term::Con(
+                label.clone(),
+                kids.iter().map(|k| Self::skeleton(k, run, next)).collect(),
+            ),
+            // Input-dependent, so unconstrained at prediction.
+            TyExpr::Ref(_) | TyExpr::Ctx(_) | TyExpr::Inst(_) => {
+                *next += 1;
+                Term::Var(format!("pat{next}#{run}"))
+            }
+        }
+    }
+
+    /// Could a derivation of `program`'s production meet `demand`? A `false`
+    /// answer refutes the production before it consumes anything.
+    #[must_use]
+    pub fn admits(&self, program: &Program, norm: &Normalizer, demand: &Term) -> bool {
+        let Some(pattern) = Self::conclusion_pattern(program) else {
+            return true;
+        };
+        let mut subst = Subst::new();
+        unify_modulo(norm, &pattern, demand, &mut subst, true)
+            || !failure_is_stable(norm, &pattern, demand)
     }
 
     /// Per-node verdict, evidence, and exported effect.

@@ -103,6 +103,26 @@ pub fn check(g: &SPG) -> Result<(), String> {
 
     for (rule, program) in &programs {
         let bindings = g.rule_bindings(&rule.name);
+        for premise in &rule.premises {
+            if let crate::typing::Judgment::Freshness { key: crate::typing::Key::Binding(name) } = &premise.judgment {
+                let introduced_everywhere = g
+                    .nonterminal_rules
+                    .iter()
+                    .filter(|(_, label)| *label == &rule.name)
+                    .flat_map(|(nt, _)| g.productions.get(nt).into_iter().flatten())
+                    .all(|production| {
+                        production.rhs.iter().any(|symbol| {
+                            symbol.binding().is_some_and(|binding| binding == name)
+                        })
+                    });
+                if !introduced_everywhere {
+                    return Err(format!(
+                        "rule '{}': freshness premise names '{}' outside its binder position",
+                        rule.name, name
+                    ));
+                }
+            }
+        }
         for te in rule.type_exprs() {
             crate::typing::TyExpr::build(g, te, &bindings)
                 .map_err(|e| format!("rule '{}': {e}", rule.name))?;

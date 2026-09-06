@@ -100,6 +100,24 @@ proptest! {
         );
         prop_assert!(!downgrade, "verdict downgrade: {:?} → {:?}", ve, vw);
     }
+
+    #[test]
+    fn duplicate_fresh_names_are_dead(name in "[a-z]{1,8}") {
+        let rule = parse_rule("x ∉ Γ", "'Unit'", "fresh");
+        let program = compile(&rule, &trivial_trees(&rule));
+        let (domain, evidence) = setup();
+        let ctx = Context::new().shadow(name.clone(), Type::raw("Int"));
+        let obs = Obligations::new(TreePath::new(), vec![Obligation {
+            name: "x".into(), paths: vec![],
+            value: Some(Lexeme::new(Span { start: 0, end: 1 }, true, false)),
+            evidence: None,
+        }]);
+        let segs = vec![crate::grammar::Segment::from_str(&name, 0, 1)];
+        let (verdict, _, _) = domain.finalize(
+            &program, &Normalizer::new(), &ctx, &obs, &segs, NodeStatus::Exact, &evidence,
+        );
+        prop_assert_eq!(verdict, Verdict::Lost);
+    }
 }
 
 // ── App rule: holes capture across premises, no arrow construct ─────────────
@@ -196,4 +214,58 @@ fn context_ext_accepts_open_prefix() {
     );
     assert_eq!(v, Verdict::Satisfied, "open prefix 'fo' should match 'foo'");
     assert_eq!(ev.term, Type::raw("Int"));
+}
+
+#[test]
+fn freshness_accepts_new_name_and_rejects_rebinding() {
+    let rule = parse_rule("x ∉ Γ", "'Unit'", "fresh");
+    let program = compile(&rule, &trivial_trees(&rule));
+    let (domain, evidence) = setup();
+    let mut ctx = Context::new();
+    ctx.add("files".into(), Type::raw("Int"));
+
+    let make_obs = |complete: bool| {
+        Obligations::new(
+            TreePath::new(),
+            vec![Obligation {
+                name: "x".into(),
+                paths: vec![],
+                value: Some(Lexeme::new(Span { start: 0, end: 1 }, complete, !complete)),
+                evidence: None,
+            }],
+        )
+    };
+    let segs = vec![crate::grammar::Segment::from_str("files", 0, 1)];
+    let (rebound, _, _) = domain.finalize(
+        &program, &Normalizer::new(), &ctx, &make_obs(true), &segs, NodeStatus::Exact, &evidence,
+    );
+    assert_eq!(rebound, Verdict::Lost);
+
+    let fresh_segs = vec![crate::grammar::Segment::from_str("other", 0, 1)];
+    let (fresh, _, _) = domain.finalize(
+        &program, &Normalizer::new(), &ctx, &make_obs(true), &fresh_segs, NodeStatus::Exact, &evidence,
+    );
+    assert_eq!(fresh, Verdict::Satisfied);
+}
+
+#[test]
+fn freshness_keeps_partial_bound_name_live() {
+    let rule = parse_rule("x ∉ Γ", "'Unit'", "fresh");
+    let program = compile(&rule, &trivial_trees(&rule));
+    let (domain, evidence) = setup();
+    let ctx = Context::new().shadow("files".into(), Type::raw("Int"));
+    let obs = Obligations::new(
+        TreePath::new(),
+        vec![Obligation {
+            name: "x".into(),
+            paths: vec![],
+            value: Some(Lexeme::new(Span { start: 0, end: 1 }, false, true)),
+            evidence: None,
+        }],
+    );
+    let segs = vec![crate::grammar::Segment::from_str("fil", 0, 1)];
+    let (verdict, _, _) = domain.finalize(
+        &program, &Normalizer::new(), &ctx, &obs, &segs, NodeStatus::Extensible, &evidence,
+    );
+    assert_eq!(verdict, Verdict::Live);
 }

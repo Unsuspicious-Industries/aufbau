@@ -166,7 +166,7 @@ for:
   splice step = [4..4]
 
 # c.auf
-for_init:
+for_init_assign:
   member name
   r0 = Γ(name)
   ascribe value : r0
@@ -174,6 +174,16 @@ for_init:
   emit r1
   splice name = [0..0]
   splice value = [1..1]
+
+# c.auf
+for_init_decl:
+  r0 = τ
+  ascribe value : r0
+  r1 = τ
+  effect name := r1
+  r2 = 'void'
+  emit r2
+  splice value = [0..0]
 
 # c.auf
 for_step:

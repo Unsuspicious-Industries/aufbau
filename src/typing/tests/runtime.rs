@@ -81,7 +81,7 @@ fn descend_extends_context_with_constant_type() {
         )
         .expect("setting extension should resolve");
     assert!(
-        next.lookup("x").is_some(),
+        next.0.lookup("x").is_some(),
         "expected 'x' bound to 'A' in extended context, got {:?}",
         next
     );

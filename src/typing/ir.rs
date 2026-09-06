@@ -42,6 +42,8 @@ pub enum Instr {
     /// `member k` — context membership of key `k` (a binding's value, or a
     /// fixed name).
     Member { key: Key },
+    /// `fresh k` — the complete binding name must not already be in Γ.
+    Fresh { key: Key },
     /// Begin a premise-local context scope (a setting extension that must not leak).
     PushScope,
     /// End the innermost context scope.
@@ -171,6 +173,13 @@ impl Compiler<'_> {
                         .insert(b.to_string(), setting_start..member_start);
                 }
             }
+            Judgment::Freshness { key } => {
+                let start = self.instrs.len();
+                self.instrs.push(Instr::Fresh { key: key.clone() });
+                if let Some(b) = key.binding() {
+                    self.splices.insert(b.to_string(), setting_start..start);
+                }
+            }
             Judgment::Equation { left, right } => {
                 let l = self.eval(left);
                 let r = self.eval(right);
@@ -203,6 +212,7 @@ impl fmt::Display for Instr {
             Instr::Ascribe { binding, expected } => write!(f, "ascribe {binding} : r{expected}"),
             Instr::Equate { left, right } => write!(f, "equate r{left} = r{right}"),
             Instr::Member { key } => write!(f, "member {key}"),
+            Instr::Fresh { key } => write!(f, "fresh {key}"),
             Instr::PushScope => write!(f, "push_scope"),
             Instr::PopScope => write!(f, "pop_scope"),
             Instr::Extend { key, ty } => write!(f, "extend {key} := r{ty}"),

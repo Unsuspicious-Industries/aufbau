@@ -115,16 +115,17 @@ impl PyGrammar {
         self.inner.rewrites.clone()
     }
 
-    /// The realizability class of the grammar, as `(kind, uninhabited)`:
+    /// The realizability class of the grammar, as `(kind, blockers)`:
     /// `("syntactic", [])` — no typing rules, live ⇔ realizable;
-    /// `("inhabited", [])` — every ascribed sort has a universal inhabitant,
-    /// live ⇒ realizable; `("sound", sorts)` — pruning is sound, but a live
-    /// prefix may be uninhabited at the listed sorts.
+    /// `("inhabited", [])` — every required sort has a universal inhabitant and
+    /// no freshness premise can block all completions; `("sound", blockers)` —
+    /// pruning is sound, but a
+    /// live prefix may be unrealizable for a listed reason.
     fn completeness(&self) -> (String, Vec<String>) {
         match crate::typing::completeness(&self.inner) {
             crate::typing::Completeness::Syntactic => ("syntactic".into(), vec![]),
             crate::typing::Completeness::Inhabited => ("inhabited".into(), vec![]),
-            crate::typing::Completeness::Sound { uninhabited } => ("sound".into(), uninhabited),
+            crate::typing::Completeness::Sound { blockers } => ("sound".into(), blockers),
         }
     }
 
