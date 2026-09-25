@@ -33,12 +33,20 @@ everything in all three sections below.
 
 ### Known failing
 
-`validation::parseable::verdicts::no_false_prunes` fails on four ml prefixes
-that are completable and are rejected, which contradicts the unconditional
-soundness of `dead`. The bug predates this release: the same four fail at
-0.5.1. It is documented in `PLAN.md` W1a with the failing list as its
-specification. A consumer should know that a live prefix can be pruned in a
-grammar with type-directed list construction.
+None. **A previous revision of this entry reported a soundness defect that does
+not exist**, and it is corrected here because it was consumer-facing advice:
+readers were told "a live prefix can be pruned in a grammar with type-directed
+list construction". That is not true and was never true.
+
+`validation::parseable::verdicts::no_false_prunes` did fail, but on four `ml`
+prefixes written against a start symbol the grammar had not had since
+2026-08-31 — `ml.auf` gained a `Program`/`Define` top level, and all four are
+bare expressions, so all four were *correctly* dead. At the real start symbol
+every one is `live`. Safe pruning holds; `dead` is unconditionally sound.
+
+Each case in that list now carries a witness that must type, so an
+uncompletable prefix can no longer be mistaken for a pruned live one. See
+`PLAN.md` W1a. The suite is 384 passed, 0 failed.
 
 ## 0.5.0 — Python term evidence and freshness-aware completion
 

@@ -36,7 +36,7 @@ not a feature.
   - `validation::corpus::tests::valid_programs_type`
   - `validation::parseable::ml::valid_expressions_ml`, `::valid_programs_ml`
   - `validation::parseable::verdicts::no_false_prunes`, which is new only
-    because the test is new; the bug it names is older. See W1a.
+    because the test is new; what it named was never a bug. See W1a.
 - `SPG.diagnostics()` landed: five checks, so `A ::= B` with `B` undefined is no
   longer accepted in silence.
 - **~79% of the stack's measured complexity is aufbau**, and it has never had a
@@ -131,32 +131,55 @@ the tree does now, and the number should not be quoted again without a re-run.
 Motivation is real: without it, a session binding can silently shadow an earlier
 one. That is a genuine gap. It does not license landing the fix unexamined.
 
-### W1a — the false prune. **This is the one that matters.**
+### W1a — the false prune: **there was none.** Closed 2026-09-25.
 
-`dead` being unconditionally sound is section 1's central claim, and it does not
-currently hold. `validation::parseable::verdicts::no_false_prunes` names four ml
-prefixes that are completable and are rejected:
+`no_false_prunes` failed from the day it was written, and was read as four
+completable `ml` prefixes being rejected — a violation of section 1's central
+claim that `dead` is unconditionally sound. **That reading was wrong, and the
+claim holds.**
+
+The four prefixes were written against a start symbol the grammar no longer
+has. On 2026-08-31 `ml.auf` gained a `Program`/`Define` top level, so a program
+is a list of structure items `let name (param : T) : T = body`. Every recorded
+prefix is a bare expression:
 
 ```
-let f : int = (
-1 + (
-let xs : int list = 1
-let rec inc : ... -> match xs with [] -> [] | h :: t -> (h +
+let f : int = (             a program must begin `let <name> (`; dies at `:`
+1 + (                       a program must begin `let`
+let xs : int list = 1       as the first
+let rec inc : ...           `Define` has no `rec`
 ```
 
-All four have one shape: a demand is refuted against a node that is still open,
-and a longer node fills the same obligation at a different type. `1` concludes
-`int`; `1 :: []` concludes `int list`. Refuting at `1` discards the reading the
-input was heading for.
+All four are therefore **correctly** dead. Rewritten at the real start symbol,
+every property the list meant to assert holds and every verdict is `live`:
 
-Measured 2026-09-06, and older than the freshness work: the same four fail with
-this test file compiled against the previous HEAD.
+```
+let solve (xs : int list) : int = (             -> live
+let solve (xs : int list) : int = 1 + (         -> live
+let solve (xs : int list) : int list = 1        -> live
+let inc (xs : int list) : int list =
+    match xs with [ ] -> [ ] | h :: t -> (h +   -> live
+```
 
-For a constrained decoder this is worse than a wrong verdict. A false prune
-makes a valid program undecodable, and it presents as the model being unable to
-write the program rather than as an engine fault, which is the single hardest
-class of bug to attribute from the outside. `MUST_STAY_LIVE` is the
-specification for the fix.
+The reasoning in the old entry was sound in the abstract — refuting a demand
+against a still-open node *is* unsound, and `MUST_STAY_LIVE` remains the
+specification protecting against a future eager-refutation optimisation. What
+was never checked is whether the engine actually did that. It did not.
+
+**What changed so this cannot recur.** Every `MUST_STAY_LIVE` case now carries a
+witness, and the witness is checked: it must extend its prefix and must type.
+"Genuinely completable" was an assertion nobody verified, which is exactly how
+uncompletable data spent three weeks impersonating unsoundness. A case whose
+witness does not type now fails saying *fix the case, not the engine*.
+
+Four sibling failures had the same cause and are also closed: the `ml`
+expression suites now parse at `Expression`, `corpora/ml` declares its
+nonterminal in a `start` file, and `ir.golden` had predated the `define` rule.
+The suite is 384 passed, 0 failed.
+
+Still open, and genuinely: `ocaml/lang_ml.ml` cannot read the corpus `start`
+file, because the OCaml FFI exposes no start override on a loaded grammar. Its
+ML certification carries the breakage the Rust side has shed.
 
 ### W2 — D4: vocabulary-wide masking
 
