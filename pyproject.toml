@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "aufbau-rs"
 dynamic = ["version"]
 description = "Python bindings for the aufbau typed feed engine"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 dev = ["ipykernel", "notebook"]
