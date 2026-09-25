@@ -520,6 +520,20 @@ cons:
   splice tail = [2..2]
 
 # ml.auf
+define:
+  push_scope
+    r0 = τ
+    extend param := r0
+    r1 = ret
+    ascribe body : r1
+  pop_scope
+  r2 = FunctionType(τ, ret)
+  effect name := r2
+  r3 = ⊤
+  emit r3
+  splice body = [1..3]
+
+# ml.auf
 diverge:
   r0 = ?A
   emit r0

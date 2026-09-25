@@ -17,6 +17,31 @@ fn ml_grammar() -> SPG {
     load_example_grammar("ml")
 }
 
+/// `ml.auf` with `Expression` as the start symbol.
+///
+/// The grammar's own start is `Program`, which is a list of `Define` structure
+/// items (`let name (p : T) : T = body`) — that is what constrained generation
+/// targets, because the grader compiles the text and calls `solve` from a driver
+/// appended after it, so a program has to bind a name that outlives its own
+/// right-hand side.
+///
+/// Everything in this module below, though, is an *expression*: `1 < 2`, `[]`,
+/// `fun (x : int) -> x`, `let a : int = 5 in a`. Those are the units the typing
+/// rules are about, and they are worth testing as units. Against the `Program`
+/// start every one of them is correctly rejected at its second token, which is
+/// exactly what happened: when the top-level section was added these suites
+/// began failing wholesale, and the `invalid_*` suites kept passing *vacuously*
+/// — their inputs were still rejected, but for the wrong reason, so they proved
+/// nothing about the type system.
+///
+/// See [`valid_structure_items_cases`] for the `Program` start.
+#[cfg(test)]
+fn ml_expression_grammar() -> SPG {
+    let mut g = load_example_grammar("ml");
+    g.with_start("Expression");
+    g
+}
+
 #[must_use]
 pub fn valid_expressions_cases() -> Vec<ParseTestCase> {
     vec![
@@ -82,7 +107,7 @@ pub fn invalid_expressions_cases() -> Vec<ParseTestCase> {
 
 #[test]
 fn valid_expressions_ml() {
-    let mut grammar = ml_grammar();
+    let mut grammar = ml_expression_grammar();
     let cases = valid_expressions_cases();
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
@@ -90,7 +115,7 @@ fn valid_expressions_ml() {
 
 #[test]
 fn invalid_expressions_ml() {
-    let mut grammar = ml_grammar();
+    let mut grammar = ml_expression_grammar();
     let cases = invalid_expressions_cases();
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
@@ -164,7 +189,9 @@ mod known_limitations {
     use crate::typing::TypingSynth;
 
     fn type_checks(s: &str) -> bool {
-        let mut synth = TypingSynth::new(super::ml_grammar(), s);
+        // The expression start, for the reason `ml_expression_grammar` gives:
+        // every string below is an expression, not a list of structure items.
+        let mut synth = TypingSynth::new(super::ml_expression_grammar(), s);
         synth.ast().is_ok_and(|a| a.is_complete())
     }
 
@@ -199,7 +226,7 @@ mod known_limitations {
 
 #[test]
 fn valid_programs_ml() {
-    let mut grammar = ml_grammar();
+    let mut grammar = ml_expression_grammar();
     let cases = valid_programs_cases();
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
@@ -207,8 +234,87 @@ fn valid_programs_ml() {
 
 #[test]
 fn invalid_programs_ml() {
-    let mut grammar = ml_grammar();
+    let mut grammar = ml_expression_grammar();
     let cases = invalid_programs_cases();
+    let (res, _) = run_parse_batch(&mut grammar, &cases);
+    assert_eq!(res.failed, 0, "{}", res.format_failures());
+}
+
+/// Structure items at the grammar's *own* start symbol, `Program`.
+///
+/// Everything else in this module is an expression, parsed at `Expression` (see
+/// [`ml_expression_grammar`]). Nothing covered the `Program` start at all, which
+/// is the one constrained generation actually targets -- so the form a generated
+/// ML program has to take was the least tested thing in the grammar. These close
+/// that gap.
+#[must_use]
+pub fn valid_structure_items_cases() -> Vec<ParseTestCase> {
+    vec![
+        ParseTestCase::valid(
+            "solve over a list",
+            "let solve (xs : int list) : int = match xs with [ ] -> 0 | h :: t -> h",
+        ),
+        ParseTestCase::valid(
+            "returns a list",
+            "let solve (xs : int list) : int list = 1 :: xs",
+        ),
+        ParseTestCase::valid(
+            "bool result",
+            "let solve (xs : int list) : bool = match xs with [ ] -> true | h :: t -> false",
+        ),
+        // A later item sees the ones before it, which is what `ProgramList` is for.
+        ParseTestCase::valid(
+            "two items, the second sees the first",
+            "let one (n : int) : int = 1 let solve (xs : int list) : int = one(0)",
+        ),
+        // `let rec` remains available *inside* a body, which is where recursion lives.
+        ParseTestCase::valid(
+            "letrec inside a define",
+            "let solve (xs : int list) : int = let rec len : int list -> int = fun (ys : int list) -> match ys with [ ] -> 0 | h :: t -> 1 + len(t) in len(xs)",
+        ),
+    ]
+}
+
+/// Structure items that must be rejected at the `Program` start.
+#[must_use]
+pub fn invalid_structure_items_cases() -> Vec<ParseTestCase> {
+    vec![
+        // The whole reason the top level exists: a bare term binds no name, so
+        // the driver appended after it has no `solve` to call.
+        ParseTestCase::invalid("a bare expression is not a program", "1 + 1"),
+        ParseTestCase::invalid(
+            "the body disagrees with the declared result type",
+            "let solve (xs : int list) : int = true",
+        ),
+        // Self-recursion is deliberately absent from `Define`: a definition sees
+        // the ones before it, not itself.
+        ParseTestCase::invalid(
+            "a define does not see itself",
+            "let solve (xs : int list) : int = solve(xs)",
+        ),
+        ParseTestCase::invalid(
+            "a later item is not visible earlier",
+            "let solve (xs : int list) : int = two(0) let two (n : int) : int = 2",
+        ),
+        ParseTestCase::invalid(
+            "the parameter is used at the wrong type",
+            "let solve (xs : int list) : int = xs + 1",
+        ),
+    ]
+}
+
+#[test]
+fn valid_structure_items_ml() {
+    let mut grammar = ml_grammar();
+    let cases = valid_structure_items_cases();
+    let (res, _) = run_parse_batch(&mut grammar, &cases);
+    assert_eq!(res.failed, 0, "{}", res.format_failures());
+}
+
+#[test]
+fn invalid_structure_items_ml() {
+    let mut grammar = ml_grammar();
+    let cases = invalid_structure_items_cases();
     let (res, _) = run_parse_batch(&mut grammar, &cases);
     assert_eq!(res.failed, 0, "{}", res.format_failures());
 }

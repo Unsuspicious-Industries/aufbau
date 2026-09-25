@@ -52,14 +52,41 @@ mod tests {
                 "corpora/{lang} has no examples/{lang}.auf to certify against"
             );
             let src = std::fs::read_to_string(&grammar).unwrap();
-            out.push((
-                lang.clone(),
-                SPG::load(&src).unwrap_or_else(|e| panic!("{lang}.auf: {e}")),
-            ));
+            let mut spg = SPG::load(&src).unwrap_or_else(|e| panic!("{lang}.auf: {e}"));
+            // A corpus is written against one nonterminal, and it is not always
+            // the grammar's own start. `corpora/ml` is a corpus of ML
+            // *expressions* (`1 < 2`, `fun (x : int) -> x`), while `ml.auf`
+            // starts at `Program`, a list of `let name (p : T) : T = body`
+            // structure items. Reading the corpus at the grammar's start
+            // rejected every entry at its second token, so `valid_programs_type`
+            // failed wholesale while `invalid_programs_do_not_type` passed
+            // vacuously -- still rejecting, but for the wrong reason.
+            //
+            // So the corpus declares its own nonterminal in an optional `start`
+            // file beside the data. Absent, the grammar's own start is used,
+            // which is right for `corpora/c`.
+            if let Some(start) = corpus_start(&path) {
+                spg.with_start(start);
+            }
+            out.push((lang.clone(), spg));
         }
         assert!(!out.is_empty(), "no corpora found under {}", dir.display());
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
+    }
+
+    /// The nonterminal this corpus is written against, from an optional
+    /// `start` file in the corpus directory. One bare nonterminal name.
+    fn corpus_start(dir: &std::path::Path) -> Option<String> {
+        let path = dir.join("start");
+        let raw = std::fs::read_to_string(path).ok()?;
+        let name = raw.trim();
+        assert!(
+            !name.is_empty() && !name.contains(char::is_whitespace),
+            "{}/start must hold one bare nonterminal name, got {raw:?}",
+            dir.display()
+        );
+        Some(name.to_string())
     }
 
     /// Whether the whole program types: a complete parse under the empty context.
